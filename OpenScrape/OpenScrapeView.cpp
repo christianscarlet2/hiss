@@ -338,6 +338,11 @@ void COpenScrapeView::RecordRegionMove(const std::vector<SOpenScrapeRegionMoveSt
 	redo_region_moves.clear();
 }
 
+void COpenScrapeView::MoveGroupBy(CString group_name, int dx, int dy)
+{
+	MoveGroupBy(group_name, dx, dy, true);
+}
+
 void COpenScrapeView::MoveGroupBy(CString group_name, int dx, int dy, bool record_undo)
 {
 	LoadGroupsFromTablemap();
@@ -394,6 +399,11 @@ bool COpenScrapeView::GetGroupColorForRegion(CString name, COLORREF *color)
 	return false;
 }
 
+void COpenScrapeView::MoveRegionBy(CString name, int dx, int dy)
+{
+	MoveRegionBy(name, dx, dy, true);
+}
+
 void COpenScrapeView::MoveRegionBy(CString name, int dx, int dy, bool record_undo)
 {
 	std::vector<SOpenScrapeRegionMoveState> before;
@@ -413,6 +423,11 @@ void COpenScrapeView::MoveRegionBy(CString name, int dx, int dy, bool record_und
 	if (record_undo) {
 		RecordRegionMove(before, CaptureMoveStateForRegion(name));
 	}
+}
+
+void COpenScrapeView::MoveRegionWithGroup(CString name, int dx, int dy)
+{
+	MoveRegionWithGroup(name, dx, dy, true);
 }
 
 void COpenScrapeView::MoveRegionWithGroup(CString name, int dx, int dy, bool record_undo)
