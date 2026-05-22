@@ -1903,7 +1903,7 @@ Mat CDlgTableMap::prepareImage(Mat img_orig, bool binarize, int threshold, bool 
 		if (cropSize < 0.01)
 			return img_bounded;
 
-		process_ocr(img_resized, second_pass);
+		process_ocr(img_resized, false, second_pass);
 		vector<pair<Rect, CString>> resBoxes;
 		if (second_pass)
 			resBoxes = ResultBoxes2;
@@ -1990,7 +1990,7 @@ Mat CDlgTableMap::prepareImage(Mat img_orig, bool binarize, int threshold, bool 
 	}
 	//////////////////////////////////////////////////
 
-	process_ocr(img_resized, second_pass);
+	process_ocr(img_resized, false, second_pass);
 	return img_bounded;
 }
 
@@ -2152,7 +2152,7 @@ CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast)
 			size_t j = 0;
 			while (j < images.size()) {
 				CString ocr_str;
-				process_ocr(images[j]);
+				process_ocr(images[j], true);
 				for (auto& element : ResultBoxes) {
 					if (element.first == bestRect) {
 						ocr_str = element.second;
