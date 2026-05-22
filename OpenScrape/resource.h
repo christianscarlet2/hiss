@@ -128,6 +128,10 @@
 #define IDC_DELETE_PLAYER_REGIONS       1119
 #define IDC_DUPLICATE_PLAYER            1120
 #define IDC_DUPLICATE_GROUP_TO_PLAYER   1121
+#define IDC_COLOR_COMBO                 1122
+#define IDC_COLOR_ADD                   1123
+#define IDC_COLOR_EDIT                  1124
+#define IDC_COLOR_DELETE                1125
 #define ID_MAIN_TOOLBAR_GREENCIRCLE     32771
 #define ID_VIEW_CONNECTTOWINDOW         32772
 #define ID_VIEW_SHOWREGIONBOXES         32774
@@ -156,7 +160,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        153
 #define _APS_NEXT_COMMAND_VALUE         32793
-#define _APS_NEXT_CONTROL_VALUE         1122
+#define _APS_NEXT_CONTROL_VALUE         1126
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

@@ -255,6 +255,10 @@ void CDlgTableMap::DoDataExchange(CDataExchange* pDX)
 	DDV_MinMaxInt(pDX, crop_size, 1, 100);
 	DDX_Control(pDX, IDC_CROP_SPIN, m_CropSpin);
 	DDX_Control(pDX, IDC_BOX_COLOR, m_BoxColor);
+	DDX_Control(pDX, IDC_COLOR_COMBO, m_ColorCombo);
+	DDX_Control(pDX, IDC_COLOR_ADD, m_ColorAdd);
+	DDX_Control(pDX, IDC_COLOR_EDIT, m_ColorEdit);
+	DDX_Control(pDX, IDC_COLOR_DELETE, m_ColorDelete);
 	DDX_ColorPickerCB(pDX, IDC_BOX_COLOR, m_crColor);
 }
 
@@ -287,6 +291,10 @@ BEGIN_MESSAGE_MAP(CDlgTableMap, CDialog)
 	ON_BN_CLICKED(IDC_CREATE_GROUP, &CDlgTableMap::OnBnClickedCreateGroup)
 	ON_BN_CLICKED(IDC_GROUP_BOX, &CDlgTableMap::OnBnClickedGroupBox)
 	ON_CBN_SELCHANGE(IDC_GROUP_COLOR, &CDlgTableMap::OnGroupColorChange)
+	ON_CBN_SELCHANGE(IDC_COLOR_COMBO, &CDlgTableMap::OnColorComboChange)
+	ON_BN_CLICKED(IDC_COLOR_ADD, &CDlgTableMap::OnBnClickedColorAdd)
+	ON_BN_CLICKED(IDC_COLOR_EDIT, &CDlgTableMap::OnBnClickedColorEdit)
+	ON_BN_CLICKED(IDC_COLOR_DELETE, &CDlgTableMap::OnBnClickedColorDelete)
 	ON_BN_CLICKED(IDC_DELETE_PLAYER_REGIONS, &CDlgTableMap::OnBnClickedDeletePlayerRegions)
 	ON_BN_CLICKED(IDC_DUPLICATE_GROUP_TO_PLAYER, &CDlgTableMap::OnBnClickedDuplicateGroupToPlayer)
 	ON_BN_CLICKED(IDC_CREATE_IMAGE, &CDlgTableMap::OnBnClickedCreateImage)

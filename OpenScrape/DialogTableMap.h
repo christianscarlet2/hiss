@@ -56,6 +56,10 @@ protected:
 	afx_msg void OnGroupColorChange();
 	afx_msg void OnBnClickedDeletePlayerRegions();
 	afx_msg void OnBnClickedDuplicateGroupToPlayer();
+	afx_msg void OnColorComboChange();
+	afx_msg void OnBnClickedColorAdd();
+	afx_msg void OnBnClickedColorEdit();
+	afx_msg void OnBnClickedColorDelete();
 	afx_msg void OnBnClickedCreateHash0();
 	afx_msg void OnBnClickedCreateHash1();
 	afx_msg void OnBnClickedCreateHash2();
@@ -198,6 +202,8 @@ public:
 	CStickyButton		m_DrawRect;
 	CComboBox			m_MatchMode;
 	CColorPickerCB		m_BoxColor;
+	CComboBox			m_ColorCombo;
+	CButton				m_ColorAdd, m_ColorEdit, m_ColorDelete;
 	vector<pair<Rect, CString>> ResultBoxes, ResultBoxes2;
 	CString ResultString, ResultString2;
 	Rect	bestRect, bestRect2;
