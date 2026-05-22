@@ -78,9 +78,14 @@ IMPLEMENT_DYNCREATE(COpenScrapeView, CView)
 BEGIN_MESSAGE_MAP(COpenScrapeView, CView)
 	ON_WM_LBUTTONDOWN()
 	ON_WM_LBUTTONUP()
+	ON_WM_RBUTTONDOWN()
 	ON_WM_MOUSEMOVE()
 	ON_WM_SETCURSOR()
 	ON_WM_KEYDOWN()
+	ON_COMMAND(ID_EDIT_UNDO, &COpenScrapeView::OnEditUndo)
+	ON_COMMAND(ID_EDIT_REDO, &COpenScrapeView::OnEditRedo)
+	ON_UPDATE_COMMAND_UI(ID_EDIT_UNDO, &COpenScrapeView::OnUpdateEditUndo)
+	ON_UPDATE_COMMAND_UI(ID_EDIT_REDO, &COpenScrapeView::OnUpdateEditRedo)
 END_MESSAGE_MAP()
 
 // COpenScrapeView construction/destruction
@@ -246,12 +251,104 @@ CString COpenScrapeView::GroupNameAtPoint(CPoint point)
 	return matched_group;
 }
 
-void COpenScrapeView::MoveGroupBy(CString group_name, int dx, int dy)
+std::vector<SOpenScrapeRegionMoveState> COpenScrapeView::CaptureRegionMoveState(const std::vector<CString> &region_names)
+{
+	std::vector<SOpenScrapeRegionMoveState> states;
+	for (size_t i = 0; i < region_names.size(); ++i) {
+		RMapCI r_iter = p_tablemap->r$()->find(region_names[i].GetString());
+		if (r_iter == p_tablemap->r$()->end()) {
+			continue;
+		}
+
+		SOpenScrapeRegionMoveState state;
+		state.name = r_iter->second.name;
+		state.bounds.left = r_iter->second.left;
+		state.bounds.top = r_iter->second.top;
+		state.bounds.right = r_iter->second.right;
+		state.bounds.bottom = r_iter->second.bottom;
+		states.push_back(state);
+	}
+	return states;
+}
+
+std::vector<SOpenScrapeRegionMoveState> COpenScrapeView::CaptureMoveStateForRegion(CString name)
+{
+	std::vector<CString> region_names;
+	region_names.push_back(name);
+	return CaptureRegionMoveState(region_names);
+}
+
+std::vector<SOpenScrapeRegionMoveState> COpenScrapeView::CaptureMoveStateForGroup(CString group_name)
+{
+	LoadGroupsFromTablemap();
+	std::map<CString, SOpenScrapeRegionGroup>::iterator group = region_groups.find(group_name);
+	if (group == region_groups.end()) {
+		return std::vector<SOpenScrapeRegionMoveState>();
+	}
+	return CaptureRegionMoveState(group->second.members);
+}
+
+void COpenScrapeView::ApplyRegionMoveState(const std::vector<SOpenScrapeRegionMoveState> &states)
+{
+	for (size_t i = 0; i < states.size(); ++i) {
+		RMapI r_iter = p_tablemap->set_r$()->find(states[i].name.GetString());
+		if (r_iter == p_tablemap->r$()->end()) {
+			continue;
+		}
+		r_iter->second.left = states[i].bounds.left;
+		r_iter->second.top = states[i].bounds.top;
+		r_iter->second.right = states[i].bounds.right;
+		r_iter->second.bottom = states[i].bounds.bottom;
+	}
+
+	RebuildGroupBounds();
+	if (theApp.m_TableMapDlg != NULL) {
+		theApp.m_TableMapDlg->update_display();
+		theApp.m_TableMapDlg->Invalidate(false);
+	}
+	Invalidate(false);
+	GetDocument()->SetModifiedFlag(true);
+}
+
+void COpenScrapeView::RecordRegionMove(const std::vector<SOpenScrapeRegionMoveState> &before, const std::vector<SOpenScrapeRegionMoveState> &after)
+{
+	if (before.empty() || before.size() != after.size()) {
+		return;
+	}
+
+	bool changed = false;
+	for (size_t i = 0; i < before.size(); ++i) {
+		if (before[i].name != after[i].name
+				|| before[i].bounds.left != after[i].bounds.left
+				|| before[i].bounds.top != after[i].bounds.top
+				|| before[i].bounds.right != after[i].bounds.right
+				|| before[i].bounds.bottom != after[i].bounds.bottom) {
+			changed = true;
+			break;
+		}
+	}
+	if (!changed) {
+		return;
+	}
+
+	SOpenScrapeRegionMoveAction action;
+	action.before = before;
+	action.after = after;
+	undo_region_moves.push_back(action);
+	redo_region_moves.clear();
+}
+
+void COpenScrapeView::MoveGroupBy(CString group_name, int dx, int dy, bool record_undo)
 {
 	LoadGroupsFromTablemap();
 	std::map<CString, SOpenScrapeRegionGroup>::iterator group = region_groups.find(group_name);
 	if (group == region_groups.end()) {
 		return;
+	}
+
+	std::vector<SOpenScrapeRegionMoveState> before;
+	if (record_undo) {
+		before = CaptureMoveStateForGroup(group_name);
 	}
 
 	for (size_t i = 0; i < group->second.members.size(); ++i) {
@@ -264,6 +361,10 @@ void COpenScrapeView::MoveGroupBy(CString group_name, int dx, int dy)
 		}
 	}
 	RebuildGroupBounds();
+
+	if (record_undo) {
+		RecordRegionMove(before, CaptureMoveStateForGroup(group_name));
+	}
 }
 
 CString COpenScrapeView::GroupNameForRegion(CString name)
@@ -293,8 +394,13 @@ bool COpenScrapeView::GetGroupColorForRegion(CString name, COLORREF *color)
 	return false;
 }
 
-void COpenScrapeView::MoveRegionBy(CString name, int dx, int dy)
+void COpenScrapeView::MoveRegionBy(CString name, int dx, int dy, bool record_undo)
 {
+	std::vector<SOpenScrapeRegionMoveState> before;
+	if (record_undo) {
+		before = CaptureMoveStateForRegion(name);
+	}
+
 	RMapI r_iter = p_tablemap->set_r$()->find(name.GetString());
 	if (r_iter != p_tablemap->r$()->end()) {
 		r_iter->second.left += dx;
@@ -303,15 +409,24 @@ void COpenScrapeView::MoveRegionBy(CString name, int dx, int dy)
 		r_iter->second.bottom += dy;
 	}
 	RebuildGroupBounds();
+
+	if (record_undo) {
+		RecordRegionMove(before, CaptureMoveStateForRegion(name));
+	}
 }
 
-void COpenScrapeView::MoveRegionWithGroup(CString name, int dx, int dy)
+void COpenScrapeView::MoveRegionWithGroup(CString name, int dx, int dy, bool record_undo)
 {
 	LoadGroupsFromTablemap();
 	CString group_name = GroupNameForRegion(name);
 	if (group_name == "") {
-		MoveRegionBy(name, dx, dy);
+		MoveRegionBy(name, dx, dy, record_undo);
 		return;
+	}
+
+	std::vector<SOpenScrapeRegionMoveState> before;
+	if (record_undo) {
+		before = CaptureMoveStateForGroup(group_name);
 	}
 
 	SOpenScrapeRegionGroup &group = region_groups[group_name];
@@ -325,6 +440,10 @@ void COpenScrapeView::MoveRegionWithGroup(CString name, int dx, int dy)
 		}
 	}
 	RebuildGroupBounds();
+
+	if (record_undo) {
+		RecordRegionMove(before, CaptureMoveStateForGroup(group_name));
+	}
 }
 
 void COpenScrapeView::PurgeMissingRegionsFromGroups()
@@ -370,6 +489,30 @@ bool COpenScrapeView::DeleteRegionGroup(CString group_name)
 	GetDocument()->SetModifiedFlag(true);
 	Invalidate(false);
 	return true;
+}
+
+bool COpenScrapeView::RemoveRegionFromGroup(CString name)
+{
+	LoadGroupsFromTablemap(true);
+	for (std::map<CString, SOpenScrapeRegionGroup>::iterator g = region_groups.begin(); g != region_groups.end(); ++g) {
+		for (std::vector<CString>::iterator member = g->second.members.begin(); member != g->second.members.end(); ++member) {
+			if (*member != name) {
+				continue;
+			}
+
+			g->second.members.erase(member);
+			if (g->second.members.size() < 2) {
+				region_groups.erase(g);
+			}
+			RebuildGroupBounds();
+			SaveGroupsToTablemap();
+			ClearRegionSelection();
+			GetDocument()->SetModifiedFlag(true);
+			Invalidate(false);
+			return true;
+		}
+	}
+	return false;
 }
 
 bool COpenScrapeView::DuplicateRegionGroupToPlayer(CString group_name, CString target_player, CString *error_message)
@@ -913,6 +1056,7 @@ void COpenScrapeView::OnLButtonDown(UINT nFlags, CPoint point)
 					dragging = true;
 					dragged_region = r_iter->second.name;
 					dragged_group = "";
+					drag_move_before = CaptureMoveStateForRegion(dragged_region);
 					drag_left_offset = point.x - r_iter->second.left;
 					drag_top_offset = point.y - r_iter->second.top;
 					Invalidate(false);
@@ -929,6 +1073,7 @@ void COpenScrapeView::OnLButtonDown(UINT nFlags, CPoint point)
 					dragging = true;
 					dragged_region = tpl_iter->second.name;
 					dragged_group = "";
+					drag_move_before.clear();
 					drag_left_offset = point.x - tpl_iter->second.left;
 					drag_top_offset = point.y - tpl_iter->second.top;
 					Invalidate(false);
@@ -954,6 +1099,9 @@ void COpenScrapeView::OnLButtonDown(UINT nFlags, CPoint point)
 					dragging = true;
 					dragged_region = clicked_region->second.name;
 					dragged_group = GroupNameForRegion(dragged_region);
+					drag_move_before = dragged_group.IsEmpty()
+						? CaptureMoveStateForRegion(dragged_region)
+						: CaptureMoveStateForGroup(dragged_group);
 					drag_left_offset = point.x - clicked_region->second.left;
 					drag_top_offset = point.y - clicked_region->second.top;
 					Invalidate(false);
@@ -974,6 +1122,7 @@ void COpenScrapeView::OnLButtonDown(UINT nFlags, CPoint point)
 				dragging = true;
 				dragged_region = "";
 				dragged_group = group_name;
+				drag_move_before = CaptureMoveStateForGroup(dragged_group);
 				drag_left_offset = point.x;
 				drag_top_offset = point.y;
 				Invalidate(false);
@@ -1067,6 +1216,15 @@ void COpenScrapeView::OnLButtonUp(UINT nFlags, CPoint point)
 
 	else if (dragging)
 	{
+		if (!drag_move_before.empty()) {
+			std::vector<CString> names;
+			for (size_t i = 0; i < drag_move_before.size(); ++i) {
+				names.push_back(drag_move_before[i].name);
+			}
+			std::vector<SOpenScrapeRegionMoveState> after = CaptureRegionMoveState(names);
+			RecordRegionMove(drag_move_before, after);
+			drag_move_before.clear();
+		}
 		dragging = false;
 		dragged_region = "";
 		dragged_group = "";
@@ -1076,6 +1234,90 @@ void COpenScrapeView::OnLButtonUp(UINT nFlags, CPoint point)
 
 
 	CView::OnLButtonUp(nFlags, point);
+}
+
+void COpenScrapeView::OnRButtonDown(UINT nFlags, CPoint point)
+{
+	CString region_name = RegionNameAtPoint(point);
+	if (region_name.IsEmpty()) {
+		CView::OnRButtonDown(nFlags, point);
+		return;
+	}
+
+	CString group_name = GroupNameForRegion(region_name);
+	if (group_name.IsEmpty()) {
+		CView::OnRButtonDown(nFlags, point);
+		return;
+	}
+
+	HTREEITEM parent_node = theApp.m_TableMapDlg->GetTypeNode("Regions");
+	HTREEITEM item = theApp.m_TableMapDlg->FindItem(region_name, parent_node);
+	if (item != NULL) {
+		theApp.m_TableMapDlg->m_TableMapTree.SelectItem(item);
+	}
+
+	CMenu menu;
+	menu.CreatePopupMenu();
+	const UINT kDeleteRegionMenuId = 51001;
+	const UINT kUngroupRegionMenuId = 51002;
+	menu.AppendMenu(MF_STRING, kDeleteRegionMenuId, "Delete");
+	menu.AppendMenu(MF_STRING, kUngroupRegionMenuId, "Ungroup this item");
+
+	CPoint screen_point = point;
+	ClientToScreen(&screen_point);
+	UINT command = menu.TrackPopupMenu(TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
+		screen_point.x, screen_point.y, this);
+
+	if (command == kDeleteRegionMenuId) {
+		CString message;
+		message.Format("Delete region: %s?", region_name);
+		if (AfxMessageBox(message, MB_YESNO) == IDYES && p_tablemap->r$_erase(region_name)) {
+			PurgeMissingRegionsFromGroups();
+			theApp.m_TableMapDlg->update_tree("Regions");
+			Invalidate(false);
+			GetDocument()->SetModifiedFlag(true);
+		}
+	}
+	else if (command == kUngroupRegionMenuId) {
+		RemoveRegionFromGroup(region_name);
+		theApp.m_TableMapDlg->update_tree("Groups");
+	}
+
+	CView::OnRButtonDown(nFlags, point);
+}
+
+void COpenScrapeView::OnEditUndo()
+{
+	if (undo_region_moves.empty()) {
+		return;
+	}
+
+	SOpenScrapeRegionMoveAction action = undo_region_moves.back();
+	undo_region_moves.pop_back();
+	ApplyRegionMoveState(action.before);
+	redo_region_moves.push_back(action);
+}
+
+void COpenScrapeView::OnEditRedo()
+{
+	if (redo_region_moves.empty()) {
+		return;
+	}
+
+	SOpenScrapeRegionMoveAction action = redo_region_moves.back();
+	redo_region_moves.pop_back();
+	ApplyRegionMoveState(action.after);
+	undo_region_moves.push_back(action);
+}
+
+void COpenScrapeView::OnUpdateEditUndo(CCmdUI *pCmdUI)
+{
+	pCmdUI->Enable(!undo_region_moves.empty());
+}
+
+void COpenScrapeView::OnUpdateEditRedo(CCmdUI *pCmdUI)
+{
+	pCmdUI->Enable(!redo_region_moves.empty());
 }
 
 void COpenScrapeView::OnMouseMove(UINT nFlags, CPoint point)
@@ -1152,7 +1394,7 @@ void COpenScrapeView::OnMouseMove(UINT nFlags, CPoint point)
 			int dx = point.x - drag_left_offset;
 			int dy = point.y - drag_top_offset;
 			if (dx != 0 || dy != 0) {
-				MoveGroupBy(dragged_group, dx, dy);
+				MoveGroupBy(dragged_group, dx, dy, false);
 				drag_left_offset = point.x;
 				drag_top_offset = point.y;
 				theApp.m_TableMapDlg->Invalidate(false);
@@ -1176,12 +1418,13 @@ void COpenScrapeView::OnMouseMove(UINT nFlags, CPoint point)
 
 			// Update internal structure for selected region
 			if (dragged_group != "") {
-				MoveRegionWithGroup(r_iter->second.name, dx, dy);
+				MoveRegionWithGroup(r_iter->second.name, dx, dy, false);
 			} else {
 				r_iter->second.left = new_left;
 				r_iter->second.top = new_top;
 				r_iter->second.right = r_iter->second.left + width;
 				r_iter->second.bottom = r_iter->second.top + height;
+				RebuildGroupBounds();
 			}
 
 			// Update table map dialog
