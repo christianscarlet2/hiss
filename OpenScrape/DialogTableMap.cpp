@@ -696,6 +696,47 @@ HTREEITEM CDlgTableMap::GetTextSelItemAndRecordType(CString* sel_text, CString* 
 	return record_type_node;
 }
 
+void CDlgTableMap::UpdateDialogTitleForSelection(CString sel_text, CString type_text, HTREEITEM type_node)
+{
+	if (type_node == NULL) {
+		SetWindowText("TableMap");
+		return;
+	}
+
+	if (type_text == "Sizes"
+			|| type_text == "Symbols"
+			|| type_text == "Groups"
+			|| type_text == "Regions") {
+		CString title;
+		title.Format("TableMap - %s", sel_text);
+		SetWindowText(title);
+		return;
+	}
+
+	SetWindowText("TableMap");
+}
+
+void CDlgTableMap::FocusOpenScrapeViewForRegion(CString sel_text, CString type_text)
+{
+	if (type_text != "Regions") {
+		return;
+	}
+
+	if (p_tablemap->r$()->find(sel_text.GetString()) == p_tablemap->r$()->end()) {
+		return;
+	}
+
+	COpenScrapeView *view = COpenScrapeView::GetView();
+	if (view == NULL || !::IsWindow(view->GetSafeHwnd())) {
+		return;
+	}
+
+	if (theApp.m_pMainWnd != NULL && ::IsWindow(theApp.m_pMainWnd->GetSafeHwnd())) {
+		theApp.m_pMainWnd->SetActiveWindow();
+	}
+	view->SetFocus();
+}
+
 
 void CDlgTableMap::OnPaint()
 {
@@ -1321,11 +1362,16 @@ void CDlgTableMap::OnZoomChange()
 void CDlgTableMap::OnTvnSelchangedTablemapTree(NMHDR* pNMHDR, LRESULT* pResult)
 {
 	LPNMTREEVIEW	pNMTreeView = reinterpret_cast<LPNMTREEVIEW>(pNMHDR);
+	CString sel_text = "", type_text = "";
+	HTREEITEM type_node = GetTextSelItemAndRecordType(&sel_text, &type_text);
+
+	UpdateDialogTitleForSelection(sel_text, type_text, type_node);
 
 	update_display();
 
 	theApp.m_pMainWnd->Invalidate(false);
 	Invalidate(false);
+	FocusOpenScrapeViewForRegion(sel_text, type_text);
 
 	*pResult = 0;
 }

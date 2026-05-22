@@ -93,6 +93,8 @@ protected:
 	afx_msg void OnBoxColorChange();
 	HTREEITEM GetRecordTypeNode(HTREEITEM item);
 	HTREEITEM GetTextSelItemAndRecordType(CString *sel_text, CString *type_text);
+	void UpdateDialogTitleForSelection(CString sel_text, CString type_text, HTREEITEM type_node);
+	void FocusOpenScrapeViewForRegion(CString sel_text, CString type_text);
 	void clear_bitmap_control(void);
 	void clear_mat_control(void);
 	void draw_region_bitmap(void);
