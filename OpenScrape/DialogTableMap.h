@@ -120,6 +120,13 @@ protected:
 	void AddNamedGroupsToTree(void);
 	void PopulateDeletePlayerCombo(void);
 	void PopulateDuplicatePlayerCombo(void);
+	void PopulateColorPresets(void);
+	void ApplySelectedColorPreset(bool update_region);
+	void ApplyBestColorPresetForSelectedRegion(void);
+	int ClosestColorPreset(COLORREF color);
+	bool GetSelectedRegionAverageColor(COLORREF *color);
+	void SaveColorPreset(int index, CString name, COLORREF color);
+	void DeleteColorPreset(int index);
 	void MoveSelectedRegionBy(int dx, int dy);
 	void CreateHash(int hash_type);
 	void SaveNodeExpansionState(CArray <bool, bool> *node_state);

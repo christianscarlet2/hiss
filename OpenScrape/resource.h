@@ -132,6 +132,7 @@
 #define IDC_COLOR_ADD                   1123
 #define IDC_COLOR_EDIT                  1124
 #define IDC_COLOR_DELETE                1125
+#define IDC_COLOR_SETTINGS              1126
 #define ID_MAIN_TOOLBAR_GREENCIRCLE     32771
 #define ID_VIEW_CONNECTTOWINDOW         32772
 #define ID_VIEW_SHOWREGIONBOXES         32774
