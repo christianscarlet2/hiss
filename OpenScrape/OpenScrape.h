@@ -38,6 +38,8 @@ public:
 	afx_msg void OnAppAbout();
 	DECLARE_MESSAGE_MAP()
   void ArrangeWindows();
+	void LoadMostRecentTablemapIfNeeded();
+	CString MostRecentExistingTablemap();
 
 public:
 	int				sessionnum;

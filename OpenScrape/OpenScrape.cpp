@@ -15,6 +15,7 @@
 //
 
 #include "stdafx.h"
+#include <afxadv.h>
 #include <psapi.h>
 
 #include "OpenScrape.h"
@@ -47,6 +48,44 @@ COpenScrapeApp::COpenScrapeApp()
 
 // The one and only COpenScrapeApp object
 COpenScrapeApp theApp;
+
+CString COpenScrapeApp::MostRecentExistingTablemap()
+{
+	if (m_pRecentFileList == NULL) {
+		return "";
+	}
+
+	for (int i = 0; i < m_pRecentFileList->GetSize(); ++i) {
+		CString path = (*m_pRecentFileList)[i];
+		if (path == "") {
+			continue;
+		}
+		CFileStatus status;
+		if (CFile::GetStatus(path, status)) {
+			return path;
+		}
+	}
+
+	return "";
+}
+
+void COpenScrapeApp::LoadMostRecentTablemapIfNeeded()
+{
+	if (p_tablemap == NULL || p_tablemap->filename() != "") {
+		return;
+	}
+
+	CString path = MostRecentExistingTablemap();
+	if (path == "") {
+		return;
+	}
+
+	OpenDocumentFile(path);
+	if (theApp.m_TableMapDlg != NULL) {
+		theApp.m_TableMapDlg->create_tree();
+		theApp.m_TableMapDlg->Invalidate(true);
+	}
+}
 
 // COpenScrapeApp initialization
 BOOL COpenScrapeApp::InitInstance()
@@ -145,7 +184,12 @@ BOOL COpenScrapeApp::InitInstance()
 	m_TableMapDlg = new CDlgTableMap(NULL);
 	m_TableMapDlg->Create(CDlgTableMap::IDD, m_pMainWnd);
 	m_TableMapDlg->ShowWindow(SW_SHOW);
-  ArrangeWindows();
+	LoadMostRecentTablemapIfNeeded();
+	if (p_tablemap != NULL && p_tablemap->filename() != "") {
+		m_TableMapDlg->create_tree();
+	}
+	ArrangeWindows();
+	((CMainFrame *)m_pMainWnd)->AutoConnectToTablemapTitleText();
 	return true;
 }
 

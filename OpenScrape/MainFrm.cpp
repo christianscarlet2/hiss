@@ -323,11 +323,87 @@ void CMainFrame::ForceRedraw()
 	theApp.m_TableMapDlg->Invalidate(true);
 }
 
+void CMainFrame::AttachToTableCandidate(const STableList &candidate)
+{
+	COpenScrapeDoc *pDoc = COpenScrapeDoc::GetDocument();
+	if (pDoc == NULL) {
+		return;
+	}
+
+	pDoc->attached_hwnd = candidate.hwnd;
+	pDoc->attached_rect.left = candidate.crect.left;
+	pDoc->attached_rect.top = candidate.crect.top;
+	pDoc->attached_rect.right = candidate.crect.right;
+	pDoc->attached_rect.bottom = candidate.crect.bottom;
+
+	SaveBmpPbits();
+	ResizeWindow(pDoc);
+	if (theApp.m_TableMapDlg) {
+		theApp.m_TableMapDlg->update_display();
+	}
+}
+
+static bool CStringContainsNoCase(CString haystack, CString needle)
+{
+	haystack.Trim();
+	needle.Trim();
+	if (needle == "") {
+		return false;
+	}
+	haystack.MakeLower();
+	needle.MakeLower();
+	return haystack.Find(needle) >= 0;
+}
+
+bool CMainFrame::TableCandidateMatchesTitleText(const STableList &candidate)
+{
+	CString title = candidate.title;
+	for (int i = -1; i < k_max_number_of_titletexts; ++i) {
+		CString symbol_name;
+		symbol_name.Format(i < 0 ? "!titletext" : "!titletext%d", i);
+		CString excluded_title = p_tablemap->GetTMSymbol(symbol_name);
+		if (CStringContainsNoCase(title, excluded_title)) {
+			return false;
+		}
+	}
+
+	for (int i = -1; i < k_max_number_of_titletexts; ++i) {
+		CString symbol_name;
+		symbol_name.Format(i < 0 ? "titletext" : "titletext%d", i);
+		CString wanted_title = p_tablemap->GetTMSymbol(symbol_name);
+		if (CStringContainsNoCase(title, wanted_title)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool CMainFrame::AutoConnectToTablemapTitleText()
+{
+	if (p_tablemap == NULL || p_tablemap->filename() == "") {
+		return false;
+	}
+
+	g_tlist.RemoveAll();
+	EnumWindows(EnumProcTopLevelWindowList, NULL);
+
+	for (int i = 0; i < g_tlist.GetSize(); ++i) {
+		if (TableCandidateMatchesTitleText(g_tlist[i])) {
+			AttachToTableCandidate(g_tlist[i]);
+			ForceRedraw();
+			BringOpenScrapeBackToFront();
+			return true;
+		}
+	}
+
+	return false;
+}
+
 void CMainFrame::OnViewConnecttowindow()
 {
 	LPARAM				lparam;
 	CDlgSelectTable		cstd;
-	COpenScrapeDoc		*pDoc = COpenScrapeDoc::GetDocument();
 
 	// Clear global list for holding table candidates
 	g_tlist.RemoveAll();
@@ -352,15 +428,7 @@ void CMainFrame::OnViewConnecttowindow()
 		// Display table select dialog
 		if (cstd.DoModal() == IDOK) 
 		{
-			// Save hwnd and rect of window we are attached to
-			pDoc->attached_hwnd = g_tlist[cstd.selected_item].hwnd;
-			pDoc->attached_rect.left = g_tlist[cstd.selected_item].crect.left;
-			pDoc->attached_rect.top = g_tlist[cstd.selected_item].crect.top;
-			pDoc->attached_rect.right = g_tlist[cstd.selected_item].crect.right;
-			pDoc->attached_rect.bottom = g_tlist[cstd.selected_item].crect.bottom;
-
-			SaveBmpPbits();
-			ResizeWindow(pDoc);	
+			AttachToTableCandidate(g_tlist[cstd.selected_item]);
 		}
 	}
 	ForceRedraw();

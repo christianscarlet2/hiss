@@ -21,8 +21,9 @@
 
 class CMainFrame : public CFrameWnd {
  public:
-  LRESULT OnHotKey(WPARAM wParam, LPARAM lParam);
+	LRESULT OnHotKey(WPARAM wParam, LPARAM lParam);
 	void UpdateTableMapDockSide();
+	bool AutoConnectToTablemapTitleText();
  protected: // create from serialization only
 	CMainFrame();
 	DECLARE_DYNCREATE(CMainFrame)
@@ -57,6 +58,8 @@ class CMainFrame : public CFrameWnd {
 	bool CreateToolbar();
 	bool CreateStatusBar();
 	void ForceRedraw();
+	void AttachToTableCandidate(const STableList &candidate);
+	bool TableCandidateMatchesTitleText(const STableList &candidate);
 	void ResizeWindow(COpenScrapeDoc *pDoc);
 	CSize CalculateFrameSizeForScreenshot(COpenScrapeDoc *pDoc);
 	void BringOpenScrapeBackToFront();

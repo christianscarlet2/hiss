@@ -26,6 +26,10 @@
 #define IDC_BUILD_PROGRESS 1007
 #define IDC_OPEN_OPENSCRAPE_BUTTON 1008
 #define IDC_OPEN_OPENHOLDEM_BUTTON 1009
+#define IDC_ALERT_TEXT 1010
+#define IDC_CLOSE_ALL_BUTTON 1011
+
+#define TIMER_WINDOW_MONITOR 2001
 
 #define WM_APP_STATUS (WM_APP + 1)
 #define WM_APP_PROGRESS (WM_APP + 2)
@@ -42,10 +46,16 @@ static HWND g_scale_checkbox = NULL;
 static HWND g_build_button = NULL;
 static HWND g_open_openscrape_button = NULL;
 static HWND g_open_openholdem_button = NULL;
+static HWND g_close_all_button = NULL;
 static HWND g_build_progress = NULL;
+static HWND g_alert_text = NULL;
+static HBRUSH g_alert_brush = NULL;
 static HINSTANCE g_instance = NULL;
 static bool g_picking_window = false;
 static volatile LONG g_building = 0;
+static HWND g_monitored_window = NULL;
+static int g_monitored_width = 0;
+static int g_monitored_height = 0;
 
 typedef BOOL (WINAPI *SetProcessDpiAwarenessContextFunction)(DPI_AWARENESS_CONTEXT);
 typedef UINT (WINAPI *GetDpiForWindowFunction)(HWND);
@@ -54,6 +64,17 @@ typedef BOOL (WINAPI *QueryFullProcessImageNameFunction)(HANDLE, DWORD, LPSTR, P
 
 static void SetStatusText(const char *message) {
   SetWindowText(g_status_text, message);
+}
+
+static void SetAlertText(const char *message) {
+  SetWindowText(g_alert_text, message);
+  ShowWindow(g_alert_text, SW_SHOW);
+  InvalidateRect(g_alert_text, NULL, TRUE);
+}
+
+static void ClearAlertText() {
+  SetWindowText(g_alert_text, "");
+  ShowWindow(g_alert_text, SW_HIDE);
 }
 
 static void PostStatusText(const char *message) {
@@ -218,6 +239,51 @@ static HWND TopLevelWindowFromPoint(POINT point) {
   return target;
 }
 
+static void StopWindowMonitor() {
+  KillTimer(g_main_window, TIMER_WINDOW_MONITOR);
+  g_monitored_window = NULL;
+  g_monitored_width = 0;
+  g_monitored_height = 0;
+}
+
+static void StartWindowMonitor(HWND target, int width, int height) {
+  g_monitored_window = target;
+  g_monitored_width = width;
+  g_monitored_height = height;
+  ClearAlertText();
+  SetTimer(g_main_window, TIMER_WINDOW_MONITOR, 500, NULL);
+}
+
+static void PollMonitoredWindowSize() {
+  if (g_monitored_window == NULL) {
+    return;
+  }
+
+  if (!IsWindow(g_monitored_window)) {
+    SetAlertText("ALERT: selected window disappeared after resize.");
+    StopWindowMonitor();
+    return;
+  }
+
+  RECT current_rect = {0};
+  if (!GetWindowRect(g_monitored_window, &current_rect)) {
+    SetAlertText("ALERT: selected window size cannot be read.");
+    return;
+  }
+
+  const int current_width = current_rect.right - current_rect.left;
+  const int current_height = current_rect.bottom - current_rect.top;
+  if (current_width != g_monitored_width || current_height != g_monitored_height) {
+    char message[192] = {0};
+    sprintf_s(message, "ALERT: selected window changed size to %d x %d; expected %d x %d.",
+      current_width, current_height, g_monitored_width, g_monitored_height);
+    SetAlertText(message);
+    return;
+  }
+
+  ClearAlertText();
+}
+
 static void StopPickingWindow() {
   if (!g_picking_window) {
     return;
@@ -286,6 +352,7 @@ static void ResizeClickedWindow(LPARAM lparam) {
 
   StopPickingWindow();
   if (resized) {
+    StartWindowMonitor(target, scaled_width, scaled_height);
     char message[192] = {0};
     if (scale_to_dpi) {
       sprintf_s(message, "Resized HWND 0x%p to %d x %d at %u DPI (%d x %d physical).",
@@ -610,6 +677,47 @@ static int KillRepoOutputProcesses(const std::string &repo_root) {
   return killed;
 }
 
+static bool IsOpenHoldemOrOpenScrapeProcess(const PROCESSENTRY32 &entry) {
+  return _stricmp(entry.szExeFile, "OpenHoldem.exe") == 0
+    || _stricmp(entry.szExeFile, "OpenScrape.exe") == 0;
+}
+
+static int ForceCloseOpenHoldemAndOpenScrape() {
+  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snapshot == INVALID_HANDLE_VALUE) {
+    return 0;
+  }
+
+  int killed = 0;
+  PROCESSENTRY32 entry = {0};
+  entry.dwSize = sizeof(entry);
+  if (Process32First(snapshot, &entry)) {
+    do {
+      if (!IsOpenHoldemOrOpenScrapeProcess(entry)) {
+        continue;
+      }
+
+      HANDLE process = OpenProcess(PROCESS_TERMINATE, FALSE, entry.th32ProcessID);
+      if (process != NULL) {
+        if (TerminateProcess(process, 1)) {
+          ++killed;
+        }
+        CloseHandle(process);
+      }
+    } while (Process32Next(snapshot, &entry));
+  }
+
+  CloseHandle(snapshot);
+  return killed;
+}
+
+static void CloseAllOpenHoldemAndOpenScrape() {
+  const int killed = ForceCloseOpenHoldemAndOpenScrape();
+  char status[128] = {0};
+  sprintf_s(status, "Closed %d OpenHoldem/OpenScrape process%s.", killed, killed == 1 ? "" : "es");
+  SetStatusText(status);
+}
+
 static bool AskToKillBlockingProcesses(const char *step, const std::string &repo_root) {
   char message[512] = {0};
   sprintf_s(message,
@@ -829,7 +937,11 @@ static void CreateChildControls(HWND hwnd) {
 
   g_open_openholdem_button = CreateWindow("BUTTON", "OpenHoldem",
     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-    16, 118, 330, 28, hwnd, (HMENU)IDC_OPEN_OPENHOLDEM_BUTTON, g_instance, NULL);
+    16, 118, 160, 28, hwnd, (HMENU)IDC_OPEN_OPENHOLDEM_BUTTON, g_instance, NULL);
+
+  g_close_all_button = CreateWindow("BUTTON", "Close All",
+    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+    186, 118, 160, 28, hwnd, (HMENU)IDC_CLOSE_ALL_BUTTON, g_instance, NULL);
 
   g_build_progress = CreateWindowEx(0, PROGRESS_CLASS, "",
     WS_CHILD | WS_VISIBLE,
@@ -837,9 +949,14 @@ static void CreateChildControls(HWND hwnd) {
   SendMessage(g_build_progress, PBM_SETRANGE, 0, MAKELPARAM(0, 100));
   SendMessage(g_build_progress, PBM_SETPOS, 0, 0);
 
+  g_alert_text = CreateWindow("STATIC", "",
+    WS_CHILD | SS_CENTER,
+    16, 184, 330, 36, hwnd, (HMENU)IDC_ALERT_TEXT, g_instance, NULL);
+  ShowWindow(g_alert_text, SW_HIDE);
+
   g_status_text = CreateWindow("STATIC", "Enter size, then click Pick Window.",
     WS_CHILD | WS_VISIBLE,
-    16, 186, 340, 54, hwnd, (HMENU)IDC_STATUS_TEXT, g_instance, NULL);
+    16, 228, 340, 54, hwnd, (HMENU)IDC_STATUS_TEXT, g_instance, NULL);
   LoadDefaultTablemapSize();
 }
 
@@ -867,6 +984,10 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARA
       OpenRepoExecutable("OpenHoldem.exe", "OpenHoldem");
       return 0;
     }
+    if (LOWORD(wparam) == IDC_CLOSE_ALL_BUTTON) {
+      CloseAllOpenHoldemAndOpenScrape();
+      return 0;
+    }
     break;
 
   case WM_APP_STATUS:
@@ -889,6 +1010,21 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARA
     EnableWindow(g_build_button, TRUE);
     EnableWindow(g_pick_button, TRUE);
     return 0;
+
+  case WM_TIMER:
+    if (wparam == TIMER_WINDOW_MONITOR) {
+      PollMonitoredWindowSize();
+      return 0;
+    }
+    break;
+
+  case WM_CTLCOLORSTATIC:
+    if ((HWND)lparam == g_alert_text) {
+      SetTextColor((HDC)wparam, RGB(255, 255, 255));
+      SetBkColor((HDC)wparam, RGB(255, 0, 0));
+      return (LRESULT)g_alert_brush;
+    }
+    break;
 
   case WM_LBUTTONDOWN:
     if (g_picking_window) {
@@ -913,6 +1049,11 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARA
     break;
 
   case WM_DESTROY:
+    StopWindowMonitor();
+    if (g_alert_brush != NULL) {
+      DeleteObject(g_alert_brush);
+      g_alert_brush = NULL;
+    }
     StopPickingWindow();
     PostQuitMessage(0);
     return 0;
@@ -924,6 +1065,7 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARA
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show_command) {
   g_instance = instance;
   EnableProcessDpiAwareness();
+  g_alert_brush = CreateSolidBrush(RGB(255, 0, 0));
 
   INITCOMMONCONTROLSEX common_controls = {0};
   common_controls.dwSize = sizeof(common_controls);
@@ -946,7 +1088,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show_command) {
 
   HWND hwnd = CreateWindowEx(WS_EX_TOPMOST, kWindowClassName, kAppTitle,
     WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-    CW_USEDEFAULT, CW_USEDEFAULT, 380, 300,
+    CW_USEDEFAULT, CW_USEDEFAULT, 380, 345,
     NULL, NULL, instance, NULL);
   if (hwnd == NULL) {
     return 1;
