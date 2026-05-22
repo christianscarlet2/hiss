@@ -250,13 +250,20 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
 	// Return string value from image. "" when OCR failed
 	Mat img_resized, img_resized2;
 	ResultBoxes.clear(); ResultBoxes2.clear();
+	ResultString = "";
+	ResultString2 = "";
+
+	int tablemap_threshold = region->second.threshold;
+	if (region->second.use_default || tablemap_threshold < 0) {
+		tablemap_threshold = kDefaultAutoOcrThreshold;
+	}
 
 	if (region->second.transform == "A0") {
 		img_resized = prepareImage(img_orig, region, true);
-		img_resized2 = prepareImage(img_orig, region, true, region->second.threshold, true);
+		img_resized2 = prepareImage(img_orig, region, true, tablemap_threshold, true);
 	}
 	if (region->second.transform == "A1") {
-		img_resized = prepareImage(img_orig, region, true, region->second.threshold);
+		img_resized = prepareImage(img_orig, region, true, tablemap_threshold);
 		img_resized2 = prepareImage(img_orig, region, true, 76, true);
 	}
 
