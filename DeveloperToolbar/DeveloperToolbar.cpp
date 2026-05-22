@@ -682,6 +682,85 @@ static bool IsOpenHoldemOrOpenScrapeProcess(const PROCESSENTRY32 &entry) {
     || _stricmp(entry.szExeFile, "OpenScrape.exe") == 0;
 }
 
+struct ProcessWindowSearch {
+  DWORD process_id;
+  HWND window;
+};
+
+static BOOL CALLBACK FindMainWindowForProcessProc(HWND window, LPARAM param) {
+  ProcessWindowSearch *search = (ProcessWindowSearch*)param;
+  DWORD window_process_id = 0;
+  GetWindowThreadProcessId(window, &window_process_id);
+  if (window_process_id != search->process_id) {
+    return TRUE;
+  }
+  if (!IsWindowVisible(window) || GetWindow(window, GW_OWNER) != NULL) {
+    return TRUE;
+  }
+
+  search->window = window;
+  return FALSE;
+}
+
+static HWND FindMainWindowForProcess(DWORD process_id) {
+  ProcessWindowSearch search = {0};
+  search.process_id = process_id;
+  EnumWindows(FindMainWindowForProcessProc, (LPARAM)&search);
+  return search.window;
+}
+
+static bool SendCtrlSToWindow(HWND window) {
+  if (!IsWindow(window)) {
+    return false;
+  }
+
+  ShowWindow(window, SW_RESTORE);
+  SetForegroundWindow(window);
+  Sleep(150);
+
+  INPUT inputs[4] = {0};
+  inputs[0].type = INPUT_KEYBOARD;
+  inputs[0].ki.wVk = VK_CONTROL;
+  inputs[1].type = INPUT_KEYBOARD;
+  inputs[1].ki.wVk = 'S';
+  inputs[2].type = INPUT_KEYBOARD;
+  inputs[2].ki.wVk = 'S';
+  inputs[2].ki.dwFlags = KEYEVENTF_KEYUP;
+  inputs[3].type = INPUT_KEYBOARD;
+  inputs[3].ki.wVk = VK_CONTROL;
+  inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
+
+  const UINT sent = SendInput((UINT)(sizeof(inputs) / sizeof(inputs[0])), inputs, sizeof(INPUT));
+  Sleep(500);
+  return sent == (UINT)(sizeof(inputs) / sizeof(inputs[0]));
+}
+
+static int SaveOpenScrapeTablemapsBeforeClose() {
+  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snapshot == INVALID_HANDLE_VALUE) {
+    return 0;
+  }
+
+  int saved = 0;
+  PROCESSENTRY32 entry = {0};
+  entry.dwSize = sizeof(entry);
+  if (Process32First(snapshot, &entry)) {
+    do {
+      if (_stricmp(entry.szExeFile, "OpenScrape.exe") != 0) {
+        continue;
+      }
+
+      HWND window = FindMainWindowForProcess(entry.th32ProcessID);
+      if (window != NULL && SendCtrlSToWindow(window)) {
+        ++saved;
+      }
+    } while (Process32Next(snapshot, &entry));
+  }
+
+  CloseHandle(snapshot);
+  return saved;
+}
+
 static int ForceCloseOpenHoldemAndOpenScrape() {
   HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
   if (snapshot == INVALID_HANDLE_VALUE) {
@@ -712,9 +791,11 @@ static int ForceCloseOpenHoldemAndOpenScrape() {
 }
 
 static void CloseAllOpenHoldemAndOpenScrape() {
+  const int saved = SaveOpenScrapeTablemapsBeforeClose();
   const int killed = ForceCloseOpenHoldemAndOpenScrape();
-  char status[128] = {0};
-  sprintf_s(status, "Closed %d OpenHoldem/OpenScrape process%s.", killed, killed == 1 ? "" : "es");
+  char status[160] = {0};
+  sprintf_s(status, "Saved %d OpenScrape window%s. Closed %d OpenHoldem/OpenScrape process%s.",
+    saved, saved == 1 ? "" : "s", killed, killed == 1 ? "" : "es");
   SetStatusText(status);
 }
 
