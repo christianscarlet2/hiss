@@ -94,6 +94,7 @@ COpenScrapeView::COpenScrapeView()
 	yellow_pen.CreatePen(PS_SOLID, 2, COLOR_YELLOW);
 	white_dot_pen.CreatePen(PS_DOT, 1, COLOR_WHITE);
 	black_dot_pen.CreatePen(PS_DOT, 1, COLOR_BLACK);
+	yellow_dot_pen.CreatePen(PS_DOT, 1, COLOR_YELLOW);
 	null_pen.CreatePen(PS_NULL, 0, COLOR_BLACK);
 
 	white_brush.CreateSolidBrush(COLOR_WHITE);
@@ -292,18 +293,24 @@ bool COpenScrapeView::GetGroupColorForRegion(CString name, COLORREF *color)
 	return false;
 }
 
+void COpenScrapeView::MoveRegionBy(CString name, int dx, int dy)
+{
+	RMapI r_iter = p_tablemap->set_r$()->find(name.GetString());
+	if (r_iter != p_tablemap->r$()->end()) {
+		r_iter->second.left += dx;
+		r_iter->second.right += dx;
+		r_iter->second.top += dy;
+		r_iter->second.bottom += dy;
+	}
+	RebuildGroupBounds();
+}
+
 void COpenScrapeView::MoveRegionWithGroup(CString name, int dx, int dy)
 {
 	LoadGroupsFromTablemap();
 	CString group_name = GroupNameForRegion(name);
 	if (group_name == "") {
-		RMapI r_iter = p_tablemap->set_r$()->find(name.GetString());
-		if (r_iter != p_tablemap->r$()->end()) {
-			r_iter->second.left += dx;
-			r_iter->second.right += dx;
-			r_iter->second.top += dy;
-			r_iter->second.bottom += dy;
-		}
+		MoveRegionBy(name, dx, dy);
 		return;
 	}
 
@@ -735,7 +742,7 @@ void COpenScrapeView::OnDraw(CDC* pDC)
 	DrawRegionGroups(pDC);
 
 	if (group_box_mode && group_box_started) {
-		pTempPen = (CPen*)pDC->SelectObject(black_dot_pen);
+		pTempPen = (CPen*)pDC->SelectObject(yellow_dot_pen);
 		oldpen.FromHandle((HPEN)pTempPen);
 		pTempBrush = (CBrush*)pDC->SelectObject(GetStockObject(NULL_BRUSH));
 		oldbrush.FromHandle((HBRUSH)pTempBrush);
@@ -905,7 +912,7 @@ void COpenScrapeView::OnLButtonDown(UINT nFlags, CPoint point)
 				{
 					dragging = true;
 					dragged_region = r_iter->second.name;
-					dragged_group = GroupNameForRegion(dragged_region);
+					dragged_group = "";
 					drag_left_offset = point.x - r_iter->second.left;
 					drag_top_offset = point.y - r_iter->second.top;
 					Invalidate(false);
@@ -1249,9 +1256,10 @@ void COpenScrapeView::OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags)
 			// check what key combinations are down
 			bool shiftKeyDown = GetKeyState(VK_SHIFT)>>7;
 			bool sizeChangeKeyDown = GetKeyState(VK_CONTROL)>>7;
+			bool moveSingleGroupedRegion = shiftKeyDown && !GroupNameForRegion(r_iter->second.name).IsEmpty();
 
 			int speed = 1;
-			if(shiftKeyDown) {
+			if(shiftKeyDown && !moveSingleGroupedRegion) {
 				speed = 5;
 			} 
 			
@@ -1293,7 +1301,11 @@ void COpenScrapeView::OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags)
 					dy = -speed;
 				}
 				if (dx != 0 || dy != 0) {
-					MoveRegionWithGroup(r_iter->second.name, dx, dy);
+					if (moveSingleGroupedRegion) {
+						MoveRegionBy(r_iter->second.name, dx, dy);
+					} else {
+						MoveRegionWithGroup(r_iter->second.name, dx, dy);
+					}
 				}
 			}
 

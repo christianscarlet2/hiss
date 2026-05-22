@@ -42,7 +42,7 @@ protected: // create from serialization only
 	afx_msg void OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags);
 	afx_msg BOOL OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message);
 
-	CPen		black_pen, green_pen, red_pen, blue_pen, white_dot_pen, black_dot_pen, null_pen;
+	CPen		black_pen, green_pen, red_pen, blue_pen, white_dot_pen, black_dot_pen, yellow_dot_pen, null_pen;
 	CPen		yellow_pen;
 	CBrush		white_brush, gray_brush, red_brush, yellow_brush;
 	bool		dragging;
@@ -82,6 +82,7 @@ public:
 	bool GroupBoxMode() const { return group_box_mode; }
 	void SetSelectedGroupColor(int color_index);
 	CString GroupNameForRegion(CString name);
+	void MoveRegionBy(CString name, int dx, int dy);
 	void MoveRegionWithGroup(CString name, int dx, int dy);
 	void LoadGroupsFromTablemap(bool force = false);
 	void SaveGroupsToTablemap();

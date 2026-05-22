@@ -5321,7 +5321,11 @@ void CDlgTableMap::MoveSelectedRegionBy(int dx, int dy)
 
 	COpenScrapeView *view = COpenScrapeView::GetView();
 	if (view != NULL) {
-		view->MoveRegionWithGroup(sel_text, dx, dy);
+		if (GetKeyState(VK_SHIFT) < 0) {
+			view->MoveRegionBy(sel_text, dx, dy);
+		} else {
+			view->MoveRegionWithGroup(sel_text, dx, dy);
+		}
 	} else {
 		sel_region->second.left += dx;
 		sel_region->second.right += dx;
