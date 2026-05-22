@@ -53,46 +53,34 @@ const char* cardsList[] = { "2c", "2s", "2h", "2d", "3c", "3s", "3h", "3d", "4c"
 	"Kc", "Ks", "Kh", "Kd", "Ac", "As", "Ah", "Ad" };
 
 // Auto OCR constants
-const int kNumberOfMatchModes = 6;					 // Number of Auto OCR Pdiff template match modes
-const char* tplMatchModes[kNumberOfMatchModes] = {   //  Auto OCR Pdiff template match modes
-	"TM_SQDIFF", /*!< \f[R(x,y)= \sum _{x',y'} (T(x',y')-I(x+x',y+y'))^2\f]
-				 with mask:
-				 \f[R(x,y)= \sum _{x',y'} \left( (T(x',y')-I(x+x',y+y')) \cdot
-				 M(x',y') \right)^2\f] */
-	"TM_SQDIFF_NORMED", /*!< \f[R(x,y)= \frac{\sum_{x',y'} (T(x',y')-I(x+x',y+y'))^2}{\sqrt{\sum_{
-						x',y'}T(x',y')^2 \cdot \sum_{x',y'} I(x+x',y+y')^2}}\f]
-						with mask:
-						\f[R(x,y)= \frac{\sum _{x',y'} \left( (T(x',y')-I(x+x',y+y')) \cdot
-						M(x',y') \right)^2}{\sqrt{\sum_{x',y'} \left( T(x',y') \cdot
-						M(x',y') \right)^2 \cdot \sum_{x',y'} \left( I(x+x',y+y') \cdot
-						M(x',y') \right)^2}}\f] */
-	"TM_CCORR", /*!< \f[R(x,y)= \sum _{x',y'} (T(x',y') \cdot I(x+x',y+y'))\f]
-				with mask:
-				\f[R(x,y)= \sum _{x',y'} (T(x',y') \cdot I(x+x',y+y') \cdot M(x',y')
-				^2)\f] */
-	"TM_CCORR_NORMED", /*!< \f[R(x,y)= \frac{\sum_{x',y'} (T(x',y') \cdot I(x+x',y+y'))}{\sqrt{
-					   \sum_{x',y'}T(x',y')^2 \cdot \sum_{x',y'} I(x+x',y+y')^2}}\f]
-					   with mask:
-					   \f[R(x,y)= \frac{\sum_{x',y'} (T(x',y') \cdot I(x+x',y+y') \cdot
-					   M(x',y')^2)}{\sqrt{\sum_{x',y'} \left( T(x',y') \cdot M(x',y')
-					   \right)^2 \cdot \sum_{x',y'} \left( I(x+x',y+y') \cdot M(x',y')
-					   \right)^2}}\f] */
-	"TM_CCOEFF", /*!< \f[R(x,y)= \sum _{x',y'} (T'(x',y') \cdot I'(x+x',y+y'))\f]
-				 where
-				 \f[\begin{array}{l} T'(x',y')=T(x',y') - 1/(w \cdot h) \cdot \sum _{
-				 x'',y''} T(x'',y'') \\ I'(x+x',y+y')=I(x+x',y+y') - 1/(w \cdot h)
-				 \cdot \sum _{x'',y''} I(x+x'',y+y'') \end{array}\f]
-				 with mask:
-				 \f[\begin{array}{l} T'(x',y')=M(x',y') \cdot \left( T(x',y') -
-				 \frac{1}{\sum _{x'',y''} M(x'',y'')} \cdot \sum _{x'',y''}
-				 (T(x'',y'') \cdot M(x'',y'')) \right) \\ I'(x+x',y+y')=M(x',y')
-				 \cdot \left( I(x+x',y+y') - \frac{1}{\sum _{x'',y''} M(x'',y'')}
-				 \cdot \sum _{x'',y''} (I(x+x'',y+y'') \cdot M(x'',y'')) \right)
-				 \end{array} \f] */
-	"TM_CCOEFF_NORMED"  /*!< \f[R(x,y)= \frac{ \sum_{x',y'} (T'(x',y') \cdot I'(x+x',y+y')) }{
-						\sqrt{\sum_{x',y'}T'(x',y')^2 \cdot \sum_{x',y'} I'(x+x',y+y')^2}
-						}\f] */
-						// Always leave that at the very end
+const int kNumberOfMatchModes = 6;
+const char* tplMatchModes[kNumberOfMatchModes] = {
+	"TM_SQDIFF",
+	"TM_SQDIFF_NORMED",
+	"TM_CCORR",
+	"TM_CCORR_NORMED",
+	"TM_CCOEFF",
+	"TM_CCOEFF_NORMED"
+};
+const int kNumberOfTesseractPageSegModes = 7;
+const int kDefaultTesseractPageSegModeIndex = 2;
+const int tessPageSegModes[kNumberOfTesseractPageSegModes] = {
+	tesseract::PSM_SINGLE_BLOCK,
+	tesseract::PSM_SINGLE_LINE,
+	tesseract::PSM_SINGLE_WORD,
+	tesseract::PSM_SINGLE_CHAR,
+	tesseract::PSM_SPARSE_TEXT,
+	tesseract::PSM_SPARSE_TEXT_OSD,
+	tesseract::PSM_AUTO
+};
+const char* tessPageSegModeLabels[kNumberOfTesseractPageSegModes] = {
+	"Single block",
+	"Single line",
+	"Single word",
+	"Single char",
+	"Sparse text",
+	"Sparse text + OSD",
+	"Auto"
 };
 
 // Declare DNN-Recognizer
@@ -339,10 +327,12 @@ BEGIN_MESSAGE_MAP(CDlgTableMap, CDialog)
 	ON_BN_CLICKED(IDC_CREATE_HASH2, &CDlgTableMap::OnBnClickedCreateHash2)
 	ON_BN_CLICKED(IDC_CREATE_HASH3, &CDlgTableMap::OnBnClickedCreateHash3)
 	ON_BN_CLICKED(IDC_USE_DEFAULT, &CDlgTableMap::OnOcrRegionChange)
+	ON_EN_CHANGE(IDC_THRESHOLD, &CDlgTableMap::OnOcrRegionChange)
 	ON_EN_KILLFOCUS(IDC_THRESHOLD, &CDlgTableMap::OnOcrRegionChange)
 	ON_NOTIFY(UDN_DELTAPOS, IDC_THRESHOLD_SPIN, &CDlgTableMap::OnDeltaposThresholdSpin)
 	ON_CBN_SELCHANGE(IDC_MATCH_MODE, &CDlgTableMap::OnOcrRegionChange)
 	ON_BN_CLICKED(IDC_USE_CROP, &CDlgTableMap::OnOcrRegionChange)
+	ON_EN_CHANGE(IDC_CROP_SIZE, &CDlgTableMap::OnOcrRegionChange)
 	ON_EN_KILLFOCUS(IDC_CROP_SIZE, &CDlgTableMap::OnOcrRegionChange)
 	ON_NOTIFY(UDN_DELTAPOS, IDC_CROP_SPIN, &CDlgTableMap::OnDeltaposCropSpin)
 	ON_CBN_SELCHANGE(IDC_BOX_COLOR, &CDlgTableMap::OnBoxColorChange)
@@ -478,8 +468,7 @@ BOOL CDlgTableMap::OnInitDialog()
 	m_ThresholdSpin.SetPos(0);
 	m_ThresholdSpin.SetBuddy(&m_Threshold);
 	match_mode = -1;
-	for (int i = 0; i < kNumberOfMatchModes; i++)
-		m_MatchMode.AddString(tplMatchModes[i]);
+	PopulateTemplateMatchModes();
 	m_MatchMode.SetCurSel(match_mode);
 
 	m_UseCrop.SetCheck(false);
@@ -866,8 +855,9 @@ void CDlgTableMap::draw_region_bitmap(void)
 	sel_template = p_tablemap->tpl$()->find(sel.GetString());
 
 	// Exit if we can't find the region or template record
-	if (sel_region == p_tablemap->r$()->end() && sel_template == p_tablemap->tpl$()->end())
+	if (sel_region == p_tablemap->r$()->end() && sel_template == p_tablemap->tpl$()->end()) {
 		return;
+	}
 
 	pDC = m_BitmapFrame.GetDC();
 	hdcControl = *pDC;
@@ -1202,7 +1192,12 @@ void CDlgTableMap::OnOcrRegionChange()
 	if (sel_template != p_tablemap->tpl$()->end()) {
 		// OCR image detecting settings
 		sel_template->second.use_default = m_UseDefault.GetCheck();
-		sel_template->second.match_mode = m_MatchMode.GetCurSel();
+		int selected_item = m_MatchMode.GetCurSel();
+		if (selected_item >= 0) {
+			DWORD_PTR selected_match_mode = m_MatchMode.GetItemData(selected_item);
+			if (selected_match_mode != CB_ERR)
+				sel_template->second.match_mode = static_cast<unsigned int>(selected_match_mode);
+		}
 	}
 
 
@@ -1225,8 +1220,9 @@ void CDlgTableMap::OnOcrRegionChange()
 		}
 	}
 
-
+	ignore_changes = true;
 	update_ocr_r$_display();
+	ignore_changes = false;
 	theApp.m_pMainWnd->Invalidate(false);
 	Invalidate(false);
 
@@ -1342,7 +1338,12 @@ void CDlgTableMap::OnRegionChange()
 		}
 
 		sel_template->second.use_default = m_UseDefault.GetCheck();
-		sel_template->second.match_mode = m_MatchMode.GetCurSel();
+		int selected_item = m_MatchMode.GetCurSel();
+		if (selected_item >= 0) {
+			DWORD_PTR selected_match_mode = m_MatchMode.GetItemData(selected_item);
+			if (selected_match_mode != CB_ERR)
+				sel_template->second.match_mode = static_cast<unsigned int>(selected_match_mode);
+		}
 	}
 
 
@@ -1399,8 +1400,10 @@ void CDlgTableMap::update_ocr_display(void)
 	sel_template = p_tablemap->set_tpl$()->find(sel_text.GetString());
 
 	// Exit if we can't find the region or template record
-	if (sel_region == p_tablemap->r$()->end() && sel_template == p_tablemap->tpl$()->end())
+	if (sel_region == p_tablemap->r$()->end() && sel_template == p_tablemap->tpl$()->end()) {
+		ignore_changes = false;
 		return;
+	}
 
 	if (sel_region != p_tablemap->r$()->end()) {
 		if (sel_region->second.transform.Find("A", 0) != -1)
@@ -1819,6 +1822,7 @@ void CDlgTableMap::disable_ocr_and_clear_all(void)
 	m_Threshold.SetWindowText(to_string(threshold).c_str());
 	m_MatchMode.EnableWindow(false);
 	match_mode = -1;
+	PopulateTemplateMatchModes();
 	m_MatchMode.SetCurSel(match_mode);
 
 	m_UseCrop.EnableWindow(false);
@@ -1994,6 +1998,9 @@ void CDlgTableMap::process_ocr(Mat img_orig, bool fast, bool second_pass) {
 	if (!m_TableMapTree.GetSelectedItem())
 		return;
 
+	tesseract::PageSegMode page_seg_mode = static_cast<tesseract::PageSegMode>(SelectedTesseractPageSegMode());
+	api->SetPageSegMode(page_seg_mode);
+	api->SetVariable("user_defined_dpi", "300");
 	api->SetImage(img_orig.data, img_orig.cols, img_orig.rows, img_orig.channels(), img_orig.step);
 	api->Recognize(0);
 
@@ -2013,6 +2020,8 @@ void CDlgTableMap::process_ocr(Mat img_orig, bool fast, bool second_pass) {
 				catch (exception e) {
 					continue;
 				}
+				api2->SetPageSegMode(page_seg_mode);
+				api2->SetVariable("user_defined_dpi", "300");
 				api2->SetImage(img_cropped.data, img_cropped.cols, img_cropped.rows, img_cropped.channels(), img_cropped.step);
 				api2->Recognize(0);
 				word = trim(api2->GetUTF8Text()).c_str();
@@ -2045,12 +2054,12 @@ CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast)
 	threshold = atoi(txt);
 
 	if (transform == "AutoOcr0") {
-		img_resized = prepareImage(img_orig, true);
+		img_resized = prepareImage(img_orig, true, threshold);
 		img_resized2 = prepareImage(img_orig, true, threshold, true);
 	}
 	if (transform == "AutoOcr1") {
 		img_resized = prepareImage(img_orig, true, threshold);
-		img_resized2 = prepareImage(img_orig, true, 76, true);
+		img_resized2 = prepareImage(img_orig, true, threshold, true);
 	}
 
 	vector<CString> result_list;
@@ -2098,28 +2107,29 @@ CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast)
 	//m_MatFrame.RedrawWindow();
 	pDC = m_MatFrame.GetDC();
 	hdcControl = *pDC;
-	BITMAPINFOHEADER bih = { sizeof(bih), img_resized.cols, -img_resized.rows, 1, 24, BI_RGB };
 	vector<RGBQUAD> pal(256);
 	for (int32_t i(0); i < 256; ++i) {
 		pal[i].rgbRed = pal[i].rgbGreen = pal[i].rgbBlue = i;
 		pal[i].rgbReserved = 0;
 	}
-	BITMAPINFO bi = { bih, pal[1] };
 	if (result_list.empty() || result_list.back() == ocr_result) {
+		BITMAPINFOHEADER bih = { sizeof(bih), img_resized.cols, -img_resized.rows, 1, 24, BI_RGB };
+		BITMAPINFO bi = { bih, pal[1] };
 		m_MatFrame.SetWindowPos(NULL, 0, 0, img_resized.cols, img_resized.rows, SWP_NOMOVE | SWP_NOZORDER | SWP_NOCOPYBITS);
 		SetDIBitsToDevice(hdcControl, 0, 0, img_resized.cols, img_resized.rows,
 			0, 0, 0, img_resized.rows, img_resized.data, &bi,
 			DIB_RGB_COLORS);
 	}
 	else {
+		BITMAPINFOHEADER bih = { sizeof(bih), img_resized2.cols, -img_resized2.rows, 1, 24, BI_RGB };
+		BITMAPINFO bi = { bih, pal[1] };
 		m_MatFrame.SetWindowPos(NULL, 0, 0, img_resized2.cols, img_resized2.rows, SWP_NOMOVE | SWP_NOZORDER | SWP_NOCOPYBITS);
 		SetDIBitsToDevice(hdcControl, 0, 0, img_resized2.cols, img_resized2.rows,
 			0, 0, 0, img_resized2.rows, img_resized2.data, &bi,
 			DIB_RGB_COLORS);
 	}
 	// Clean up
-	DeleteDC(hdcControl);
-	ReleaseDC(pDC);
+	m_MatFrame.ReleaseDC(pDC);
 
 
 	// Display OCR recognition result
@@ -2699,9 +2709,12 @@ void CDlgTableMap::update_ocr_r$_display(void) {
 		else if (sel_region->second.transform == "A1")		selected_transform = "AutoOcr1";
 	}
 
+	m_MatchMode.EnableWindow(false);
+
 	// Auto-Ocr processing
 	if (sel_template != p_tablemap->tpl$()->end())
 	{
+		PopulateTemplateMatchModes();
 		m_UseDefault.SetCheck(sel_template->second.use_default);
 		if (m_UseDefault.GetCheck()) {
 			m_MatchMode.SetCurSel(kDefaultMatchMode);
@@ -2732,6 +2745,7 @@ void CDlgTableMap::update_ocr_r$_display(void) {
 	}
 
 	if (selected_transform.Find("AutoOcr") != -1) {
+		PopulateTesseractMatchModes();
 		m_UseDefault.SetCheck(sel_region->second.use_default);
 		m_UseCrop.SetCheck(sel_region->second.use_cropping);
 		if (m_UseDefault.GetCheck()) {
@@ -2782,6 +2796,8 @@ void CDlgTableMap::update_ocr_r$_display(void) {
 		m_MatchMode.EnableWindow(false);
 	}
 
+	if (selected_transform.Find("AutoOcr") != -1)
+		m_MatchMode.EnableWindow(true);
 
 	if (sel_region != p_tablemap->r$()->end()) {
 		// Go calc the result and display it
@@ -2881,6 +2897,8 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 		m_Transform.SelectString(-1, selected_transform);
 	}
 
+	m_MatchMode.EnableWindow(false);
+
 	// Left/top/right/bottom edits/spinners
 	if (!dont_update_spinners && sel_template != p_tablemap->tpl$()->end())
 	{
@@ -2904,6 +2922,7 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 	// Auto-Ocr processing
 	if (sel_template != p_tablemap->tpl$()->end())
 	{
+		PopulateTemplateMatchModes();
 		m_UseDefault.SetCheck(sel_template->second.use_default);
 		if (m_UseDefault.GetCheck()) {
 			m_MatchMode.SetCurSel(kDefaultMatchMode);
@@ -2934,6 +2953,7 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 	}
 
 	if (selected_transform.Find("AutoOcr") != -1) {
+		PopulateTesseractMatchModes();
 		m_UseDefault.SetCheck(sel_region->second.use_default);
 		m_UseCrop.SetCheck(sel_region->second.use_cropping);
 		if (m_UseDefault.GetCheck()) {
@@ -2984,6 +3004,9 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 		m_ThresholdSpin.EnableWindow(false);
 		m_MatchMode.EnableWindow(false);
 	}
+
+	if (selected_transform.Find("AutoOcr") != -1)
+		m_MatchMode.EnableWindow(true);
 
 	if (sel_template != p_tablemap->tpl$()->end()) return;
 
@@ -3420,10 +3443,18 @@ void CDlgTableMap::OnDeltaposThresholdSpin(NMHDR* pNMHDR, LRESULT* pResult)
 
 	if (ignore_changes)  return;
 
-	sel_region->second.threshold = pNMUpDown->iPos + pNMUpDown->iDelta;
+	sel_region->second.threshold = max(0, min(300, pNMUpDown->iPos + pNMUpDown->iDelta));
+	CString text;
+	text.Format("%d", sel_region->second.threshold);
+	ignore_changes = true;
+	m_Threshold.SetWindowText(text);
+	m_ThresholdSpin.SetPos(sel_region->second.threshold);
+	ignore_changes = false;
 
 	//update_ocr_display();
+	ignore_changes = true;
 	update_ocr_r$_display();
+	ignore_changes = false;
 	Invalidate(false);
 	theApp.m_pMainWnd->Invalidate(false);
 
@@ -3450,10 +3481,18 @@ void CDlgTableMap::OnDeltaposCropSpin(NMHDR* pNMHDR, LRESULT* pResult)
 
 	if (ignore_changes)  return;
 
-	sel_region->second.crop_size = pNMUpDown->iPos + pNMUpDown->iDelta;
+	sel_region->second.crop_size = max(2, min(100, pNMUpDown->iPos + pNMUpDown->iDelta));
+	CString text;
+	text.Format("%d", sel_region->second.crop_size);
+	ignore_changes = true;
+	m_CropSize.SetWindowText(text);
+	m_CropSpin.SetPos(sel_region->second.crop_size);
+	ignore_changes = false;
 
 	//update_ocr_display();
+	ignore_changes = true;
 	update_ocr_r$_display();
+	ignore_changes = false;
 	Invalidate(false);
 	theApp.m_pMainWnd->Invalidate(false);
 
@@ -3767,6 +3806,56 @@ void CDlgTableMap::OnBnClickedNew() {
 		}
 		//}
 	}
+}
+
+void CDlgTableMap::PopulateTemplateMatchModes(void)
+{
+	CString current_text;
+	int current_sel = m_MatchMode.GetCurSel();
+	if (current_sel >= 0)
+		m_MatchMode.GetLBText(current_sel, current_text);
+
+	m_MatchMode.ResetContent();
+	for (int i = 0; i < kNumberOfMatchModes; i++) {
+		int item = m_MatchMode.AddString(tplMatchModes[i]);
+		m_MatchMode.SetItemData(item, i);
+		if (current_text == tplMatchModes[i])
+			m_MatchMode.SetCurSel(item);
+	}
+}
+
+void CDlgTableMap::PopulateTesseractMatchModes(void)
+{
+	CString current_text;
+	int current_sel = m_MatchMode.GetCurSel();
+	if (current_sel >= 0)
+		m_MatchMode.GetLBText(current_sel, current_text);
+
+	m_MatchMode.ResetContent();
+	int selected_item = -1;
+	for (int i = 0; i < kNumberOfTesseractPageSegModes; i++) {
+		int item = m_MatchMode.AddString(tessPageSegModeLabels[i]);
+		m_MatchMode.SetItemData(item, tessPageSegModes[i]);
+		if (current_text == tessPageSegModeLabels[i])
+			selected_item = item;
+	}
+
+	if (selected_item < 0)
+		selected_item = kDefaultTesseractPageSegModeIndex;
+	m_MatchMode.SetCurSel(selected_item);
+}
+
+int CDlgTableMap::SelectedTesseractPageSegMode(void)
+{
+	int selected_item = m_MatchMode.GetCurSel();
+	if (selected_item < 0)
+		return tessPageSegModes[kDefaultTesseractPageSegModeIndex];
+
+	DWORD_PTR page_seg_mode = m_MatchMode.GetItemData(selected_item);
+	if (page_seg_mode == CB_ERR)
+		return tessPageSegModes[kDefaultTesseractPageSegModeIndex];
+
+	return static_cast<int>(page_seg_mode);
 }
 
 void CDlgTableMap::OnBnClickedCreateGroup()

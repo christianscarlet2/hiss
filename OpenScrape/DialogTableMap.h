@@ -105,6 +105,9 @@ protected:
 	void update_ocr_r$_display(void);
 	void update_r$_display(bool dont_update_spinners);
 	void update_t$_display();
+	void PopulateTemplateMatchModes(void);
+	void PopulateTesseractMatchModes(void);
+	int SelectedTesseractPageSegMode(void);
 	COLORREF get_color_under_mouse(UINT *nFlags, CPoint *point);
 	CString GetGroupName(CString regionName);
 	HTREEITEM FindRegionGroupItem(HTREEITEM hRegionNode, CString groupName);

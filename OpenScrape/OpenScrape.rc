@@ -301,7 +301,7 @@ BEGIN
     GROUPBOX        "Image processing",IDC_IMG_PROC,7,368,108,82
     CONTROL         "Use default",IDC_USE_DEFAULT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,18,384,53,10
     LTEXT           "Threshold:",IDC_STATIC,17,400,43,8
-    LTEXT           "Match mode:",IDC_STATIC,17,416,65,8
+    LTEXT           "Mode:",IDC_STATIC,17,416,65,8
     EDITTEXT        IDC_THRESHOLD,66,398,26,14,ES_AUTOHSCROLL | ES_NUMBER
     CONTROL         "",IDC_OCR_VIEW,"Static",SS_ETCHEDFRAME,127,382,182,68
     LTEXT           "Auto OCR view:",IDC_STATIC,133,368,52,8
