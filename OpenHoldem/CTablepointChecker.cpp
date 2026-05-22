@@ -20,6 +20,7 @@
 #include "CScraper.h"
 #include "CTableMapLoader.h"
 #include "..\CTransform\CTransform.h"
+#include "..\Shared\WindowCapture.h"
 
 int CTablepointChecker::_number_of_mismatches_the_last_N_heartbeats = 0;
 
@@ -39,36 +40,53 @@ bool CTablepointChecker::CheckTablepoints(HWND window_candidate, int tablemap_in
   BYTE alpha = 0, red = 0, green = 0, blue = 0;
   int	width = 0, height = 0;
   int x = 0, y = 0;
-  HDC	    hdcScreen = NULL, hdcCompatible = NULL;
+  HDC	    hdcCompatible = NULL;
   HBITMAP	hbmScreen = NULL, hOldScreenBitmap = NULL;
   CTransform	trans;
   if (tablemap_connection_data[tablemap_index].TablePointCount > 0) {
-    RECT crect;
-    GetClientRect(window_candidate, &crect);
+    hbmScreen = CaptureCompositedClientBitmap(window_candidate, &width, &height);
+    if (hbmScreen == NULL) {
+      write_log(k_always_log_errors, "[CTablepointChecker] Could not capture candidate window\n");
+      return false;
+    }
+    hdcCompatible = CreateCompatibleDC(NULL);
+    hOldScreenBitmap = (HBITMAP)SelectObject(hdcCompatible, hbmScreen);
+
+    BITMAPINFO bmi;
+    ZeroMemory(&bmi, sizeof(bmi));
+    bmi.bmiHeader.biSize = sizeof(bmi.bmiHeader);
+    bmi.bmiHeader.biWidth = width;
+    bmi.bmiHeader.biHeight = -height;
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+    bmi.bmiHeader.biSizeImage = width * height * 4;
+    pBits = new BYTE[bmi.bmiHeader.biSizeImage];
+    if (GetDIBits(hdcCompatible, hbmScreen, 0, height, pBits, &bmi, DIB_RGB_COLORS) == 0) {
+      delete[]pBits;
+      SelectObject(hdcCompatible, hOldScreenBitmap);
+      DeleteObject(hbmScreen);
+      DeleteDC(hdcCompatible);
+      write_log(k_always_log_errors, "[CTablepointChecker] Could not read candidate window pixels\n");
+      return false;
+    }
+
     for (int i = 0; i<tablemap_connection_data[tablemap_index].TablePointCount; i++) {
-      // Allocate heap space for BITMAPINFO
-      BITMAPINFO  *bmi;
-      int         info_len = sizeof(BITMAPINFOHEADER) + 1024;
-      bmi = (BITMAPINFO *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, info_len);
-      // Check table points for match
-      width = crect.right - crect.left;
-      height = crect.bottom - crect.top;
-      hdcScreen = GetDC(window_candidate);
-      hdcCompatible = CreateCompatibleDC(hdcScreen);
-      hbmScreen = CreateCompatibleBitmap(hdcScreen, width, height);
-      hOldScreenBitmap = (HBITMAP)SelectObject(hdcCompatible, hbmScreen);
-      BitBlt(hdcCompatible, 0, 0, width, height, hdcScreen, 0, 0, SRCCOPY);
-      // Populate BITMAPINFOHEADER
-      bmi->bmiHeader.biSize = sizeof(bmi->bmiHeader);
-      bmi->bmiHeader.biBitCount = 0;
-      GetDIBits(hdcCompatible, hbmScreen, 0, 0, NULL, bmi, DIB_RGB_COLORS);
-      // Get the actual argb bit information
-      bmi->bmiHeader.biHeight = -bmi->bmiHeader.biHeight;
-      pBits = new BYTE[bmi->bmiHeader.biSizeImage];
-      GetDIBits(hdcCompatible, hbmScreen, 0, height, pBits, bmi, DIB_RGB_COLORS);
       bool good_table_points = true;
       x = tablemap_connection_data[tablemap_index].TablePoint[i].left;
       y = tablemap_connection_data[tablemap_index].TablePoint[i].top;
+      if ((x < 0) || (y < 0) || (x >= width) || (y >= height)) {
+        write_log(Preferences()->debug_tablepoints(), "[CTablepointChecker] tablepoint%i outside screenshot bounds\n", i);
+        good_table_points = false;
+      }
+      if (!good_table_points) {
+        delete[]pBits;
+        SelectObject(hdcCompatible, hOldScreenBitmap);
+        DeleteObject(hbmScreen);
+        DeleteDC(hdcCompatible);
+        write_log(Preferences()->debug_tablepoints(), "[CTablepointChecker] Not all tablepoints match.\n");
+        return false;
+      }
       int pbits_loc = y*width * 4 + x * 4;
       alpha = pBits[pbits_loc + 3];
       red = pBits[pbits_loc + 2];
@@ -101,18 +119,19 @@ bool CTablepointChecker::CheckTablepoints(HWND window_candidate, int tablemap_in
           good_table_points = false;
         }
       }
-      // Clean up
-      HeapFree(GetProcessHeap(), NULL, bmi);
-      delete[]pBits;
-      SelectObject(hdcCompatible, hOldScreenBitmap);
-      DeleteObject(hbmScreen);
-      DeleteDC(hdcCompatible);
-      ReleaseDC(window_candidate, hdcScreen);
       if (!good_table_points) {
+        delete[]pBits;
+        SelectObject(hdcCompatible, hOldScreenBitmap);
+        DeleteObject(hbmScreen);
+        DeleteDC(hdcCompatible);
         write_log(Preferences()->debug_tablepoints(), "[CTablepointChecker] Not all tablepoints match.\n");
         return false;
       }
     }
+    delete[]pBits;
+    SelectObject(hdcCompatible, hOldScreenBitmap);
+    DeleteObject(hbmScreen);
+    DeleteDC(hdcCompatible);
   }
   write_log(Preferences()->debug_tablepoints(), "[CTablepointChecker] All tablepoints match.\n");
   return true;

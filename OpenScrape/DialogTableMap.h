@@ -51,6 +51,11 @@ protected:
 	afx_msg void OnBnClickedNew();
 	afx_msg void OnBnClickedDelete();
 	afx_msg void OnBnClickedEdit();
+	afx_msg void OnBnClickedCreateGroup();
+	afx_msg void OnBnClickedGroupBox();
+	afx_msg void OnGroupColorChange();
+	afx_msg void OnBnClickedDeletePlayerRegions();
+	afx_msg void OnBnClickedDuplicateGroupToPlayer();
 	afx_msg void OnBnClickedCreateHash0();
 	afx_msg void OnBnClickedCreateHash1();
 	afx_msg void OnBnClickedCreateHash2();
@@ -81,6 +86,7 @@ protected:
 	afx_msg BOOL OnToolTipText(UINT id, NMHDR* pTTTStruct, LRESULT* pResult);
 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
 	afx_msg void OnSize(UINT nType, int cx, int cy);
+	afx_msg void OnMove(int x, int y);
 	afx_msg void OnTvnKeydownTablemapTree(NMHDR *pNMHDR, LRESULT *pResult);
 	afx_msg void OnBnClickedUseDefault();
 	afx_msg void OnBnClickedUseCrop();
@@ -102,6 +108,10 @@ protected:
 	HTREEITEM FindRegionGroupItem(HTREEITEM hRegionNode, CString groupName);
 	HTREEITEM MoveTreeItem(HTREEITEM hItem, HTREEITEM hNewParent, CString name, bool bSelect);
 	void RemoveSingleItemGroups(void);
+	void AddNamedGroupsToTree(void);
+	void PopulateDeletePlayerCombo(void);
+	void PopulateDuplicatePlayerCombo(void);
+	void MoveSelectedRegionBy(int dx, int dy);
 	void CreateHash(int hash_type);
 	void SaveNodeExpansionState(CArray <bool, bool> *node_state);
 	void RestoreNodeExpansionState(CArray <bool, bool> *node_state);
@@ -114,6 +124,12 @@ protected:
 	CComboBox			m_Transform, m_Zoom, m_TrackerFontSet, m_TrackerFontNum, m_TrackerCardNum;
 	CEdit				m_Alpha, m_Red, m_Green, m_Blue, m_RedAvg, m_GreenAvg, m_BlueAvg, m_Radius, m_Result, m_PixelSeparation, m_ImgProc, m_Threshold, m_CropSize;
 	CButton				m_New, m_Delete, m_Edit, m_CreateImage, m_CreateFont, m_FontPlus, m_FontMinus;
+	CButton				m_CreateGroup, m_GroupBox;
+	CComboBox			m_GroupColor;
+	CButton				m_DeletePlayerRegions;
+	CComboBox			m_DeletePlayer;
+	CButton				m_DuplicateGroupToPlayer;
+	CComboBox			m_DuplicatePlayer;
 	CButton				m_CreateHash0, m_CreateHash1, m_CreateHash2, m_CreateHash3;
 	CButton				m_NudgeTaller, m_NudgeShorter, m_NudgeWider, m_NudgeNarrower, m_NudgeBigger, m_NudgeSmaller;
 	CButton				m_NudgeUpLeft, m_NudgeUp, m_NudgeUpRight, m_NudgeRight, m_NudgeDownRight, m_NudgeDown;

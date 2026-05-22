@@ -15,20 +15,27 @@
 #include "CAutoOcr.h"
 
 #include "CAutoconnector.h"
+#include "..\Shared\WindowCapture.h"
 
 
 CAutoOcr *p_auto_ocr = NULL;
 
 #define __HDC_HEADER 		HBITMAP		old_bitmap = NULL; \
-	HDC				hdc = GetDC(p_autoconnector->attached_hwnd()); \
 	HDC				hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL); \
 	HDC				hdcCompatible = CreateCompatibleDC(hdcScreen); \
+	HDC				hdc = CreateCompatibleDC(hdcScreen); \
+	int				window_capture_width = 0; \
+	int				window_capture_height = 0; \
+	HBITMAP		window_capture_bitmap = CaptureCompositedClientBitmap(p_autoconnector->attached_hwnd(), &window_capture_width, &window_capture_height); \
+	HBITMAP		old_window_capture_bitmap = window_capture_bitmap ? (HBITMAP)SelectObject(hdc, window_capture_bitmap) : NULL; \
   ++_leaking_GDI_objects;
 
 #define __HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK \
+	if (old_window_capture_bitmap != NULL) SelectObject(hdc, old_window_capture_bitmap); \
+	if (window_capture_bitmap != NULL) DeleteObject(window_capture_bitmap); \
+	DeleteDC(hdc); \
   DeleteDC(hdcCompatible); \
 	DeleteDC(hdcScreen); \
-	ReleaseDC(p_autoconnector->attached_hwnd(), hdc); \
   --_leaking_GDI_objects;
 
 // Declare DNN-Recognizer
@@ -503,7 +510,6 @@ CString CAutoOcr::GetDetectTemplateResult(CString area_name, CString tpl_name, R
 		DeleteObject(bitmap_image);
 		// Free memory
 		delete[]pBits;
-		__HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK
 	}
 
 	// Clean up
@@ -626,7 +632,6 @@ vector<CString> CAutoOcr::GetDetectTemplatesResult(CString area_name) {
 		DeleteObject(bitmap_image);
 		// Free memory
 		delete []pBits;
-		__HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK
 	}
 
 	// Order ROI array

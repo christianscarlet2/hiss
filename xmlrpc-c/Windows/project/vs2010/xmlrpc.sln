@@ -1,5 +1,8 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.7.1.23011
+MinimumVisualStudioVersion = 18.0.0.0
 # Visual C++ Express 2010
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libxmlrpc_xmlparse", "xmlrpc_xmlparse.vcxproj", "{40B0756D-AFEE-4A38-9F38-A372CE431404}"
 EndProject

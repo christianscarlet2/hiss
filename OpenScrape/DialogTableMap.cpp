@@ -16,6 +16,7 @@
 //
 #include "stdafx.h"
 #include <assert.h>
+#include <ctype.h>
 #include <math.h>
 //#include <regex>
 //#include <sstream>
@@ -41,6 +42,7 @@
 
 #include "..\CTablemap\CTablemap.h"
 #include "..\OpenHoldem\NumericalFunctions.h"
+#include "..\Shared\WindowCapture.h"
 
 
 const char* fontsList = "aAbBcCdDeEfFgGhHiIjJkKlLmMnNoOpPqQrRsStTuUvVwWxXyYzZ0123456789.,_-$";
@@ -97,6 +99,26 @@ const char* tplMatchModes[kNumberOfMatchModes] = {   //  Auto OCR Pdiff template
 //TextRecognitionModel recognizer;
 TessBaseAPI* api = new TessBaseAPI();
 TessBaseAPI* api2 = new TessBaseAPI();
+
+static bool IsOpenScrapeGroupSymbol(CString name)
+{
+	return name.Left(7) == "osgroup";
+}
+
+static bool RegionNameMatchesPlayer(CString region_name, CString player)
+{
+	int start = 0;
+	while ((start = region_name.Find(player, start)) != -1) {
+		int end = start + player.GetLength();
+		bool previous_ok = start == 0 || !isalnum((unsigned char)region_name[start - 1]);
+		bool next_ok = end >= region_name.GetLength() || !isdigit((unsigned char)region_name[end]);
+		if (previous_ok && next_ok) {
+			return true;
+		}
+		start = end;
+	}
+	return false;
+}
 
 
 // CDlgTableMap dialog
@@ -194,6 +216,13 @@ void CDlgTableMap::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_DELETE, m_Delete);
 	DDX_Control(pDX, IDC_EDITXY, m_xy);
 	DDX_Control(pDX, IDC_EDIT, m_Edit);
+	DDX_Control(pDX, IDC_CREATE_GROUP, m_CreateGroup);
+	DDX_Control(pDX, IDC_GROUP_BOX, m_GroupBox);
+	DDX_Control(pDX, IDC_GROUP_COLOR, m_GroupColor);
+	DDX_Control(pDX, IDC_DELETE_PLAYER, m_DeletePlayer);
+	DDX_Control(pDX, IDC_DELETE_PLAYER_REGIONS, m_DeletePlayerRegions);
+	DDX_Control(pDX, IDC_DUPLICATE_PLAYER, m_DuplicatePlayer);
+	DDX_Control(pDX, IDC_DUPLICATE_GROUP_TO_PLAYER, m_DuplicateGroupToPlayer);
 	DDX_Control(pDX, IDC_CREATE_IMAGE, m_CreateImage);
 	DDX_Control(pDX, IDC_CREATE_FONT, m_CreateFont);
 	DDX_Control(pDX, IDC_PIXELSEPARATION, m_PixelSeparation);
@@ -267,6 +296,11 @@ BEGIN_MESSAGE_MAP(CDlgTableMap, CDialog)
 	ON_BN_CLICKED(IDC_NEW, &CDlgTableMap::OnBnClickedNew)
 	ON_BN_CLICKED(IDC_DELETE, &CDlgTableMap::OnBnClickedDelete)
 	ON_BN_CLICKED(IDC_EDIT, &CDlgTableMap::OnBnClickedEdit)
+	ON_BN_CLICKED(IDC_CREATE_GROUP, &CDlgTableMap::OnBnClickedCreateGroup)
+	ON_BN_CLICKED(IDC_GROUP_BOX, &CDlgTableMap::OnBnClickedGroupBox)
+	ON_CBN_SELCHANGE(IDC_GROUP_COLOR, &CDlgTableMap::OnGroupColorChange)
+	ON_BN_CLICKED(IDC_DELETE_PLAYER_REGIONS, &CDlgTableMap::OnBnClickedDeletePlayerRegions)
+	ON_BN_CLICKED(IDC_DUPLICATE_GROUP_TO_PLAYER, &CDlgTableMap::OnBnClickedDuplicateGroupToPlayer)
 	ON_BN_CLICKED(IDC_CREATE_IMAGE, &CDlgTableMap::OnBnClickedCreateImage)
 	ON_BN_CLICKED(IDC_CREATE_FONT, &CDlgTableMap::OnBnClickedCreateFont)
 	ON_BN_CLICKED(IDC_FONTPLUS, &CDlgTableMap::OnBnClickedFontplus)
@@ -294,6 +328,7 @@ BEGIN_MESSAGE_MAP(CDlgTableMap, CDialog)
 	ON_NOTIFY_EX(TTN_NEEDTEXT, 0, OnToolTipText)
 	ON_WM_CREATE()
 	ON_WM_SIZE()
+	ON_WM_MOVE()
 	ON_WM_VSCROLL()
 	ON_WM_MOUSEWHEEL()
 	ON_WM_MOUSEMOVE()
@@ -424,6 +459,16 @@ BOOL CDlgTableMap::OnInitDialog()
 
 	m_PixelSeparation.SetFont(&separation_font);
 
+	m_GroupColor.AddString("Red");
+	m_GroupColor.AddString("Blue");
+	m_GroupColor.AddString("Green");
+	m_GroupColor.AddString("Yellow");
+	m_GroupColor.AddString("Cyan");
+	m_GroupColor.AddString("Magenta");
+	m_GroupColor.SetCurSel(3);
+
+	PopulateDeletePlayerCombo();
+	PopulateDuplicatePlayerCombo();
 
 	//m_ImgProc.SetWindowText("Inbuilt image processing");
 	m_UseDefault.SetCheck(true);
@@ -1633,6 +1678,11 @@ void CDlgTableMap::update_display(void)
 
 			update_r$_display(false);
 		}
+
+		else if (type_text == "Groups")
+		{
+			m_Delete.EnableWindow(true);
+		}
 	}
 
 	// Re-enable triggering of OnChange messages
@@ -2250,8 +2300,7 @@ void CDlgTableMap::DetectAndShowTemplate(string name) {
 CString CDlgTableMap::GetDetectTemplateResult(CString area_name, CString tpl_name, RECT* rect_result) {
 	//  Detect template
 	COpenScrapeDoc* pDoc = COpenScrapeDoc::GetDocument();
-	HDC					hdc = ::GetDC(pDoc->attached_hwnd);
-	HDC					hdcScreen, hdcCompat, hdc_bitmap_orig, hdc_bitmap_transform_ocr;
+	HDC					hdcScreen, hdc_bitmap_orig, hdc_bitmap_transform_ocr;
 	CString				text, selected_transform, separation;
 	HBITMAP				old_bitmap_orig, old_bitmap_transform, bitmap_transform_ocr;
 	RMapCI				r_iter = p_tablemap->r$()->find(area_name.GetString());
@@ -2267,12 +2316,13 @@ CString CDlgTableMap::GetDetectTemplateResult(CString area_name, CString tpl_nam
 
 	// Bitblt the attached windows bitmap into a HDC
 	hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL);
-	hdcCompat = CreateCompatibleDC(hdcScreen);
-	RECT rect;
-	::GetClientRect(pDoc->attached_hwnd, &rect);
-	HBITMAP attached_bitmap = CreateCompatibleBitmap(hdcScreen, rect.right, rect.bottom);
-	HBITMAP	old_bitmap = (HBITMAP)SelectObject(hdcCompat, attached_bitmap);
-	BitBlt(hdcCompat, 0, 0, rect.right, rect.bottom, hdc, 0, 0, SRCCOPY);
+	int attached_width = 0;
+	int attached_height = 0;
+	HBITMAP attached_bitmap = CaptureCompositedWindowBitmap(pDoc->attached_hwnd, &attached_width, &attached_height);
+	if (attached_bitmap == NULL) {
+		DeleteDC(hdcScreen);
+		return "";
+	}
 
 	hdc_bitmap_orig = CreateCompatibleDC(hdcScreen);
 	old_bitmap_orig = (HBITMAP)SelectObject(hdc_bitmap_orig, attached_bitmap);
@@ -2287,7 +2337,7 @@ CString CDlgTableMap::GetDetectTemplateResult(CString area_name, CString tpl_nam
 	old_bitmap_transform = (HBITMAP)SelectObject(hdc_bitmap_transform_ocr, bitmap_transform_ocr);
 
 	BitBlt(hdc_bitmap_transform_ocr, 0, 0, w, h,
-		hdc,
+		hdc_bitmap_orig,
 		r_iter->second.left - 1, r_iter->second.top - 1,
 		SRCCOPY);
 
@@ -2305,8 +2355,16 @@ CString CDlgTableMap::GetDetectTemplateResult(CString area_name, CString tpl_nam
 	width = sel_template->second.width;
 	height = sel_template->second.height;
 	match_mode = sel_template->second.match_mode;
-	if (width < 1 || height < 1 || match_mode < 0)
+	if (width < 1 || height < 1 || match_mode < 0) {
+		SelectObject(hdc_bitmap_transform_ocr, old_bitmap_transform);
+		DeleteObject(bitmap_transform_ocr);
+		DeleteDC(hdc_bitmap_transform_ocr);
+		SelectObject(hdc_bitmap_orig, old_bitmap_orig);
+		DeleteObject(attached_bitmap);
+		DeleteDC(hdc_bitmap_orig);
+		DeleteDC(hdcScreen);
 		return "";
+	}
 
 	// Create new memory DC and new bitmap
 	bitmap_image = CreateCompatibleBitmap(hdcScreen, width, height);
@@ -2351,7 +2409,10 @@ CString CDlgTableMap::GetDetectTemplateResult(CString area_name, CString tpl_nam
 	DeleteObject(bitmap_transform_ocr);
 	DeleteDC(hdc_bitmap_transform_ocr);
 
+	SelectObject(hdc_bitmap_orig, old_bitmap_image);
+	DeleteObject(bitmap_image);
 	SelectObject(hdc_bitmap_orig, old_bitmap_orig);
+	DeleteObject(attached_bitmap);
 	DeleteDC(hdc_bitmap_orig);
 
 	DeleteDC(hdcScreen);
@@ -3662,6 +3723,122 @@ void CDlgTableMap::OnBnClickedNew() {
 	}
 }
 
+void CDlgTableMap::OnBnClickedCreateGroup()
+{
+	COpenScrapeView *view = COpenScrapeView::GetView();
+	if (view != NULL) {
+		view->CreateGroupFromSelection();
+		update_tree("Groups");
+	}
+}
+
+void CDlgTableMap::OnBnClickedGroupBox()
+{
+	COpenScrapeView *view = COpenScrapeView::GetView();
+	if (view != NULL) {
+		view->SetGroupBoxMode(!view->GroupBoxMode());
+		m_GroupBox.SetWindowText(view->GroupBoxMode() ? "On" : "Box");
+	}
+}
+
+void CDlgTableMap::OnGroupColorChange()
+{
+	COpenScrapeView *view = COpenScrapeView::GetView();
+	if (view != NULL) {
+		view->SetSelectedGroupColor(m_GroupColor.GetCurSel());
+	}
+}
+
+void CDlgTableMap::OnBnClickedDeletePlayerRegions()
+{
+	if (m_DeletePlayer.GetCurSel() == CB_ERR) {
+		return;
+	}
+
+	CString player;
+	m_DeletePlayer.GetLBText(m_DeletePlayer.GetCurSel(), player);
+
+	std::vector<CString> regions_to_delete;
+	for (RMapCI r_iter = p_tablemap->r$()->begin(); r_iter != p_tablemap->r$()->end(); ++r_iter) {
+		if (RegionNameMatchesPlayer(r_iter->second.name, player)) {
+			regions_to_delete.push_back(r_iter->second.name);
+		}
+	}
+
+	if (regions_to_delete.empty()) {
+		CString text;
+		text.Format("No region records found for %s.", player);
+		MessageBox(text, "Delete player regions", MB_OK);
+		return;
+	}
+
+	CString text;
+	text.Format("Delete %d region records for %s?", (int)regions_to_delete.size(), player);
+	if (MessageBox(text, "Delete player regions", MB_YESNO) == IDNO) {
+		return;
+	}
+
+	for (size_t i = 0; i < regions_to_delete.size(); ++i) {
+		p_tablemap->r$_erase(regions_to_delete[i]);
+	}
+
+	COpenScrapeView *view = COpenScrapeView::GetView();
+	if (view != NULL) {
+		view->PurgeMissingRegionsFromGroups();
+	}
+
+	update_tree("Regions");
+	PopulateDeletePlayerCombo();
+	Invalidate(false);
+	theApp.m_pMainWnd->Invalidate(false);
+	COpenScrapeDoc::GetDocument()->SetModifiedFlag(true);
+}
+
+void CDlgTableMap::OnBnClickedDuplicateGroupToPlayer()
+{
+	if (m_DuplicatePlayer.GetCurSel() == CB_ERR) {
+		return;
+	}
+
+	CString target_player;
+	m_DuplicatePlayer.GetLBText(m_DuplicatePlayer.GetCurSel(), target_player);
+
+	CString sel_text = "", type_text = "";
+	GetTextSelItemAndRecordType(&sel_text, &type_text);
+
+	COpenScrapeView *view = COpenScrapeView::GetView();
+	if (view == NULL) {
+		return;
+	}
+
+	CString group_name = "";
+	if (type_text == "Groups") {
+		group_name = sel_text;
+	}
+	else if (type_text == "Regions") {
+		group_name = view->GroupNameForRegion(sel_text);
+	}
+
+	if (group_name.IsEmpty()) {
+		MessageBox("Select a saved group, or select a region that belongs to a saved group.", "Duplicate group", MB_OK);
+		return;
+	}
+
+	CString error_message;
+	if (!view->DuplicateRegionGroupToPlayer(group_name, target_player, &error_message)) {
+		if (!error_message.IsEmpty()) {
+			MessageBox(error_message, "Duplicate group", MB_OK);
+		}
+		return;
+	}
+
+	update_tree("Groups");
+	PopulateDeletePlayerCombo();
+	PopulateDuplicatePlayerCombo();
+	Invalidate(false);
+	theApp.m_pMainWnd->Invalidate(false);
+}
+
 int CDlgTableMap::GetType(CString selected_text)
 {
 	int type = 0;
@@ -3692,6 +3869,26 @@ void CDlgTableMap::OnBnClickedDelete()
 	if (type_node == NULL || m_TableMapTree.ItemHasChildren(m_TableMapTree.GetSelectedItem()))
 		return;
 
+	if (type_text == "Groups")
+	{
+		CString text;
+		text.Format("Delete group: %s?\n\nThe regions in this group will not be deleted.", sel_text);
+		if (MessageBox(text.GetString(), "Delete group", MB_YESNO) == IDNO)
+			return;
+
+		COpenScrapeView *view = COpenScrapeView::GetView();
+		if (view == NULL || !view->DeleteRegionGroup(sel_text))
+		{
+			MessageBox("Error deleting group.", "ERROR", MB_OK | MB_TOPMOST);
+			return;
+		}
+
+		update_tree("Groups");
+		Invalidate(false);
+		theApp.m_pMainWnd->Invalidate(false);
+		return;
+	}
+
 	// If this is not a valid record type (like a region group), then return
 	CString		valid_types("Sizes|Symbols|Regions|Fonts|Hash Points|Hashes|Images|Templates");
 	if (valid_types.Find(type_text.GetString()) == -1)
@@ -3720,6 +3917,10 @@ void CDlgTableMap::OnBnClickedDelete()
 	else if (type_text == "Regions") {
 		if (p_tablemap->r$_erase(sel_text)) {
 			item_deleted = true;
+			COpenScrapeView *view = COpenScrapeView::GetView();
+			if (view != NULL) {
+				view->PurgeMissingRegionsFromGroups();
+			}
 		}
 	}
 
@@ -4884,6 +5085,117 @@ COLORREF CDlgTableMap::get_color_under_mouse(UINT* nFlags, CPoint* point)
 	return cr;
 }
 
+void CDlgTableMap::AddNamedGroupsToTree(void)
+{
+	CString count_text = p_tablemap->GetTMSymbol("osgroupcount");
+	int group_count = atoi(count_text.GetString());
+	if (group_count <= 0) {
+		return;
+	}
+
+	HTREEITEM parent = m_TableMapTree.InsertItem("Groups");
+	m_TableMapTree.SetItemState(parent, TVIS_BOLD, TVIS_BOLD);
+
+	for (int i = 0; i < group_count; ++i) {
+		CString key;
+		key.Format("osgroup%dname", i);
+		CString group_name = p_tablemap->GetTMSymbol(key);
+		if (!group_name.IsEmpty()) {
+			m_TableMapTree.InsertItem(group_name, parent);
+		}
+	}
+
+	m_TableMapTree.SortChildren(parent);
+}
+
+void CDlgTableMap::PopulateDeletePlayerCombo(void)
+{
+	if (m_DeletePlayer.GetSafeHwnd() == NULL) {
+		return;
+	}
+
+	CString previous;
+	if (m_DeletePlayer.GetCurSel() != CB_ERR) {
+		m_DeletePlayer.GetLBText(m_DeletePlayer.GetCurSel(), previous);
+	}
+
+	m_DeletePlayer.ResetContent();
+	for (int player = 1; player <= 10; ++player) {
+		CString player_text;
+		player_text.Format("p%d", player);
+		bool found = false;
+		for (RMapCI r_iter = p_tablemap->r$()->begin(); r_iter != p_tablemap->r$()->end(); ++r_iter) {
+			if (RegionNameMatchesPlayer(r_iter->second.name, player_text)) {
+				found = true;
+				break;
+			}
+		}
+		if (found || player <= 4) {
+			m_DeletePlayer.AddString(player_text);
+		}
+	}
+
+	int selection = previous.IsEmpty() ? CB_ERR : m_DeletePlayer.FindStringExact(-1, previous);
+	if (selection == CB_ERR && m_DeletePlayer.GetCount() > 0) {
+		selection = 0;
+	}
+	if (selection != CB_ERR) {
+		m_DeletePlayer.SetCurSel(selection);
+	}
+}
+
+void CDlgTableMap::PopulateDuplicatePlayerCombo(void)
+{
+	if (m_DuplicatePlayer.GetSafeHwnd() == NULL) {
+		return;
+	}
+
+	CString previous;
+	if (m_DuplicatePlayer.GetCurSel() != CB_ERR) {
+		m_DuplicatePlayer.GetLBText(m_DuplicatePlayer.GetCurSel(), previous);
+	}
+
+	m_DuplicatePlayer.ResetContent();
+	for (int player = 0; player <= 8; ++player) {
+		CString player_text;
+		player_text.Format("p%d", player);
+		m_DuplicatePlayer.AddString(player_text);
+	}
+
+	int selection = previous.IsEmpty() ? CB_ERR : m_DuplicatePlayer.FindStringExact(-1, previous);
+	if (selection == CB_ERR) {
+		selection = m_DuplicatePlayer.FindStringExact(-1, "p1");
+	}
+	if (selection != CB_ERR) {
+		m_DuplicatePlayer.SetCurSel(selection);
+	}
+}
+
+void CDlgTableMap::MoveSelectedRegionBy(int dx, int dy)
+{
+	CString sel_text = "", type_text = "";
+	GetTextSelItemAndRecordType(&sel_text, &type_text);
+	if (type_text != "Regions") {
+		return;
+	}
+
+	RMapI sel_region = p_tablemap->set_r$()->find(sel_text.GetString());
+	if (sel_region == p_tablemap->r$()->end()) {
+		return;
+	}
+
+	COpenScrapeView *view = COpenScrapeView::GetView();
+	if (view != NULL) {
+		view->MoveRegionWithGroup(sel_text, dx, dy);
+	} else {
+		sel_region->second.left += dx;
+		sel_region->second.right += dx;
+		sel_region->second.top += dy;
+		sel_region->second.bottom += dy;
+	}
+	UpdateDisplayOfAllRegions();
+}
+
 void CDlgTableMap::create_tree(void)
 {
 	HTREEITEM					parent, newitem;
@@ -4906,10 +5218,15 @@ void CDlgTableMap::create_tree(void)
 	parent = m_TableMapTree.InsertItem("Symbols");
 	m_TableMapTree.SetItemState(parent, TVIS_BOLD, TVIS_BOLD);
 
-	for (SMapCI s_iter = p_tablemap->s$()->begin(); s_iter != p_tablemap->s$()->end(); s_iter++)
-		m_TableMapTree.InsertItem(s_iter->second.name, parent);
+	for (SMapCI s_iter = p_tablemap->s$()->begin(); s_iter != p_tablemap->s$()->end(); s_iter++) {
+		if (!IsOpenScrapeGroupSymbol(s_iter->second.name)) {
+			m_TableMapTree.InsertItem(s_iter->second.name, parent);
+		}
+	}
 
 	m_TableMapTree.SortChildren(parent);
+
+	AddNamedGroupsToTree();
 
 	// r$ records
 	parent = m_TableMapTree.InsertItem("Regions");
@@ -4990,6 +5307,8 @@ void CDlgTableMap::create_tree(void)
 	m_TableMapTree.SortChildren(parent);
 
 	UpdateStatus();
+	PopulateDeletePlayerCombo();
+	PopulateDuplicatePlayerCombo();
 }
 
 void CDlgTableMap::OnBnClickedNudgeTaller()
@@ -5216,6 +5535,12 @@ void CDlgTableMap::OnBnClickedNudgeUpleft()
 
 	if (sel_region != p_tablemap->r$()->end())
 	{
+		MoveSelectedRegionBy(-1, -1);
+		return;
+	}
+
+	if (sel_region != p_tablemap->r$()->end())
+	{
 		sel_region->second.left = sel_region->second.left - 1;
 		sel_region->second.top = sel_region->second.top - 1;
 		sel_region->second.right = sel_region->second.right - 1;
@@ -5253,6 +5578,12 @@ void CDlgTableMap::OnBnClickedNudgeUp()
 
 	if (sel_region != p_tablemap->r$()->end())
 	{
+		MoveSelectedRegionBy(0, -1);
+		return;
+	}
+
+	if (sel_region != p_tablemap->r$()->end())
+	{
 		sel_region->second.top = sel_region->second.top - 1;
 		sel_region->second.bottom = sel_region->second.bottom - 1;
 
@@ -5281,6 +5612,12 @@ void CDlgTableMap::OnBnClickedNudgeUpright()
 	// Get iterator for selected region and template
 	sel_region = p_tablemap->set_r$()->find(sel_text.GetString());
 	sel_template = p_tablemap->set_tpl$()->find(sel_text.GetString());
+
+	if (sel_region != p_tablemap->r$()->end())
+	{
+		MoveSelectedRegionBy(1, -1);
+		return;
+	}
 
 	if (sel_region != p_tablemap->r$()->end())
 	{
@@ -5319,6 +5656,12 @@ void CDlgTableMap::OnBnClickedNudgeRight()
 
 	if (sel_region != p_tablemap->r$()->end())
 	{
+		MoveSelectedRegionBy(1, 0);
+		return;
+	}
+
+	if (sel_region != p_tablemap->r$()->end())
+	{
 		sel_region->second.left = sel_region->second.left + 1;
 		sel_region->second.right = sel_region->second.right + 1;
 
@@ -5347,6 +5690,12 @@ void CDlgTableMap::OnBnClickedNudgeDownright()
 	// Get iterator for selected region and template
 	sel_region = p_tablemap->set_r$()->find(sel_text.GetString());
 	sel_template = p_tablemap->set_tpl$()->find(sel_text.GetString());
+
+	if (sel_region != p_tablemap->r$()->end())
+	{
+		MoveSelectedRegionBy(1, 1);
+		return;
+	}
 
 	if (sel_region != p_tablemap->r$()->end())
 	{
@@ -5385,6 +5734,12 @@ void CDlgTableMap::OnBnClickedNudgeDown()
 
 	if (sel_region != p_tablemap->r$()->end())
 	{
+		MoveSelectedRegionBy(0, 1);
+		return;
+	}
+
+	if (sel_region != p_tablemap->r$()->end())
+	{
 		sel_region->second.top = sel_region->second.top + 1;
 		sel_region->second.bottom = sel_region->second.bottom + 1;
 
@@ -5413,6 +5768,12 @@ void CDlgTableMap::OnBnClickedNudgeDownleft()
 	// Get iterator for selected region and template
 	sel_region = p_tablemap->set_r$()->find(sel_text.GetString());
 	sel_template = p_tablemap->set_tpl$()->find(sel_text.GetString());
+
+	if (sel_region != p_tablemap->r$()->end())
+	{
+		MoveSelectedRegionBy(-1, 1);
+		return;
+	}
 
 	if (sel_region != p_tablemap->r$()->end())
 	{
@@ -5448,6 +5809,12 @@ void CDlgTableMap::OnBnClickedNudgeLeft()
 	// Get iterator for selected region and template
 	sel_region = p_tablemap->set_r$()->find(sel_text.GetString());
 	sel_template = p_tablemap->set_tpl$()->find(sel_text.GetString());
+
+	if (sel_region != p_tablemap->r$()->end())
+	{
+		MoveSelectedRegionBy(-1, 0);
+		return;
+	}
 
 	if (sel_region != p_tablemap->r$()->end())
 	{
@@ -5499,6 +5866,16 @@ void CDlgTableMap::OnSize(UINT nType, int cx, int cy)
 
 	if (proceed_scroll == true)
 		m_scrollHelper->OnSize(nType, cx, cy);
+}
+
+void CDlgTableMap::OnMove(int x, int y)
+{
+	CDialog::OnMove(x, y);
+
+	CMainFrame *main_frame = (CMainFrame*)AfxGetMainWnd();
+	if (main_frame && ::IsWindow(main_frame->GetSafeHwnd())) {
+		main_frame->UpdateTableMapDockSide();
+	}
 }
 
 

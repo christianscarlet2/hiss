@@ -44,11 +44,11 @@ using namespace std;
 
 #include "MainFrm.h"
 #include "OpenHoldem.h"
+#include "..\Shared\WindowCapture.h"
 
 CScraper *p_scraper = NULL;
 
 #define __HDC_HEADER 		HBITMAP		old_bitmap = NULL; \
-	HDC				hdc = GetDC(p_autoconnector->attached_hwnd()); \
 	HDC				hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL); \
 	HDC				hdcCompatible = CreateCompatibleDC(hdcScreen); \
   ++_leaking_GDI_objects;
@@ -56,7 +56,6 @@ CScraper *p_scraper = NULL;
 #define __HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK \
   DeleteDC(hdcCompatible); \
 	DeleteDC(hdcScreen); \
-	ReleaseDC(p_autoconnector->attached_hwnd(), hdc); \
   --_leaking_GDI_objects;
 
 
@@ -91,6 +90,8 @@ bool CScraper::ProcessRegion(RMapCI r_iter) {
     "[CScraper] ProcessRegion color %i radius %i transform %s\n",
     r_iter->second.color, r_iter->second.radius, r_iter->second.transform);
 	__HDC_HEADER
+	HDC hdcWindowSnapshot = CreateCompatibleDC(hdcScreen);
+	HBITMAP old_window_snapshot = (HBITMAP) SelectObject(hdcWindowSnapshot, _entire_window_cur);
 	// Get "current" bitmap
 	old_bitmap = (HBITMAP) SelectObject(hdcCompatible, r_iter->second.cur_bmp);
 	/*if (r_iter->second.transform[0] == 'A') {
@@ -99,9 +100,9 @@ bool CScraper::ProcessRegion(RMapCI r_iter) {
 			hdc, r_iter->second.left - 3, r_iter->second.top - 3, SRCCOPY);
 	}
 	else {*/
-		BitBlt(hdcCompatible, 0, 0, r_iter->second.right - r_iter->second.left + 1, 
-									r_iter->second.bottom - r_iter->second.top + 1, 
-									hdc, r_iter->second.left, r_iter->second.top, SRCCOPY);
+		BitBlt(hdcCompatible, 0, 0, r_iter->second.right - r_iter->second.left + 1,
+									r_iter->second.bottom - r_iter->second.top + 1,
+									hdcWindowSnapshot, r_iter->second.left, r_iter->second.top, SRCCOPY);
 	//}
 	SelectObject(hdcCompatible, old_bitmap);
 	//SaveHBITMAPToFile(r_iter->second.cur_bmp, "output.bmp");
@@ -118,12 +119,16 @@ bool CScraper::ProcessRegion(RMapCI r_iter) {
 		else {*/
 			BitBlt(hdcCompatible, 0, 0, r_iter->second.right - r_iter->second.left + 1,
 				r_iter->second.bottom - r_iter->second.top + 1,
-				hdc, r_iter->second.left, r_iter->second.top, SRCCOPY);
+				hdcWindowSnapshot, r_iter->second.left, r_iter->second.top, SRCCOPY);
 		//}
-		SelectObject(hdcCompatible, old_bitmap);  
+		SelectObject(hdcCompatible, old_bitmap);
+		SelectObject(hdcWindowSnapshot, old_window_snapshot);
+		DeleteDC(hdcWindowSnapshot);
 		__HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK
 		return true;
 	}
+	SelectObject(hdcWindowSnapshot, old_window_snapshot);
+	DeleteDC(hdcWindowSnapshot);
 	__HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK
 	return false;
 }
@@ -151,7 +156,7 @@ bool CScraper::EvaluateRegion(CString name, CString *result) {
 			int h = r_iter->second.bottom - r_iter->second.top + 1;
 			Mat input(h, w, CV_8UC4);
 			BITMAPINFOHEADER bi = { sizeof(bi), w, -h, 1, 32, BI_RGB };
-			GetDIBits(hdc, r_iter->second.cur_bmp, 0, h, input.data, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
+			GetDIBits(hdcCompatible, r_iter->second.cur_bmp, 0, h, input.data, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
 			//imshow("Output", input);
 			//waitKey();
 			*result = p_auto_ocr->get_ocr_result(input, r_iter).GetString();
@@ -1027,13 +1032,13 @@ BOOL CScraper::SaveHBITMAPToFile(HBITMAP hBitmap, LPCTSTR lpszFileName)
 }
 
 void CScraper::CreateBitmaps(void) {
-	HDC				hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL);
-
 	// Whole window
 	RECT			cr = {0};
-	GetClientRect(p_autoconnector->attached_hwnd(), &cr);
-	_entire_window_last = CreateCompatibleBitmap(hdcScreen, cr.right, cr.bottom);
-	_entire_window_cur = CreateCompatibleBitmap(hdcScreen, cr.right, cr.bottom);
+	if (!GetClientWindowCaptureRect(p_autoconnector->attached_hwnd(), &cr)) {
+		GetClientRect(p_autoconnector->attached_hwnd(), &cr);
+	}
+	_entire_window_last = WindowCaptureCreateDIBSection(cr.right, cr.bottom, NULL);
+	_entire_window_cur = WindowCaptureCreateDIBSection(cr.right, cr.bottom, NULL);
 
 	// r$regions
 	for (RMapI r_iter=p_tablemap->set_r$()->begin(); r_iter!=p_tablemap->set_r$()->end(); r_iter++)
@@ -1047,12 +1052,10 @@ void CScraper::CreateBitmaps(void) {
 		else {*/
 			//w = w + 6;
 			//h = h + 6;
-			r_iter->second.last_bmp = CreateCompatibleBitmap(hdcScreen, w, h);
-			r_iter->second.cur_bmp = CreateCompatibleBitmap(hdcScreen, w, h);
+			r_iter->second.last_bmp = WindowCaptureCreateDIBSection(w, h, NULL);
+			r_iter->second.cur_bmp = WindowCaptureCreateDIBSection(w, h, NULL);
 		//}
 	}
-
-	DeleteDC(hdcScreen);
 }
 
 void CScraper::DeleteBitmaps(void) {
@@ -1070,8 +1073,6 @@ void CScraper::DeleteBitmaps(void) {
 
 // This is the chip scrape routine
 const double CScraper::DoChipScrape(RMapCI r_iter) {
-	HDC				hdc = GetDC(p_autoconnector->attached_hwnd());
-
 	int				j = 0, stackindex = 0, chipindex = 0;
 	int				hash_type = 0, pixcount = 0, chipwidth = 0, chipheight = 0;
 	int				top = 0, bottom = 0, left = 0, right = 0;
@@ -1097,7 +1098,6 @@ const double CScraper::DoChipScrape(RMapCI r_iter) {
 	// Check for bad parameters
 	if (r_iter == p_tablemap->r$()->end())
 	{
-		ReleaseDC(p_autoconnector->attached_hwnd(), hdc);
 		return 0.;
 	}
 
@@ -1110,7 +1110,6 @@ const double CScraper::DoChipScrape(RMapCI r_iter) {
 
 	else
 	{
-		ReleaseDC(p_autoconnector->attached_hwnd(), hdc);
 		return 0.;
 	}
 
@@ -1119,7 +1118,6 @@ const double CScraper::DoChipScrape(RMapCI r_iter) {
 	r_start = p_tablemap->r$()->find(s.GetString());
 	if (r_start == p_tablemap->r$()->end())
 	{
-		ReleaseDC(p_autoconnector->attached_hwnd(), hdc);
 		return 0.;
 	}
 
@@ -1141,11 +1139,7 @@ const double CScraper::DoChipScrape(RMapCI r_iter) {
 	// Bitblt the attached windows bitmap into a HDC
 	HDC hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL);
 	HDC hdcCompat = CreateCompatibleDC(hdcScreen);
-	RECT rect;
-	GetClientRect(p_autoconnector->attached_hwnd(), &rect);
-	HBITMAP attached_bitmap = CreateCompatibleBitmap(hdcScreen, rect.right, rect.bottom);
-	HBITMAP	old_bitmap = (HBITMAP) SelectObject(hdcCompat, attached_bitmap);
-	BitBlt(hdcCompat, 0, 0, rect.right, rect.bottom, hdc, 0, 0, SRCCOPY);
+	HBITMAP	old_bitmap = (HBITMAP) SelectObject(hdcCompat, _entire_window_cur);
 	
 	// Get chipscrapemethod option from tablemap, if specified
 	CString res = p_tablemap->chipscrapemethod();
@@ -1265,11 +1259,9 @@ const double CScraper::DoChipScrape(RMapCI r_iter) {
 	}
 
 	SelectObject(hdcCompat, old_bitmap);
-	DeleteObject(attached_bitmap);
 	DeleteDC(hdcCompat);
 	DeleteDC(hdcScreen);
 
-	ReleaseDC(p_autoconnector->attached_hwnd(), hdc);
 	return result;
 }
 
@@ -1284,30 +1276,29 @@ bool CScraper::IsIdenticalScrape() {
 
 	// Get bitmap of whole window
 	RECT		cr = {0};
-	GetClientRect(p_autoconnector->attached_hwnd(), &cr);
-
-	old_bitmap = (HBITMAP) SelectObject(hdcCompatible, _entire_window_cur);
-	BitBlt(hdcCompatible, 0, 0, cr.right, cr.bottom, hdc, cr.left, cr.top, SRCCOPY);
-	SelectObject(hdcCompatible, old_bitmap);
+	if (!GetClientWindowCaptureRect(p_autoconnector->attached_hwnd(), &cr)) {
+		GetClientRect(p_autoconnector->attached_hwnd(), &cr);
+	}
+	if (!CaptureCompositedClientIntoBitmap(
+			p_autoconnector->attached_hwnd(), _entire_window_cur, cr.right, cr.bottom)) {
+		write_log(k_always_log_errors, "[CScraper] ERROR! Could not capture attached window screenshot\n");
+		__HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK
+		return true;
+	}
 
   p_table_state->TableTitle()->UpdateTitle();
 	
 	// If the bitmaps are the same, then return now
 	// !! How often does this happen?
 	// !! How costly is the comparison?
-	if (BitmapsAreEqual(_entire_window_last, _entire_window_cur) 
+	if (BitmapsAreEqual(_entire_window_last, _entire_window_cur)
       && !p_table_state->TableTitle()->TitleChangedSinceLastHeartbeat()) 	{
-		DeleteDC(hdcCompatible);
-		DeleteDC(hdcScreen);
-		ReleaseDC(p_autoconnector->attached_hwnd(), hdc);
 		write_log(Preferences()->debug_scraper(), "[CScraper] IsIdenticalScrape() true\n");
     __HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK
 		return true;
 	}
 	// Copy into "last" bitmap
-	old_bitmap = (HBITMAP) SelectObject(hdcCompatible, _entire_window_last);
-	BitBlt(hdcCompatible, 0, 0, cr.right-cr.left+1, cr.bottom-cr.top+1, hdc, cr.left, cr.top, SRCCOPY);
-	SelectObject(hdc, old_bitmap);
+	WindowCaptureCopyBitmap(_entire_window_last, _entire_window_cur, cr.right, cr.bottom);
 
 	__HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK
 	write_log(Preferences()->debug_scraper(), "[CScraper] IsIdenticalScrape() false\n");

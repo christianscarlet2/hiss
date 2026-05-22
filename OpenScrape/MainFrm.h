@@ -22,6 +22,7 @@
 class CMainFrame : public CFrameWnd {
  public:
   LRESULT OnHotKey(WPARAM wParam, LPARAM lParam);
+	void UpdateTableMapDockSide();
  protected: // create from serialization only
 	CMainFrame();
 	DECLARE_DYNCREATE(CMainFrame)
@@ -33,6 +34,9 @@ class CMainFrame : public CFrameWnd {
 	afx_msg void OnEditUpdatehashes();
 	afx_msg void OnEditDuplicateregion();
 	afx_msg void OnTimer(UINT_PTR nIDEvent);
+	afx_msg void OnMove(int x, int y);
+	afx_msg void OnSize(UINT nType, int cx, int cy);
+	afx_msg void OnGetMinMaxInfo(MINMAXINFO* lpMMI);
 	afx_msg void OnGroupregionsBytype();
 	afx_msg void OnGroupregionsByname();
 	afx_msg void OnUpdateViewCurrentwindowsize(CCmdUI *pCmdUI);
@@ -54,9 +58,15 @@ class CMainFrame : public CFrameWnd {
 	bool CreateStatusBar();
 	void ForceRedraw();
 	void ResizeWindow(COpenScrapeDoc *pDoc);
+	CSize CalculateFrameSizeForScreenshot(COpenScrapeDoc *pDoc);
 	void BringOpenScrapeBackToFront();
 	void SetTablemapSizeIfUnknown(int size_x, int size_y);
+	void DockTableMapWindow(bool update_dock_side);
   void CheckIfOHReplayRunning();
+	bool _docking_tablemap;
+	bool _window_size_locked;
+	CSize _locked_window_size;
+	int _tablemap_dock_side;
 #ifdef _DEBUG
 	virtual void AssertValid() const;
 	virtual void Dump(CDumpContext& dc) const;

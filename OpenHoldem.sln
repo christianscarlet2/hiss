@@ -1,8 +1,8 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.11.35219.272
-MinimumVisualStudioVersion = 10.0.40219.1
+# Visual Studio Version 18
+VisualStudioVersion = 18.7.1.23011
+MinimumVisualStudioVersion = 18.0.0.0
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OpenHoldem", "OpenHoldem\OpenHoldem.vcxproj", "{4B4F8898-50C6-4F07-8771-B140482DBA69}"
 	ProjectSection(ProjectDependencies) = postProject
 		{11E82A06-6DEB-49EA-A176-A7F9C1164F11} = {11E82A06-6DEB-49EA-A176-A7F9C1164F11}
@@ -314,7 +314,7 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
-		VisualSVNWorkingCopyRoot = 
+		VisualSVNWorkingCopyRoot =
 		SolutionGuid = {C9C8C2FD-D1F1-4F5F-AB90-47B663C766A9}
 	EndGlobalSection
 EndGlobal

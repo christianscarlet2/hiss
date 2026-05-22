@@ -31,6 +31,7 @@
 #include "OpenScrapeDoc.h"
 #include "OpenScrapeView.h"
 #include "registry.h"
+#include "..\Shared\WindowCapture.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -39,6 +40,8 @@
 // CMainFrame
 
 const int kHotkeyRefresh = 1234;
+const int kTableMapDockLeft = 0;
+const int kTableMapDockRight = 1;
 
 IMPLEMENT_DYNCREATE(CMainFrame, CFrameWnd)
 
@@ -56,6 +59,9 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
 
 	ON_COMMAND(ID_EDIT_UPDATEHASHES, &CMainFrame::OnEditUpdatehashes)
 	ON_WM_TIMER()
+	ON_WM_MOVE()
+	ON_WM_SIZE()
+	ON_WM_GETMINMAXINFO()
 	ON_UPDATE_COMMAND_UI(ID_VIEW_CURRENTWINDOWSIZE, &CMainFrame::OnUpdateViewCurrentwindowsize)
 	ON_COMMAND(ID_EDIT_DUPLICATEREGION, &CMainFrame::OnEditDuplicateregion)
 	ON_UPDATE_COMMAND_UI(ID_EDIT_DUPLICATEREGION, &CMainFrame::OnUpdateEditDuplicateregion)
@@ -80,6 +86,10 @@ static UINT openscrape_indicators[] =
 /////////////////////////////////////////////////////
 
 CMainFrame::CMainFrame() {
+	_docking_tablemap = false;
+	_window_size_locked = false;
+	_locked_window_size = CSize(0, 0);
+	_tablemap_dock_side = kTableMapDockLeft;
 	// Save startup directory
   ::GetCurrentDirectory(sizeof(_startup_path) - 1, _startup_path);
   // https://msdn.microsoft.com/en-us/library/windows/desktop/ms646309%28v=vs.85%29.aspx
@@ -227,6 +237,83 @@ BOOL CMainFrame::DestroyWindow()
 	if (theApp.m_TableMapDlg)  theApp.m_TableMapDlg->DestroyWindow();
 
 	return CFrameWnd::DestroyWindow();
+}
+
+void CMainFrame::UpdateTableMapDockSide()
+{
+	if (!theApp.m_TableMapDlg || !::IsWindow(theApp.m_TableMapDlg->GetSafeHwnd())) {
+		return;
+	}
+
+	CRect main_rect;
+	CRect tablemap_rect;
+	GetWindowRect(&main_rect);
+	theApp.m_TableMapDlg->GetWindowRect(&tablemap_rect);
+
+	int tablemap_center = tablemap_rect.left + (tablemap_rect.Width() / 2);
+	int main_center = main_rect.left + (main_rect.Width() / 2);
+	_tablemap_dock_side = (tablemap_center < main_center) ? kTableMapDockLeft : kTableMapDockRight;
+}
+
+void CMainFrame::DockTableMapWindow(bool update_dock_side)
+{
+	if (_docking_tablemap) {
+		return;
+	}
+	if (!theApp.m_TableMapDlg || !::IsWindow(theApp.m_TableMapDlg->GetSafeHwnd())) {
+		return;
+	}
+	if (!::IsWindowVisible(theApp.m_TableMapDlg->GetSafeHwnd())) {
+		return;
+	}
+	if (IsIconic()) {
+		return;
+	}
+
+	if (update_dock_side) {
+		UpdateTableMapDockSide();
+	}
+
+	CRect main_rect;
+	CRect tablemap_rect;
+	GetWindowRect(&main_rect);
+	theApp.m_TableMapDlg->GetWindowRect(&tablemap_rect);
+
+	int tablemap_width = tablemap_rect.Width();
+	int tablemap_height = tablemap_rect.Height();
+	int tablemap_x = (_tablemap_dock_side == kTableMapDockLeft)
+		? main_rect.left - tablemap_width
+		: main_rect.right;
+	int tablemap_y = main_rect.top;
+
+	_docking_tablemap = true;
+	theApp.m_TableMapDlg->SetWindowPos(this, tablemap_x, tablemap_y,
+		tablemap_width, tablemap_height,
+		SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOOWNERZORDER);
+	_docking_tablemap = false;
+}
+
+void CMainFrame::OnMove(int x, int y)
+{
+	CFrameWnd::OnMove(x, y);
+	DockTableMapWindow(false);
+}
+
+void CMainFrame::OnSize(UINT nType, int cx, int cy)
+{
+	CFrameWnd::OnSize(nType, cx, cy);
+	DockTableMapWindow(false);
+}
+
+void CMainFrame::OnGetMinMaxInfo(MINMAXINFO* lpMMI)
+{
+	CFrameWnd::OnGetMinMaxInfo(lpMMI);
+	if (_window_size_locked && _locked_window_size.cx > 0 && _locked_window_size.cy > 0) {
+		lpMMI->ptMinTrackSize.x = _locked_window_size.cx;
+		lpMMI->ptMinTrackSize.y = _locked_window_size.cy;
+		lpMMI->ptMaxTrackSize.x = _locked_window_size.cx;
+		lpMMI->ptMaxTrackSize.y = _locked_window_size.cy;
+	}
 }
 
 // TODO: Callers might need to be refactored
@@ -469,16 +556,44 @@ LRESULT CMainFrame::OnHotKey(WPARAM wParam, LPARAM lParam) {
   return CallNextHookEx(NULL, WM_HOTKEY, wParam,lParam);
 }
 
+CSize CMainFrame::CalculateFrameSizeForScreenshot(COpenScrapeDoc *pDoc)
+{
+	int screenshot_width = pDoc->attached_rect.right - pDoc->attached_rect.left;
+	int screenshot_height = pDoc->attached_rect.bottom - pDoc->attached_rect.top;
+	if (screenshot_width <= 0 || screenshot_height <= 0) {
+		return CSize(0, 0);
+	}
+
+	COpenScrapeView *view = COpenScrapeView::GetView();
+	if (view == NULL || !::IsWindow(view->GetSafeHwnd())) {
+		CRect frame_adjust(0, 0, screenshot_width, screenshot_height);
+		AdjustWindowRectEx(&frame_adjust, GetStyle(), TRUE, GetExStyle());
+		return CSize(frame_adjust.Width(), frame_adjust.Height());
+	}
+
+	CRect frame_rect;
+	CRect view_rect;
+	GetWindowRect(&frame_rect);
+	view->GetClientRect(&view_rect);
+
+	return CSize(
+		frame_rect.Width() + screenshot_width - view_rect.Width(),
+		frame_rect.Height() + screenshot_height - view_rect.Height());
+}
+
 void CMainFrame::ResizeWindow(COpenScrapeDoc *pDoc)
 {
-	RECT newrect;
-	::GetClientRect(pDoc->attached_hwnd, &newrect);
-	AdjustWindowRect(&newrect, GetWindowLong(AfxGetApp()->m_pMainWnd->GetSafeHwnd(), GWL_STYLE), true);
-  // We must use theApp.m_pMainWnd->SetWindowPos()
-  // as this function can get indirectly called by OpenScrape.cpp
-  // if we use the hotkey to refresh.
-  // It still triggers an assertion, but no harm seems to be done.
-	theApp.m_pMainWnd->SetWindowPos(NULL, 0, 0, newrect.right-newrect.left+4, newrect.bottom-newrect.top+47, SWP_NOMOVE);
+	CSize frame_size = CalculateFrameSizeForScreenshot(pDoc);
+	if (frame_size.cx <= 0 || frame_size.cy <= 0) {
+		return;
+	}
+
+	_locked_window_size = frame_size;
+	_window_size_locked = true;
+
+	// Set the frame so the view's client area exactly matches the captured screenshot.
+	theApp.m_pMainWnd->SetWindowPos(NULL, 0, 0, frame_size.cx, frame_size.cy, SWP_NOMOVE | SWP_NOZORDER);
+	DockTableMapWindow(false);
 }
 
 void CMainFrame::OnViewRefresh()
@@ -496,7 +611,9 @@ void CMainFrame::OnViewRefresh()
 		SaveBmpPbits();
 
 		// Update saved rect
-		::GetClientRect(pDoc->attached_hwnd, &crect);
+		if (!GetFullWindowCaptureRect(pDoc->attached_hwnd, &crect)) {
+			::GetClientRect(pDoc->attached_hwnd, &crect);
+		}
 		pDoc->attached_rect.left = crect.left;
 		pDoc->attached_rect.top = crect.top;
 		pDoc->attached_rect.right = crect.right;
@@ -585,7 +702,9 @@ void CMainFrame::OnViewPrev()
 		SaveBmpPbits();
 
 		// Update saved rect
-		::GetClientRect(pDoc->attached_hwnd, &crect);
+		if (!GetFullWindowCaptureRect(pDoc->attached_hwnd, &crect)) {
+			::GetClientRect(pDoc->attached_hwnd, &crect);
+		}
 		pDoc->attached_rect.left = crect.left;
 		pDoc->attached_rect.top = crect.top;
 		pDoc->attached_rect.right = crect.right;
@@ -643,7 +762,9 @@ void CMainFrame::OnViewNext()
 		SaveBmpPbits();
 
 		// Update saved rect
-		::GetClientRect(pDoc->attached_hwnd, &crect);
+		if (!GetFullWindowCaptureRect(pDoc->attached_hwnd, &crect)) {
+			::GetClientRect(pDoc->attached_hwnd, &crect);
+		}
 		pDoc->attached_rect.left = crect.left;
 		pDoc->attached_rect.top = crect.top;
 		pDoc->attached_rect.right = crect.right;
@@ -757,10 +878,6 @@ void CMainFrame::OnUpdateGroupregionsByname(CCmdUI *pCmdUI)
 
 void CMainFrame::SaveBmpPbits(void)
 {
-	HDC					hdc;
-	HDC					hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL);
-	HDC					hdcCompatible = CreateCompatibleDC(hdcScreen); 
-	HBITMAP				old_bitmap;
 	COpenScrapeDoc		*pDoc = COpenScrapeDoc::GetDocument();
 	int					width, height;
 
@@ -777,16 +894,16 @@ void CMainFrame::SaveBmpPbits(void)
 		pDoc->attached_pBits = NULL;
 	}
 
-	// Get DC for connected window
-	hdc = ::GetDC(pDoc->attached_hwnd);
-
 	// Save bitmap of connected window
-	width = pDoc->attached_rect.right - pDoc->attached_rect.left;
-	height = pDoc->attached_rect.bottom - pDoc->attached_rect.top;
-	pDoc->attached_bitmap = CreateCompatibleBitmap(hdcScreen, width, height);
-	old_bitmap = (HBITMAP) SelectObject(hdcCompatible, pDoc->attached_bitmap);
-	BitBlt(hdcCompatible, 0, 0, width, height, hdc, 
-		   pDoc->attached_rect.left, pDoc->attached_rect.top, SRCCOPY);
+	pDoc->attached_bitmap = CaptureCompositedWindowBitmap(pDoc->attached_hwnd, &width, &height);
+	if (pDoc->attached_bitmap == NULL) {
+		MessageBox("Unable to capture the attached window.", "Screen scrape failed", MB_OK | MB_ICONERROR);
+		return;
+	}
+	pDoc->attached_rect.left = 0;
+	pDoc->attached_rect.top = 0;
+	pDoc->attached_rect.right = width;
+	pDoc->attached_rect.bottom = height;
 
 	// Get pBits of connected window
 	// Allocate heap space for BITMAPINFO
@@ -797,17 +914,22 @@ void CMainFrame::SaveBmpPbits(void)
 	// Populate BITMAPINFOHEADER
 	bmi->bmiHeader.biSize = sizeof(bmi->bmiHeader);
 	bmi->bmiHeader.biBitCount = 0;
-	::GetDIBits(hdc, pDoc->attached_bitmap, 0, 0, NULL, bmi, DIB_RGB_COLORS);
+	HDC hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL);
+	HDC hdcCompatible = CreateCompatibleDC(hdcScreen);
+	HBITMAP old_bitmap = (HBITMAP) SelectObject(hdcCompatible, pDoc->attached_bitmap);
+	::GetDIBits(hdcCompatible, pDoc->attached_bitmap, 0, 0, NULL, bmi, DIB_RGB_COLORS);
 
 	// Get the actual argb bit information
 	bmi->bmiHeader.biHeight = -bmi->bmiHeader.biHeight;
+	bmi->bmiHeader.biBitCount = 32;
+	bmi->bmiHeader.biCompression = BI_RGB;
+	bmi->bmiHeader.biSizeImage = width * height * 4;
 	pDoc->attached_pBits = new BYTE[bmi->bmiHeader.biSizeImage];
-	::GetDIBits(hdc, pDoc->attached_bitmap, 0, height, pDoc->attached_pBits, bmi, DIB_RGB_COLORS);
+	::GetDIBits(hdcCompatible, pDoc->attached_bitmap, 0, height, pDoc->attached_pBits, bmi, DIB_RGB_COLORS);
 
 	// Clean up
 	HeapFree(GetProcessHeap(), NULL, bmi);
 	SelectObject(hdcCompatible, old_bitmap);
-	::ReleaseDC(pDoc->attached_hwnd, hdc);
 	DeleteDC(hdcCompatible);
 	DeleteDC(hdcScreen);
 }

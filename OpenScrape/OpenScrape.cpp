@@ -143,9 +143,7 @@ BOOL COpenScrapeApp::InitInstance()
 
 	// Start tablemap dialog
 	m_TableMapDlg = new CDlgTableMap(NULL);
-	// Create a desktop-based window, no longer a dialog-based one (BillW)
-	// http://www.maxinmontreal.com/forums/viewtopic.php?f=112&t=16464
-	m_TableMapDlg->Create(CDlgTableMap::IDD, CWnd::GetDesktopWindow());
+	m_TableMapDlg->Create(CDlgTableMap::IDD, m_pMainWnd);
 	m_TableMapDlg->ShowWindow(SW_SHOW);
   ArrangeWindows();
 	return true;

@@ -22,6 +22,7 @@
 #include "..\CTablemap\CTablemapAccess.h"
 #include "..\DLLs\Files_DLL\Files.h"
 #include "..\DLLs\WindowFunctions_DLL\window_functions.h"
+#include "..\Shared\WindowCapture.h"
 #include "OpenHoldem.h"
 
 CTableMapLoader *p_tablemap_loader = NULL;
@@ -224,7 +225,9 @@ bool Check_TM_Against_Single_Window(int MapIndex, HWND window) {
 
 bool TablemapMatchesWindowBySize(int MapIndex, HWND window) {
   RECT crect;
-  GetClientRect(window, &crect);
+  if (!GetClientWindowCaptureRect(window, &crect)) {
+    GetClientRect(window, &crect);
+  }
   if (crect.right < tablemap_connection_data[MapIndex].ClientSizeMinX) return false;
   if (crect.right > tablemap_connection_data[MapIndex].ClientSizeMaxX) return false;
   if (crect.bottom < tablemap_connection_data[MapIndex].ClientSizeMinY) return false;

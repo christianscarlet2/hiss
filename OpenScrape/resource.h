@@ -121,6 +121,13 @@
 #define IDC_MATCH_MODE                  1109
 #define IDC_CROP_SIZE                   1110
 #define IDC_IMG_PROC                    1111
+#define IDC_CREATE_GROUP                1115
+#define IDC_GROUP_BOX                   1116
+#define IDC_GROUP_COLOR                 1117
+#define IDC_DELETE_PLAYER               1118
+#define IDC_DELETE_PLAYER_REGIONS       1119
+#define IDC_DUPLICATE_PLAYER            1120
+#define IDC_DUPLICATE_GROUP_TO_PLAYER   1121
 #define ID_MAIN_TOOLBAR_GREENCIRCLE     32771
 #define ID_VIEW_CONNECTTOWINDOW         32772
 #define ID_VIEW_SHOWREGIONBOXES         32774
@@ -149,7 +156,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        153
 #define _APS_NEXT_COMMAND_VALUE         32793
-#define _APS_NEXT_CONTROL_VALUE         1115
+#define _APS_NEXT_CONTROL_VALUE         1122
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
