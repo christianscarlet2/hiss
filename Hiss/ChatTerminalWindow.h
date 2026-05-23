@@ -17,6 +17,49 @@ struct SChatTerminalScreen {
 	CString pinned_state;
 };
 
+class CChatTerminalWindow;
+
+class COpponentRangeWindow : public CWnd {
+	DECLARE_DYNAMIC(COpponentRangeWindow)
+	DECLARE_MESSAGE_MAP()
+
+public:
+	COpponentRangeWindow();
+	virtual ~COpponentRangeWindow();
+
+	BOOL Create(CWnd *owner, CChatTerminalWindow *terminal);
+	void AttachToOwner(bool force = false);
+
+protected:
+	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
+	afx_msg void OnSize(UINT nType, int cx, int cy);
+	afx_msg void OnPaint();
+	afx_msg void OnMoving(UINT fwSide, LPRECT pRect);
+	afx_msg void OnClose();
+	afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
+	afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
+	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
+	afx_msg void OnVpipChanged();
+
+private:
+	void LayoutControls(int cx, int cy);
+	void DrawRangeSelector(CDC *dc);
+	int RangeCellFromPoint(CPoint point) const;
+	int RangeRowTriangleFromPoint(CPoint point) const;
+	int RangeColumnTriangleFromPoint(CPoint point) const;
+
+	CWnd *_owner;
+	CChatTerminalWindow *_terminal;
+	CStatic _title;
+	CStatic _vpip_label;
+	CEdit _vpip_input;
+	bool _layout_ready;
+	bool _range_dragging;
+	bool _range_drag_value;
+	int _last_drag_range_index;
+	CRect _range_grid_rect;
+};
+
 class CChatTerminalWindow : public CWnd {
 	DECLARE_DYNAMIC(CChatTerminalWindow)
 	DECLARE_MESSAGE_MAP()
@@ -32,15 +75,14 @@ public:
 	void ClearScreen(CString screen);
 	void AttachToOwner(bool force = false);
 	void MaybeUpdatePotOddsFromTableState(void);
+	void ShowOpponentRangeWindow(bool visible);
+	bool IsOpponentRangeWindowVisible(void) const;
+	bool RangeAllowsOpponentHand(int first_card, int second_card);
 
 protected:
 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
-	afx_msg void OnPaint();
 	afx_msg void OnSize(UINT nType, int cx, int cy);
 	afx_msg void OnMoving(UINT fwSide, LPRECT pRect);
-	afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
-	afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
-	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
 	afx_msg void OnClearClicked();
 	afx_msg void OnSendClicked();
 	afx_msg void OnScreenChanged();
@@ -51,15 +93,15 @@ protected:
 	afx_msg void OnFeatureReverseImpliedOdds();
 	afx_msg void OnUpdateFeatureReverseImpliedOdds(CCmdUI *pCmdUI);
 	afx_msg void OnFeatureLoadHudProfile();
-	afx_msg void OnViewRangeSelector();
-	afx_msg void OnUpdateViewRangeSelector(CCmdUI *pCmdUI);
+	afx_msg void OnFeatureOpponentRange();
+	afx_msg void OnUpdateFeatureOpponentRange(CCmdUI *pCmdUI);
 	afx_msg void OnHoleCardsChanged();
-	afx_msg void OnVpipChanged();
-	afx_msg void OnRangeChanged(UINT id);
 	afx_msg LRESULT OnAppendMessage(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnClearTerminal(WPARAM wParam, LPARAM lParam);
 
 private:
+	friend class COpponentRangeWindow;
+
 	void LayoutControls(int cx, int cy);
 	int EnsureScreen(CString screen);
 	void RefreshScreenList(void);
@@ -71,20 +113,15 @@ private:
 	CString CurrentCommunityCardsText(void);
 	CString CalculatePotOddsText(CString hole_cards, CString board_cards, bool use_range, bool reverse, CString label);
 	void BuildRangeSelector(void);
-	void SetRangeSelectorVisible(bool visible);
-	void DrawRangeSelector(CDC *dc);
-	int RangeCellFromPoint(CPoint point, int *row = NULL, int *col = NULL) const;
-	int RangeRowTriangleFromPoint(CPoint point) const;
-	int RangeColumnTriangleFromPoint(CPoint point) const;
+	bool IsRangeCellEnabled(int index) const;
 	void SetRangeCell(int index, bool enabled);
 	void SetRangeRow(int row, bool enabled);
 	void SetRangeColumn(int col, bool enabled);
 	void RefreshRangeOdds(void);
-	void ApplyVpipRange(void);
+	void ApplyVpipRange(CString vpip_text);
 	int RangeComboCount(int row, int col) const;
 	int RangeScore(int row, int col) const;
 	CString RangeLabel(int row, int col);
-	bool RangeAllowsOpponentHand(int first_card, int second_card);
 
 	CWnd *_owner;
 	CMenu _menu;
@@ -93,13 +130,11 @@ private:
 	CComboBox _screen_combo;
 	CEdit _chat_input;
 	CEdit _hole_cards_input;
-	CEdit _vpip_input;
 	CStatic _title;
 	CStatic _hole_cards_label;
-	CStatic _vpip_label;
-	CStatic _range_label;
 	CStatic _section_labels[kChatTerminalSectionCount];
 	CEdit _sections[kChatTerminalSectionCount];
+	COpponentRangeWindow _opponent_range_window;
 	std::vector<SChatTerminalScreen> _screens;
 	int _active_screen;
 	bool _attach_left;
@@ -107,12 +142,7 @@ private:
 	bool _pot_odds_enabled;
 	bool _implied_pot_odds_enabled;
 	bool _reverse_implied_odds_enabled;
-	bool _range_selector_visible;
 	bool _range_enabled[169];
-	bool _range_dragging;
-	bool _range_drag_value;
-	int _last_drag_range_index;
-	CRect _range_grid_rect;
 	CString _last_pot_odds_board;
 };
 
