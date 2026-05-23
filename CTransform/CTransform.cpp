@@ -16,17 +16,17 @@
 
 #include <Math.h>
 #include "..\Shared\MagicNumbers\MagicNumbers.h"
-#include "..\OpenHoldem\NumericalFunctions.h"
+#include "..\Hiss\NumericalFunctions.h"
 #include "..\DLLs\Preferences_DLL\Preferences.h"
 #include "..\DLLs\StringFunctions_DLL\string_functions.h"
-#include "..\OpenHoldem\WebSafeColours.h"
+#include "..\Hiss\WebSafeColours.h"
 
 #ifdef OPENHOLDEM_PROGRAM
 //include "../DLLs/Debug_DLL\debug.h"
 #endif
 
 #ifdef OPENSCRAPE_PROGRAM
-#include "../OpenScrape/debug.h"
+#include "../Vision/debug.h"
 #endif
 
 CTransform::CTransform() {

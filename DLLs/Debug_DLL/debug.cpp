@@ -148,7 +148,7 @@ void start_log(int current_session_iD, bool delete_old_log) {
   if ((log_fp = _fsopen(LogFilePath(session_ID).GetString(), "a", _SH_DENYWR)) != 0) {
     write_log_separator(k_always_log_basic_information, "LOG FILE OPEN");
     // License information
-    write_log(k_always_log_basic_information, "OpenHoldem\n");
+    write_log(k_always_log_basic_information, "Hiss\n");
     //!!!write_log(k_always_log_basic_information, "Version %s\n", VERSION_TEXT);
     write_log(k_always_log_basic_information, "Licensed under GPLv3\n");
     write_log(k_always_log_basic_information, "http://www.maxinmontreal.com/forums/index.php\n");

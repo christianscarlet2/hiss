@@ -79,7 +79,7 @@
       <Culture>0x0409</Culture>
     </ResourceCompile>
     <Link>
-      <AdditionalDependencies>$(OutDir)OpenHoldem.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(OutDir)Hiss.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)DumperDll.dll</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -122,7 +122,7 @@
       <Culture>0x0409</Culture>
     </ResourceCompile>
     <Link>
-      <AdditionalDependencies>$(OutDir)OpenHoldem.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(OutDir)Hiss.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)DumperDll.dll</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <ProgramDatabaseFile>$(TargetDir)$(TargetName).pdb</ProgramDatabaseFile>
@@ -149,7 +149,7 @@
     <ClInclude Include="minIni.h" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\OpenHoldem\OpenHoldem.vcxproj">
+    <ProjectReference Include="..\Hiss\Hiss.vcxproj">
       <Project>{4b4f8898-50c6-4f07-8771-b140482dba69}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>

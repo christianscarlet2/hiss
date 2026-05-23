@@ -35,7 +35,7 @@
 #define WM_APP_PROGRESS (WM_APP + 2)
 #define WM_APP_BUILD_DONE (WM_APP + 3)
 
-static const char kWindowClassName[] = "OpenHoldemDeveloperToolbar";
+static const char kWindowClassName[] = "HissDeveloperToolbar";
 static const char kAppTitle[] = "Developer Toolbar";
 static HWND g_main_window = NULL;
 static HWND g_width_edit = NULL;
@@ -392,7 +392,7 @@ static std::string ParentDirectory(const std::string &path) {
 static std::string FindRepoRoot() {
   std::string candidate = ExeDirectory();
   for (int i = 0; i < 5; ++i) {
-    if (FileExists(JoinPath(candidate, "OpenHoldem.sln"))) {
+    if (FileExists(JoinPath(candidate, "Hiss.sln"))) {
       return candidate;
     }
     candidate = ParentDirectory(candidate);
@@ -404,7 +404,7 @@ static std::string FindDefaultTablemap(const std::string &repo_root) {
   const char *preferred_directories[] = {
     "Release\\scraper",
     "Debug\\scraper",
-    "##_OpenHoldem_Release_Directory_##\\scraper",
+    "##_Hiss_Release_Directory_##\\scraper",
     "##_Tablemaps_##\\scraper"
   };
 
@@ -582,7 +582,7 @@ static bool RunProcessAndWait(const std::string &command_line, const std::string
 }
 
 static bool BuildReleaseOptimized(const std::string &repo_root) {
-  const std::string solution = JoinPath(repo_root, "OpenHoldem.sln");
+  const std::string solution = JoinPath(repo_root, "Hiss.sln");
   const std::string command_line = Quote(FindMSBuild())
     + " " + Quote(solution)
     + " /p:Configuration=\"Release - Optimized\" /p:Platform=Win32 /m /v:minimal";
@@ -634,7 +634,7 @@ static bool LooksLikeRepoOutputProcess(const PROCESSENTRY32 &entry, const std::s
   }
 
   const char *known_names[] = {
-    "OpenHoldem.exe", "OpenScrape.exe", "OHReplay.exe", "ManualMode.exe",
+    "Hiss.exe", "Vision.exe", "OHReplay.exe", "ManualMode.exe",
     "DeveloperToolbar.exe", "WindowSizer.exe", "OpenReplayShooter.exe"
   };
   for (int i = 0; i < (int)(sizeof(known_names) / sizeof(known_names[0])); ++i) {
@@ -678,8 +678,8 @@ static int KillRepoOutputProcesses(const std::string &repo_root) {
 }
 
 static bool IsOpenHoldemOrOpenScrapeProcess(const PROCESSENTRY32 &entry) {
-  return _stricmp(entry.szExeFile, "OpenHoldem.exe") == 0
-    || _stricmp(entry.szExeFile, "OpenScrape.exe") == 0;
+  return _stricmp(entry.szExeFile, "Hiss.exe") == 0
+    || _stricmp(entry.szExeFile, "Vision.exe") == 0;
 }
 
 struct ProcessWindowSearch {
@@ -746,7 +746,7 @@ static int SaveOpenScrapeTablemapsBeforeClose() {
   entry.dwSize = sizeof(entry);
   if (Process32First(snapshot, &entry)) {
     do {
-      if (_stricmp(entry.szExeFile, "OpenScrape.exe") != 0) {
+      if (_stricmp(entry.szExeFile, "Vision.exe") != 0) {
         continue;
       }
 
@@ -794,7 +794,7 @@ static void CloseAllOpenHoldemAndOpenScrape() {
   const int saved = SaveOpenScrapeTablemapsBeforeClose();
   const int killed = ForceCloseOpenHoldemAndOpenScrape();
   char status[160] = {0};
-  sprintf_s(status, "Saved %d OpenScrape window%s. Closed %d OpenHoldem/OpenScrape process%s.",
+  sprintf_s(status, "Saved %d Vision window%s. Closed %d Hiss/Vision process%s.",
     saved, saved == 1 ? "" : "s", killed, killed == 1 ? "" : "es");
   SetStatusText(status);
 }
@@ -802,7 +802,7 @@ static void CloseAllOpenHoldemAndOpenScrape() {
 static bool AskToKillBlockingProcesses(const char *step, const std::string &repo_root) {
   char message[512] = {0};
   sprintf_s(message,
-    "%s failed. A running OpenHoldem/OpenScrape/DeveloperToolbar process may be blocking the output files.\r\n\r\nKill blocking repo output processes and retry?",
+    "%s failed. A running Hiss/Vision/DeveloperToolbar process may be blocking the output files.\r\n\r\nKill blocking repo output processes and retry?",
     step);
 
   const int answer = MessageBox(g_main_window, message, kAppTitle,
@@ -1012,11 +1012,11 @@ static void CreateChildControls(HWND hwnd) {
     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
     126, 82, 104, 30, hwnd, (HMENU)IDC_BUILD_BUTTON, g_instance, NULL);
 
-  g_open_openscrape_button = CreateWindow("BUTTON", "OpenScrape",
+  g_open_openscrape_button = CreateWindow("BUTTON", "Vision",
     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
     236, 82, 110, 30, hwnd, (HMENU)IDC_OPEN_OPENSCRAPE_BUTTON, g_instance, NULL);
 
-  g_open_openholdem_button = CreateWindow("BUTTON", "OpenHoldem",
+  g_open_openholdem_button = CreateWindow("BUTTON", "Hiss",
     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
     16, 118, 160, 28, hwnd, (HMENU)IDC_OPEN_OPENHOLDEM_BUTTON, g_instance, NULL);
 
@@ -1058,11 +1058,11 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARA
       return 0;
     }
     if (LOWORD(wparam) == IDC_OPEN_OPENSCRAPE_BUTTON) {
-      OpenRepoExecutable("OpenScrape.exe", "OpenScrape");
+      OpenRepoExecutable("Vision.exe", "Vision");
       return 0;
     }
     if (LOWORD(wparam) == IDC_OPEN_OPENHOLDEM_BUTTON) {
-      OpenRepoExecutable("OpenHoldem.exe", "OpenHoldem");
+      OpenRepoExecutable("Hiss.exe", "Hiss");
       return 0;
     }
     if (LOWORD(wparam) == IDC_CLOSE_ALL_BUTTON) {

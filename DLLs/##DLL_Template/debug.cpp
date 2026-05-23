@@ -289,12 +289,12 @@ void write_log_separator(bool debug_settings_for_this_message, const char* heade
 #include <windows.h>
 #include "assert.h"
 #include "string_functions.h"
-#include "..\OpenHoldem\MagicNumbers.h"
+#include "..\Hiss\MagicNumbers.h"
 #include "Psapi.h"
 
 #ifdef OPENHOLDEM_PROGRAM
-#include "..\OpenHoldem\OH_MessageBox.h"
-#include "..\OpenHoldem\CSymbolEngineReplayFrameController.h"
+#include "..\Hiss\OH_MessageBox.h"
+#include "..\Hiss\CSymbolEngineReplayFrameController.h"
 #endif
 
 const char kUnprintableBeepChar = 0x07;

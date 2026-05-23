@@ -14,7 +14,7 @@
 #define PREFERENCES_DLL_EXPORTS
 
 #include "Preferences.h"
-//#include "..\..\OpenHoldem\NumericalFunctions.h"
+//#include "..\..\Hiss\NumericalFunctions.h"
 #include "..\..\Shared\MagicNumbers\MagicNumbers.h"
 #include "..\Debug_DLL\debug.h"
 #include "..\Files_DLL\Files.h"

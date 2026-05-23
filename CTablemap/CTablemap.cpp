@@ -26,7 +26,7 @@
 #endif
 
 #ifdef OPENSCRAPE_PROGRAM
-#include "../OpenScrape/debug.h"
+#include "../Vision/debug.h"
 #include "..\DLLs\StringFunctions_DLL\string_functions.h"
 #endif
 

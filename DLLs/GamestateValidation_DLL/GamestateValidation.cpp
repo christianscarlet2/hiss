@@ -17,7 +17,7 @@
 #include "GamestateValidation.h"
 #include <atlstr.h>
 // !!!!! move to numerical DLL
-#include "..\..\OpenHoldem\FloatingPoint_Comparisions.h"
+#include "..\..\Hiss\FloatingPoint_Comparisions.h"
 #include "..\WindowFunctions_DLL\window_functions.h"
 #include "..\..\Shared\MagicNumbers\MagicNumbers.h"
 
