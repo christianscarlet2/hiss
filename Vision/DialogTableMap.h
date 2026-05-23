@@ -61,6 +61,7 @@ protected:
 	afx_msg void OnBnClickedColorEdit();
 	afx_msg void OnBnClickedColorDelete();
 	afx_msg void OnBnClickedColorAddPoint();
+	afx_msg void OnBnClickedColorClearPoint();
 	afx_msg void OnStnClickedColorPreview();
 	afx_msg void OnBnClickedCreateHash0();
 	afx_msg void OnBnClickedCreateHash1();
@@ -131,6 +132,7 @@ protected:
 	void DrawColorPresetPreview(void);
 	void ClearColorPresetPreview(void);
 	bool GetSelectedColorPresetPoint(int *x, int *y);
+	void ClearSelectedColorPresetPoint(void);
 	void CaptureColorPresetPreviewPoint(CPoint point);
 	void SetColorPresetInputs(COLORREF color, int alpha = 255);
 	COLORREF GetColorPresetInputColor(void);
@@ -221,7 +223,7 @@ public:
 	CColorPickerCB		m_BoxColor;
 	CComboBox			m_ColorCombo;
 	CEdit				m_ColorA, m_ColorR, m_ColorG, m_ColorB;
-	CButton				m_ColorAdd, m_ColorEdit, m_ColorDelete, m_ColorAddPoint;
+	CButton				m_ColorAdd, m_ColorEdit, m_ColorDelete, m_ColorAddPoint, m_ColorClearPoint;
 	vector<pair<Rect, CString>> ResultBoxes, ResultBoxes2;
 	CString ResultString, ResultString2;
 	Rect	bestRect, bestRect2;
