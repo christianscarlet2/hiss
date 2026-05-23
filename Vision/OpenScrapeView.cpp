@@ -1008,6 +1008,90 @@ void COpenScrapeView::DrawMagnifierPreview(CDC *pDC)
 		}
 	}
 
+	int source_left = preview_point.x - source_size / 2;
+	int source_top = preview_point.y - source_size / 2;
+	int saved_dc = pDC->SaveDC();
+	pDC->IntersectClipRect(&preview_rect);
+	for (RMapCI r_iter = p_tablemap->r$()->begin(); r_iter != p_tablemap->r$()->end(); ++r_iter) {
+		CRect source_rect((int)r_iter->second.left - 1, (int)r_iter->second.top - 1,
+			(int)r_iter->second.right + 2, (int)r_iter->second.bottom + 2);
+		CRect visible_rect(source_left, source_top, source_left + source_size, source_top + source_size);
+		CRect intersection;
+		if (!intersection.IntersectRect(&source_rect, &visible_rect)) {
+			continue;
+		}
+
+		COLORREF region_color = COLOR_RED;
+		GetGroupColorForRegion(r_iter->second.name, &region_color);
+		if (IsRegionSelected(r_iter->second.name)) {
+			region_color = COLOR_YELLOW;
+		}
+		CPen region_pen(PS_SOLID, IsRegionSelected(r_iter->second.name) ? 2 : 1, region_color);
+		CPen *old_region_pen = pDC->SelectObject(&region_pen);
+		CGdiObject *old_region_brush = pDC->SelectStockObject(NULL_BRUSH);
+		CRect draw_rect(
+			preview_rect.left + (source_rect.left - source_left) * scale,
+			preview_rect.top + (source_rect.top - source_top) * scale,
+			preview_rect.left + (source_rect.right - source_left) * scale,
+			preview_rect.top + (source_rect.bottom - source_top) * scale);
+		pDC->Rectangle(&draw_rect);
+		pDC->SelectObject(old_region_pen);
+		pDC->SelectObject(old_region_brush);
+	}
+
+	RebuildGroupBounds();
+	for (std::map<CString, SOpenScrapeRegionGroup>::iterator g = region_groups.begin(); g != region_groups.end(); ++g) {
+		if (g->second.members.empty()) {
+			continue;
+		}
+		CRect source_rect(g->second.bounds.left - 4, g->second.bounds.top - 18,
+			g->second.bounds.right + 5, g->second.bounds.bottom + 5);
+		CRect visible_rect(source_left, source_top, source_left + source_size, source_top + source_size);
+		CRect intersection;
+		if (!intersection.IntersectRect(&source_rect, &visible_rect)) {
+			continue;
+		}
+
+		CPen group_pen(PS_SOLID, 2, g->second.color);
+		CPen *old_group_pen = pDC->SelectObject(&group_pen);
+		CGdiObject *old_group_brush = pDC->SelectStockObject(NULL_BRUSH);
+		CRect draw_rect(
+			preview_rect.left + (source_rect.left - source_left) * scale,
+			preview_rect.top + (source_rect.top - source_top) * scale,
+			preview_rect.left + (source_rect.right - source_left) * scale,
+			preview_rect.top + (source_rect.bottom - source_top) * scale);
+		pDC->Rectangle(&draw_rect);
+		pDC->SelectObject(old_group_pen);
+		pDC->SelectObject(old_group_brush);
+	}
+	pDC->RestoreDC(saved_dc);
+
+	int cursor_center_x = preview_rect.left + (source_size / 2) * scale + scale / 2;
+	int cursor_center_y = preview_rect.top + (source_size / 2) * scale + scale / 2;
+	CPen cursor_shadow_pen(PS_SOLID, 3, RGB(0, 0, 0));
+	CPen *old_cursor_pen = pDC->SelectObject(&cursor_shadow_pen);
+	pDC->MoveTo(cursor_center_x - 9, cursor_center_y);
+	pDC->LineTo(cursor_center_x - 3, cursor_center_y);
+	pDC->MoveTo(cursor_center_x + 3, cursor_center_y);
+	pDC->LineTo(cursor_center_x + 9, cursor_center_y);
+	pDC->MoveTo(cursor_center_x, cursor_center_y - 9);
+	pDC->LineTo(cursor_center_x, cursor_center_y - 3);
+	pDC->MoveTo(cursor_center_x, cursor_center_y + 3);
+	pDC->LineTo(cursor_center_x, cursor_center_y + 9);
+	pDC->SelectObject(old_cursor_pen);
+
+	CPen cursor_pen(PS_SOLID, 1, RGB(255, 255, 255));
+	old_cursor_pen = pDC->SelectObject(&cursor_pen);
+	pDC->MoveTo(cursor_center_x - 9, cursor_center_y);
+	pDC->LineTo(cursor_center_x - 3, cursor_center_y);
+	pDC->MoveTo(cursor_center_x + 3, cursor_center_y);
+	pDC->LineTo(cursor_center_x + 9, cursor_center_y);
+	pDC->MoveTo(cursor_center_x, cursor_center_y - 9);
+	pDC->LineTo(cursor_center_x, cursor_center_y - 3);
+	pDC->MoveTo(cursor_center_x, cursor_center_y + 3);
+	pDC->LineTo(cursor_center_x, cursor_center_y + 9);
+	pDC->SelectObject(old_cursor_pen);
+
 	CPen border_pen(PS_SOLID, 1, RGB(255, 255, 255));
 	CPen *old_pen = pDC->SelectObject(&border_pen);
 	CGdiObject *old_brush = pDC->SelectStockObject(NULL_BRUSH);
