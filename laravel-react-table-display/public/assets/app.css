@@ -184,6 +184,32 @@ body {
   margin-top: 2px;
 }
 
+.hud {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px 5px;
+  width: 132px;
+  min-height: 12px;
+  margin-top: 2px;
+  font-size: 10px;
+  line-height: 12px;
+  text-shadow: 0 1px 1px #111;
+}
+
+.hud-stat {
+  white-space: nowrap;
+}
+
+.hud-stat.important {
+  color: #fff;
+}
+
+.hud-stat.normal {
+  color: #b9bdc2;
+}
+
 .bet {
   position: absolute;
   background: #ffff00;

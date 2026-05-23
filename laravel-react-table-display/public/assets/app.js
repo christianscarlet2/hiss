@@ -57,6 +57,13 @@ function Player(props) {
       player.name || ('p' + player.chair)
     ),
     e('div', { className: 'balance' }, player.seated ? money(player.balance) : ('Out (' + money(player.balance) + ')')),
+    (player.hud || []).length ? e('div', { className: 'hud' }, (player.hud || []).map(function (stat, index) {
+      return e('span', {
+        key: index,
+        className: 'hud-stat ' + (stat.important ? 'important' : 'normal'),
+        title: stat.name || stat.abbr
+      }, (stat.abbr || '') + ' ' + (stat.value || '-'));
+    })) : null,
     player.dealer ? e('div', { className: 'dealer' }, 'D') : null
   );
 }

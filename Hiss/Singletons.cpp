@@ -27,6 +27,7 @@
 #include "CFormulaParser.h"
 #include "CHandresetDetector.h"
 #include "CHeartbeatThread.h"
+#include "HudManager.h"
 #include "CIteratorThread.h"
 #include "CLazyScraper.h"
 #include "CMemoryPool.h"
@@ -124,6 +125,9 @@ void InstantiateAllSingletons() {
   write_log(Preferences()->debug_singletons(), "[Singletons] Going to create CPokerTrackerThread\n");
   assert(!p_pokertracker_thread);
   p_pokertracker_thread = new CPokerTrackerThread;
+  write_log(Preferences()->debug_singletons(), "[Singletons] Going to create CHudManager\n");
+  assert(!p_hud_manager);
+  p_hud_manager = new CHudManager;
   write_log(Preferences()->debug_singletons(), "[Singletons] Going to create CValidator\n");
   assert(!p_validator);
   p_validator = new CValidator;
@@ -241,6 +245,8 @@ void DeleteAllSingletons() {
   DELETE_AND_CLEAR(p_table_positioner)
   write_log(Preferences()->debug_singletons(), "[Singletons] Deleting 03\n");
   DELETE_AND_CLEAR(p_validator)
+  write_log(Preferences()->debug_singletons(), "[Singletons] Deleting HUD manager\n");
+  DELETE_AND_CLEAR(p_hud_manager)
   write_log(Preferences()->debug_singletons(), "[Singletons] Deleting 07\n");
   DELETE_AND_CLEAR(p_autoplayer)
   write_log(Preferences()->debug_singletons(), "[Singletons] Deleting 08\n");

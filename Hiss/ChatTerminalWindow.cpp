@@ -3,6 +3,7 @@
 #include "CEngineContainer.h"
 #include "CSymbolEngineChipAmounts.h"
 #include "CTableState.h"
+#include "HudManager.h"
 #include "inlines/eval.h"
 
 const UINT WM_CHAT_TERMINAL_APPEND = WM_APP + 410;
@@ -26,6 +27,7 @@ const UINT ID_TERMINAL_FEATURE_POT_ODDS = 24101;
 const UINT ID_TERMINAL_FEATURE_IMPLIED_POT_ODDS = 24102;
 const UINT ID_TERMINAL_FEATURE_REVERSE_IMPLIED_ODDS = 24103;
 const UINT ID_TERMINAL_VIEW_RANGE_SELECTOR = 24104;
+const UINT ID_TERMINAL_FEATURE_LOAD_HUD_PROFILE = 24105;
 
 struct SChatTerminalMessage {
 	CString screen;
@@ -52,6 +54,7 @@ BEGIN_MESSAGE_MAP(CChatTerminalWindow, CWnd)
 	ON_UPDATE_COMMAND_UI(ID_TERMINAL_FEATURE_IMPLIED_POT_ODDS, &CChatTerminalWindow::OnUpdateFeatureImpliedPotOdds)
 	ON_COMMAND(ID_TERMINAL_FEATURE_REVERSE_IMPLIED_ODDS, &CChatTerminalWindow::OnFeatureReverseImpliedOdds)
 	ON_UPDATE_COMMAND_UI(ID_TERMINAL_FEATURE_REVERSE_IMPLIED_ODDS, &CChatTerminalWindow::OnUpdateFeatureReverseImpliedOdds)
+	ON_COMMAND(ID_TERMINAL_FEATURE_LOAD_HUD_PROFILE, &CChatTerminalWindow::OnFeatureLoadHudProfile)
 	ON_COMMAND(ID_TERMINAL_VIEW_RANGE_SELECTOR, &CChatTerminalWindow::OnViewRangeSelector)
 	ON_UPDATE_COMMAND_UI(ID_TERMINAL_VIEW_RANGE_SELECTOR, &CChatTerminalWindow::OnUpdateViewRangeSelector)
 	ON_EN_KILLFOCUS(IDC_TERMINAL_HOLE_CARDS, &CChatTerminalWindow::OnHoleCardsChanged)
@@ -131,6 +134,8 @@ int CChatTerminalWindow::OnCreate(LPCREATESTRUCT lpCreateStruct)
 	features_menu.AppendMenu(MF_STRING, ID_TERMINAL_FEATURE_POT_ODDS, "Enable Pot Odds Calculation");
 	features_menu.AppendMenu(MF_STRING, ID_TERMINAL_FEATURE_IMPLIED_POT_ODDS, "Enable Implied Pot Odds");
 	features_menu.AppendMenu(MF_STRING, ID_TERMINAL_FEATURE_REVERSE_IMPLIED_ODDS, "Enable Reverse Implied Odds");
+	features_menu.AppendMenu(MF_SEPARATOR);
+	features_menu.AppendMenu(MF_STRING, ID_TERMINAL_FEATURE_LOAD_HUD_PROFILE, "Load HUD Profile...");
 	_menu.AppendMenu(MF_POPUP, (UINT_PTR)features_menu.Detach(), "Features");
 	SetMenu(&_menu);
 
@@ -478,6 +483,31 @@ void CChatTerminalWindow::OnUpdateFeatureReverseImpliedOdds(CCmdUI *pCmdUI)
 {
 	pCmdUI->SetCheck(_reverse_implied_odds_enabled);
 	pCmdUI->SetText(_reverse_implied_odds_enabled ? "Disable Reverse Implied Odds" : "Enable Reverse Implied Odds");
+}
+
+void CChatTerminalWindow::OnFeatureLoadHudProfile()
+{
+	CFileDialog dialog(
+		TRUE,
+		NULL,
+		NULL,
+		OFN_FILEMUSTEXIST | OFN_HIDEREADONLY,
+		"HUD Profiles (*.pt4hud;*.hud;*.txt;*.ini;*.csv)|*.pt4hud;*.hud;*.txt;*.ini;*.csv|All Files (*.*)|*.*||",
+		this);
+	if (dialog.DoModal() != IDOK) {
+		return;
+	}
+	CString message;
+	if (p_hud_manager != NULL && p_hud_manager->LoadProfile(dialog.GetPathName(), &message)) {
+		AppendToSection("main", kChatTerminalContext, message, false);
+		Invalidate();
+	}
+	else {
+		if (message.IsEmpty()) {
+			message = "Could not load HUD profile.";
+		}
+		AppendToSection("main", kChatTerminalContext, message, false);
+	}
 }
 
 void CChatTerminalWindow::OnViewRangeSelector()

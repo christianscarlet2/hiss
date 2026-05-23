@@ -46,6 +46,7 @@ protected:
 	afx_msg void OnUpdateFeatureImpliedPotOdds(CCmdUI *pCmdUI);
 	afx_msg void OnFeatureReverseImpliedOdds();
 	afx_msg void OnUpdateFeatureReverseImpliedOdds(CCmdUI *pCmdUI);
+	afx_msg void OnFeatureLoadHudProfile();
 	afx_msg void OnViewRangeSelector();
 	afx_msg void OnUpdateViewRangeSelector(CCmdUI *pCmdUI);
 	afx_msg void OnHoleCardsChanged();

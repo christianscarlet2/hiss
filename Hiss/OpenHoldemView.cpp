@@ -36,6 +36,7 @@
 #include "CTableState.h"
 #include "CWhiteInfoBox.h"
 #include "ChatTerminalWindow.h"
+#include "HudManager.h"
 
 #include "OpenHoldem.h"
 #include "OpenHoldemDoc.h"
@@ -102,6 +103,7 @@ IMPLEMENT_DYNCREATE(COpenHoldemView, CView)
 BEGIN_MESSAGE_MAP(COpenHoldemView, CView)
 	ON_WM_ERASEBKGND()
 	ON_WM_TIMER()
+	ON_WM_MOUSEMOVE()
 END_MESSAGE_MAP()
 
 // COpenHoldemView construction/destruction
@@ -174,9 +176,28 @@ BOOL COpenHoldemView::PreCreateWindow(CREATESTRUCT& cs) {
 
 void COpenHoldemView::OnInitialUpdate() {
 	CView::OnInitialUpdate();
+	_hud_tooltip.Create(this);
+	_hud_tooltip.AddTool(this, "");
+	_hud_tooltip.Activate(TRUE);
 
 	// Timer to check for display updates
 	SetTimer(DISPLAY_UPDATE_TIMER, 103, 0);
+}
+
+BOOL COpenHoldemView::PreTranslateMessage(MSG* pMsg) {
+	if (_hud_tooltip.GetSafeHwnd() != NULL) {
+		_hud_tooltip.RelayEvent(pMsg);
+	}
+	return CView::PreTranslateMessage(pMsg);
+}
+
+void COpenHoldemView::OnMouseMove(UINT nFlags, CPoint point) {
+	CString tooltip = HudTooltipAtPoint(point);
+	if (tooltip != _current_hud_tooltip && _hud_tooltip.GetSafeHwnd() != NULL) {
+		_current_hud_tooltip = tooltip;
+		_hud_tooltip.UpdateTipText(tooltip, this);
+	}
+	CView::OnMouseMove(nFlags, point);
 }
 
 // COpenHoldemView drawing
@@ -206,6 +227,9 @@ void COpenHoldemView::UpdateDisplay(const bool update_all) {
 	CDC			*pDC = GetDC();
 
 	CString sym_handnumber = p_handreset_detector->GetHandNumber();
+	if (p_hud_manager != NULL) {
+		p_hud_manager->RefreshIfNeeded(sym_handnumber, update_all);
+	}
 	double  sym_bblind = p_engine_container->symbol_engine_tablelimits()->bblind();
 	double  sym_sblind = p_engine_container->symbol_engine_tablelimits()->sblind();
 	double  sym_ante = p_engine_container->symbol_engine_tablelimits()->ante();
@@ -345,6 +369,7 @@ void COpenHoldemView::UpdateDisplay(const bool update_all) {
 				DrawPlayerCards(i);
 				DrawNameBox(i);
 				DrawBalanceBox(i);
+				DrawHudStats(i);
         // !! Disabled, as it gets rarely used
         // and doesn't fit well to the Omaha cards.
         // DrawColourCodes(i);
@@ -353,6 +378,9 @@ void COpenHoldemView::UpdateDisplay(const bool update_all) {
 			// The player might have left the table, 
 			// but depending on casinos potmethod a bet might still be there.
 			DrawPlayerBet(i);
+		}
+		else if (p_hud_manager != NULL && p_hud_manager->IsEnabled()) {
+			DrawHudStats(i);
 		}
 		// Draw dealer button
 		// At some casinos the dealer can be at an empty seat.
@@ -365,6 +393,26 @@ void COpenHoldemView::UpdateDisplay(const bool update_all) {
 	write_log(Preferences()->debug_gui(), "[GUI] COpenHoldemView::UpdateDisplay() Update finished\n");
 	ReleaseDC(pDC);
 	write_log(Preferences()->debug_gui(), "[GUI] COpenHoldemView::UpdateDisplay() DC released\n");
+}
+
+void COpenHoldemView::ClearHudHotspotsForChair(const int chair) {
+	for (std::vector<SHudHotspot>::iterator it = _hud_hotspots.begin(); it != _hud_hotspots.end();) {
+		if (it->chair == chair) {
+			it = _hud_hotspots.erase(it);
+		}
+		else {
+			++it;
+		}
+	}
+}
+
+CString COpenHoldemView::HudTooltipAtPoint(CPoint point) const {
+	for (size_t i = 0; i < _hud_hotspots.size(); ++i) {
+		if (_hud_hotspots[i].rect.PtInRect(point)) {
+			return _hud_hotspots[i].full_name;
+		}
+	}
+	return "";
 }
 
 void COpenHoldemView::DrawButtonIndicators(void) {
@@ -866,6 +914,64 @@ void COpenHoldemView::DrawBalanceBox(const int chair) {
 	pDC->SelectObject(oldbrush);
 	pDC->SelectObject(oldfont);
 	cFont.DeleteObject();
+	ReleaseDC(pDC);
+}
+
+void COpenHoldemView::DrawHudStats(const int chair) {
+	if (p_hud_manager == NULL || !p_hud_manager->IsEnabled()) {
+		ClearHudHotspotsForChair(chair);
+		return;
+	}
+
+	const std::vector<SHudStatValue> &stats = p_hud_manager->StatsForChair(chair);
+	ClearHudHotspotsForChair(chair);
+
+	CDC *pDC = GetDC();
+	int xcenter = _client_rect.right * pc[p_tablemap->nchairs()][chair][0];
+	int ycenter = _client_rect.bottom * pc[p_tablemap->nchairs()][chair][1];
+	CRect erase_rect(xcenter - 70, ycenter + 46, xcenter + 70, ycenter + 92);
+	pDC->FillSolidRect(&erase_rect, COLOR_GRAY);
+	if (stats.empty() || !p_table_state->Player(chair)->seated()) {
+		ReleaseDC(pDC);
+		return;
+	}
+
+	_logfont.lfHeight = -10;
+	_logfont.lfWeight = FW_NORMAL;
+	CFont font;
+	font.CreateFontIndirect(&_logfont);
+	CFont *oldfont = pDC->SelectObject(&font);
+	pDC->SetBkMode(TRANSPARENT);
+
+	int x = erase_rect.left;
+	int y = erase_rect.top;
+	const int row_height = 12;
+	const int gap = 4;
+	for (size_t i = 0; i < stats.size(); ++i) {
+		CString text;
+		text.Format("%s %s", stats[i].abbreviation.GetString(), stats[i].value.GetString());
+		CSize size = pDC->GetTextExtent(text);
+		if (x + size.cx > erase_rect.right && x > erase_rect.left) {
+			x = erase_rect.left;
+			y += row_height;
+		}
+		if (y + row_height > erase_rect.bottom) {
+			break;
+		}
+		CRect text_rect(x, y, x + size.cx + 2, y + row_height);
+		pDC->SetTextColor(stats[i].important ? COLOR_WHITE : RGB(180, 180, 180));
+		pDC->DrawText(text, -1, &text_rect, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+
+		SHudHotspot hotspot;
+		hotspot.rect = text_rect;
+		hotspot.full_name = stats[i].full_name;
+		hotspot.chair = chair;
+		_hud_hotspots.push_back(hotspot);
+		x += size.cx + gap + 2;
+	}
+
+	pDC->SelectObject(oldfont);
+	font.DeleteObject();
 	ReleaseDC(pDC);
 }
 

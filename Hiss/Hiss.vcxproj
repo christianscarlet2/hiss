@@ -233,6 +233,7 @@
     <ClCompile Include="CHandresetDetector.cpp" />
     <ClCompile Include="CHeartbeatDelay.cpp" />
     <ClCompile Include="CHeartbeatThread.cpp" />
+    <ClCompile Include="HudManager.cpp" />
     <ClCompile Include="CLevDistance.cpp" />
     <ClCompile Include="CLimitScraper.cpp" />
     <ClCompile Include="CMemoryPool.cpp" />
@@ -521,6 +522,7 @@
     <ClInclude Include="CHandresetDetector.h" />
     <ClInclude Include="CHeartbeatDelay.h" />
     <ClInclude Include="CHeartbeatThread.h" />
+    <ClInclude Include="HudManager.h" />
     <ClInclude Include="ChatTerminalServer.h" />
     <ClInclude Include="ChatTerminalWindow.h" />
     <ClInclude Include="CLazyScraper.h" />

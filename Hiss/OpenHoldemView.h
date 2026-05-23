@@ -16,6 +16,7 @@
 
 #include "OpenHoldemDoc.h"
 #include "Card.h"
+#include <vector>
 
 #define DISPLAY_UPDATE_TIMER	111
 
@@ -27,9 +28,11 @@ class COpenHoldemView : public CView {
 	DECLARE_DYNCREATE(COpenHoldemView)
 	DECLARE_MESSAGE_MAP()
   afx_msg void OnTimer(UINT_PTR nIDEvent);
+  afx_msg void OnMouseMove(UINT nFlags, CPoint point);
  public:
 	COpenHoldemDoc* GetDocument() const;
 	virtual void OnDraw(CDC* pDC);  // overridden to draw this view
+	virtual BOOL PreTranslateMessage(MSG* pMsg);
 	virtual BOOL PreCreateWindow(CREATESTRUCT& cs);
 	virtual ~COpenHoldemView();
 	virtual void OnInitialUpdate();
@@ -46,7 +49,15 @@ class COpenHoldemView : public CView {
 	void DrawPlayerBet(const int chair);
 	void DrawPlayerCards(const int chair);
   void DrawColourCodes(const int chair);
+	void DrawHudStats(const int chair);
+	void ClearHudHotspotsForChair(const int chair);
+	CString HudTooltipAtPoint(CPoint point) const;
  private:
+	struct SHudHotspot {
+		CRect rect;
+		CString full_name;
+		int chair;
+	};
 	CString	_handnumber_last;
 	double	_sblind_last, _bblind_last, _lim_last, _ante_last, _pot_last;
 	int	    _iterator_thread_progress_last;
@@ -63,6 +74,9 @@ class COpenHoldemView : public CView {
 	CPen		_black_pen, _green_pen, _red_pen, _blue_pen, _white_dot_pen, _null_pen;
 	CBrush	_white_brush, _gray_brush, _red_brush, _yellow_brush;
 	RECT		_client_rect;
+	CToolTipCtrl _hud_tooltip;
+	std::vector<SHudHotspot> _hud_hotspots;
+	CString _current_hud_tooltip;
 };
 
 inline COpenHoldemDoc* COpenHoldemView::GetDocument() const

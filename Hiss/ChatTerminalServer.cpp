@@ -7,6 +7,7 @@
 #include "CSymbolEngineChipAmounts.h"
 #include "CHandresetDetector.h"
 #include "CTableState.h"
+#include "HudManager.h"
 #include "..\CTablemap\CTablemap.h"
 
 #pragma comment(lib, "ws2_32.lib")
@@ -348,6 +349,9 @@ CStringA CChatTerminalServer::BuildTableStateJson(void)
 	double ante = p_engine_container == NULL ? 0 : p_engine_container->symbol_engine_tablelimits()->ante();
 	double pot = p_engine_container == NULL ? 0 : p_engine_container->symbol_engine_chip_amounts()->pot();
 	int gametype = p_engine_container == NULL ? 0 : p_engine_container->symbol_engine_gametype()->gametype();
+	if (p_hud_manager != NULL) {
+		p_hud_manager->RefreshIfNeeded(handnumber, false);
+	}
 
 	json.Format("{\"nchairs\":%d,\"handnumber\":\"%s\",\"limits\":{\"sblind\":%.2f,\"bblind\":%.2f,\"ante\":%.2f,\"gametype\":%d},\"pot\":%.2f,",
 		nchairs, JsonEscape(handnumber).GetString(), sblind, bblind, ante, gametype, pot);
@@ -374,6 +378,18 @@ CStringA CChatTerminalServer::BuildTableStateJson(void)
 			if (card_index > 0) json += ",";
 			CString card = player == NULL ? "" : player->hole_cards(card_index)->ToString();
 			json.AppendFormat("\"%s\"", JsonEscape(card).GetString());
+		}
+		json += "],\"hud\":[";
+		if (p_hud_manager != NULL && p_hud_manager->IsEnabled()) {
+			const std::vector<SHudStatValue> &stats = p_hud_manager->StatsForChair(chair);
+			for (size_t stat_index = 0; stat_index < stats.size(); ++stat_index) {
+				if (stat_index > 0) json += ",";
+				json.AppendFormat("{\"abbr\":\"%s\",\"name\":\"%s\",\"value\":\"%s\",\"important\":%s}",
+					JsonEscape(stats[stat_index].abbreviation).GetString(),
+					JsonEscape(stats[stat_index].full_name).GetString(),
+					JsonEscape(stats[stat_index].value).GetString(),
+					stats[stat_index].important ? "true" : "false");
+			}
 		}
 		json += "]}";
 	}
