@@ -1,6 +1,13 @@
 #include "stdafx.h"
 #include "ChatTerminalServer.h"
 #include "ChatTerminalWindow.h"
+#include "CEngineContainer.h"
+#include "CSymbolEngineTableLimits.h"
+#include "CSymbolEngineGameType.h"
+#include "CSymbolEngineChipAmounts.h"
+#include "CHandresetDetector.h"
+#include "CTableState.h"
+#include "..\CTablemap\CTablemap.h"
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -32,11 +39,13 @@ bool CChatTerminalServer::Start(unsigned short port)
 
 	_port = port;
 	_stop = false;
-	_thread = AfxBeginThread(ServerThread, this, THREAD_PRIORITY_NORMAL, 0, 0, NULL);
+	_thread = AfxBeginThread(ServerThread, this, THREAD_PRIORITY_NORMAL, 0, CREATE_SUSPENDED, NULL);
 	if (_thread == NULL) {
 		WSACleanup();
 		return false;
 	}
+	_thread->m_bAutoDelete = false;
+	_thread->ResumeThread();
 	return true;
 }
 
@@ -79,13 +88,13 @@ void CChatTerminalServer::Run(void)
 	address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	address.sin_port = htons(_port);
 
-	if (bind(_listen_socket, (sockaddr *)&address, sizeof(address)) == SOCKET_ERROR) {
+	if (::bind(_listen_socket, (sockaddr *)&address, sizeof(address)) == SOCKET_ERROR) {
 		ChatTerminalAppend(kChatTerminalContext, "Terminal API server failed to bind localhost port.");
 		closesocket(_listen_socket);
 		_listen_socket = INVALID_SOCKET;
 		return;
 	}
-	if (listen(_listen_socket, SOMAXCONN) == SOCKET_ERROR) {
+	if (::listen(_listen_socket, SOMAXCONN) == SOCKET_ERROR) {
 		closesocket(_listen_socket);
 		_listen_socket = INVALID_SOCKET;
 		return;
@@ -96,7 +105,7 @@ void CChatTerminalServer::Run(void)
 	ChatTerminalAppend(kChatTerminalContext, ready);
 
 	while (!_stop) {
-		SOCKET client = accept(_listen_socket, NULL, NULL);
+		SOCKET client = ::accept(_listen_socket, NULL, NULL);
 		if (client == INVALID_SOCKET) {
 			if (!_stop) {
 				Sleep(25);
@@ -147,6 +156,37 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		text = request.Mid(body_start + 4);
 	}
 
+	if (path.CompareNoCase("/") == 0 || path.CompareNoCase("/table-display") == 0 || path.CompareNoCase("/table-display/") == 0) {
+		ServeFile(client, "index.html");
+		return;
+	}
+
+	if (path.Left(15).CompareNoCase("/table-display/") == 0) {
+		CString relative(path.Mid(15));
+		if (relative.IsEmpty()) {
+			relative = "index.html";
+		}
+		ServeFile(client, relative);
+		return;
+	}
+
+	if (path.CompareNoCase("/api/table-state") == 0) {
+		CStringA body = BuildTableStateJson();
+		CStringA response;
+		response.Format(
+			"HTTP/1.1 200 OK\r\n"
+			"Content-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\n"
+			"Content-Length: %d\r\n"
+			"Connection: close\r\n"
+			"\r\n"
+			"%s",
+			body.GetLength(),
+			body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
 	if (path.CompareNoCase("/clear") == 0) {
 		if (screen_text.IsEmpty()) {
 			ChatTerminalClear();
@@ -192,6 +232,153 @@ CStringA CChatTerminalServer::Response(CStringA body, CStringA status)
 		body.GetLength(),
 		body.GetString());
 	return response;
+}
+
+CStringA CChatTerminalServer::BinaryResponse(CByteArray &body, CStringA content_type, CStringA status)
+{
+	CStringA response;
+	response.Format(
+		"HTTP/1.1 %s\r\n"
+		"Content-Type: %s\r\n"
+		"Content-Length: %d\r\n"
+		"Connection: close\r\n"
+		"\r\n",
+		status.GetString(),
+		content_type.GetString(),
+		body.GetSize());
+	return response;
+}
+
+bool CChatTerminalServer::ServeFile(SOCKET client, CString relative_path)
+{
+	relative_path.Replace("/", "\\");
+	if (relative_path.Find("..") >= 0) {
+		CStringA response = Response("bad path\r\n", "400 Bad Request");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return false;
+	}
+
+	CString path;
+	path.Format("laravel-react-table-display\\public\\%s", relative_path.GetString());
+	if (GetFileAttributes(path) == INVALID_FILE_ATTRIBUTES) {
+		TCHAR module_path[MAX_PATH] = { 0 };
+		GetModuleFileName(NULL, module_path, MAX_PATH);
+		CString module_dir(module_path);
+		int slash = module_dir.ReverseFind('\\');
+		if (slash >= 0) {
+			module_dir = module_dir.Left(slash);
+			CString candidate;
+			candidate.Format("%s\\laravel-react-table-display\\public\\%s", module_dir.GetString(), relative_path.GetString());
+			if (GetFileAttributes(candidate) != INVALID_FILE_ATTRIBUTES) {
+				path = candidate;
+			} else {
+				candidate.Format("%s\\..\\laravel-react-table-display\\public\\%s", module_dir.GetString(), relative_path.GetString());
+				if (GetFileAttributes(candidate) != INVALID_FILE_ATTRIBUTES) {
+					path = candidate;
+				}
+			}
+		}
+		if (GetFileAttributes(path) == INVALID_FILE_ATTRIBUTES) {
+			CStringA response = Response("not found\r\n", "404 Not Found");
+			send(client, response.GetString(), response.GetLength(), 0);
+			return false;
+		}
+	}
+
+	CFile file;
+	if (!file.Open(path, CFile::modeRead | CFile::typeBinary)) {
+		CStringA response = Response("cannot read file\r\n", "500 Internal Server Error");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return false;
+	}
+
+	CByteArray body;
+	ULONGLONG length = file.GetLength();
+	body.SetSize((INT_PTR)length);
+	if (length > 0) {
+		file.Read(body.GetData(), (UINT)length);
+	}
+	file.Close();
+
+	CStringA header = BinaryResponse(body, ContentType(path));
+	send(client, header.GetString(), header.GetLength(), 0);
+	if (body.GetSize() > 0) {
+		send(client, (const char *)body.GetData(), (int)body.GetSize(), 0);
+	}
+	return true;
+}
+
+CStringA CChatTerminalServer::ContentType(CString path)
+{
+	path.MakeLower();
+	if (path.Right(5) == ".html") return "text/html; charset=utf-8";
+	if (path.Right(3) == ".js") return "application/javascript; charset=utf-8";
+	if (path.Right(4) == ".css") return "text/css; charset=utf-8";
+	if (path.Right(5) == ".json") return "application/json; charset=utf-8";
+	if (path.Right(4) == ".svg") return "image/svg+xml";
+	if (path.Right(4) == ".png") return "image/png";
+	return "application/octet-stream";
+}
+
+CStringA CChatTerminalServer::JsonEscape(CString value)
+{
+	CStringA input(value);
+	CStringA escaped;
+	for (int i = 0; i < input.GetLength(); ++i) {
+		char c = input[i];
+		switch (c) {
+		case '\\': escaped += "\\\\"; break;
+		case '"': escaped += "\\\""; break;
+		case '\r': break;
+		case '\n': escaped += "\\n"; break;
+		case '\t': escaped += "\\t"; break;
+		default: escaped += c; break;
+		}
+	}
+	return escaped;
+}
+
+CStringA CChatTerminalServer::BuildTableStateJson(void)
+{
+	int nchairs = p_tablemap == NULL ? 10 : p_tablemap->nchairs();
+	CStringA json;
+	CString handnumber = p_handreset_detector == NULL ? "" : p_handreset_detector->GetHandNumber();
+	double sblind = p_engine_container == NULL ? 0 : p_engine_container->symbol_engine_tablelimits()->sblind();
+	double bblind = p_engine_container == NULL ? 0 : p_engine_container->symbol_engine_tablelimits()->bblind();
+	double ante = p_engine_container == NULL ? 0 : p_engine_container->symbol_engine_tablelimits()->ante();
+	double pot = p_engine_container == NULL ? 0 : p_engine_container->symbol_engine_chip_amounts()->pot();
+	int gametype = p_engine_container == NULL ? 0 : p_engine_container->symbol_engine_gametype()->gametype();
+
+	json.Format("{\"nchairs\":%d,\"handnumber\":\"%s\",\"limits\":{\"sblind\":%.2f,\"bblind\":%.2f,\"ante\":%.2f,\"gametype\":%d},\"pot\":%.2f,",
+		nchairs, JsonEscape(handnumber).GetString(), sblind, bblind, ante, gametype, pot);
+	json += "\"commonCards\":[";
+	for (int i = 0; i < kNumberOfCommunityCards; ++i) {
+		if (i > 0) json += ",";
+		CString card = p_table_state == NULL ? "" : p_table_state->CommonCards(i)->ToString();
+		json.AppendFormat("\"%s\"", JsonEscape(card).GetString());
+	}
+	json += "],\"players\":[";
+	for (int chair = 0; chair < nchairs; ++chair) {
+		if (chair > 0) json += ",";
+		CPlayer *player = p_table_state == NULL ? NULL : p_table_state->Player(chair);
+		CString name = player == NULL ? "" : player->name();
+		json.AppendFormat("{\"chair\":%d,\"name\":\"%s\",\"seated\":%s,\"active\":%s,\"dealer\":%s,\"balance\":%.2f,\"bet\":%.2f,\"cards\":[",
+			chair,
+			JsonEscape(name).GetString(),
+			player != NULL && player->seated() ? "true" : "false",
+			player != NULL && player->active() ? "true" : "false",
+			player != NULL && player->dealer() ? "true" : "false",
+			player == NULL ? 0 : player->_balance.GetValue(),
+			player == NULL ? 0 : player->_bet.GetValue());
+		for (int card_index = 0; card_index < kMaxNumberOfCardsPerPlayer; ++card_index) {
+			if (card_index > 0) json += ",";
+			CString card = player == NULL ? "" : player->hole_cards(card_index)->ToString();
+			json.AppendFormat("\"%s\"", JsonEscape(card).GetString());
+		}
+		json += "]}";
+	}
+	json += "]}";
+	return json;
 }
 
 CStringA CChatTerminalServer::QueryValue(CStringA query, CStringA name)

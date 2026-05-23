@@ -1,0 +1,204 @@
+:root {
+  color-scheme: dark;
+  font-family: Segoe UI, Arial, sans-serif;
+  background: #202327;
+  color: #f6f7f8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
+.app {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: #202327;
+}
+
+.topbar {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  border-bottom: 1px solid #3a3f45;
+  background: #292d32;
+}
+
+.title {
+  font-weight: 600;
+}
+
+.meta {
+  display: flex;
+  gap: 14px;
+  color: #cfd5db;
+  font-size: 13px;
+}
+
+.table {
+  position: relative;
+  margin: 16px;
+  border: 1px solid #4b5158;
+  background: #808080;
+  min-height: calc(100vh - 76px);
+  overflow: hidden;
+}
+
+.felt {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 55%;
+  height: 36%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: #6f747a;
+  border: 2px solid #52575d;
+}
+
+.center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+
+.cards {
+  display: flex;
+  gap: 4px;
+}
+
+.card {
+  width: 26px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #111;
+  border-radius: 3px;
+  background: #fff;
+  color: #111;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.card.empty {
+  background: #d0d3d6;
+  color: transparent;
+}
+
+.card.back {
+  background: #3b73b9;
+  color: #fff;
+}
+
+.card.red {
+  color: #d20f26;
+}
+
+.pot {
+  min-width: 92px;
+  text-align: center;
+  padding: 3px 8px;
+  border: 1px solid #111;
+  background: #c0c0c0;
+  color: #111;
+}
+
+.player {
+  position: absolute;
+  width: 128px;
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+
+.seat-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 64px;
+  height: 64px;
+  transform: translate(-50%, -50%);
+  border: 2px solid #111;
+  border-radius: 50%;
+  background: #c0c0c0;
+}
+
+.seat-ring.active {
+  background: #f4d21b;
+}
+
+.holecards {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 6px;
+}
+
+.holecards .card {
+  margin-left: -10px;
+}
+
+.holecards .card:first-child {
+  margin-left: 0;
+}
+
+.name,
+.balance,
+.bet {
+  position: relative;
+  display: inline-block;
+  min-width: 54px;
+  max-width: 118px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 5px;
+  border: 1px solid #111;
+  background: #fff;
+  color: #111;
+  font-size: 12px;
+}
+
+.balance {
+  margin-top: 2px;
+}
+
+.bet {
+  position: absolute;
+  background: #ffff00;
+  left: 50%;
+  top: -28px;
+  transform: translateX(-50%);
+}
+
+.dealer {
+  position: absolute;
+  right: 24px;
+  top: 14px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1px solid #111;
+  background: #fff;
+  color: #111;
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.status {
+  color: #bac2ca;
+  font-size: 12px;
+}

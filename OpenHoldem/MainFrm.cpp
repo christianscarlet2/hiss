@@ -66,6 +66,7 @@
 #include "inlines/eval.h"
 #include "OpenHoldem.h"
 #include "OpenHoldemDoc.h"
+#include "ReactTableWindow.h"
 #include "SAPrefsDialog.h"
 #include "Singletons.h"
 
@@ -170,6 +171,13 @@ CMainFrame::~CMainFrame() {
 		delete p_chat_terminal_server;
 		p_chat_terminal_server = NULL;
 	}
+	if (p_react_table_window != NULL) {
+		if (::IsWindow(p_react_table_window->GetSafeHwnd())) {
+			p_react_table_window->DestroyWindow();
+		}
+		delete p_react_table_window;
+		p_react_table_window = NULL;
+	}
 	if (p_chat_terminal != NULL) {
 		if (::IsWindow(p_chat_terminal->GetSafeHwnd())) {
 			p_chat_terminal->DestroyWindow();
@@ -202,6 +210,8 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct) {
 	if (!p_chat_terminal_server->Start()) {
 		ChatTerminalAppend(kChatTerminalContext, "Terminal API server failed to start.");
 	}
+	p_react_table_window = new CReactTableWindow();
+	p_react_table_window->Create(this, p_chat_terminal_server->port());
 	// Start timer that checks if we should enable buttons
 	SetTimer(ENABLE_BUTTONS_TIMER, 50, 0);
 	// Start timer that updates status bar

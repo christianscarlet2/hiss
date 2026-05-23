@@ -15,6 +15,11 @@ private:
 	void Run(void);
 	void HandleClient(SOCKET client);
 	CStringA Response(CStringA body, CStringA status = "200 OK");
+	CStringA BinaryResponse(CByteArray &body, CStringA content_type, CStringA status = "200 OK");
+	bool ServeFile(SOCKET client, CString relative_path);
+	CStringA ContentType(CString path);
+	CStringA BuildTableStateJson(void);
+	CStringA JsonEscape(CString value);
 	CStringA QueryValue(CStringA query, CStringA name);
 	CStringA UrlDecode(CStringA value);
 	int SectionFromText(CStringA value);
