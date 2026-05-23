@@ -1463,7 +1463,7 @@ void CDlgTableMap::DeleteColorPreset(int index)
 	}
 
 	for (int i = index; i < count - 1; ++i) {
-		const char *fields[] = { "name", "color", "a", "r", "g", "b", "pointx", "pointy", "use_default", "threshold", "use_crop", "crop", "box", "psm" };
+		const char *fields[] = { "name", "color", "a", "r", "g", "b", "pointx", "pointy", "pointrelx", "pointrely", "use_default", "threshold", "use_crop", "crop", "box", "psm" };
 		for (int f = 0; f < (int)(sizeof(fields) / sizeof(fields[0])); ++f) {
 			CString src = ColorPresetKey(i + 1, fields[f]);
 			CString dst = ColorPresetKey(i, fields[f]);
@@ -1475,7 +1475,7 @@ void CDlgTableMap::DeleteColorPreset(int index)
 		}
 	}
 
-	const char *fields[] = { "name", "color", "a", "r", "g", "b", "pointx", "pointy", "use_default", "threshold", "use_crop", "crop", "box", "psm" };
+	const char *fields[] = { "name", "color", "a", "r", "g", "b", "pointx", "pointy", "pointrelx", "pointrely", "use_default", "threshold", "use_crop", "crop", "box", "psm" };
 	for (int f = 0; f < (int)(sizeof(fields) / sizeof(fields[0])); ++f) {
 		CString key = ColorPresetKey(count - 1, fields[f]);
 		p_tablemap->s$_erase(key);
@@ -1670,6 +1670,20 @@ bool CDlgTableMap::GetSelectedColorPresetPoint(int *x, int *y)
 	if (index == kDefaultColorPresetIndex) {
 		return false;
 	}
+	CString point_rel_x = p_tablemap->GetTMSymbol(ColorPresetKey(index, "pointrelx"));
+	CString point_rel_y = p_tablemap->GetTMSymbol(ColorPresetKey(index, "pointrely"));
+	if (!point_rel_x.IsEmpty() && !point_rel_y.IsEmpty()) {
+		CString sel_text = "", type_text = "";
+		GetTextSelItemAndRecordType(&sel_text, &type_text);
+		if (type_text == "Regions") {
+			RMapCI selected_region = p_tablemap->r$()->find(sel_text.GetString());
+			if (selected_region != p_tablemap->r$()->end()) {
+				*x = (int)selected_region->second.left + atoi(point_rel_x.GetString());
+				*y = (int)selected_region->second.top + atoi(point_rel_y.GetString());
+				return true;
+			}
+		}
+	}
 	CString text_x = p_tablemap->GetTMSymbol(ColorPresetKey(index, "pointx"));
 	CString text_y = p_tablemap->GetTMSymbol(ColorPresetKey(index, "pointy"));
 	if (text_x.IsEmpty() || text_y.IsEmpty()) {
@@ -1700,6 +1714,8 @@ void CDlgTableMap::ClearSelectedColorPresetPoint(void)
 
 	p_tablemap->s$_erase(ColorPresetKey(index, "pointx"));
 	p_tablemap->s$_erase(ColorPresetKey(index, "pointy"));
+	p_tablemap->s$_erase(ColorPresetKey(index, "pointrelx"));
+	p_tablemap->s$_erase(ColorPresetKey(index, "pointrely"));
 	CString point_region_name;
 	point_region_name.Format("oscolorip%dpoint", index);
 	p_tablemap->set_r$()->erase(point_region_name.GetString());
@@ -1770,6 +1786,31 @@ void CDlgTableMap::DrawColorPresetPreview(void)
 	DeleteDC(hdcScreen);
 }
 
+bool CDlgTableMap::ReadColorPresetColor(int index, COLORREF *color)
+{
+	if (color == NULL || p_tablemap == NULL) {
+		return false;
+	}
+
+	CString red_text = p_tablemap->GetTMSymbol(ColorPresetKey(index, "r"));
+	CString green_text = p_tablemap->GetTMSymbol(ColorPresetKey(index, "g"));
+	CString blue_text = p_tablemap->GetTMSymbol(ColorPresetKey(index, "b"));
+	if (!red_text.IsEmpty() || !green_text.IsEmpty() || !blue_text.IsEmpty()) {
+		int red = red_text.IsEmpty() ? 0 : max(0, min(255, atoi(red_text.GetString())));
+		int green = green_text.IsEmpty() ? 0 : max(0, min(255, atoi(green_text.GetString())));
+		int blue = blue_text.IsEmpty() ? 0 : max(0, min(255, atoi(blue_text.GetString())));
+		*color = RGB(red, green, blue);
+		return true;
+	}
+
+	CString text = p_tablemap->GetTMSymbol(ColorPresetKey(index, "color"));
+	if (text.IsEmpty()) {
+		return false;
+	}
+	*color = strtoul(text.GetString(), NULL, 16);
+	return true;
+}
+
 int CDlgTableMap::ClosestColorPreset(COLORREF color)
 {
 	CString count_str = p_tablemap->GetTMSymbol("oscoloripcount");
@@ -1777,11 +1818,10 @@ int CDlgTableMap::ClosestColorPreset(COLORREF color)
 	int best_index = -1;
 	long best_distance = LONG_MAX;
 	for (int i = 0; i < count; ++i) {
-		CString text = p_tablemap->GetTMSymbol(ColorPresetKey(i, "color"));
-		if (text.IsEmpty()) {
+		COLORREF preset;
+		if (!ReadColorPresetColor(i, &preset)) {
 			continue;
 		}
-		COLORREF preset = strtoul(text.GetString(), NULL, 16);
 		long dr = (long)GetRValue(color) - (long)GetRValue(preset);
 		long dg = (long)GetGValue(color) - (long)GetGValue(preset);
 		long db = (long)GetBValue(color) - (long)GetBValue(preset);
@@ -1796,12 +1836,57 @@ int CDlgTableMap::ClosestColorPreset(COLORREF color)
 
 void CDlgTableMap::ApplyBestColorPresetForSelectedRegion(void)
 {
-	COLORREF color;
 	int index = kDefaultColorPresetIndex;
-	if (GetSelectedRegionAverageColor(&color)) {
-		int closest = ClosestColorPreset(color);
-		if (closest >= 0) {
-			index = closest;
+
+	CString sel_text = "", type_text = "";
+	GetTextSelItemAndRecordType(&sel_text, &type_text);
+	RMapCI selected_region = p_tablemap->r$()->find(sel_text.GetString());
+	if (selected_region != p_tablemap->r$()->end()) {
+		CString count_str = p_tablemap->GetTMSymbol("oscoloripcount");
+		int count = count_str.IsEmpty() ? 0 : atoi(count_str.GetString());
+		const long max_color_preset_distance = 70L * 70L * 3L;
+		long best_distance = LONG_MAX;
+		for (int preset = 0; preset < count; ++preset) {
+			COLORREF preset_color;
+			if (!ReadColorPresetColor(preset, &preset_color)) {
+				continue;
+			}
+
+			CString rel_x_text = p_tablemap->GetTMSymbol(ColorPresetKey(preset, "pointrelx"));
+			CString rel_y_text = p_tablemap->GetTMSymbol(ColorPresetKey(preset, "pointrely"));
+			CString point_x_text = p_tablemap->GetTMSymbol(ColorPresetKey(preset, "pointx"));
+			CString point_y_text = p_tablemap->GetTMSymbol(ColorPresetKey(preset, "pointy"));
+			int sample_x = 0, sample_y = 0;
+			if (!rel_x_text.IsEmpty() && !rel_y_text.IsEmpty()) {
+				sample_x = (int)selected_region->second.left + atoi(rel_x_text.GetString());
+				sample_y = (int)selected_region->second.top + atoi(rel_y_text.GetString());
+			} else if (!point_x_text.IsEmpty() && !point_y_text.IsEmpty()) {
+				sample_x = atoi(point_x_text.GetString());
+				sample_y = atoi(point_y_text.GetString());
+			} else {
+				continue;
+			}
+
+			if (sample_x < (int)selected_region->second.left || sample_x > (int)selected_region->second.right
+					|| sample_y < (int)selected_region->second.top || sample_y > (int)selected_region->second.bottom) {
+				continue;
+			}
+
+			COLORREF sampled_color;
+			if (!GetFourByFourAverageColor(sample_x, sample_y, &sampled_color)) {
+				continue;
+			}
+			long dr = (long)GetRValue(sampled_color) - (long)GetRValue(preset_color);
+			long dg = (long)GetGValue(sampled_color) - (long)GetGValue(preset_color);
+			long db = (long)GetBValue(sampled_color) - (long)GetBValue(preset_color);
+			long distance = dr * dr + dg * dg + db * db;
+			if (distance < best_distance) {
+				best_distance = distance;
+				index = preset;
+			}
+		}
+		if (best_distance > max_color_preset_distance) {
+			index = kDefaultColorPresetIndex;
 		}
 	}
 	for (int i = 0; i < m_ColorCombo.GetCount(); ++i) {
@@ -2049,6 +2134,10 @@ void CDlgTableMap::CaptureColorPresetPoint(CPoint point)
 
 	CString key;
 	STablemapSymbol symbol;
+	RMapCI parent_region = p_tablemap->r$()->end();
+	if (!parent_region_name.IsEmpty()) {
+		parent_region = p_tablemap->r$()->find(parent_region_name.GetString());
+	}
 	key = ColorPresetKey(index, "pointx");
 	p_tablemap->s$_erase(key);
 	symbol.name = key;
@@ -2059,6 +2148,18 @@ void CDlgTableMap::CaptureColorPresetPoint(CPoint point)
 	symbol.name = key;
 	symbol.text.Format("%d", point.y);
 	p_tablemap->s$_insert(symbol);
+	if (parent_region != p_tablemap->r$()->end()) {
+		key = ColorPresetKey(index, "pointrelx");
+		p_tablemap->s$_erase(key);
+		symbol.name = key;
+		symbol.text.Format("%d", point.x - (int)parent_region->second.left);
+		p_tablemap->s$_insert(symbol);
+		key = ColorPresetKey(index, "pointrely");
+		p_tablemap->s$_erase(key);
+		symbol.name = key;
+		symbol.text.Format("%d", point.y - (int)parent_region->second.top);
+		p_tablemap->s$_insert(symbol);
+	}
 
 	CString point_region_name;
 	point_region_name.Format("oscolorip%dpoint", index);

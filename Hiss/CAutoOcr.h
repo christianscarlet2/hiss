@@ -47,6 +47,8 @@ private:
 	Mat prepareImage(Mat img_orig, const SAutoOcrSettings &settings, bool binarize = true, int threshold = 100, bool second_pass = false);
 	Mat binarize_array_opencv(Mat image, int threshold);
 	COLORREF AverageFourByFour(Mat img, int center_x, int center_y);
+	bool ReadColorPresetColor(int index, COLORREF *color);
+	bool ReadColorPresetSamplePoint(int index, RMapCI region, int *rel_x, int *rel_y);
 	bool TryColorPresetSettings(Mat img_orig, RMapCI region, SAutoOcrSettings *settings);
 
 	string trim(string str) {

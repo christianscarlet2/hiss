@@ -687,7 +687,7 @@ bool COpenScrapeView::DuplicateRegionGroupToPlayer(CString group_name, CString t
 		}
 	}
 
-	const char *color_fields[] = { "name", "color", "a", "r", "g", "b", "pointx", "pointy", "use_default", "threshold", "use_crop", "crop", "box", "psm" };
+	const char *color_fields[] = { "name", "color", "a", "r", "g", "b", "pointx", "pointy", "pointrelx", "pointrely", "use_default", "threshold", "use_crop", "crop", "box", "psm" };
 	for (int f = 0; f < (int)(sizeof(color_fields) / sizeof(color_fields[0])); ++f) {
 		CString key = ColorPresetKeyForIndex(-1, color_fields[f]);
 		CString value = p_tablemap->GetTMSymbol(key);
@@ -727,21 +727,36 @@ bool COpenScrapeView::DuplicateRegionGroupToPlayer(CString group_name, CString t
 
 		CString old_x_text = p_tablemap->GetTMSymbol(ColorPresetKeyForIndex(preset, "pointx"));
 		CString old_y_text = p_tablemap->GetTMSymbol(ColorPresetKeyForIndex(preset, "pointy"));
-		if (!old_x_text.IsEmpty() && !old_y_text.IsEmpty()) {
-			int old_x = atoi(old_x_text.GetString());
-			int old_y = atoi(old_y_text.GetString());
+		CString old_rel_x_text = p_tablemap->GetTMSymbol(ColorPresetKeyForIndex(preset, "pointrelx"));
+		CString old_rel_y_text = p_tablemap->GetTMSymbol(ColorPresetKeyForIndex(preset, "pointrely"));
+		if ((!old_x_text.IsEmpty() && !old_y_text.IsEmpty()) || (!old_rel_x_text.IsEmpty() && !old_rel_y_text.IsEmpty())) {
+			int old_x = old_x_text.IsEmpty() ? 0 : atoi(old_x_text.GetString());
+			int old_y = old_y_text.IsEmpty() ? 0 : atoi(old_y_text.GetString());
 			int new_x = old_x + dx;
 			int new_y = old_y + dy;
+			int new_rel_x = old_rel_x_text.IsEmpty() ? 0 : atoi(old_rel_x_text.GetString());
+			int new_rel_y = old_rel_y_text.IsEmpty() ? 0 : atoi(old_rel_y_text.GetString());
 			for (size_t member_index = 0; member_index < source_group->second.members.size(); ++member_index) {
 				RMapCI source_region = p_tablemap->r$()->find(source_group->second.members[member_index].GetString());
 				RMapCI new_region = p_tablemap->r$()->find(new_members[member_index].GetString());
 				if (source_region == p_tablemap->r$()->end() || new_region == p_tablemap->r$()->end()) {
 					continue;
 				}
-				if (old_x >= (int)source_region->second.left && old_x <= (int)source_region->second.right
+				if (!old_rel_x_text.IsEmpty() && !old_rel_y_text.IsEmpty()
+						&& (old_x_text.IsEmpty() || old_y_text.IsEmpty())) {
+					new_x = (int)new_region->second.left + new_rel_x;
+					new_y = (int)new_region->second.top + new_rel_y;
+					break;
+				}
+				if (!old_x_text.IsEmpty() && !old_y_text.IsEmpty()
+						&& old_x >= (int)source_region->second.left && old_x <= (int)source_region->second.right
 						&& old_y >= (int)source_region->second.top && old_y <= (int)source_region->second.bottom) {
-					new_x = (int)new_region->second.left + (old_x - (int)source_region->second.left);
-					new_y = (int)new_region->second.top + (old_y - (int)source_region->second.top);
+					if (old_rel_x_text.IsEmpty() || old_rel_y_text.IsEmpty()) {
+						new_rel_x = old_x - (int)source_region->second.left;
+						new_rel_y = old_y - (int)source_region->second.top;
+					}
+					new_x = (int)new_region->second.left + new_rel_x;
+					new_y = (int)new_region->second.top + new_rel_y;
 					break;
 				}
 			}
@@ -751,6 +766,10 @@ bool COpenScrapeView::DuplicateRegionGroupToPlayer(CString group_name, CString t
 			UpsertSymbol(ColorPresetKeyForIndex(new_preset, "pointx"), point_text);
 			point_text.Format("%d", new_y);
 			UpsertSymbol(ColorPresetKeyForIndex(new_preset, "pointy"), point_text);
+			point_text.Format("%d", new_rel_x);
+			UpsertSymbol(ColorPresetKeyForIndex(new_preset, "pointrelx"), point_text);
+			point_text.Format("%d", new_rel_y);
+			UpsertSymbol(ColorPresetKeyForIndex(new_preset, "pointrely"), point_text);
 
 			CString point_region_name;
 			point_region_name.Format("oscolorip%dpoint", new_preset);

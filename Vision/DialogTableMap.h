@@ -130,6 +130,7 @@ protected:
 	void ApplySelectedColorPreset(bool update_region);
 	void ApplyBestColorPresetForSelectedRegion(void);
 	int ClosestColorPreset(COLORREF color);
+	bool ReadColorPresetColor(int index, COLORREF *color);
 	bool GetSelectedRegionAverageColor(COLORREF *color);
 	bool GetFourByFourAverageColor(int center_x, int center_y, COLORREF *color);
 	void DrawColorPresetPreview(void);

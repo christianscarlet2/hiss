@@ -135,31 +135,77 @@ static CString ColorPresetKey(int index, const char *field)
 	return key;
 }
 
+bool CAutoOcr::ReadColorPresetColor(int index, COLORREF *color)
+{
+	if (color == NULL || p_tablemap == NULL) {
+		return false;
+	}
+
+	CString red_text = p_tablemap->GetTMSymbol(ColorPresetKey(index, "r"));
+	CString green_text = p_tablemap->GetTMSymbol(ColorPresetKey(index, "g"));
+	CString blue_text = p_tablemap->GetTMSymbol(ColorPresetKey(index, "b"));
+	if (!red_text.IsEmpty() || !green_text.IsEmpty() || !blue_text.IsEmpty()) {
+		int red = red_text.IsEmpty() ? 0 : max(0, min(255, atoi(red_text.GetString())));
+		int green = green_text.IsEmpty() ? 0 : max(0, min(255, atoi(green_text.GetString())));
+		int blue = blue_text.IsEmpty() ? 0 : max(0, min(255, atoi(blue_text.GetString())));
+		*color = RGB(red, green, blue);
+		return true;
+	}
+
+	CString color_text = p_tablemap->GetTMSymbol(ColorPresetKey(index, "color"));
+	if (color_text.IsEmpty()) {
+		return false;
+	}
+	*color = strtoul(color_text.GetString(), NULL, 16);
+	return true;
+}
+
+bool CAutoOcr::ReadColorPresetSamplePoint(int index, RMapCI region, int *rel_x, int *rel_y)
+{
+	if (rel_x == NULL || rel_y == NULL || p_tablemap == NULL) {
+		return false;
+	}
+
+	CString point_rel_x_text = p_tablemap->GetTMSymbol(ColorPresetKey(index, "pointrelx"));
+	CString point_rel_y_text = p_tablemap->GetTMSymbol(ColorPresetKey(index, "pointrely"));
+	if (!point_rel_x_text.IsEmpty() && !point_rel_y_text.IsEmpty()) {
+		*rel_x = atoi(point_rel_x_text.GetString());
+		*rel_y = atoi(point_rel_y_text.GetString());
+		return true;
+	}
+
+	CString point_x_text = p_tablemap->GetTMSymbol(ColorPresetKey(index, "pointx"));
+	CString point_y_text = p_tablemap->GetTMSymbol(ColorPresetKey(index, "pointy"));
+	if (point_x_text.IsEmpty() || point_y_text.IsEmpty()) {
+		return false;
+	}
+	*rel_x = atoi(point_x_text.GetString()) - (int)region->second.left;
+	*rel_y = atoi(point_y_text.GetString()) - (int)region->second.top;
+	return true;
+}
+
 bool CAutoOcr::TryColorPresetSettings(Mat img_orig, RMapCI region, SAutoOcrSettings *settings)
 {
 	if (settings == NULL || p_tablemap == NULL) {
 		return false;
 	}
 
+	const long kMaxColorPresetDistance = 70L * 70L * 3L;
 	int count = atoi(p_tablemap->GetTMSymbol("oscoloripcount").GetString());
 	int best_index = -1;
 	long best_distance = LONG_MAX;
 	for (int i = 0; i < count; ++i) {
-		CString point_x_text = p_tablemap->GetTMSymbol(ColorPresetKey(i, "pointx"));
-		CString point_y_text = p_tablemap->GetTMSymbol(ColorPresetKey(i, "pointy"));
-		CString color_text = p_tablemap->GetTMSymbol(ColorPresetKey(i, "color"));
-		if (point_x_text.IsEmpty() || point_y_text.IsEmpty() || color_text.IsEmpty()) {
+		COLORREF preset;
+		int rel_x = 0, rel_y = 0;
+		if (!ReadColorPresetColor(i, &preset) || !ReadColorPresetSamplePoint(i, region, &rel_x, &rel_y)) {
 			continue;
 		}
 
-		int rel_x = atoi(point_x_text.GetString()) - (int)region->second.left;
-		int rel_y = atoi(point_y_text.GetString()) - (int)region->second.top;
 		if (rel_x < 0 || rel_y < 0 || rel_x >= img_orig.cols || rel_y >= img_orig.rows) {
 			continue;
 		}
 
 		COLORREF sampled = AverageFourByFour(img_orig, rel_x, rel_y);
-		COLORREF preset = strtoul(color_text.GetString(), NULL, 16);
 		long dr = (long)GetRValue(sampled) - (long)GetRValue(preset);
 		long dg = (long)GetGValue(sampled) - (long)GetGValue(preset);
 		long db = (long)GetBValue(sampled) - (long)GetBValue(preset);
@@ -170,7 +216,7 @@ bool CAutoOcr::TryColorPresetSettings(Mat img_orig, RMapCI region, SAutoOcrSetti
 		}
 	}
 
-	if (best_index < 0) {
+	if (best_index < 0 || best_distance > kMaxColorPresetDistance) {
 		best_index = kDefaultColorPresetIndex;
 	}
 
