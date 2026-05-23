@@ -140,6 +140,7 @@
 #define IDC_COLOR_ADD_POINT             1131
 #define IDC_COLOR_PREVIEW               1132
 #define IDC_COLOR_CLEAR_POINT           1133
+#define IDC_UPDATE_OCR_NOW              1134
 #define ID_MAIN_TOOLBAR_GREENCIRCLE     32771
 #define ID_VIEW_CONNECTTOWINDOW         32772
 #define ID_VIEW_SHOWREGIONBOXES         32774
@@ -160,6 +161,8 @@
 #define ID_EDIT_ENABLETEXTDETECTION     32790
 #define ID_EDIT_TEXTDETECTIONSETTINGS   32791
 #define ID_EDIT_                        32792
+#define ID_VIEW_SHOW_PREVIEW            32793
+#define ID_OPERATIONS_CREATE_HASHES_IMAGES_0 32794
 #define IDC_LABEL                       65535
 
 // Next default values for new objects
@@ -167,8 +170,8 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        153
-#define _APS_NEXT_COMMAND_VALUE         32793
-#define _APS_NEXT_CONTROL_VALUE         1126
+#define _APS_NEXT_COMMAND_VALUE         32795
+#define _APS_NEXT_CONTROL_VALUE         1135
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

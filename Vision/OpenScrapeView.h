@@ -55,6 +55,8 @@ protected: // create from serialization only
 	afx_msg void OnEditRedo();
 	afx_msg void OnUpdateEditUndo(CCmdUI *pCmdUI);
 	afx_msg void OnUpdateEditRedo(CCmdUI *pCmdUI);
+	afx_msg void OnViewShowPreview();
+	afx_msg void OnUpdateViewShowPreview(CCmdUI *pCmdUI);
 	afx_msg BOOL OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message);
 
 	CPen		black_pen, green_pen, red_pen, blue_pen, white_dot_pen, black_dot_pen, yellow_dot_pen, null_pen;
@@ -73,6 +75,9 @@ protected: // create from serialization only
 	std::vector<SOpenScrapeRegionMoveAction> redo_region_moves;
 	std::vector<SOpenScrapeRegionMoveState> drag_move_before;
 	CString loaded_group_filename;
+	bool show_preview;
+	CPoint preview_point;
+	CRect preview_close_rect;
 
 	HCURSOR		hCurDrawRect, hCurStandard;
 	bool IsRegionSelected(CString name);
@@ -80,6 +85,7 @@ protected: // create from serialization only
 	void SelectRegionsInsideRect(RECT rect);
 	void ClearRegionSelection();
 	void DrawRegionGroups(CDC *pDC);
+	void DrawMagnifierPreview(CDC *pDC);
 	void RebuildGroupBounds();
 	CString RegionNameAtPoint(CPoint point);
 	CString GroupNameAtPoint(CPoint point);
@@ -114,9 +120,12 @@ public:
 	void SaveGroupsToTablemap();
 	void PurgeMissingRegionsFromGroups();
 	bool DeleteRegionGroup(CString group_name);
+	bool DeleteAllRegionsInGroup(CString group_name);
 	bool RemoveRegionFromGroup(CString name);
 	bool DuplicateRegionGroupToPlayer(CString group_name, CString target_player, CString *error_message);
 	bool GetGroupColorForRegion(CString name, COLORREF *color);
+	void SetShowPreview(bool show);
+	bool ShowPreview() const { return show_preview; }
 
 	bool		drawing_rect, drawing_started;
 	bool		color_point_mode;

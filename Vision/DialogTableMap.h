@@ -67,6 +67,8 @@ protected:
 	afx_msg void OnBnClickedCreateHash1();
 	afx_msg void OnBnClickedCreateHash2();
 	afx_msg void OnBnClickedCreateHash3();
+	afx_msg void OnBnClickedUpdateOcrNow();
+	afx_msg void OnOperationsCreateHashesImages0();
 	afx_msg void OnBnClickedCreateImage();
 	afx_msg void OnBnClickedCreateFont();
 	afx_msg void OnBnClickedFontplus();
@@ -140,6 +142,7 @@ protected:
 	void DeleteColorPreset(int index);
 	void MoveSelectedRegionBy(int dx, int dy);
 	void CreateHash(int hash_type);
+	void CreateHashesOfAllImages(int hash_type);
 	void SaveNodeExpansionState(CArray <bool, bool> *node_state);
 	void RestoreNodeExpansionState(CArray <bool, bool> *node_state);
 	int GetType(CString selected_text);
@@ -162,6 +165,8 @@ protected:
 	CButton				m_NudgeUpLeft, m_NudgeUp, m_NudgeUpRight, m_NudgeRight, m_NudgeDownRight, m_NudgeDown;
 	CButton				m_NudgeDownLeft, m_NudgeLeft;
 	CButton				m_UseCrop, m_UseDefault;
+	CButton				m_UpdateOcrNow;
+	CMenu				m_TableMapMenu;
 	CPen				black_pen, green_pen, red_pen, blue_pen, white_dot_pen, null_pen;
 	CBrush				white_brush, lt_gray_brush, gray_brush, red_brush, yellow_brush;
 	LOGFONT				lf_fixed;

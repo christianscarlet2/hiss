@@ -71,6 +71,26 @@ static COLORREF NextGroupColor(COLORREF current_color)
 	return colors[0];
 }
 
+static CString ColorPresetKeyForIndex(int index, const char *field)
+{
+	CString key;
+	if (index < 0) {
+		key.Format("oscoloripdefault%s", field);
+	} else {
+		key.Format("oscolorip%d%s", index, field);
+	}
+	return key;
+}
+
+static void UpsertSymbol(CString key, CString text)
+{
+	STablemapSymbol symbol;
+	p_tablemap->s$_erase(key);
+	symbol.name = key;
+	symbol.text = text;
+	p_tablemap->s$_insert(symbol);
+}
+
 // COpenScrapeView
 
 IMPLEMENT_DYNCREATE(COpenScrapeView, CView)
@@ -86,6 +106,8 @@ BEGIN_MESSAGE_MAP(COpenScrapeView, CView)
 	ON_COMMAND(ID_EDIT_REDO, &COpenScrapeView::OnEditRedo)
 	ON_UPDATE_COMMAND_UI(ID_EDIT_UNDO, &COpenScrapeView::OnUpdateEditUndo)
 	ON_UPDATE_COMMAND_UI(ID_EDIT_REDO, &COpenScrapeView::OnUpdateEditRedo)
+	ON_COMMAND(ID_VIEW_SHOW_PREVIEW, &COpenScrapeView::OnViewShowPreview)
+	ON_UPDATE_COMMAND_UI(ID_VIEW_SHOW_PREVIEW, &COpenScrapeView::OnUpdateViewShowPreview)
 END_MESSAGE_MAP()
 
 // COpenScrapeView construction/destruction
@@ -115,6 +137,9 @@ COpenScrapeView::COpenScrapeView()
 	drawing_rect = drawing_started = false;
 	color_point_mode = false;
 	group_box_mode = group_box_started = false;
+	show_preview = true;
+	preview_point = CPoint(0, 0);
+	preview_close_rect.SetRectEmpty();
 	hCurDrawRect = ::LoadCursor(AfxGetInstanceHandle(), MAKEINTRESOURCE(IDC_DRAWRECTCURSOR));
 	hCurStandard = ::LoadCursor(NULL, IDC_ARROW);
 }
@@ -507,6 +532,27 @@ bool COpenScrapeView::DeleteRegionGroup(CString group_name)
 	return true;
 }
 
+bool COpenScrapeView::DeleteAllRegionsInGroup(CString group_name)
+{
+	LoadGroupsFromTablemap(true);
+	std::map<CString, SOpenScrapeRegionGroup>::iterator group = region_groups.find(group_name);
+	if (group == region_groups.end()) {
+		return false;
+	}
+
+	std::vector<CString> members = group->second.members;
+	for (size_t i = 0; i < members.size(); ++i) {
+		p_tablemap->r$_erase(members[i]);
+	}
+
+	region_groups.erase(group);
+	SaveGroupsToTablemap();
+	ClearRegionSelection();
+	GetDocument()->SetModifiedFlag(true);
+	Invalidate(false);
+	return true;
+}
+
 bool COpenScrapeView::RemoveRegionFromGroup(CString name)
 {
 	LoadGroupsFromTablemap(true);
@@ -576,6 +622,7 @@ bool COpenScrapeView::DuplicateRegionGroupToPlayer(CString group_name, CString t
 	}
 
 	std::vector<CString> new_members;
+	std::map<CString, CString> source_to_new_member;
 	for (size_t i = 0; i < source_group->second.members.size(); ++i) {
 		if (p_tablemap->r$()->find(source_group->second.members[i].GetString()) == p_tablemap->r$()->end()) {
 			if (error_message != NULL) {
@@ -592,6 +639,7 @@ bool COpenScrapeView::DuplicateRegionGroupToPlayer(CString group_name, CString t
 			return false;
 		}
 		new_members.push_back(new_name);
+		source_to_new_member[source_group->second.members[i]] = new_name;
 	}
 
 	RebuildGroupBounds();
@@ -618,6 +666,99 @@ bool COpenScrapeView::DuplicateRegionGroupToPlayer(CString group_name, CString t
 			}
 			return false;
 		}
+	}
+
+	const char *color_fields[] = { "name", "color", "a", "r", "g", "b", "pointx", "pointy", "use_default", "threshold", "use_crop", "crop", "box", "psm" };
+	for (int f = 0; f < (int)(sizeof(color_fields) / sizeof(color_fields[0])); ++f) {
+		CString key = ColorPresetKeyForIndex(-1, color_fields[f]);
+		CString value = p_tablemap->GetTMSymbol(key);
+		if (!value.IsEmpty()) {
+			UpsertSymbol(key, value);
+		}
+	}
+
+	CString count_text = p_tablemap->GetTMSymbol("oscoloripcount");
+	int original_color_preset_count = count_text.IsEmpty() ? 0 : atoi(count_text.GetString());
+	int next_color_preset = original_color_preset_count;
+	for (int preset = 0; preset < original_color_preset_count; ++preset) {
+		CString preset_name = p_tablemap->GetTMSymbol(ColorPresetKeyForIndex(preset, "name"));
+		if (preset_name.CompareNoCase("Default") == 0) {
+			for (int f = 0; f < (int)(sizeof(color_fields) / sizeof(color_fields[0])); ++f) {
+				CString value = p_tablemap->GetTMSymbol(ColorPresetKeyForIndex(preset, color_fields[f]));
+				if (!value.IsEmpty()) {
+					UpsertSymbol(ColorPresetKeyForIndex(-1, color_fields[f]), value);
+				}
+			}
+			continue;
+		}
+
+		int new_preset = next_color_preset++;
+		for (int f = 0; f < (int)(sizeof(color_fields) / sizeof(color_fields[0])); ++f) {
+			CString field = color_fields[f];
+			CString value = p_tablemap->GetTMSymbol(ColorPresetKeyForIndex(preset, color_fields[f]));
+			if (field == "name") {
+				if (value.IsEmpty()) {
+					value.Format("Color preset %s", target_player);
+				} else {
+					value.Format("%s %s", value, target_player);
+				}
+			}
+			UpsertSymbol(ColorPresetKeyForIndex(new_preset, color_fields[f]), value);
+		}
+
+		CString old_x_text = p_tablemap->GetTMSymbol(ColorPresetKeyForIndex(preset, "pointx"));
+		CString old_y_text = p_tablemap->GetTMSymbol(ColorPresetKeyForIndex(preset, "pointy"));
+		if (!old_x_text.IsEmpty() && !old_y_text.IsEmpty()) {
+			int old_x = atoi(old_x_text.GetString());
+			int old_y = atoi(old_y_text.GetString());
+			int new_x = old_x + dx;
+			int new_y = old_y + dy;
+			for (size_t member_index = 0; member_index < source_group->second.members.size(); ++member_index) {
+				RMapCI source_region = p_tablemap->r$()->find(source_group->second.members[member_index].GetString());
+				RMapCI new_region = p_tablemap->r$()->find(new_members[member_index].GetString());
+				if (source_region == p_tablemap->r$()->end() || new_region == p_tablemap->r$()->end()) {
+					continue;
+				}
+				if (old_x >= (int)source_region->second.left && old_x <= (int)source_region->second.right
+						&& old_y >= (int)source_region->second.top && old_y <= (int)source_region->second.bottom) {
+					new_x = (int)new_region->second.left + (old_x - (int)source_region->second.left);
+					new_y = (int)new_region->second.top + (old_y - (int)source_region->second.top);
+					break;
+				}
+			}
+
+			CString point_text;
+			point_text.Format("%d", new_x);
+			UpsertSymbol(ColorPresetKeyForIndex(new_preset, "pointx"), point_text);
+			point_text.Format("%d", new_y);
+			UpsertSymbol(ColorPresetKeyForIndex(new_preset, "pointy"), point_text);
+
+			CString point_region_name;
+			point_region_name.Format("oscolorip%dpoint", new_preset);
+			if (p_tablemap->r$()->find(point_region_name.GetString()) == p_tablemap->r$()->end()) {
+				STablemapRegion point_region;
+				point_region.name = point_region_name;
+				point_region.left = new_x > 1 ? new_x - 1 : 0;
+				point_region.top = new_y > 1 ? new_y - 1 : 0;
+				point_region.right = point_region.left + 3;
+				point_region.bottom = point_region.top + 3;
+				point_region.color = RGB(255, 0, 255);
+				point_region.radius = 0;
+				point_region.transform = "N";
+				point_region.use_default = true;
+				point_region.threshold = -1;
+				point_region.use_cropping = false;
+				point_region.crop_size = -1;
+				point_region.box_color = -1;
+				p_tablemap->r$_insert(point_region);
+				new_members.push_back(point_region_name);
+			}
+		}
+	}
+	if (next_color_preset != original_color_preset_count) {
+		CString new_count;
+		new_count.Format("%d", next_color_preset);
+		UpsertSymbol("oscoloripcount", new_count);
 	}
 
 	SOpenScrapeRegionGroup new_group;
@@ -803,6 +944,69 @@ void COpenScrapeView::DrawRegionGroups(CDC *pDC)
 	}
 }
 
+void COpenScrapeView::DrawMagnifierPreview(CDC *pDC)
+{
+	COpenScrapeDoc* pDoc = GetDocument();
+	if (!show_preview || pDoc->attached_bitmap == NULL) {
+		preview_close_rect.SetRectEmpty();
+		return;
+	}
+
+	CRect client;
+	GetClientRect(&client);
+	const int source_size = 24;
+	const int scale = 4;
+	const int preview_size = source_size * scale;
+	const int pad = 6;
+	CRect preview_rect(client.right - preview_size - pad, client.top + pad,
+		client.right - pad, client.top + pad + preview_size);
+	preview_close_rect.SetRect(preview_rect.right - 16, preview_rect.top,
+		preview_rect.right, preview_rect.top + 16);
+
+	HDC hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL);
+	HDC hdcBitmap = CreateCompatibleDC(hdcScreen);
+	HBITMAP oldBitmap = (HBITMAP)SelectObject(hdcBitmap, pDoc->attached_bitmap);
+
+	CBrush background(RGB(32, 32, 32));
+	pDC->FillRect(&preview_rect, &background);
+	for (int y = 0; y < source_size; ++y) {
+		for (int x = 0; x < source_size; ++x) {
+			int source_x = preview_point.x - source_size / 2 + x;
+			int source_y = preview_point.y - source_size / 2 + y;
+			COLORREF pixel = RGB(0, 0, 0);
+			if (source_x >= 0 && source_y >= 0
+					&& source_x < pDoc->attached_rect.right - pDoc->attached_rect.left
+					&& source_y < pDoc->attached_rect.bottom - pDoc->attached_rect.top) {
+				COLORREF sampled = GetPixel(hdcBitmap, source_x, source_y);
+				if (sampled != CLR_INVALID) {
+					pixel = sampled;
+				}
+			}
+			CBrush pixel_brush(pixel);
+			CRect pixel_rect(preview_rect.left + x * scale, preview_rect.top + y * scale,
+				preview_rect.left + (x + 1) * scale, preview_rect.top + (y + 1) * scale);
+			pDC->FillRect(&pixel_rect, &pixel_brush);
+		}
+	}
+
+	CPen border_pen(PS_SOLID, 1, RGB(255, 255, 255));
+	CPen *old_pen = pDC->SelectObject(&border_pen);
+	CGdiObject *old_brush = pDC->SelectStockObject(NULL_BRUSH);
+	pDC->Rectangle(&preview_rect);
+	pDC->SelectObject(old_pen);
+	pDC->SelectObject(old_brush);
+
+	CBrush close_brush(RGB(40, 40, 40));
+	pDC->FillRect(&preview_close_rect, &close_brush);
+	pDC->SetTextColor(RGB(255, 255, 255));
+	pDC->SetBkMode(TRANSPARENT);
+	pDC->DrawText("X", 1, &preview_close_rect, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+
+	SelectObject(hdcBitmap, oldBitmap);
+	DeleteDC(hdcBitmap);
+	DeleteDC(hdcScreen);
+}
+
 // COpenScrapeView drawing
 
 void COpenScrapeView::OnDraw(CDC* pDC)
@@ -944,6 +1148,9 @@ void COpenScrapeView::OnDraw(CDC* pDC)
 	}
 
 	// Clean Up
+	DrawMagnifierPreview(pDC);
+
+	// Clean Up
 	DeleteObject(hbmp);
 	DeleteDC(hdcCompatible);
 	DeleteDC(hdcScreen);
@@ -978,6 +1185,12 @@ void COpenScrapeView::OnLButtonDown(UINT nFlags, CPoint point)
 	COpenScrapeDoc		*pDoc = GetDocument();
 	CString				sel = theApp.m_TableMapDlg->m_TableMapTree.GetItemText(theApp.m_TableMapDlg->m_TableMapTree.GetSelectedItem());
 	CString				text;
+
+	if (show_preview && preview_close_rect.PtInRect(point)) {
+		SetShowPreview(false);
+		CView::OnLButtonDown(nFlags, point);
+		return;
+	}
 
 	if (color_point_mode) {
 		color_point_mode = false;
@@ -1265,6 +1478,38 @@ void COpenScrapeView::OnRButtonDown(UINT nFlags, CPoint point)
 {
 	CString region_name = RegionNameAtPoint(point);
 	if (region_name.IsEmpty()) {
+		CString empty_group_name = GroupNameAtPoint(point);
+		if (!empty_group_name.IsEmpty()) {
+			CMenu menu;
+			menu.CreatePopupMenu();
+			const UINT kDeleteAllInGroupMenuId = 51003;
+			const UINT kDeleteGroupOnlyMenuId = 51004;
+			menu.AppendMenu(MF_STRING, kDeleteAllInGroupMenuId, "Delete all regions in group");
+			menu.AppendMenu(MF_STRING, kDeleteGroupOnlyMenuId, "Delete group only (keep regions)");
+
+			CPoint screen_point = point;
+			ClientToScreen(&screen_point);
+			UINT command = menu.TrackPopupMenu(TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
+				screen_point.x, screen_point.y, this);
+
+			if (command == kDeleteAllInGroupMenuId) {
+				CString message;
+				message.Format("Delete all regions in group '%s'?\n\nThis also removes the group.", empty_group_name);
+				if (AfxMessageBox(message, MB_YESNO) == IDYES && DeleteAllRegionsInGroup(empty_group_name)) {
+					theApp.m_TableMapDlg->update_tree("Regions");
+					theApp.m_TableMapDlg->update_tree("Groups");
+				}
+			}
+			else if (command == kDeleteGroupOnlyMenuId) {
+				CString message;
+				message.Format("Delete group '%s' only?\n\nThe regions in this group will be kept.", empty_group_name);
+				if (AfxMessageBox(message, MB_YESNO) == IDYES && DeleteRegionGroup(empty_group_name)) {
+					theApp.m_TableMapDlg->update_tree("Groups");
+				}
+			}
+			CView::OnRButtonDown(nFlags, point);
+			return;
+		}
 		CView::OnRButtonDown(nFlags, point);
 		return;
 	}
@@ -1345,11 +1590,36 @@ void COpenScrapeView::OnUpdateEditRedo(CCmdUI *pCmdUI)
 	pCmdUI->Enable(!redo_region_moves.empty());
 }
 
+void COpenScrapeView::SetShowPreview(bool show)
+{
+	show_preview = show;
+	if (!show_preview) {
+		preview_close_rect.SetRectEmpty();
+	}
+	Invalidate(false);
+}
+
+void COpenScrapeView::OnViewShowPreview()
+{
+	SetShowPreview(!show_preview);
+}
+
+void COpenScrapeView::OnUpdateViewShowPreview(CCmdUI *pCmdUI)
+{
+	pCmdUI->SetCheck(show_preview);
+	pCmdUI->SetText(show_preview ? "Hide Preview" : "Show Preview");
+}
+
 void COpenScrapeView::OnMouseMove(UINT nFlags, CPoint point)
 {
 	COpenScrapeDoc		*pDoc = GetDocument();
 	int					width, height;
 	CString				text;
+
+	if (show_preview && pDoc->attached_bitmap != NULL && preview_point != point) {
+		preview_point = point;
+		Invalidate(false);
+	}
 
 	if (group_box_mode && group_box_started)
 	{

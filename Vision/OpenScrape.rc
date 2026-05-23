@@ -135,6 +135,7 @@ BEGIN
         MENUITEM "Previous Frame",              ID_VIEW_PREV
         MENUITEM "Re&fresh\tCtrl+R",            ID_VIEW_REFRESH
         MENUITEM "Next Frame\tF5",              ID_VIEW_NEXT
+        MENUITEM "Hide Preview",                ID_VIEW_SHOW_PREVIEW, CHECKED
         POPUP "&Group Regions"
         BEGIN
             MENUITEM "By &Type",                    ID_GROUPREGIONS_BYTYPE
@@ -323,6 +324,7 @@ BEGIN
     PUSHBUTTON      "Delete",IDC_COLOR_DELETE,69,496,23,14
     PUSHBUTTON      "Add point",IDC_COLOR_ADD_POINT,25,516,67,14
     PUSHBUTTON      "Clear point",IDC_COLOR_CLEAR_POINT,25,533,67,14
+    PUSHBUTTON      "Update now",IDC_UPDATE_OCR_NOW,25,552,67,14
     LTEXT           "Color Preset Preview:",IDC_STATIC,198,452,77,8
     CONTROL         "",IDC_COLOR_PREVIEW,"Static",SS_NOTIFY | SS_ETCHEDFRAME,198,464,18,18
     LTEXT           "A",IDC_STATIC,198,488,8,8
