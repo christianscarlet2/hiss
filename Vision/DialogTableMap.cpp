@@ -1277,6 +1277,12 @@ void CDlgTableMap::OnOcrRegionChange()
 		}
 	}
 
+
+	if (sel_region != p_tablemap->r$()->end() && sel_region->second.transform.Find("A", 0) != -1 && m_ColorCombo.GetCurSel() != CB_ERR) {
+		CString color_preset_name;
+		m_ColorCombo.GetLBText(m_ColorCombo.GetCurSel(), color_preset_name);
+		SaveColorPreset((int)m_ColorCombo.GetItemData(m_ColorCombo.GetCurSel()), color_preset_name, GetColorPresetInputColor());
+	}
 	ignore_changes = true;
 	update_ocr_r$_display();
 	ignore_changes = false;
@@ -1615,11 +1621,11 @@ bool CDlgTableMap::GetSelectedColorPresetPoint(int *x, int *y)
 		return false;
 	}
 	int index = (int)m_ColorCombo.GetItemData(sel);
-	CString key;
-	key.Format("oscolorip%dpointx", index);
-	CString text_x = p_tablemap->GetTMSymbol(key);
-	key.Format("oscolorip%dpointy", index);
-	CString text_y = p_tablemap->GetTMSymbol(key);
+	if (index == kDefaultColorPresetIndex) {
+		return false;
+	}
+	CString text_x = p_tablemap->GetTMSymbol(ColorPresetKey(index, "pointx"));
+	CString text_y = p_tablemap->GetTMSymbol(ColorPresetKey(index, "pointy"));
 	if (text_x.IsEmpty() || text_y.IsEmpty()) {
 		return false;
 	}
@@ -1711,9 +1717,7 @@ int CDlgTableMap::ClosestColorPreset(COLORREF color)
 	int best_index = -1;
 	long best_distance = LONG_MAX;
 	for (int i = 0; i < count; ++i) {
-		CString key;
-		key.Format("oscolorip%dcolor", i);
-		CString text = p_tablemap->GetTMSymbol(key);
+		CString text = p_tablemap->GetTMSymbol(ColorPresetKey(i, "color"));
 		if (text.IsEmpty()) {
 			continue;
 		}
@@ -1895,6 +1899,9 @@ void CDlgTableMap::CaptureColorPresetPoint(CPoint point)
 		return;
 	}
 	int index = (int)m_ColorCombo.GetItemData(sel);
+	if (index == kDefaultColorPresetIndex) {
+		return;
+	}
 
 	COLORREF color;
 	if (!GetFourByFourAverageColor(point.x, point.y, &color)) {
@@ -1904,12 +1911,12 @@ void CDlgTableMap::CaptureColorPresetPoint(CPoint point)
 
 	CString key;
 	STablemapSymbol symbol;
-	key.Format("oscolorip%dpointx", index);
+	key = ColorPresetKey(index, "pointx");
 	p_tablemap->s$_erase(key);
 	symbol.name = key;
 	symbol.text.Format("%d", point.x);
 	p_tablemap->s$_insert(symbol);
-	key.Format("oscolorip%dpointy", index);
+	key = ColorPresetKey(index, "pointy");
 	p_tablemap->s$_erase(key);
 	symbol.name = key;
 	symbol.text.Format("%d", point.y);
@@ -2566,7 +2573,7 @@ void CDlgTableMap::disable_ocr_and_clear_all(void)
 	m_ColorEdit.EnableWindow(false);
 	m_ColorDelete.EnableWindow(false);
 	m_ColorAddPoint.EnableWindow(false);
-	 m_ColorClearPoint.EnableWindow(false);
+	m_ColorClearPoint.EnableWindow(false);
 	ClearColorPresetPreview();
 }
 
@@ -3458,7 +3465,7 @@ void CDlgTableMap::update_ocr_r$_display(void) {
 	m_ColorEdit.EnableWindow(false);
 	m_ColorDelete.EnableWindow(false);
 	m_ColorAddPoint.EnableWindow(false);
-	 m_ColorClearPoint.EnableWindow(false);
+	m_ColorClearPoint.EnableWindow(false);
 
 	// Auto-Ocr processing
 	if (sel_template != p_tablemap->tpl$()->end())
@@ -3552,8 +3559,10 @@ void CDlgTableMap::update_ocr_r$_display(void) {
 		m_ColorCombo.EnableWindow(true);
 		m_ColorAdd.EnableWindow(true);
 		m_ColorEdit.EnableWindow(m_ColorCombo.GetCurSel() != CB_ERR);
-		m_ColorDelete.EnableWindow(m_ColorCombo.GetCurSel() != CB_ERR);
-		m_ColorAddPoint.EnableWindow(m_ColorCombo.GetCurSel() != CB_ERR);
+		bool color_preset_can_have_point = m_ColorCombo.GetCurSel() != CB_ERR && (int)m_ColorCombo.GetItemData(m_ColorCombo.GetCurSel()) != kDefaultColorPresetIndex;
+		m_ColorDelete.EnableWindow(color_preset_can_have_point);
+		m_ColorAddPoint.EnableWindow(color_preset_can_have_point);
+		m_ColorClearPoint.EnableWindow(color_preset_can_have_point);
 	}
 
 	if (sel_region != p_tablemap->r$()->end()) {
@@ -3660,7 +3669,7 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 	m_ColorEdit.EnableWindow(false);
 	m_ColorDelete.EnableWindow(false);
 	m_ColorAddPoint.EnableWindow(false);
-	 m_ColorClearPoint.EnableWindow(false);
+	m_ColorClearPoint.EnableWindow(false);
 
 	// Left/top/right/bottom edits/spinners
 	if (!dont_update_spinners && sel_template != p_tablemap->tpl$()->end())
@@ -3775,8 +3784,10 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 		m_ColorCombo.EnableWindow(true);
 		m_ColorAdd.EnableWindow(true);
 		m_ColorEdit.EnableWindow(m_ColorCombo.GetCurSel() != CB_ERR);
-		m_ColorDelete.EnableWindow(m_ColorCombo.GetCurSel() != CB_ERR);
-		m_ColorAddPoint.EnableWindow(m_ColorCombo.GetCurSel() != CB_ERR);
+		bool color_preset_can_have_point = m_ColorCombo.GetCurSel() != CB_ERR && (int)m_ColorCombo.GetItemData(m_ColorCombo.GetCurSel()) != kDefaultColorPresetIndex;
+		m_ColorDelete.EnableWindow(color_preset_can_have_point);
+		m_ColorAddPoint.EnableWindow(color_preset_can_have_point);
+		m_ColorClearPoint.EnableWindow(color_preset_can_have_point);
 	}
 
 	if (sel_template != p_tablemap->tpl$()->end()) return;

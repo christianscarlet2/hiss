@@ -13,6 +13,7 @@ public:
 
 	BOOL Create(CWnd *owner, unsigned short port);
 	void NavigateToDisplay(unsigned short port);
+	void AttachToOwner(void);
 
 protected:
 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
@@ -21,6 +22,7 @@ protected:
 private:
 	void ResizeBrowser(void);
 
+	CWnd *_owner;
 	ICoreWebView2Controller *_controller;
 	ICoreWebView2 *_webview;
 	unsigned short _port;

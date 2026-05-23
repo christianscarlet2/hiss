@@ -40,6 +40,8 @@ public:
   void ArrangeWindows();
 	void LoadMostRecentTablemapIfNeeded();
 	CString MostRecentExistingTablemap();
+	void RememberTablemap(CString path);
+	CString LastRememberedTablemap();
 
 public:
 	int				sessionnum;

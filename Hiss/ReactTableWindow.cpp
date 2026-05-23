@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "ReactTableWindow.h"
+#include "CopenHoldemStatusbar.h"
 #include <wrl.h>
 #include "WebView2.h"
 
@@ -19,6 +20,7 @@ END_MESSAGE_MAP()
 
 CReactTableWindow::CReactTableWindow()
 {
+	_owner = NULL;
 	_controller = NULL;
 	_webview = NULL;
 	_port = 0;
@@ -38,14 +40,18 @@ CReactTableWindow::~CReactTableWindow()
 
 BOOL CReactTableWindow::Create(CWnd *owner, unsigned short port)
 {
+	_owner = owner;
 	_port = port;
+	if (p_openholdem_statusbar != NULL) {
+		p_openholdem_statusbar->SetTableViewLoading();
+	}
 	CString class_name = AfxRegisterWndClass(
 		CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW,
 		AfxGetApp()->LoadStandardCursor(IDC_ARROW),
 		(HBRUSH)(COLOR_WINDOW + 1),
 		::LoadIcon(NULL, IDI_APPLICATION));
 
-	return CWnd::CreateEx(
+	BOOL created = CWnd::CreateEx(
 		WS_EX_TOOLWINDOW,
 		class_name,
 		"Hiss React Table Display",
@@ -56,6 +62,10 @@ BOOL CReactTableWindow::Create(CWnd *owner, unsigned short port)
 		kReactTableHeight,
 		owner == NULL ? NULL : owner->GetSafeHwnd(),
 		NULL);
+	if (created) {
+		AttachToOwner();
+	}
+	return created;
 }
 
 int CReactTableWindow::OnCreate(LPCREATESTRUCT lpCreateStruct)
@@ -84,6 +94,22 @@ int CReactTableWindow::OnCreate(LPCREATESTRUCT lpCreateStruct)
 							_controller = controller;
 							_controller->AddRef();
 							_controller->get_CoreWebView2(&_webview);
+							if (_webview != NULL) {
+								EventRegistrationToken navigation_completed_token = {};
+								_webview->add_NavigationCompleted(
+									Callback<ICoreWebView2NavigationCompletedEventHandler>(
+										[](ICoreWebView2 *sender, ICoreWebView2NavigationCompletedEventArgs *args) -> HRESULT {
+											BOOL success = FALSE;
+											if (args != NULL) {
+												args->get_IsSuccess(&success);
+											}
+											if (success && p_openholdem_statusbar != NULL) {
+												p_openholdem_statusbar->SetTableViewReady();
+											}
+											return S_OK;
+										}).Get(),
+									&navigation_completed_token);
+							}
 							ResizeBrowser();
 							NavigateToDisplay(_port);
 							return S_OK;
@@ -113,6 +139,20 @@ void CReactTableWindow::ResizeBrowser(void)
 	_controller->put_Bounds(bounds);
 }
 
+void CReactTableWindow::AttachToOwner(void)
+{
+	if (_owner == NULL || !::IsWindow(_owner->GetSafeHwnd()) || !::IsWindow(GetSafeHwnd())) {
+		return;
+	}
+
+	CRect owner_rect, rect;
+	_owner->GetWindowRect(&owner_rect);
+	GetWindowRect(&rect);
+	int x = owner_rect.right - rect.Width();
+	int y = owner_rect.bottom;
+	SetWindowPos(NULL, x, y, rect.Width(), rect.Height(), SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
 void CReactTableWindow::NavigateToDisplay(unsigned short port)
 {
 	if (_webview == NULL || port == 0) {
@@ -121,5 +161,8 @@ void CReactTableWindow::NavigateToDisplay(unsigned short port)
 
 	CString url;
 	url.Format("http://127.0.0.1:%u/table-display/", port);
+	if (p_openholdem_statusbar != NULL) {
+		p_openholdem_statusbar->SetTableViewLoading();
+	}
 	_webview->Navigate(CStringW(url));
 }

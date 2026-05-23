@@ -36,6 +36,9 @@ COpenHoldemStatusbar::COpenHoldemStatusbar(CWnd *main_window) {
   _main_window = main_window;
   InitStatusbar();
   SetLastAction("");
+  _tableview_status = "";
+  _tableview_loading = false;
+  _tableview_spinner_frame = 0;
   SetPrWin(0, 0, 0);
   SetHandrank(0);
 }
@@ -53,7 +56,7 @@ void COpenHoldemStatusbar::InitStatusbar() {
   };
   _status_bar.SetIndicators(indicators, sizeof(indicators) / sizeof(UINT));
   int position = 0;
-  _status_bar.SetPaneInfo(position, ID_INDICATOR_STATUS_ACTION, NULL, 100);
+  _status_bar.SetPaneInfo(position, ID_INDICATOR_STATUS_ACTION, NULL, 180);
   ++position;
   _status_bar.SetPaneInfo(position, ID_INDICATOR_STATUS_HANDRANK, NULL, 100);
   ++position;
@@ -87,9 +90,24 @@ void COpenHoldemStatusbar::OnUpdateStatusbar() {
     // Don't change anything, keep information
   }
   // Display data
-  _status_bar.SetPaneText(_status_bar.CommandToIndex(ID_INDICATOR_STATUS_ACTION), LastAction());
+  _status_bar.SetPaneText(_status_bar.CommandToIndex(ID_INDICATOR_STATUS_ACTION), StatusActionText());
 	_status_bar.SetPaneText(_status_bar.CommandToIndex(ID_INDICATOR_STATUS_HANDRANK), _status_handrank);
 	_status_bar.SetPaneText(_status_bar.CommandToIndex(ID_INDICATOR_STATUS_PRWIN), _status_prwin);
+}
+
+CString COpenHoldemStatusbar::StatusActionText() {
+  if (_tableview_status.IsEmpty()) {
+    return LastAction();
+  }
+  if (!_tableview_loading) {
+    return _tableview_status;
+  }
+
+  static const char spinner_frames[] = { '|', '/', '-', '\\' };
+  CString status;
+  status.Format("%s %c", _tableview_status, spinner_frames[_tableview_spinner_frame % 4]);
+  ++_tableview_spinner_frame;
+  return status;
 }
 
 CString COpenHoldemStatusbar::LastAction() {
@@ -112,4 +130,15 @@ void COpenHoldemStatusbar::SetPrWin(double prwin, double prtie, double prlos) {
   _prwin = prwin;
   _prtie = prtie;
   _prlos = prlos;
+}
+
+void COpenHoldemStatusbar::SetTableViewLoading() {
+  _tableview_status = "Loading Tableview..";
+  _tableview_loading = true;
+  _tableview_spinner_frame = 0;
+}
+
+void COpenHoldemStatusbar::SetTableViewReady() {
+  _tableview_status = "Tableview ready :)";
+  _tableview_loading = false;
 }

@@ -25,9 +25,12 @@ class COpenHoldemStatusbar {
    void SetLastAction(CString action) { _last_action = action; }
    void SetHandrank(int handrank)     { _handrank = handrank; }
    void SetPrWin(double prwin, double prtie, double prlos);
+   void SetTableViewLoading();
+   void SetTableViewReady();
  private:
 	void InitStatusbar();
   CString LastAction();
+  CString StatusActionText();
  private:
 	CStatusBar _status_bar;
 	CWnd    *_main_window;
@@ -39,6 +42,9 @@ class COpenHoldemStatusbar {
  private:
   // Info to be displayed
   CString _last_action;
+  CString _tableview_status;
+  bool _tableview_loading;
+  int _tableview_spinner_frame;
   // to do!!! last line
   CString	_status_handrank;
   CString	_status_prwin;

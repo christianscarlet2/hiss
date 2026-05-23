@@ -226,6 +226,9 @@ void CMainFrame::OnMove(int x, int y) {
 	if (p_chat_terminal != NULL) {
 		p_chat_terminal->AttachToOwner(true);
 	}
+	if (p_react_table_window != NULL) {
+		p_react_table_window->AttachToOwner();
+	}
 }
 
 BOOL CMainFrame::PreCreateWindow(CREATESTRUCT& cs) {

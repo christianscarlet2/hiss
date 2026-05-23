@@ -122,6 +122,19 @@ COLORREF CAutoOcr::AverageFourByFour(Mat img, int center_x, int center_y)
 	return RGB(r / samples, g / samples, b / samples);
 }
 
+static const int kDefaultColorPresetIndex = -1;
+
+static CString ColorPresetKey(int index, const char *field)
+{
+	CString key;
+	if (index == kDefaultColorPresetIndex) {
+		key.Format("oscoloripdefault%s", field);
+	} else {
+		key.Format("oscolorip%d%s", index, field);
+	}
+	return key;
+}
+
 bool CAutoOcr::TryColorPresetSettings(Mat img_orig, RMapCI region, SAutoOcrSettings *settings)
 {
 	if (settings == NULL || p_tablemap == NULL) {
@@ -132,13 +145,9 @@ bool CAutoOcr::TryColorPresetSettings(Mat img_orig, RMapCI region, SAutoOcrSetti
 	int best_index = -1;
 	long best_distance = LONG_MAX;
 	for (int i = 0; i < count; ++i) {
-		CString key;
-		key.Format("oscolorip%dpointx", i);
-		CString point_x_text = p_tablemap->GetTMSymbol(key);
-		key.Format("oscolorip%dpointy", i);
-		CString point_y_text = p_tablemap->GetTMSymbol(key);
-		key.Format("oscolorip%dcolor", i);
-		CString color_text = p_tablemap->GetTMSymbol(key);
+		CString point_x_text = p_tablemap->GetTMSymbol(ColorPresetKey(i, "pointx"));
+		CString point_y_text = p_tablemap->GetTMSymbol(ColorPresetKey(i, "pointy"));
+		CString color_text = p_tablemap->GetTMSymbol(ColorPresetKey(i, "color"));
 		if (point_x_text.IsEmpty() || point_y_text.IsEmpty() || color_text.IsEmpty()) {
 			continue;
 		}
@@ -162,29 +171,25 @@ bool CAutoOcr::TryColorPresetSettings(Mat img_orig, RMapCI region, SAutoOcrSetti
 	}
 
 	if (best_index < 0) {
-		return false;
+		best_index = kDefaultColorPresetIndex;
 	}
 
-	CString key, text;
-	key.Format("oscolorip%duse_default", best_index);
-	bool use_default = atoi(p_tablemap->GetTMSymbol(key).GetString()) != 0;
-	key.Format("oscolorip%dthreshold", best_index);
-	text = p_tablemap->GetTMSymbol(key);
+	CString text;
+	text = p_tablemap->GetTMSymbol(ColorPresetKey(best_index, "use_default"));
+	bool use_default = text.IsEmpty() ? best_index == kDefaultColorPresetIndex : atoi(text.GetString()) != 0;
+	text = p_tablemap->GetTMSymbol(ColorPresetKey(best_index, "threshold"));
 	if (!use_default && !text.IsEmpty()) {
 		settings->threshold = atoi(text.GetString());
 	}
-	key.Format("oscolorip%duse_crop", best_index);
-	text = p_tablemap->GetTMSymbol(key);
+	text = p_tablemap->GetTMSymbol(ColorPresetKey(best_index, "use_crop"));
 	if (!text.IsEmpty()) {
 		settings->use_cropping = atoi(text.GetString()) != 0;
 	}
-	key.Format("oscolorip%dcrop", best_index);
-	text = p_tablemap->GetTMSymbol(key);
+	text = p_tablemap->GetTMSymbol(ColorPresetKey(best_index, "crop"));
 	if (!text.IsEmpty()) {
 		settings->crop_size = atoi(text.GetString());
 	}
-	key.Format("oscolorip%dpsm", best_index);
-	text = p_tablemap->GetTMSymbol(key);
+	text = p_tablemap->GetTMSymbol(ColorPresetKey(best_index, "psm"));
 	if (!text.IsEmpty()) {
 		settings->page_seg_mode = atoi(text.GetString());
 	}
