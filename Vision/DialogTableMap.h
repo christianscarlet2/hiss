@@ -154,8 +154,7 @@ protected:
 	CButton				m_NudgeUpLeft, m_NudgeUp, m_NudgeUpRight, m_NudgeRight, m_NudgeDownRight, m_NudgeDown;
 	CButton				m_NudgeDownLeft, m_NudgeLeft;
 	CButton				m_UseCrop, m_UseDefault;
-	CButton				m_UpdateOcrNow;
-	CMenu				m_TableMapMenu;
+	CButton\t\t\tm_UpdateOcrNow;\r\n\tCComboBox\t\tm_ImageProcessingPreset;\r\n\tCButton\t\t\tm_AddPreset, m_DeletePreset, m_LoadPreset;\r\n\tCMenu				m_TableMapMenu;
 	CPen				black_pen, green_pen, red_pen, blue_pen, white_dot_pen, null_pen;
 	CBrush				white_brush, lt_gray_brush, gray_brush, red_brush, yellow_brush;
 	LOGFONT				lf_fixed;
@@ -165,11 +164,15 @@ protected:
 	HBITMAP				h_picker_bitmap, h_drawrect_bitmap;
 	bool				picker_cursor;
 	HCURSOR				hCurPicker, hCurStandard;
-	bool				ignore_changes;
-	CEdit				m_status_cards, m_status_fonts;
-	COLORREF			m_crColor;
+	bool				ignore_changes;        CEdit                           m_status_cards, m_status_fonts;
 
 private:
+        void AddImageProcessingPreset();
+        void DeleteSelectedImageProcessingPreset();
+        void LoadSelectedImageProcessingPreset();
+        void RefreshImageProcessingPresetList();
+        ImageProcessingPreset GetCurrentImageProcessingPreset();
+        void ApplyImageProcessingPreset(const ImageProcessingPreset& preset);
 	RECT detectTemplate(Mat area, Mat tpl, int match_mode);
 	void DetectAndShowTemplate(string name);
 	CString GetDetectTemplateResult(CString area_name, CString tpl_name, RECT* rect_result);
