@@ -35,8 +35,12 @@ public:
 
 protected:
 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
+	afx_msg void OnPaint();
 	afx_msg void OnSize(UINT nType, int cx, int cy);
 	afx_msg void OnMoving(UINT fwSide, LPRECT pRect);
+	afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
+	afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
+	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
 	afx_msg void OnClearClicked();
 	afx_msg void OnSendClicked();
 	afx_msg void OnScreenChanged();
@@ -50,6 +54,7 @@ protected:
 	afx_msg void OnViewRangeSelector();
 	afx_msg void OnUpdateViewRangeSelector(CCmdUI *pCmdUI);
 	afx_msg void OnHoleCardsChanged();
+	afx_msg void OnVpipChanged();
 	afx_msg void OnRangeChanged(UINT id);
 	afx_msg LRESULT OnAppendMessage(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnClearTerminal(WPARAM wParam, LPARAM lParam);
@@ -67,6 +72,17 @@ private:
 	CString CalculatePotOddsText(CString hole_cards, CString board_cards, bool use_range, bool reverse, CString label);
 	void BuildRangeSelector(void);
 	void SetRangeSelectorVisible(bool visible);
+	void DrawRangeSelector(CDC *dc);
+	int RangeCellFromPoint(CPoint point, int *row = NULL, int *col = NULL) const;
+	int RangeRowTriangleFromPoint(CPoint point) const;
+	int RangeColumnTriangleFromPoint(CPoint point) const;
+	void SetRangeCell(int index, bool enabled);
+	void SetRangeRow(int row, bool enabled);
+	void SetRangeColumn(int col, bool enabled);
+	void RefreshRangeOdds(void);
+	void ApplyVpipRange(void);
+	int RangeComboCount(int row, int col) const;
+	int RangeScore(int row, int col) const;
 	CString RangeLabel(int row, int col);
 	bool RangeAllowsOpponentHand(int first_card, int second_card);
 
@@ -77,10 +93,11 @@ private:
 	CComboBox _screen_combo;
 	CEdit _chat_input;
 	CEdit _hole_cards_input;
+	CEdit _vpip_input;
 	CStatic _title;
 	CStatic _hole_cards_label;
+	CStatic _vpip_label;
 	CStatic _range_label;
-	CButton _range_buttons[169];
 	CStatic _section_labels[kChatTerminalSectionCount];
 	CEdit _sections[kChatTerminalSectionCount];
 	std::vector<SChatTerminalScreen> _screens;
@@ -92,6 +109,10 @@ private:
 	bool _reverse_implied_odds_enabled;
 	bool _range_selector_visible;
 	bool _range_enabled[169];
+	bool _range_dragging;
+	bool _range_drag_value;
+	int _last_drag_range_index;
+	CRect _range_grid_rect;
 	CString _last_pot_odds_board;
 };
 

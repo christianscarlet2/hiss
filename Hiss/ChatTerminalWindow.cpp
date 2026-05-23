@@ -5,6 +5,7 @@
 #include "CTableState.h"
 #include "HudManager.h"
 #include "inlines/eval.h"
+#include <algorithm>
 
 const UINT WM_CHAT_TERMINAL_APPEND = WM_APP + 410;
 const UINT WM_CHAT_TERMINAL_CLEAR = WM_APP + 411;
@@ -15,13 +16,16 @@ const int kTerminalGap = 8;
 const int kControlMargin = 8;
 const int kTopHeight = 30;
 const int kChatHeight = 44;
-const int kRangeSelectorHeight = 236;
+const int kRangeSelectorHeight = 258;
+const int kRangeCellSize = 24;
+const int kRangeHeaderSize = 18;
 
 const UINT IDC_TERMINAL_CLEAR = 24001;
 const UINT IDC_TERMINAL_SEND = 24002;
 const UINT IDC_TERMINAL_CHAT = 24003;
 const UINT IDC_TERMINAL_SCREEN = 24004;
 const UINT IDC_TERMINAL_HOLE_CARDS = 24005;
+const UINT IDC_TERMINAL_VPIP = 24006;
 const UINT IDC_TERMINAL_RANGE_BASE = 24200;
 const UINT ID_TERMINAL_FEATURE_POT_ODDS = 24101;
 const UINT ID_TERMINAL_FEATURE_IMPLIED_POT_ODDS = 24102;
@@ -43,8 +47,12 @@ IMPLEMENT_DYNAMIC(CChatTerminalWindow, CWnd)
 
 BEGIN_MESSAGE_MAP(CChatTerminalWindow, CWnd)
 	ON_WM_CREATE()
+	ON_WM_PAINT()
 	ON_WM_SIZE()
 	ON_WM_MOVING()
+	ON_WM_LBUTTONDOWN()
+	ON_WM_LBUTTONUP()
+	ON_WM_MOUSEMOVE()
 	ON_BN_CLICKED(IDC_TERMINAL_CLEAR, &CChatTerminalWindow::OnClearClicked)
 	ON_BN_CLICKED(IDC_TERMINAL_SEND, &CChatTerminalWindow::OnSendClicked)
 	ON_CBN_SELCHANGE(IDC_TERMINAL_SCREEN, &CChatTerminalWindow::OnScreenChanged)
@@ -58,7 +66,7 @@ BEGIN_MESSAGE_MAP(CChatTerminalWindow, CWnd)
 	ON_COMMAND(ID_TERMINAL_VIEW_RANGE_SELECTOR, &CChatTerminalWindow::OnViewRangeSelector)
 	ON_UPDATE_COMMAND_UI(ID_TERMINAL_VIEW_RANGE_SELECTOR, &CChatTerminalWindow::OnUpdateViewRangeSelector)
 	ON_EN_KILLFOCUS(IDC_TERMINAL_HOLE_CARDS, &CChatTerminalWindow::OnHoleCardsChanged)
-	ON_CONTROL_RANGE(BN_CLICKED, IDC_TERMINAL_RANGE_BASE, IDC_TERMINAL_RANGE_BASE + 168, &CChatTerminalWindow::OnRangeChanged)
+	ON_EN_KILLFOCUS(IDC_TERMINAL_VPIP, &CChatTerminalWindow::OnVpipChanged)
 	ON_MESSAGE(WM_CHAT_TERMINAL_APPEND, &CChatTerminalWindow::OnAppendMessage)
 	ON_MESSAGE(WM_CHAT_TERMINAL_CLEAR, &CChatTerminalWindow::OnClearTerminal)
 END_MESSAGE_MAP()
@@ -73,6 +81,9 @@ CChatTerminalWindow::CChatTerminalWindow()
 	_implied_pot_odds_enabled = false;
 	_reverse_implied_odds_enabled = false;
 	_range_selector_visible = false;
+	_range_dragging = false;
+	_range_drag_value = false;
+	_last_drag_range_index = -1;
 	for (int i = 0; i < 169; ++i) {
 		_range_enabled[i] = true;
 	}
@@ -122,6 +133,8 @@ int CChatTerminalWindow::OnCreate(LPCREATESTRUCT lpCreateStruct)
 	_screen_combo.Create(WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST, CRect(0, 0, 0, 0), this, IDC_TERMINAL_SCREEN);
 	_hole_cards_label.Create("Hole cards", WS_CHILD | WS_VISIBLE | SS_LEFT, CRect(0, 0, 0, 0), this);
 	_hole_cards_input.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL, CRect(0, 0, 0, 0), this, IDC_TERMINAL_HOLE_CARDS);
+	_vpip_label.Create("VPIP", WS_CHILD | WS_VISIBLE | SS_LEFT, CRect(0, 0, 0, 0), this);
+	_vpip_input.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, CRect(0, 0, 0, 0), this, IDC_TERMINAL_VPIP);
 	_chat_input.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL, CRect(0, 0, 0, 0), this, IDC_TERMINAL_CHAT);
 
 	_menu.CreateMenu();
@@ -172,6 +185,14 @@ void CChatTerminalWindow::OnSize(UINT nType, int cx, int cy)
 {
 	CWnd::OnSize(nType, cx, cy);
 	LayoutControls(cx, cy);
+}
+
+void CChatTerminalWindow::OnPaint()
+{
+	CPaintDC dc(this);
+	if (_range_selector_visible) {
+		DrawRangeSelector(&dc);
+	}
 }
 
 void CChatTerminalWindow::OnMoving(UINT fwSide, LPRECT pRect)
@@ -233,31 +254,24 @@ void CChatTerminalWindow::LayoutControls(int cx, int cy)
 	_screen_combo.MoveWindow(left + 150, top, 120, 120);
 	_hole_cards_label.MoveWindow(left + 278, top + 5, 58, 18);
 	_hole_cards_input.MoveWindow(left + 338, top, 48, 22);
+	_vpip_label.MoveWindow(left + 392, top + 5, 28, 18);
+	_vpip_input.MoveWindow(left + 424, top, 36, 22);
 	_clear_button.MoveWindow(right - 64, top, 64, 22);
 
 	int grid_top = top + kTopHeight;
 	if (_range_selector_visible) {
-		_range_label.MoveWindow(left, grid_top + 3, 140, 14);
+		_range_label.MoveWindow(left, grid_top + 3, 260, 14);
 		_range_label.ShowWindow(SW_SHOW);
-		const int cell_width = 34;
-		const int cell_height = 15;
-		const int range_left = left;
-		const int range_top = grid_top + 20;
-		for (int row = 0; row < 13; ++row) {
-			for (int col = 0; col < 13; ++col) {
-				int index = row * 13 + col;
-				_range_buttons[index].MoveWindow(range_left + col * cell_width, range_top + row * cell_height, cell_width - 1, cell_height - 1);
-				_range_buttons[index].ShowWindow(SW_SHOW);
-			}
-		}
+		_range_grid_rect.SetRect(left + kRangeHeaderSize, grid_top + 40,
+			left + kRangeHeaderSize + 13 * kRangeCellSize,
+			grid_top + 40 + 13 * kRangeCellSize);
 		grid_top += kRangeSelectorHeight;
 	}
 	else {
 		_range_label.ShowWindow(SW_HIDE);
-		for (int i = 0; i < 169; ++i) {
-			_range_buttons[i].ShowWindow(SW_HIDE);
-		}
+		_range_grid_rect.SetRectEmpty();
 	}
+	Invalidate(FALSE);
 	int chat_top = cy - kControlMargin - kChatHeight;
 	int grid_bottom = chat_top - kControlMargin;
 	int grid_height = max(120, grid_bottom - grid_top);
@@ -532,11 +546,79 @@ void CChatTerminalWindow::OnRangeChanged(UINT id)
 {
 	int index = (int)(id - IDC_TERMINAL_RANGE_BASE);
 	if (index >= 0 && index < 169) {
-		_range_enabled[index] = _range_buttons[index].GetCheck() != 0;
-		if (_implied_pot_odds_enabled || _reverse_implied_odds_enabled) {
-			UpdatePotOddsForCurrentBoard(true);
+		SetRangeCell(index, !_range_enabled[index]);
+	}
+}
+
+void CChatTerminalWindow::OnVpipChanged()
+{
+	ApplyVpipRange();
+	RefreshRangeOdds();
+}
+
+void CChatTerminalWindow::OnLButtonDown(UINT nFlags, CPoint point)
+{
+	if (_range_selector_visible && !_range_grid_rect.IsRectEmpty()) {
+		int row = RangeRowTriangleFromPoint(point);
+		if (row >= 0) {
+			bool enable = false;
+			for (int col = 0; col < 13; ++col) {
+				if (!_range_enabled[row * 13 + col]) {
+					enable = true;
+					break;
+				}
+			}
+			SetRangeRow(row, enable);
+			return;
+		}
+		int col = RangeColumnTriangleFromPoint(point);
+		if (col >= 0) {
+			bool enable = false;
+			for (int test_row = 0; test_row < 13; ++test_row) {
+				if (!_range_enabled[test_row * 13 + col]) {
+					enable = true;
+					break;
+				}
+			}
+			SetRangeColumn(col, enable);
+			return;
+		}
+		int index = RangeCellFromPoint(point);
+		if (index >= 0) {
+			_range_dragging = true;
+			_range_drag_value = !_range_enabled[index];
+			_last_drag_range_index = -1;
+			SetCapture();
+			SetRangeCell(index, _range_drag_value);
+			return;
 		}
 	}
+	CWnd::OnLButtonDown(nFlags, point);
+}
+
+void CChatTerminalWindow::OnLButtonUp(UINT nFlags, CPoint point)
+{
+	if (_range_dragging) {
+		_range_dragging = false;
+		_last_drag_range_index = -1;
+		if (GetCapture() == this) {
+			ReleaseCapture();
+		}
+		return;
+	}
+	CWnd::OnLButtonUp(nFlags, point);
+}
+
+void CChatTerminalWindow::OnMouseMove(UINT nFlags, CPoint point)
+{
+	if (_range_dragging) {
+		int index = RangeCellFromPoint(point);
+		if (index >= 0 && index != _last_drag_range_index) {
+			SetRangeCell(index, _range_drag_value);
+		}
+		return;
+	}
+	CWnd::OnMouseMove(nFlags, point);
 }
 
 void CChatTerminalWindow::SendChatText(void)
@@ -826,17 +908,8 @@ void CChatTerminalWindow::MaybeUpdatePotOddsFromTableState(void)
 
 void CChatTerminalWindow::BuildRangeSelector(void)
 {
-	for (int row = 0; row < 13; ++row) {
-		for (int col = 0; col < 13; ++col) {
-			int index = row * 13 + col;
-			_range_buttons[index].Create(RangeLabel(row, col),
-				WS_CHILD | BS_AUTOCHECKBOX | BS_PUSHLIKE,
-				CRect(0, 0, 0, 0),
-				this,
-				IDC_TERMINAL_RANGE_BASE + index);
-			_range_buttons[index].SetCheck(BST_CHECKED);
-			_range_buttons[index].ShowWindow(SW_HIDE);
-		}
+	for (int i = 0; i < 169; ++i) {
+		_range_enabled[i] = true;
 	}
 }
 
@@ -849,6 +922,248 @@ void CChatTerminalWindow::SetRangeSelectorVisible(bool visible)
 	CRect rect;
 	GetClientRect(&rect);
 	LayoutControls(rect.Width(), rect.Height());
+}
+
+void CChatTerminalWindow::DrawRangeSelector(CDC *dc)
+{
+	if (dc == NULL || _range_grid_rect.IsRectEmpty()) {
+		return;
+	}
+	const char *ranks = "AKQJT98765432";
+	CFont *old_font = dc->SelectObject(GetFont());
+	int old_mode = dc->SetBkMode(TRANSPARENT);
+	COLORREF old_text = dc->GetTextColor();
+	CPen grid_pen(PS_SOLID, 1, RGB(80, 80, 80));
+	CPen border_pen(PS_SOLID, 1, RGB(145, 145, 145));
+	CBrush enabled_brush(RGB(36, 116, 70));
+	CBrush disabled_brush(RGB(48, 48, 48));
+	CBrush triangle_brush(RGB(210, 210, 210));
+	CBrush *old_brush = dc->SelectObject(&disabled_brush);
+	CPen *old_pen = dc->SelectObject(&grid_pen);
+
+	CRect selector_rect(_range_grid_rect.left - kRangeHeaderSize, _range_grid_rect.top - kRangeHeaderSize,
+		_range_grid_rect.right, _range_grid_rect.bottom);
+	dc->FillSolidRect(selector_rect, RGB(28, 28, 28));
+
+	for (int col = 0; col < 13; ++col) {
+		int x = _range_grid_rect.left + col * kRangeCellSize;
+		CString rank;
+		rank.Format("%c", ranks[col]);
+		dc->SetTextColor(RGB(220, 220, 220));
+		dc->DrawText(rank, CRect(x, _range_grid_rect.top - kRangeHeaderSize + 1, x + kRangeCellSize, _range_grid_rect.top - 2),
+			DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+		CPoint triangle[3] = {
+			CPoint(x + kRangeCellSize / 2, _range_grid_rect.top - 2),
+			CPoint(x + 5, _range_grid_rect.top - 12),
+			CPoint(x + kRangeCellSize - 5, _range_grid_rect.top - 12)
+		};
+		dc->SelectObject(&triangle_brush);
+		dc->Polygon(triangle, 3);
+	}
+
+	for (int row = 0; row < 13; ++row) {
+		int y = _range_grid_rect.top + row * kRangeCellSize;
+		CString rank;
+		rank.Format("%c", ranks[row]);
+		dc->SetTextColor(RGB(220, 220, 220));
+		dc->DrawText(rank, CRect(_range_grid_rect.left - kRangeHeaderSize, y + 4, _range_grid_rect.left - 4, y + kRangeCellSize),
+			DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+		CPoint triangle[3] = {
+			CPoint(_range_grid_rect.left - 2, y + kRangeCellSize / 2),
+			CPoint(_range_grid_rect.left - 12, y + 5),
+			CPoint(_range_grid_rect.left - 12, y + kRangeCellSize - 5)
+		};
+		dc->SelectObject(&triangle_brush);
+		dc->Polygon(triangle, 3);
+	}
+
+	for (int row = 0; row < 13; ++row) {
+		for (int col = 0; col < 13; ++col) {
+			int index = row * 13 + col;
+			CRect cell(_range_grid_rect.left + col * kRangeCellSize,
+				_range_grid_rect.top + row * kRangeCellSize,
+				_range_grid_rect.left + (col + 1) * kRangeCellSize,
+				_range_grid_rect.top + (row + 1) * kRangeCellSize);
+			dc->SelectObject(_range_enabled[index] ? &enabled_brush : &disabled_brush);
+			dc->Rectangle(cell);
+			dc->SetTextColor(_range_enabled[index] ? RGB(255, 255, 255) : RGB(160, 160, 160));
+			dc->DrawText(RangeLabel(row, col), cell, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+		}
+	}
+
+	dc->SelectObject(&border_pen);
+	dc->SelectStockObject(NULL_BRUSH);
+	dc->Rectangle(_range_grid_rect);
+	dc->SetTextColor(old_text);
+	dc->SetBkMode(old_mode);
+	dc->SelectObject(old_pen);
+	dc->SelectObject(old_brush);
+	if (old_font != NULL) {
+		dc->SelectObject(old_font);
+	}
+}
+
+int CChatTerminalWindow::RangeCellFromPoint(CPoint point, int *row, int *col) const
+{
+	if (_range_grid_rect.IsRectEmpty() || !_range_grid_rect.PtInRect(point)) {
+		return -1;
+	}
+	int cell_col = (point.x - _range_grid_rect.left) / kRangeCellSize;
+	int cell_row = (point.y - _range_grid_rect.top) / kRangeCellSize;
+	if (cell_row < 0 || cell_row >= 13 || cell_col < 0 || cell_col >= 13) {
+		return -1;
+	}
+	if (row != NULL) {
+		*row = cell_row;
+	}
+	if (col != NULL) {
+		*col = cell_col;
+	}
+	return cell_row * 13 + cell_col;
+}
+
+int CChatTerminalWindow::RangeRowTriangleFromPoint(CPoint point) const
+{
+	if (_range_grid_rect.IsRectEmpty()) {
+		return -1;
+	}
+	CRect row_header(_range_grid_rect.left - kRangeHeaderSize, _range_grid_rect.top,
+		_range_grid_rect.left, _range_grid_rect.bottom);
+	if (!row_header.PtInRect(point)) {
+		return -1;
+	}
+	int row = (point.y - _range_grid_rect.top) / kRangeCellSize;
+	return row >= 0 && row < 13 ? row : -1;
+}
+
+int CChatTerminalWindow::RangeColumnTriangleFromPoint(CPoint point) const
+{
+	if (_range_grid_rect.IsRectEmpty()) {
+		return -1;
+	}
+	CRect column_header(_range_grid_rect.left, _range_grid_rect.top - kRangeHeaderSize,
+		_range_grid_rect.right, _range_grid_rect.top);
+	if (!column_header.PtInRect(point)) {
+		return -1;
+	}
+	int col = (point.x - _range_grid_rect.left) / kRangeCellSize;
+	return col >= 0 && col < 13 ? col : -1;
+}
+
+void CChatTerminalWindow::SetRangeCell(int index, bool enabled)
+{
+	if (index < 0 || index >= 169) {
+		return;
+	}
+	_last_drag_range_index = index;
+	if (_range_enabled[index] == enabled) {
+		return;
+	}
+	_range_enabled[index] = enabled;
+	Invalidate(FALSE);
+	RefreshRangeOdds();
+}
+
+void CChatTerminalWindow::SetRangeRow(int row, bool enabled)
+{
+	if (row < 0 || row >= 13) {
+		return;
+	}
+	for (int col = 0; col < 13; ++col) {
+		_range_enabled[row * 13 + col] = enabled;
+	}
+	Invalidate(FALSE);
+	RefreshRangeOdds();
+}
+
+void CChatTerminalWindow::SetRangeColumn(int col, bool enabled)
+{
+	if (col < 0 || col >= 13) {
+		return;
+	}
+	for (int row = 0; row < 13; ++row) {
+		_range_enabled[row * 13 + col] = enabled;
+	}
+	Invalidate(FALSE);
+	RefreshRangeOdds();
+}
+
+void CChatTerminalWindow::RefreshRangeOdds(void)
+{
+	if (_implied_pot_odds_enabled || _reverse_implied_odds_enabled) {
+		UpdatePotOddsForCurrentBoard(true);
+	}
+}
+
+void CChatTerminalWindow::ApplyVpipRange(void)
+{
+	CString vpip_text;
+	_vpip_input.GetWindowText(vpip_text);
+	vpip_text.Trim();
+	if (vpip_text.IsEmpty()) {
+		return;
+	}
+	int vpip = atoi(vpip_text);
+	if (vpip < 0) vpip = 0;
+	if (vpip > 100) vpip = 100;
+	int target_combos = (int)(1326.0 * (double)vpip / 100.0 + 0.5);
+
+	struct SRangeChoice {
+		int index;
+		int score;
+		int combos;
+	};
+	std::vector<SRangeChoice> choices;
+	choices.reserve(169);
+	for (int row = 0; row < 13; ++row) {
+		for (int col = 0; col < 13; ++col) {
+			SRangeChoice choice;
+			choice.index = row * 13 + col;
+			choice.score = RangeScore(row, col);
+			choice.combos = RangeComboCount(row, col);
+			choices.push_back(choice);
+		}
+	}
+	std::sort(choices.begin(), choices.end(), [](const SRangeChoice &a, const SRangeChoice &b) {
+		if (a.score != b.score) return a.score > b.score;
+		return a.index < b.index;
+	});
+
+	for (int i = 0; i < 169; ++i) {
+		_range_enabled[i] = false;
+	}
+	int selected_combos = 0;
+	for (size_t i = 0; i < choices.size() && selected_combos < target_combos; ++i) {
+		_range_enabled[choices[i].index] = true;
+		selected_combos += choices[i].combos;
+	}
+	Invalidate(FALSE);
+}
+
+int CChatTerminalWindow::RangeComboCount(int row, int col) const
+{
+	if (row == col) return 6;
+	if (row < col) return 4;
+	return 12;
+}
+
+int CChatTerminalWindow::RangeScore(int row, int col) const
+{
+	int high = 12 - min(row, col);
+	int low = 12 - max(row, col);
+	int gap = abs(row - col) - 1;
+	if (gap < 0) gap = 0;
+	int connected_bonus = max(0, 4 - gap) * 18;
+	int broadway_bonus = (high >= 8 && low >= 8) ? 90 : 0;
+	if (row == col) {
+		return 10000 + high * 120;
+	}
+	if (row < col) {
+		return 6000 + high * 120 + low * 34 + connected_bonus + broadway_bonus - gap * 22;
+	}
+	return 3000 + high * 115 + low * 28 + connected_bonus + broadway_bonus - gap * 28;
 }
 
 CString CChatTerminalWindow::RangeLabel(int row, int col)
