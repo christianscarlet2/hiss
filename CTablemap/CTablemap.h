@@ -17,6 +17,7 @@
 #include <atlstr.h>
 #include <stdint.h>
 #include <map>
+#include <vector>
 #include "../CTransform/pdiff/RGBAImage.h"
 #include "..\Shared\MagicNumbers\MagicNumbers.h"
 #include "..\Shared\CCritSec\CCritSec.h"
@@ -61,6 +62,8 @@ struct STablemapRegion {
 	int				crop_size;
 	int				box_color;
 	CString			transform;
+	CString			color_preset_name;	// Selected color preset name
+	std::vector<COLORREF> color_preset_points;	// Detected color points for this region
 };
 
 typedef std::pair<CString, STablemapRegion> RPair;
