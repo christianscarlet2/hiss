@@ -334,6 +334,10 @@ BEGIN_MESSAGE_MAP(CDlgTableMap, CDialog)
 	ON_BN_CLICKED(IDC_COLOR_ADD, &CDlgTableMap::OnBnClickedColorAdd)
 	ON_BN_CLICKED(IDC_COLOR_EDIT, &CDlgTableMap::OnBnClickedColorEdit)
 	ON_BN_CLICKED(IDC_COLOR_DELETE, &CDlgTableMap::OnBnClickedColorDelete)
+	ON_EN_CHANGE(IDC_COLOR_A, &CDlgTableMap::OnOcrRegionChange)
+	ON_EN_CHANGE(IDC_COLOR_R, &CDlgTableMap::OnOcrRegionChange)
+	ON_EN_CHANGE(IDC_COLOR_G, &CDlgTableMap::OnOcrRegionChange)
+	ON_EN_CHANGE(IDC_COLOR_B, &CDlgTableMap::OnOcrRegionChange)
 	ON_BN_CLICKED(IDC_COLOR_ADD_POINT, &CDlgTableMap::OnBnClickedColorAddPoint)
 	ON_BN_CLICKED(IDC_COLOR_CLEAR_POINT, &CDlgTableMap::OnBnClickedColorClearPoint)
 	ON_STN_CLICKED(IDC_COLOR_PREVIEW, &CDlgTableMap::OnStnClickedColorPreview)
@@ -1410,24 +1414,29 @@ void CDlgTableMap::SaveColorPreset(int index, CString name, COLORREF color)
 	p_tablemap->s$_insert(symbol);
 
 	key = ColorPresetKey(index, "use_crop");
-	p_tablemap->s$_erase(key);
-	symbol.name = key;
-	symbol.text.Format("%d", m_UseCrop.GetCheck() ? 1 : 0);
-	p_tablemap->s$_insert(symbol);
-
-	m_CropSize.GetWindowText(text);
+	text = p_tablemap->GetTMSymbol(key);
+	m_UseCrop.SetCheck(!text.IsEmpty() && atoi(text.GetString()) != 0);
 	key = ColorPresetKey(index, "crop");
-	p_tablemap->s$_erase(key);
-	symbol.name = key;
-	symbol.text = text;
-	p_tablemap->s$_insert(symbol);
-
+	text = p_tablemap->GetTMSymbol(key);
+	if (!text.IsEmpty()) {
+		SetEditTextUnlessFocused(m_CropSize, text);
+		m_CropSpin.SetPos(atoi(text.GetString()));
+	} else {
+		text.Format("%d", kDefaultCropSize);
+		SetEditTextUnlessFocused(m_CropSize, text);
+		m_CropSpin.SetPos(kDefaultCropSize);
+	}
 	key = ColorPresetKey(index, "box");
-	p_tablemap->s$_erase(key);
-	symbol.name = key;
-	symbol.text.Format("%d", m_BoxColor.GetCurSel());
-	p_tablemap->s$_insert(symbol);
-
+	text = p_tablemap->GetTMSymbol(key);
+	if (!text.IsEmpty()) {
+		m_BoxColor.SetCurSel(atoi(text.GetString()));
+	} else {
+		m_BoxColor.SetCurSel(kDefaultBoxColor);
+	}
+	bool use_crop = m_UseCrop.GetCheck() != 0;
+	m_CropSize.EnableWindow(use_crop);
+	m_CropSpin.EnableWindow(use_crop);
+	m_BoxColor.EnableWindow(use_crop);
 	key = ColorPresetKey(index, "psm");
 	p_tablemap->s$_erase(key);
 	symbol.name = key;
@@ -1506,7 +1515,7 @@ void CDlgTableMap::ApplySelectedColorPreset(bool update_region)
 	if (!text.IsEmpty()) {
 		SetEditTextUnlessFocused(m_CropSize, text);
 		m_CropSpin.SetPos(atoi(text.GetString()));
-	} else if (index == kDefaultColorPresetIndex) {
+	} else {
 		text.Format("%d", kDefaultCropSize);
 		SetEditTextUnlessFocused(m_CropSize, text);
 		m_CropSpin.SetPos(kDefaultCropSize);
@@ -1515,9 +1524,13 @@ void CDlgTableMap::ApplySelectedColorPreset(bool update_region)
 	text = p_tablemap->GetTMSymbol(key);
 	if (!text.IsEmpty()) {
 		m_BoxColor.SetCurSel(atoi(text.GetString()));
-	} else if (index == kDefaultColorPresetIndex) {
+	} else {
 		m_BoxColor.SetCurSel(kDefaultBoxColor);
 	}
+	bool use_crop = m_UseCrop.GetCheck() != 0;
+	m_CropSize.EnableWindow(use_crop);
+	m_CropSpin.EnableWindow(use_crop);
+	m_BoxColor.EnableWindow(use_crop);
 	key = ColorPresetKey(index, "psm");
 	text = p_tablemap->GetTMSymbol(key);
 	int psm = text.IsEmpty() ? tesseract::PSM_SINGLE_WORD : atoi(text.GetString());
@@ -1527,17 +1540,25 @@ void CDlgTableMap::ApplySelectedColorPreset(bool update_region)
 			break;
 		}
 	}
-	key = ColorPresetKey(index, "color");
-	text = p_tablemap->GetTMSymbol(key);
-	if (!text.IsEmpty()) {
-		int alpha = 255;
-		CString alpha_text = p_tablemap->GetTMSymbol(ColorPresetKey(index, "a"));
-		if (!alpha_text.IsEmpty()) {
-			alpha = atoi(alpha_text.GetString());
+	CString alpha_text = p_tablemap->GetTMSymbol(ColorPresetKey(index, "a"));
+	CString red_text = p_tablemap->GetTMSymbol(ColorPresetKey(index, "r"));
+	CString green_text = p_tablemap->GetTMSymbol(ColorPresetKey(index, "g"));
+	CString blue_text = p_tablemap->GetTMSymbol(ColorPresetKey(index, "b"));
+	if (!red_text.IsEmpty() || !green_text.IsEmpty() || !blue_text.IsEmpty()) {
+		int alpha = alpha_text.IsEmpty() ? 255 : atoi(alpha_text.GetString());
+		int red = red_text.IsEmpty() ? 0 : atoi(red_text.GetString());
+		int green = green_text.IsEmpty() ? 0 : atoi(green_text.GetString());
+		int blue = blue_text.IsEmpty() ? 0 : atoi(blue_text.GetString());
+		SetColorPresetInputs(RGB(red, green, blue), alpha);
+	} else {
+		key = ColorPresetKey(index, "color");
+		text = p_tablemap->GetTMSymbol(key);
+		if (!text.IsEmpty()) {
+			int alpha = alpha_text.IsEmpty() ? 255 : atoi(alpha_text.GetString());
+			SetColorPresetInputs(strtoul(text.GetString(), NULL, 16), alpha);
+		} else if (index == kDefaultColorPresetIndex) {
+			SetColorPresetInputs(RGB(0, 0, 0));
 		}
-		SetColorPresetInputs(strtoul(text.GetString(), NULL, 16), alpha);
-	} else if (index == kDefaultColorPresetIndex) {
-		SetColorPresetInputs(RGB(0, 0, 0));
 	}
 	if (update_region) {
 		OnOcrRegionChange();
@@ -1547,6 +1568,8 @@ void CDlgTableMap::ApplySelectedColorPreset(bool update_region)
 void CDlgTableMap::SetColorPresetInputs(COLORREF color, int alpha)
 {
 	CString text;
+	bool previous_ignore_changes = ignore_changes;
+	ignore_changes = true;
 	text.Format("%d", max(0, min(255, alpha)));
 	m_ColorA.SetWindowText(text);
 	text.Format("%d", GetRValue(color));
@@ -1555,6 +1578,7 @@ void CDlgTableMap::SetColorPresetInputs(COLORREF color, int alpha)
 	m_ColorG.SetWindowText(text);
 	text.Format("%d", GetBValue(color));
 	m_ColorB.SetWindowText(text);
+	ignore_changes = previous_ignore_changes;
 }
 
 COLORREF CDlgTableMap::GetColorPresetInputColor(void)
