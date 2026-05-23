@@ -84,7 +84,114 @@ Mat CAutoOcr::binarize_array_opencv(Mat image, int threshold) {
 	return ret;
 }
 
-Mat CAutoOcr::prepareImage(Mat img_orig, RMapCI region, bool binarize, int threshold, bool second_pass) {
+COLORREF CAutoOcr::AverageFourByFour(Mat img, int center_x, int center_y)
+{
+	long r = 0, g = 0, b = 0, samples = 0;
+	for (int y = center_y - 1; y <= center_y + 2; ++y) {
+		if (y < 0 || y >= img.rows) {
+			continue;
+		}
+		for (int x = center_x - 1; x <= center_x + 2; ++x) {
+			if (x < 0 || x >= img.cols) {
+				continue;
+			}
+			if (img.channels() == 4) {
+				Vec4b pixel = img.at<Vec4b>(y, x);
+				b += pixel[0];
+				g += pixel[1];
+				r += pixel[2];
+			}
+			else if (img.channels() == 3) {
+				Vec3b pixel = img.at<Vec3b>(y, x);
+				b += pixel[0];
+				g += pixel[1];
+				r += pixel[2];
+			}
+			else if (img.channels() == 1) {
+				uchar pixel = img.at<uchar>(y, x);
+				r += pixel;
+				g += pixel;
+				b += pixel;
+			}
+			++samples;
+		}
+	}
+	if (samples <= 0) {
+		return RGB(0, 0, 0);
+	}
+	return RGB(r / samples, g / samples, b / samples);
+}
+
+bool CAutoOcr::TryColorPresetSettings(Mat img_orig, RMapCI region, SAutoOcrSettings *settings)
+{
+	if (settings == NULL || p_tablemap == NULL) {
+		return false;
+	}
+
+	int count = atoi(p_tablemap->GetTMSymbol("oscoloripcount").GetString());
+	int best_index = -1;
+	long best_distance = LONG_MAX;
+	for (int i = 0; i < count; ++i) {
+		CString key;
+		key.Format("oscolorip%dpointx", i);
+		CString point_x_text = p_tablemap->GetTMSymbol(key);
+		key.Format("oscolorip%dpointy", i);
+		CString point_y_text = p_tablemap->GetTMSymbol(key);
+		key.Format("oscolorip%dcolor", i);
+		CString color_text = p_tablemap->GetTMSymbol(key);
+		if (point_x_text.IsEmpty() || point_y_text.IsEmpty() || color_text.IsEmpty()) {
+			continue;
+		}
+
+		int rel_x = atoi(point_x_text.GetString()) - (int)region->second.left;
+		int rel_y = atoi(point_y_text.GetString()) - (int)region->second.top;
+		if (rel_x < 0 || rel_y < 0 || rel_x >= img_orig.cols || rel_y >= img_orig.rows) {
+			continue;
+		}
+
+		COLORREF sampled = AverageFourByFour(img_orig, rel_x, rel_y);
+		COLORREF preset = strtoul(color_text.GetString(), NULL, 16);
+		long dr = (long)GetRValue(sampled) - (long)GetRValue(preset);
+		long dg = (long)GetGValue(sampled) - (long)GetGValue(preset);
+		long db = (long)GetBValue(sampled) - (long)GetBValue(preset);
+		long distance = dr * dr + dg * dg + db * db;
+		if (distance < best_distance) {
+			best_distance = distance;
+			best_index = i;
+		}
+	}
+
+	if (best_index < 0) {
+		return false;
+	}
+
+	CString key, text;
+	key.Format("oscolorip%duse_default", best_index);
+	bool use_default = atoi(p_tablemap->GetTMSymbol(key).GetString()) != 0;
+	key.Format("oscolorip%dthreshold", best_index);
+	text = p_tablemap->GetTMSymbol(key);
+	if (!use_default && !text.IsEmpty()) {
+		settings->threshold = atoi(text.GetString());
+	}
+	key.Format("oscolorip%duse_crop", best_index);
+	text = p_tablemap->GetTMSymbol(key);
+	if (!text.IsEmpty()) {
+		settings->use_cropping = atoi(text.GetString()) != 0;
+	}
+	key.Format("oscolorip%dcrop", best_index);
+	text = p_tablemap->GetTMSymbol(key);
+	if (!text.IsEmpty()) {
+		settings->crop_size = atoi(text.GetString());
+	}
+	key.Format("oscolorip%dpsm", best_index);
+	text = p_tablemap->GetTMSymbol(key);
+	if (!text.IsEmpty()) {
+		settings->page_seg_mode = atoi(text.GetString());
+	}
+	return true;
+}
+
+Mat CAutoOcr::prepareImage(Mat img_orig, const SAutoOcrSettings &settings, bool binarize, int threshold, bool second_pass) {
 	// Prepare image for OCR
 	//  !!  Do not change those settings and values !!   //
 	//  Or display on OCR view control will be distorded //
@@ -110,12 +217,12 @@ Mat CAutoOcr::prepareImage(Mat img_orig, RMapCI region, bool binarize, int thres
 	Mat img_bounded = img_resized.clone();
 
 	// Cropping management ///////////////////////////
-	if (region->second.use_cropping == true) {
-		double crop_size = (double)region->second.crop_size / 100;
+	if (settings.use_cropping == true) {
+		double crop_size = (double)settings.crop_size / 100;
 		if (crop_size < 0.01)
 			return img_resized;
 
-		process_ocr(img_resized, region, second_pass);
+		process_ocr(img_resized, settings, false, second_pass);
 		vector<pair<Rect, CString>> resBoxes;
 		if (second_pass)
 			resBoxes = ResultBoxes2;
@@ -201,15 +308,20 @@ Mat CAutoOcr::prepareImage(Mat img_orig, RMapCI region, bool binarize, int thres
 	}
 	/////////////////////////////////////////////////
 
-	process_ocr(img_resized, region, second_pass);
+	process_ocr(img_resized, settings, false, second_pass);
 	return img_resized;
 }
 
-void CAutoOcr::process_ocr(Mat img_orig, RMapCI region, bool fast, bool second_pass) {
+void CAutoOcr::process_ocr(Mat img_orig, const SAutoOcrSettings &settings, bool fast, bool second_pass) {
+	tesseract::PageSegMode page_seg_mode = static_cast<tesseract::PageSegMode>(settings.page_seg_mode);
+	api->SetPageSegMode(page_seg_mode);
+	api2->SetPageSegMode(page_seg_mode);
+	api->SetVariable("user_defined_dpi", "300");
+	api2->SetVariable("user_defined_dpi", "300");
 	api->SetImage(img_orig.data, img_orig.cols, img_orig.rows, img_orig.channels(), img_orig.step);
 	api->Recognize(0);
 
-	if (region->second.use_cropping == true) {
+	if (settings.use_cropping == true) {
 		ResultIterator* ri = api->GetIterator();
 		PageIteratorLevel level = tesseract::RIL_WORD;
 		if (ri != 0) {
@@ -257,19 +369,26 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
 	if (region->second.use_default || tablemap_threshold < 0) {
 		tablemap_threshold = kDefaultAutoOcrThreshold;
 	}
+	SAutoOcrSettings settings;
+	settings.threshold = tablemap_threshold;
+	settings.use_cropping = region->second.use_cropping;
+	settings.crop_size = region->second.crop_size > 0 ? region->second.crop_size : 40;
+	settings.page_seg_mode = tesseract::PSM_SINGLE_WORD;
+	TryColorPresetSettings(img_orig, region, &settings);
+	tablemap_threshold = settings.threshold;
 
 	if (region->second.transform == "A0") {
-		img_resized = prepareImage(img_orig, region, true);
-		img_resized2 = prepareImage(img_orig, region, true, tablemap_threshold, true);
+		img_resized = prepareImage(img_orig, settings, true, tablemap_threshold);
+		img_resized2 = prepareImage(img_orig, settings, true, tablemap_threshold, true);
 	}
 	if (region->second.transform == "A1") {
-		img_resized = prepareImage(img_orig, region, true, tablemap_threshold);
-		img_resized2 = prepareImage(img_orig, region, true, 76, true);
+		img_resized = prepareImage(img_orig, settings, true, tablemap_threshold);
+		img_resized2 = prepareImage(img_orig, settings, true, tablemap_threshold, true);
 	}
 
 	vector<CString> lst;
 	CString ocr_result, ocr_result2;
-	if (region->second.use_cropping == true) {
+	if (settings.use_cropping == true) {
 		for (auto & element : ResultBoxes) {
 			if (element.first == bestRect) {
 				ocr_result = element.second;
@@ -328,7 +447,7 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
 			size_t j = 0;
 			while (j < images.size()) {
 				CString ocr_str;
-				process_ocr(images[j], region);
+				process_ocr(images[j], settings);
 				for (auto & element : ResultBoxes) {
 					if (element.first == bestRect) {
 						ocr_str = element.second;

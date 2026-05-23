@@ -181,6 +181,7 @@ void CDlgTableMap::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_TABLEMAP_TREE, m_TableMapTree);
 	DDX_Control(pDX, IDC_CURRENTREGION, m_BitmapFrame);
 	DDX_Control(pDX, IDC_OCR_VIEW, m_MatFrame);
+	DDX_Control(pDX, IDC_COLOR_PREVIEW, m_ColorPreview);
 	DDX_Control(pDX, IDC_LEFT, m_Left);
 	DDX_Control(pDX, IDC_LEFT_SPIN, m_LeftSpin);
 	DDX_Control(pDX, IDC_TOP, m_Top);
@@ -301,6 +302,7 @@ BEGIN_MESSAGE_MAP(CDlgTableMap, CDialog)
 	ON_BN_CLICKED(IDC_COLOR_EDIT, &CDlgTableMap::OnBnClickedColorEdit)
 	ON_BN_CLICKED(IDC_COLOR_DELETE, &CDlgTableMap::OnBnClickedColorDelete)
 	ON_BN_CLICKED(IDC_COLOR_ADD_POINT, &CDlgTableMap::OnBnClickedColorAddPoint)
+	ON_STN_CLICKED(IDC_COLOR_PREVIEW, &CDlgTableMap::OnStnClickedColorPreview)
 	ON_BN_CLICKED(IDC_DELETE_PLAYER_REGIONS, &CDlgTableMap::OnBnClickedDeletePlayerRegions)
 	ON_BN_CLICKED(IDC_DUPLICATE_GROUP_TO_PLAYER, &CDlgTableMap::OnBnClickedDuplicateGroupToPlayer)
 	ON_BN_CLICKED(IDC_CREATE_IMAGE, &CDlgTableMap::OnBnClickedCreateImage)
@@ -805,6 +807,8 @@ void CDlgTableMap::OnPaint()
 		}
 	}
 
+	DrawColorPresetPreview();
+
 	// Do not call CDialog::OnPaint() for painting messages
 }
 
@@ -846,6 +850,22 @@ void CDlgTableMap::clear_mat_control(void)
 	pDC->SelectObject(oldbrush);
 	pDC->SelectObject(oldpen);
 	ReleaseDC(pDC);
+}
+
+void CDlgTableMap::ClearColorPresetPreview(void)
+{
+	if (!::IsWindow(m_ColorPreview.GetSafeHwnd())) {
+		return;
+	}
+	CDC* pDC = m_ColorPreview.GetDC();
+	if (pDC == NULL) {
+		return;
+	}
+	CRect rect;
+	m_ColorPreview.GetClientRect(&rect);
+	CBrush brush(COLOR_SILVER);
+	pDC->FillRect(&rect, &brush);
+	m_ColorPreview.ReleaseDC(pDC);
 }
 
 void CDlgTableMap::draw_region_bitmap(void)
@@ -1457,6 +1477,7 @@ void CDlgTableMap::ApplySelectedColorPreset(bool update_region)
 	if (update_region) {
 		OnOcrRegionChange();
 	}
+	DrawColorPresetPreview();
 }
 
 void CDlgTableMap::SetColorPresetInputs(COLORREF color, int alpha)
@@ -1539,6 +1560,84 @@ bool CDlgTableMap::GetFourByFourAverageColor(int center_x, int center_y, COLORRE
 	return true;
 }
 
+bool CDlgTableMap::GetSelectedColorPresetPoint(int *x, int *y)
+{
+	if (x == NULL || y == NULL) {
+		return false;
+	}
+	int sel = m_ColorCombo.GetCurSel();
+	if (sel == CB_ERR) {
+		return false;
+	}
+	int index = (int)m_ColorCombo.GetItemData(sel);
+	CString key;
+	key.Format("oscolorip%dpointx", index);
+	CString text_x = p_tablemap->GetTMSymbol(key);
+	key.Format("oscolorip%dpointy", index);
+	CString text_y = p_tablemap->GetTMSymbol(key);
+	if (text_x.IsEmpty() || text_y.IsEmpty()) {
+		return false;
+	}
+	*x = atoi(text_x.GetString());
+	*y = atoi(text_y.GetString());
+	return true;
+}
+
+void CDlgTableMap::DrawColorPresetPreview(void)
+{
+	if (!::IsWindow(m_ColorPreview.GetSafeHwnd())) {
+		return;
+	}
+
+	int point_x = 0, point_y = 0;
+	if (!GetSelectedColorPresetPoint(&point_x, &point_y)) {
+		ClearColorPresetPreview();
+		return;
+	}
+
+	COpenScrapeDoc* pDoc = COpenScrapeDoc::GetDocument();
+	if (pDoc->attached_bitmap == NULL) {
+		ClearColorPresetPreview();
+		return;
+	}
+
+	HDC hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL);
+	HDC hdcBitmap = CreateCompatibleDC(hdcScreen);
+	HBITMAP oldBitmap = (HBITMAP)SelectObject(hdcBitmap, pDoc->attached_bitmap);
+	CDC* pDC = m_ColorPreview.GetDC();
+	if (pDC == NULL) {
+		SelectObject(hdcBitmap, oldBitmap);
+		DeleteDC(hdcBitmap);
+		DeleteDC(hdcScreen);
+		return;
+	}
+
+	CRect rect;
+	m_ColorPreview.GetClientRect(&rect);
+	CBrush brush(COLOR_SILVER);
+	pDC->FillRect(&rect, &brush);
+
+	int left = point_x > 1 ? point_x - 1 : 0;
+	int top = point_y > 1 ? point_y - 1 : 0;
+	const int scale = 4;
+	for (int y = 0; y < 4; ++y) {
+		for (int x = 0; x < 4; ++x) {
+			COLORREF pixel = GetPixel(hdcBitmap, left + x, top + y);
+			if (pixel == CLR_INVALID) {
+				pixel = RGB(0, 0, 0);
+			}
+			CBrush pixel_brush(pixel);
+			CRect pixel_rect(1 + x * scale, 1 + y * scale, 1 + (x + 1) * scale, 1 + (y + 1) * scale);
+			pDC->FillRect(&pixel_rect, &pixel_brush);
+		}
+	}
+
+	m_ColorPreview.ReleaseDC(pDC);
+	SelectObject(hdcBitmap, oldBitmap);
+	DeleteDC(hdcBitmap);
+	DeleteDC(hdcScreen);
+}
+
 int CDlgTableMap::ClosestColorPreset(COLORREF color)
 {
 	int count = atoi(p_tablemap->GetTMSymbol("oscoloripcount").GetString());
@@ -1568,10 +1667,12 @@ void CDlgTableMap::ApplyBestColorPresetForSelectedRegion(void)
 {
 	COLORREF color;
 	if (!GetSelectedRegionAverageColor(&color)) {
+		ClearColorPresetPreview();
 		return;
 	}
 	int index = ClosestColorPreset(color);
 	if (index < 0) {
+		ClearColorPresetPreview();
 		return;
 	}
 	for (int i = 0; i < m_ColorCombo.GetCount(); ++i) {
@@ -1581,6 +1682,7 @@ void CDlgTableMap::ApplyBestColorPresetForSelectedRegion(void)
 			return;
 		}
 	}
+	ClearColorPresetPreview();
 }
 
 void CDlgTableMap::OnColorComboChange()
@@ -1667,7 +1769,48 @@ void CDlgTableMap::OnBnClickedColorAddPoint()
 		return;
 	}
 	view->color_point_mode = true;
-	MessageBox("Click the 4x4 color sample point in the OpenScrape screenshot.", "Color preset", MB_OK);
+	MessageBox("Click the 4x4 color sample point in the OpenScrape screenshot or the Color Preset Preview.", "Color preset", MB_OK);
+}
+
+void CDlgTableMap::OnStnClickedColorPreview()
+{
+	if (m_ColorCombo.GetCurSel() == CB_ERR) {
+		return;
+	}
+	COpenScrapeView *view = COpenScrapeView::GetView();
+	if (view != NULL) {
+		view->color_point_mode = false;
+	}
+	CPoint point;
+	GetCursorPos(&point);
+	m_ColorPreview.ScreenToClient(&point);
+	CaptureColorPresetPreviewPoint(point);
+}
+
+void CDlgTableMap::CaptureColorPresetPreviewPoint(CPoint point)
+{
+	int point_x = 0, point_y = 0;
+	if (!GetSelectedColorPresetPoint(&point_x, &point_y)) {
+		return;
+	}
+
+	CRect rect;
+	m_ColorPreview.GetClientRect(&rect);
+	if (!rect.PtInRect(point)) {
+		return;
+	}
+
+	int source_left = point_x > 1 ? point_x - 1 : 0;
+	int source_top = point_y > 1 ? point_y - 1 : 0;
+	int preview_x = (point.x - 1) / 4;
+	int preview_y = (point.y - 1) / 4;
+	if (preview_x < 0) preview_x = 0;
+	if (preview_x > 3) preview_x = 3;
+	if (preview_y < 0) preview_y = 0;
+	if (preview_y > 3) preview_y = 3;
+	int source_x = source_left + preview_x;
+	int source_y = source_top + preview_y;
+	CaptureColorPresetPoint(CPoint(source_x, source_y));
 }
 
 void CDlgTableMap::CaptureColorPresetPoint(CPoint point)
@@ -1699,14 +1842,18 @@ void CDlgTableMap::CaptureColorPresetPoint(CPoint point)
 
 	CString point_region_name;
 	point_region_name.Format("oscolorip%dpoint", index);
+	int sample_left = point.x > 1 ? point.x - 1 : 0;
+	int sample_top = point.y > 1 ? point.y - 1 : 0;
+	int sample_right = sample_left + 3;
+	int sample_bottom = sample_top + 3;
 	RMapI region = p_tablemap->set_r$()->find(point_region_name.GetString());
 	if (region == p_tablemap->r$()->end()) {
 		STablemapRegion new_region;
 		new_region.name = point_region_name;
-		new_region.left = max(0, point.x - 1);
-		new_region.top = max(0, point.y - 1);
-		new_region.right = point.x + 2;
-		new_region.bottom = point.y + 2;
+		new_region.left = sample_left;
+		new_region.top = sample_top;
+		new_region.right = sample_right;
+		new_region.bottom = sample_bottom;
 		new_region.color = RGB(255, 0, 255);
 		new_region.radius = 0;
 		new_region.transform = "N";
@@ -1718,15 +1865,17 @@ void CDlgTableMap::CaptureColorPresetPoint(CPoint point)
 		p_tablemap->r$_insert(new_region);
 	}
 	else {
-		region->second.left = max(0, point.x - 1);
-		region->second.top = max(0, point.y - 1);
-		region->second.right = point.x + 2;
-		region->second.bottom = point.y + 2;
+		region->second.left = sample_left;
+		region->second.top = sample_top;
+		region->second.right = sample_right;
+		region->second.bottom = sample_bottom;
+		region->second.color = RGB(255, 0, 255);
 	}
 
 	CString name;
 	m_ColorCombo.GetLBText(sel, name);
 	SaveColorPreset(index, name, color);
+	DrawColorPresetPreview();
 	update_tree("Regions");
 	Invalidate(false);
 	theApp.m_pMainWnd->Invalidate(false);
@@ -2342,6 +2491,7 @@ void CDlgTableMap::disable_ocr_and_clear_all(void)
 	m_ColorEdit.EnableWindow(false);
 	m_ColorDelete.EnableWindow(false);
 	m_ColorAddPoint.EnableWindow(false);
+	ClearColorPresetPreview();
 }
 
 

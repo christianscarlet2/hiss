@@ -61,6 +61,7 @@ protected:
 	afx_msg void OnBnClickedColorEdit();
 	afx_msg void OnBnClickedColorDelete();
 	afx_msg void OnBnClickedColorAddPoint();
+	afx_msg void OnStnClickedColorPreview();
 	afx_msg void OnBnClickedCreateHash0();
 	afx_msg void OnBnClickedCreateHash1();
 	afx_msg void OnBnClickedCreateHash2();
@@ -127,6 +128,10 @@ protected:
 	int ClosestColorPreset(COLORREF color);
 	bool GetSelectedRegionAverageColor(COLORREF *color);
 	bool GetFourByFourAverageColor(int center_x, int center_y, COLORREF *color);
+	void DrawColorPresetPreview(void);
+	void ClearColorPresetPreview(void);
+	bool GetSelectedColorPresetPoint(int *x, int *y);
+	void CaptureColorPresetPreviewPoint(CPoint point);
 	void SetColorPresetInputs(COLORREF color, int alpha = 255);
 	COLORREF GetColorPresetInputColor(void);
 	void SaveColorPreset(int index, CString name, COLORREF color);
@@ -138,7 +143,7 @@ protected:
 	int GetType(CString selected_text);
 	HTREEITEM InsertGroupedRegion(CString itemText);
 
-	CStatic				m_BitmapFrame, m_MatFrame;
+	CStatic				m_BitmapFrame, m_MatFrame, m_ColorPreview;
 	CStickyButton		m_Picker;
 	CSpinButtonCtrl		m_LeftSpin, m_TopSpin, m_BottomSpin, m_RightSpin, m_RadiusSpin, m_ThresholdSpin, m_CropSpin;
 	CComboBox			m_Transform, m_Zoom, m_TrackerFontSet, m_TrackerFontNum, m_TrackerCardNum;

@@ -24,6 +24,13 @@
 using namespace cv;
 using namespace tesseract;
 
+struct SAutoOcrSettings {
+	int threshold;
+	bool use_cropping;
+	int crop_size;
+	int page_seg_mode;
+};
+
 class CAutoOcr : public CSpaceOptimizedGlobalObject {
 	friend class CScraper;
 public:
@@ -36,9 +43,11 @@ public:
 	CString get_ocr_result(Mat img_orig, RMapCI region, bool fast = false);
 private:
 	RECT detectTemplate(Mat area, Mat tpl, int match_mode);
-	void process_ocr(Mat img_orig, RMapCI region, bool fast = false, bool second_pass = false);
-	Mat prepareImage(Mat img_orig, RMapCI region, bool binarize = true, int threshold = 100, bool second_pass = false);
+	void process_ocr(Mat img_orig, const SAutoOcrSettings &settings, bool fast = false, bool second_pass = false);
+	Mat prepareImage(Mat img_orig, const SAutoOcrSettings &settings, bool binarize = true, int threshold = 100, bool second_pass = false);
 	Mat binarize_array_opencv(Mat image, int threshold);
+	COLORREF AverageFourByFour(Mat img, int center_x, int center_y);
+	bool TryColorPresetSettings(Mat img_orig, RMapCI region, SAutoOcrSettings *settings);
 
 	string trim(string str) {
 		return regex_replace(str, regex("\\s"), "");
