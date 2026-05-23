@@ -17,7 +17,6 @@
 #include "libpq-fe.h"
 #include <map>
 #include "CSpaceOptimizedGlobalObject.h"
-#include "COCRNameMapping.h"
 
 
 const int k_advanced_stat_update_every    =    5;
@@ -31,9 +30,7 @@ struct SPlayerData
 	bool			found;
 	// Stats are now in the DLL
 	//double			stat[k_max_number_of_supported_pokertracker_stats];
-	int				skipped_updates;
-	bool			name_verified;  // True if name came from hand history mapping
-	COLORREF		name_color;      // Bold bright green (0x00FF00) if verified, normal if OCR
+	int				skipped_updates;           
 };
 
 extern SPlayerData _player_data[kMaxNumberOfPlayers];
@@ -58,7 +55,6 @@ public:
 	bool				CheckIfNameExistsInDB(int chair);
 	bool				_connected;
 	PGconn *		_pgconn;
-	COCRNameMapping	_ocr_mapping;
 private:
 	// private functions and variables - not available via accessors or mutators
 	UINT			PokertrackerThreadFunction(LPVOID pParam);
@@ -81,7 +77,6 @@ private:
 	void				RecalcSkippedUpdates(int chr);
 	void				ReportUpdateComplete(int updatedCount, int chair);
 	void				SetPlayerName(int chr, bool found, const char* pt_name, const char* scraped_name);
-	bool				LookupOCRNameMapping(const char *ocr_name, int id_site, char *actual_name, bool *is_verified);
 	int					GetSkippedUpdates(int chr){return _player_data[chr].skipped_updates;}
 	bool				IsFound(int chair);
 	const char* GetPlayerScrapedName(int chair){return _player_data[chair].scraped_name;}

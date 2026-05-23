@@ -13,7 +13,6 @@
 
 #include "stdafx.h"
 #include "COCRNameMapping.h"
-#include "..\DLLs\Preferences_DLL\Preferences.h"
 
 COCRNameMapping::COCRNameMapping()
 	: _pgconn(NULL)

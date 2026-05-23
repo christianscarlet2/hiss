@@ -155,9 +155,6 @@ void CPokerTrackerThread::Connect(void) {
 			Preferences()->pt_port(), 
 			Preferences()->pt_dbname());
 
-		// Initialize OCR name mapping with the new connection
-		_ocr_mapping.SetConnection(_pgconn);
-
 		_connected = true;
 	}	else {
 		write_log(Preferences()->debug_pokertracker(), "[PokerTracker] ERROR opening PostgreSQL DB: %s\n\n", PQerrorMessage(_pgconn));
@@ -273,30 +270,13 @@ bool CPokerTrackerThread::CheckIfNameExistsInDB(int chair)
 	if (FindName(oh_scraped_name, best_name))
 	{
 		write_log(Preferences()->debug_pokertracker(), "[PokerTracker] CheckIfNameExistsInDB() Name found in database\n");
-		
-		// Also check if there's a verified OCR mapping for this name
-		bool is_verified = false;
-		char mapped_name[kMaxLengthOfPlayername] = {0};
-		int site_id = pt_lookup.GetSiteId();
-		if (site_id != kUndefined)
-		{
-			LookupOCRNameMapping(oh_scraped_name, site_id, mapped_name, &is_verified);
-		}
-		
 		SetPlayerName(chair, true, best_name, oh_scraped_name);
-		
-		// Set verified flag and color if mapping found
-		_player_data[chair].name_verified = is_verified;
-		_player_data[chair].name_color = is_verified ? RGB(0, 255, 0) : RGB(255, 255, 255);  // Bright green if verified, white if not
-		
 		return true;
 	}
 	else
 	{
 		write_log(Preferences()->debug_pokertracker(), "[PokerTracker] CheckIfNameExistsInDB() Name not found in database\n");
 		SetPlayerName(chair, false, "", "");
-		_player_data[chair].name_verified = false;
-		_player_data[chair].name_color = RGB(255, 255, 255);
 		return false;
 	}
 }
@@ -348,43 +328,6 @@ void CPokerTrackerThread::SetPlayerName(int chr, bool found, const char* pt_name
 		write_log(Preferences()->debug_pokertracker(), "[PokerTracker] SetPlayerName[%d]: Done. ptname[%s] scrapedName[%s]\n", chr, _player_data[chr].pt_name, _player_data[chr].scraped_name);
 	}
 }
-
-// Look up OCR name in the hand history mapping table
-// Returns true if a verified mapping was found
-bool CPokerTrackerThread::LookupOCRNameMapping(const char *ocr_name, int id_site, char *actual_name, bool *is_verified)
-{
-	if (!_connected || _pgconn == NULL || PQstatus(_pgconn) != CONNECTION_OK)
-		return false;
-
-	if (ocr_name == NULL || actual_name == NULL || is_verified == NULL)
-		return false;
-
-	SOCRNameMapping mapping;
-	memset(&mapping, 0, sizeof(mapping));
-
-	// Try to look up in the mapping table
-	if (_ocr_mapping.LookupActualName(ocr_name, id_site, &mapping))
-	{
-		if (mapping.found)
-		{
-			strncpy_s(actual_name, kMaxLengthOfPlayername, mapping.actual_username, _TRUNCATE);
-			*is_verified = mapping.verified;
-
-			write_log(Preferences()->debug_pokertracker(),
-				"[PokerTracker] OCR name mapping found: [%s] -> [%s] (verified=%d)\n",
-				ocr_name, mapping.actual_username, mapping.verified);
-
-			return true;
-		}
-	}
-
-	// No mapping found - return the OCR name as fallback
-	strncpy_s(actual_name, kMaxLengthOfPlayername, ocr_name, _TRUNCATE);
-	*is_verified = false;
-
-	return false;
-}
-
 
 //Short Algorithm to query the DB for the best name. returns true if best name is populated.
 bool CPokerTrackerThread::FindName(const char *oh_scraped_name, char *best_name)

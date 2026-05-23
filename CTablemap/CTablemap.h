@@ -62,8 +62,6 @@ struct STablemapRegion {
 	int				crop_size;
 	int				box_color;
 	CString			transform;
-	CString			color_preset_name;	// Selected color preset name
-	std::vector<COLORREF> color_preset_points;	// Detected color points for this region
 };
 
 typedef std::pair<CString, STablemapRegion> RPair;

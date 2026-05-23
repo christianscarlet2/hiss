@@ -391,7 +391,8 @@
     <ClCompile Include="CTablePositioner.cpp" />
     <ClCompile Include="CTablepointChecker.cpp" />
     <ClCompile Include="CPokerTrackerLookUp.cpp" />
-    <ClCompile Include="COCRNameMapping.cpp" />
+    <!-- TEMPORARILY DISABLED: OCRNameMapping implementation pending OCR settings refactor -->
+    <!-- <ClCompile Include="COCRNameMapping.cpp" /> -->
     <ClCompile Include="CPokerTrackerThread.cpp" />
     <ClCompile Include="CIteratorThread.cpp" />
     <ClCompile Include="PrWinHandranges.cpp" />
