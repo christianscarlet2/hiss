@@ -52,7 +52,10 @@ function Player(props) {
     e('div', { className: 'holecards' }, cards.map(function (card, index) {
       return e(CardView, { key: index, value: card });
     })),
-    e('div', { className: 'name' }, player.name || ('p' + player.chair)),
+    e('div', { className: 'name' },
+      player.active ? e('span', { className: 'active-dot' }) : null,
+      player.name || ('p' + player.chair)
+    ),
     e('div', { className: 'balance' }, player.seated ? money(player.balance) : ('Out (' + money(player.balance) + ')')),
     player.dealer ? e('div', { className: 'dealer' }, 'D') : null
   );

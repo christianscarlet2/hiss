@@ -121,6 +121,7 @@ public:
 	void PurgeMissingRegionsFromGroups();
 	bool DeleteRegionGroup(CString group_name);
 	bool DeleteAllRegionsInGroup(CString group_name);
+	bool AddRegionToGroup(CString group_name, CString region_name);
 	bool RemoveRegionFromGroup(CString name);
 	bool DuplicateRegionGroupToPlayer(CString group_name, CString target_player, CString *error_message);
 	bool GetGroupColorForRegion(CString name, COLORREF *color);
@@ -129,6 +130,7 @@ public:
 
 	bool		drawing_rect, drawing_started;
 	bool		color_point_mode;
+	bool		color_dropper_mode;
 	CPoint		drawrect_start;
 	CString		drawrect_region;
 

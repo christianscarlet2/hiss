@@ -298,6 +298,8 @@ void CDlgTableMap::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_COLOR_B, m_ColorB);
 	DDX_Control(pDX, IDC_COLOR_ADD_POINT, m_ColorAddPoint);
 	DDX_Control(pDX, IDC_COLOR_CLEAR_POINT, m_ColorClearPoint);
+	DDX_Control(pDX, IDC_UPDATE_OCR_NOW, m_UpdateOcrNow);
+	DDX_Control(pDX, IDC_COLOR_DROPPER, m_ColorDropper);
 	DDX_ColorPickerCB(pDX, IDC_BOX_COLOR, m_crColor);
 }
 
@@ -340,6 +342,8 @@ BEGIN_MESSAGE_MAP(CDlgTableMap, CDialog)
 	ON_EN_CHANGE(IDC_COLOR_B, &CDlgTableMap::OnOcrRegionChange)
 	ON_BN_CLICKED(IDC_COLOR_ADD_POINT, &CDlgTableMap::OnBnClickedColorAddPoint)
 	ON_BN_CLICKED(IDC_COLOR_CLEAR_POINT, &CDlgTableMap::OnBnClickedColorClearPoint)
+	ON_BN_CLICKED(IDC_COLOR_DROPPER, &CDlgTableMap::OnBnClickedColorDropper)
+	ON_BN_CLICKED(IDC_UPDATE_OCR_NOW, &CDlgTableMap::OnBnClickedUpdateOcrNow)
 	ON_STN_CLICKED(IDC_COLOR_PREVIEW, &CDlgTableMap::OnStnClickedColorPreview)
 	ON_BN_CLICKED(IDC_DELETE_PLAYER_REGIONS, &CDlgTableMap::OnBnClickedDeletePlayerRegions)
 	ON_BN_CLICKED(IDC_DUPLICATE_GROUP_TO_PLAYER, &CDlgTableMap::OnBnClickedDuplicateGroupToPlayer)
@@ -380,6 +384,7 @@ BEGIN_MESSAGE_MAP(CDlgTableMap, CDialog)
 	ON_BN_CLICKED(IDC_CREATE_HASH1, &CDlgTableMap::OnBnClickedCreateHash1)
 	ON_BN_CLICKED(IDC_CREATE_HASH2, &CDlgTableMap::OnBnClickedCreateHash2)
 	ON_BN_CLICKED(IDC_CREATE_HASH3, &CDlgTableMap::OnBnClickedCreateHash3)
+	ON_COMMAND(ID_OPERATIONS_CREATE_HASHES_IMAGES_0, &CDlgTableMap::OnOperationsCreateHashesImages0)
 	ON_BN_CLICKED(IDC_USE_DEFAULT, &CDlgTableMap::OnOcrRegionChange)
 	ON_EN_CHANGE(IDC_THRESHOLD, &CDlgTableMap::OnOcrRegionChange)
 	ON_EN_KILLFOCUS(IDC_THRESHOLD, &CDlgTableMap::OnOcrRegionChange)
@@ -433,6 +438,13 @@ BOOL CDlgTableMap::OnInitDialog()
 	CDialog::OnInitDialog();
 
 	create_tree();
+
+	m_TableMapMenu.CreateMenu();
+	CMenu operations_menu;
+	operations_menu.CreatePopupMenu();
+	operations_menu.AppendMenu(MF_STRING, ID_OPERATIONS_CREATE_HASHES_IMAGES_0, "Create hashes of all Images (0)");
+	m_TableMapMenu.AppendMenu(MF_POPUP, (UINT_PTR)operations_menu.Detach(), "Operations");
+	SetMenu(&m_TableMapMenu);
 
 	// Setup text entry fields and spinners
 	m_Left.SetWindowText("0");
@@ -1239,7 +1251,7 @@ void CDlgTableMap::OnBoxColorChange()
 
 	sel_region->second.box_color = m_BoxColor.GetCurSel();
 
-	update_ocr_r$_display();
+	OnOcrRegionChange();
 	Invalidate(false);
 }
 
@@ -1300,9 +1312,6 @@ void CDlgTableMap::OnOcrRegionChange()
 		m_ColorCombo.GetLBText(m_ColorCombo.GetCurSel(), color_preset_name);
 		SaveColorPreset((int)m_ColorCombo.GetItemData(m_ColorCombo.GetCurSel()), color_preset_name, GetColorPresetInputColor());
 	}
-	ignore_changes = true;
-	update_ocr_r$_display();
-	ignore_changes = false;
 	theApp.m_pMainWnd->Invalidate(false);
 	Invalidate(false);
 
@@ -1904,19 +1913,41 @@ void CDlgTableMap::OnBnClickedColorClearPoint()
 {
 	ClearSelectedColorPresetPoint();
 }
+void CDlgTableMap::OnBnClickedColorDropper()
+{
+	if (m_ColorCombo.GetCurSel() == CB_ERR) {
+		MessageBox("Select or add a color preset first.", "Color preset", MB_OK);
+		return;
+	}
+
+	COpenScrapeView *view = COpenScrapeView::GetView();
+	if (view == NULL) {
+		return;
+	}
+	view->color_dropper_mode = true;
+	view->color_point_mode = false;
+	MessageBox("Click a color in the OpenScrape screenshot or the Color Preset Preview to update A, R, G, B.", "Color preset", MB_OK);
+}
+
 void CDlgTableMap::OnStnClickedColorPreview()
 {
 	if (m_ColorCombo.GetCurSel() == CB_ERR) {
 		return;
 	}
 	COpenScrapeView *view = COpenScrapeView::GetView();
+	bool dropper_mode = view != NULL && view->color_dropper_mode;
 	if (view != NULL) {
 		view->color_point_mode = false;
+		view->color_dropper_mode = false;
 	}
 	CPoint point;
 	GetCursorPos(&point);
 	m_ColorPreview.ScreenToClient(&point);
-	CaptureColorPresetPreviewPoint(point);
+	if (dropper_mode) {
+		CaptureColorPresetPreviewColor(point);
+	} else {
+		CaptureColorPresetPreviewPoint(point);
+	}
 }
 
 void CDlgTableMap::CaptureColorPresetPreviewPoint(CPoint point)
@@ -1945,6 +1976,53 @@ void CDlgTableMap::CaptureColorPresetPreviewPoint(CPoint point)
 	CaptureColorPresetPoint(CPoint(source_x, source_y));
 }
 
+void CDlgTableMap::CaptureColorPresetPreviewColor(CPoint point)
+{
+	int point_x = 0, point_y = 0;
+	if (!GetSelectedColorPresetPoint(&point_x, &point_y)) {
+		return;
+	}
+
+	CRect rect;
+	m_ColorPreview.GetClientRect(&rect);
+	if (!rect.PtInRect(point)) {
+		return;
+	}
+
+	int source_left = point_x > 1 ? point_x - 1 : 0;
+	int source_top = point_y > 1 ? point_y - 1 : 0;
+	int preview_x = (point.x - 1) / 4;
+	int preview_y = (point.y - 1) / 4;
+	if (preview_x < 0) preview_x = 0;
+	if (preview_x > 3) preview_x = 3;
+	if (preview_y < 0) preview_y = 0;
+	if (preview_y > 3) preview_y = 3;
+	int source_x = source_left + preview_x;
+	int source_y = source_top + preview_y;
+	CaptureColorPresetColor(CPoint(source_x, source_y));
+}
+
+void CDlgTableMap::CaptureColorPresetColor(CPoint point)
+{
+	int sel = m_ColorCombo.GetCurSel();
+	if (sel == CB_ERR) {
+		return;
+	}
+
+	COLORREF color;
+	if (!GetFourByFourAverageColor(point.x, point.y, &color)) {
+		return;
+	}
+	SetColorPresetInputs(color);
+
+	CString name;
+	m_ColorCombo.GetLBText(sel, name);
+	SaveColorPreset((int)m_ColorCombo.GetItemData(sel), name, color);
+	DrawColorPresetPreview();
+	Invalidate(false);
+	theApp.m_pMainWnd->Invalidate(false);
+	COpenScrapeDoc::GetDocument()->SetModifiedFlag(true);
+}
 void CDlgTableMap::CaptureColorPresetPoint(CPoint point)
 {
 	CString parent_region_name = "";
@@ -2012,6 +2090,16 @@ void CDlgTableMap::CaptureColorPresetPoint(CPoint point)
 		region->second.right = sample_right;
 		region->second.bottom = sample_bottom;
 		region->second.color = RGB(255, 0, 255);
+	}
+
+	if (!parent_region_name.IsEmpty()) {
+		COpenScrapeView *view = COpenScrapeView::GetView();
+		if (view != NULL) {
+			CString group_name = view->GroupNameForRegion(parent_region_name);
+			if (!group_name.IsEmpty()) {
+				view->AddRegionToGroup(group_name, point_region_name);
+			}
+		}
 	}
 
 	CString name;
@@ -5019,6 +5107,7 @@ HTREEITEM CDlgTableMap::update_tree(CString node_text)
 	// Recreate the tree
 	create_tree();
 
+
 	// Restore expanded state of each node
 	RestoreNodeExpansionState(&node_state);
 
@@ -7336,6 +7425,53 @@ void CDlgTableMap::OnBnClickedUseCrop()
 	pDoc->SetModifiedFlag(true);
 }
 
+void CDlgTableMap::OnBnClickedUpdateOcrNow()
+{
+	bool previous_ignore_changes = ignore_changes;
+	ignore_changes = true;
+	update_ocr_r$_display();
+	ignore_changes = previous_ignore_changes;
+	theApp.m_pMainWnd->Invalidate(false);
+	Invalidate(false);
+}
+
+void CDlgTableMap::OnOperationsCreateHashesImages0()
+{
+	CreateHashesOfAllImages(0);
+}
+
+void CDlgTableMap::CreateHashesOfAllImages(int hash_type)
+{
+	COpenScrapeDoc* pDoc = COpenScrapeDoc::GetDocument();
+	int added = 0;
+	CString errors;
+	for (IMapCI i_iter = p_tablemap->i$()->begin(); i_iter != p_tablemap->i$()->end(); ++i_iter) {
+		STablemapHashValue new_hash;
+		new_hash.name = i_iter->second.name;
+		new_hash.hash = p_tablemap->CalculateHashValue(i_iter, hash_type);
+		if (p_tablemap->h$_insert(hash_type, new_hash)) {
+			++added;
+		}
+		else {
+			CString line;
+			line.Format("%s\n", new_hash.name);
+			errors += line;
+		}
+	}
+	update_tree("Hashes");
+	update_tree("Images");
+	update_display();
+	if (pDoc != NULL && added > 0) {
+		pDoc->SetModifiedFlag(true);
+	}
+	CString message;
+	message.Format("Created %d image hash records for position %d.", added, hash_type);
+	if (!errors.IsEmpty()) {
+		message += "\n\nSkipped existing hashes:\n";
+		message += errors;
+	}
+	MessageBox(message, "Create image hashes", MB_OK);
+}
 void CDlgTableMap::OnBnClickedCreateHash0()
 {
 	CreateHash(0);

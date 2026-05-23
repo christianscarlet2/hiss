@@ -758,6 +758,17 @@ void COpenHoldemView::DrawNameBox(const int chair) {
 		pDC->DrawText(p_table_state->Player(chair)->name().GetString(), 
       p_table_state->Player(chair)->name().GetLength(), &drawrect,
 			DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+		if (p_table_state->Player(chair)->active()) {
+			CBrush active_brush(RGB(0, 208, 80));
+			CPen active_pen(PS_SOLID, 1, RGB(0, 128, 48));
+			CPen *active_old_pen = pDC->SelectObject(&active_pen);
+			CBrush *active_old_brush = pDC->SelectObject(&active_brush);
+			int dot_left = drawrect.left + 4;
+			int dot_top = drawrect.top + ((drawrect.bottom - drawrect.top) - 5) / 2;
+			pDC->Ellipse(dot_left, dot_top, dot_left + 5, dot_top + 5);
+			pDC->SelectObject(active_old_pen);
+			pDC->SelectObject(active_old_brush);
+		}
 		name_rect_last[chair].left = drawrect.left;
 		name_rect_last[chair].top = drawrect.top;
 		name_rect_last[chair].right = drawrect.right;

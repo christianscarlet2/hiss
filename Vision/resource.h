@@ -141,6 +141,7 @@
 #define IDC_COLOR_PREVIEW               1132
 #define IDC_COLOR_CLEAR_POINT           1133
 #define IDC_UPDATE_OCR_NOW              1134
+#define IDC_COLOR_DROPPER               1135
 #define ID_MAIN_TOOLBAR_GREENCIRCLE     32771
 #define ID_VIEW_CONNECTTOWINDOW         32772
 #define ID_VIEW_SHOWREGIONBOXES         32774
@@ -171,7 +172,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        153
 #define _APS_NEXT_COMMAND_VALUE         32795
-#define _APS_NEXT_CONTROL_VALUE         1135
+#define _APS_NEXT_CONTROL_VALUE         1136
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

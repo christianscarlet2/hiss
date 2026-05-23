@@ -170,6 +170,16 @@ body {
   font-size: 12px;
 }
 
+.active-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 4px;
+  vertical-align: middle;
+  border-radius: 50%;
+  background: #00d050;
+}
+
 .balance {
   margin-top: 2px;
 }

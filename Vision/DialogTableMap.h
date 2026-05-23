@@ -62,6 +62,7 @@ protected:
 	afx_msg void OnBnClickedColorDelete();
 	afx_msg void OnBnClickedColorAddPoint();
 	afx_msg void OnBnClickedColorClearPoint();
+	afx_msg void OnBnClickedColorDropper();
 	afx_msg void OnStnClickedColorPreview();
 	afx_msg void OnBnClickedCreateHash0();
 	afx_msg void OnBnClickedCreateHash1();
@@ -136,6 +137,7 @@ protected:
 	bool GetSelectedColorPresetPoint(int *x, int *y);
 	void ClearSelectedColorPresetPoint(void);
 	void CaptureColorPresetPreviewPoint(CPoint point);
+	void CaptureColorPresetPreviewColor(CPoint point);
 	void SetColorPresetInputs(COLORREF color, int alpha = 255);
 	COLORREF GetColorPresetInputColor(void);
 	void SaveColorPreset(int index, CString name, COLORREF color);
@@ -165,7 +167,7 @@ protected:
 	CButton				m_NudgeUpLeft, m_NudgeUp, m_NudgeUpRight, m_NudgeRight, m_NudgeDownRight, m_NudgeDown;
 	CButton				m_NudgeDownLeft, m_NudgeLeft;
 	CButton				m_UseCrop, m_UseDefault;
-	CButton				m_UpdateOcrNow;
+	CButton				m_UpdateOcrNow, m_ColorDropper;
 	CMenu				m_TableMapMenu;
 	CPen				black_pen, green_pen, red_pen, blue_pen, white_dot_pen, null_pen;
 	CBrush				white_brush, lt_gray_brush, gray_brush, red_brush, yellow_brush;
@@ -214,6 +216,7 @@ public:
 	void update_display(void);
 	void UpdateStatus(void);
 	void CaptureColorPresetPoint(CPoint point);
+	void CaptureColorPresetColor(CPoint point);
 	HTREEITEM update_tree(CString node_text);
 	void GroupRegions(void);
 	void UngroupRegions(void);

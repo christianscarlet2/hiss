@@ -136,6 +136,7 @@ COpenScrapeView::COpenScrapeView()
 
 	drawing_rect = drawing_started = false;
 	color_point_mode = false;
+	color_dropper_mode = false;
 	group_box_mode = group_box_started = false;
 	show_preview = true;
 	preview_point = CPoint(0, 0);
@@ -553,6 +554,26 @@ bool COpenScrapeView::DeleteAllRegionsInGroup(CString group_name)
 	return true;
 }
 
+bool COpenScrapeView::AddRegionToGroup(CString group_name, CString region_name)
+{
+	LoadGroupsFromTablemap(true);
+	std::map<CString, SOpenScrapeRegionGroup>::iterator group = region_groups.find(group_name);
+	if (group == region_groups.end()) {
+		return false;
+	}
+	for (size_t i = 0; i < group->second.members.size(); ++i) {
+		if (group->second.members[i] == region_name) {
+			return true;
+		}
+	}
+	group->second.members.push_back(region_name);
+	RebuildGroupBounds();
+	SaveGroupsToTablemap();
+	GetDocument()->SetModifiedFlag(true);
+	Invalidate(false);
+	return true;
+}
+
 bool COpenScrapeView::RemoveRegionFromGroup(CString name)
 {
 	LoadGroupsFromTablemap(true);
@@ -622,7 +643,6 @@ bool COpenScrapeView::DuplicateRegionGroupToPlayer(CString group_name, CString t
 	}
 
 	std::vector<CString> new_members;
-	std::map<CString, CString> source_to_new_member;
 	for (size_t i = 0; i < source_group->second.members.size(); ++i) {
 		if (p_tablemap->r$()->find(source_group->second.members[i].GetString()) == p_tablemap->r$()->end()) {
 			if (error_message != NULL) {
@@ -639,7 +659,6 @@ bool COpenScrapeView::DuplicateRegionGroupToPlayer(CString group_name, CString t
 			return false;
 		}
 		new_members.push_back(new_name);
-		source_to_new_member[source_group->second.members[i]] = new_name;
 	}
 
 	RebuildGroupBounds();
@@ -1196,6 +1215,15 @@ void COpenScrapeView::OnLButtonDown(UINT nFlags, CPoint point)
 		color_point_mode = false;
 		if (theApp.m_TableMapDlg != NULL) {
 			theApp.m_TableMapDlg->CaptureColorPresetPoint(point);
+		}
+		CView::OnLButtonDown(nFlags, point);
+		return;
+	}
+
+	if (color_dropper_mode) {
+		color_dropper_mode = false;
+		if (theApp.m_TableMapDlg != NULL) {
+			theApp.m_TableMapDlg->CaptureColorPresetColor(point);
 		}
 		CView::OnLButtonDown(nFlags, point);
 		return;
