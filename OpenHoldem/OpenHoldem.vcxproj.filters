@@ -84,6 +84,7 @@
     <ClCompile Include="..\CTransform\pdiff\LPyramid.cpp" />
     <ClCompile Include="..\CTransform\pdiff\Metric.cpp" />
     <ClCompile Include="..\CTransform\pdiff\RGBAImage.cpp" />
+    <ClCompile Include="ChatTerminalWindow.cpp" />
     <ClCompile Include="COpenHoldemTitle.cpp" />
     <ClCompile Include="DialogSAPrefs10.cpp" />
     <ClCompile Include="DialogSAPrefs11.cpp" />
@@ -221,6 +222,7 @@
     <ClInclude Include="CHandresetDetector.h" />
     <ClInclude Include="CHeartbeatDelay.h" />
     <ClInclude Include="CHeartbeatThread.h" />
+    <ClInclude Include="ChatTerminalWindow.h" />
     <ClInclude Include="CLazyScraper.h" />
     <ClInclude Include="CLevDistance.h" />
     <ClInclude Include="CLimitScraper.h" />

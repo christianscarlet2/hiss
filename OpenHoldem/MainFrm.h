@@ -28,6 +28,7 @@ protected: // create from serialization only
 	afx_msg void OnEditPreferences();
 	afx_msg void OnFileLoadTableMap();
 	afx_msg void OnTimer(UINT_PTR nIDEvent);
+	afx_msg void OnMove(int x, int y);
 	afx_msg void OnUpdateStatus(CCmdUI *pCmdUI);
 	afx_msg void OnAutoplayer();
 	afx_msg void OnValidator();

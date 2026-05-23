@@ -24,6 +24,8 @@
 #include "CAutoConnector.h"
 #include "CAutoplayer.h"
 #include "CAutoplayerFunctions.h"
+#include "ChatTerminalServer.h"
+#include "ChatTerminalWindow.h"
 #include "CEngineContainer.h"
 #include "CFlagsToolbar.h"
 #include "CHeartbeatThread.h"
@@ -139,6 +141,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
 	ON_BN_CLICKED(ID_NUMBER19, &CMainFrame::OnClickedFlags)
 
 	ON_WM_TIMER()
+	ON_WM_MOVE()
   ON_UPDATE_COMMAND_UI(ID_INDICATOR_STATUS_ACTION, OnUpdateStatus)
 	ON_UPDATE_COMMAND_UI(ID_INDICATOR_STATUS_HANDRANK,OnUpdateStatus)
 	ON_UPDATE_COMMAND_UI(ID_INDICATOR_STATUS_PRWIN,OnUpdateStatus)
@@ -162,6 +165,18 @@ CMainFrame::CMainFrame() {
 }
 
 CMainFrame::~CMainFrame() {
+	if (p_chat_terminal_server != NULL) {
+		p_chat_terminal_server->Stop();
+		delete p_chat_terminal_server;
+		p_chat_terminal_server = NULL;
+	}
+	if (p_chat_terminal != NULL) {
+		if (::IsWindow(p_chat_terminal->GetSafeHwnd())) {
+			p_chat_terminal->DestroyWindow();
+		}
+		delete p_chat_terminal;
+		p_chat_terminal = NULL;
+	}
 	if (p_flags_toolbar != NULL) {
 		delete(p_flags_toolbar);
 	}
@@ -179,6 +194,14 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct) {
 	p_flags_toolbar = new CFlagsToolbar(this);
 	// Status bar
 	p_openholdem_statusbar = new COpenHoldemStatusbar(this);
+	// ChatGPT-style terminal companion window
+	p_chat_terminal = new CChatTerminalWindow();
+	p_chat_terminal->Create(this);
+	ChatTerminalAppend(kChatTerminalContext, "OpenHoldem terminal attached. Drag it left or right of the main window to choose the side.");
+	p_chat_terminal_server = new CChatTerminalServer();
+	if (!p_chat_terminal_server->Start()) {
+		ChatTerminalAppend(kChatTerminalContext, "Terminal API server failed to start.");
+	}
 	// Start timer that checks if we should enable buttons
 	SetTimer(ENABLE_BUTTONS_TIMER, 50, 0);
 	// Start timer that updates status bar
@@ -186,6 +209,13 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct) {
   // Start timer that checks for continued existence of attached HWND 		
   SetTimer(HWND_CHECK_TIMER, 200, 0);
 	return 0;
+}
+
+void CMainFrame::OnMove(int x, int y) {
+	CFrameWnd::OnMove(x, y);
+	if (p_chat_terminal != NULL) {
+		p_chat_terminal->AttachToOwner(true);
+	}
 }
 
 BOOL CMainFrame::PreCreateWindow(CREATESTRUCT& cs) {
