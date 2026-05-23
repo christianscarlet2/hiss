@@ -713,6 +713,21 @@ void CScraper::ClearAllPlayerNames() {
 	}
 }
 
+static bool IsLikelyPlayerNameCharacter(TCHAR ch) {
+	return _istalnum(ch) || ch == '_' || ch == '-';
+}
+
+static CString NormalizeScrapedPlayerName(CString name) {
+	name.Trim();
+	while (!name.IsEmpty() && !IsLikelyPlayerNameCharacter(name[0])) {
+		name.Delete(0);
+	}
+	while (!name.IsEmpty() && !IsLikelyPlayerNameCharacter(name[name.GetLength() - 1])) {
+		name.Delete(name.GetLength() - 1);
+	}
+	return name;
+}
+
 void CScraper::ScrapeName(int chair) {
 	RETURN_IF_OUT_OF_RANGE (chair, p_tablemap->LastChair())
 
@@ -727,6 +742,7 @@ void CScraper::ScrapeName(int chair) {
 	// Player name uXname
 	s.Format("u%dname", chair);
 	EvaluateRegion(s, &result);
+	result = NormalizeScrapedPlayerName(result);
 	write_log(Preferences()->debug_scraper(), "[CScraper] u%dname, result %s\n", chair, result.GetString());
 	if (result != "") {
 		Position = 0;
@@ -751,6 +767,7 @@ void CScraper::ScrapeName(int chair) {
 	// Player name pXname
 	s.Format("p%dname", chair);
 	EvaluateRegion(s, &result);
+	result = NormalizeScrapedPlayerName(result);
 	write_log(Preferences()->debug_scraper(), "[CScraper] p%dname, result %s\n", chair, result.GetString());
 	if (result != "") {
 		Position = 0;

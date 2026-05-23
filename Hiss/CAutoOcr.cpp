@@ -463,14 +463,16 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
 		ocr_result2 = ResultString2;
 	}
 
-	// Clean results from unwanted chars
+	// Clean OCR noise from unwanted chars.
 	const char* blacklist = "®©℗ⓒ™!%&*+;=?@²^æÆÇçÉéèêëïîíìÄÅÂÀàáâäåúùûüôöòñÑÿÖÜ€£¥₧ƒ~ªº¿⌐¬½¼¡«»\"`#<{([])}>|│░▒▓┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■";
 	for (size_t i = 0; i < strlen(blacklist); i++) {
 		if (ocr_result.Find(blacklist[i]) != -1)
-			ocr_result.Replace(blacklist[i], '\0');
+			ocr_result.Remove(blacklist[i]);
 		if (ocr_result2.Find(blacklist[i]) != -1)
-			ocr_result2.Replace(blacklist[i], '\0');
+			ocr_result2.Remove(blacklist[i]);
 	}
+	ocr_result.Trim();
+	ocr_result2.Trim();
 
 	if (ocr_result != "")
 		lst.push_back(ocr_result);
