@@ -57,7 +57,8 @@ public:
 	const CString password, const CString DB_name);
 	bool				CheckIfNameExistsInDB(int chair);
 	bool				_connected;
-	PGconn *		_pgconn;	COCRNameMapping	_ocr_mapping;
+	PGconn *		_pgconn;
+	COCRNameMapping	_ocr_mapping;
 private:
 	// private functions and variables - not available via accessors or mutators
 	UINT			PokertrackerThreadFunction(LPVOID pParam);

@@ -273,13 +273,30 @@ bool CPokerTrackerThread::CheckIfNameExistsInDB(int chair)
 	if (FindName(oh_scraped_name, best_name))
 	{
 		write_log(Preferences()->debug_pokertracker(), "[PokerTracker] CheckIfNameExistsInDB() Name found in database\n");
+		
+		// Also check if there's a verified OCR mapping for this name
+		bool is_verified = false;
+		char mapped_name[kMaxLengthOfPlayername] = {0};
+		int site_id = pt_lookup.GetSiteId();
+		if (site_id != kUndefined)
+		{
+			LookupOCRNameMapping(oh_scraped_name, site_id, mapped_name, &is_verified);
+		}
+		
 		SetPlayerName(chair, true, best_name, oh_scraped_name);
+		
+		// Set verified flag and color if mapping found
+		_player_data[chair].name_verified = is_verified;
+		_player_data[chair].name_color = is_verified ? RGB(0, 255, 0) : RGB(255, 255, 255);  // Bright green if verified, white if not
+		
 		return true;
 	}
 	else
 	{
 		write_log(Preferences()->debug_pokertracker(), "[PokerTracker] CheckIfNameExistsInDB() Name not found in database\n");
 		SetPlayerName(chair, false, "", "");
+		_player_data[chair].name_verified = false;
+		_player_data[chair].name_color = RGB(255, 255, 255);
 		return false;
 	}
 }

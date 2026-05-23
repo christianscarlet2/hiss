@@ -16,6 +16,7 @@
 
 #include "libpq-fe.h"
 #include <map>
+#include <string>
 
 struct SOCRNameMapping
 {
@@ -53,4 +54,4 @@ private:
 	bool _ExecuteMappingQuery(const char *ocr_detected_name, int id_site, SOCRNameMapping *mapping);
 };
 
-#endif INC_COCRNAMEMAPPING_H
+#endif // INC_COCRNAMEMAPPING_H
