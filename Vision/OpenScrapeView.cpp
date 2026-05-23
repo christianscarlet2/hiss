@@ -1628,6 +1628,32 @@ void COpenScrapeView::OnRButtonDown(UINT nFlags, CPoint point)
 
 	CString group_name = GroupNameForRegion(region_name);
 	if (group_name.IsEmpty()) {
+		HTREEITEM parent_node = theApp.m_TableMapDlg->GetTypeNode("Regions");
+		HTREEITEM item = theApp.m_TableMapDlg->FindItem(region_name, parent_node);
+		if (item != NULL) {
+			theApp.m_TableMapDlg->m_TableMapTree.SelectItem(item);
+		}
+
+		CMenu menu;
+		menu.CreatePopupMenu();
+		const UINT kDeleteRegionMenuId = 51001;
+		menu.AppendMenu(MF_STRING, kDeleteRegionMenuId, "Delete");
+
+		CPoint screen_point = point;
+		ClientToScreen(&screen_point);
+		UINT command = menu.TrackPopupMenu(TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
+			screen_point.x, screen_point.y, this);
+
+		if (command == kDeleteRegionMenuId) {
+			CString message;
+			message.Format("Delete region: %s?", region_name);
+			if (AfxMessageBox(message, MB_YESNO) == IDYES && p_tablemap->r$_erase(region_name)) {
+				PurgeMissingRegionsFromGroups();
+				theApp.m_TableMapDlg->update_tree("Regions");
+				Invalidate(false);
+				GetDocument()->SetModifiedFlag(true);
+			}
+		}
 		CView::OnRButtonDown(nFlags, point);
 		return;
 	}

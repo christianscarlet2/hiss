@@ -35,6 +35,7 @@
 #include "..\CTablemap\CTablemap.h"
 #include "CTableState.h"
 #include "CWhiteInfoBox.h"
+#include "ChatTerminalWindow.h"
 
 #include "OpenHoldem.h"
 #include "OpenHoldemDoc.h"
@@ -274,6 +275,7 @@ void COpenHoldemView::UpdateDisplay(const bool update_all) {
 	DrawButtonIndicators();
 
 	// Draw common cards
+	bool community_cards_changed = false;
 	for (int i=0; i<kNumberOfCommunityCards; i++) 
 	{
     Card *p_card = p_table_state->CommonCards(i);
@@ -281,6 +283,7 @@ void COpenHoldemView::UpdateDisplay(const bool update_all) {
 		if (_card_common_last[i] != card_value || update_all) 
 		{
 			_card_common_last[i] = card_value;
+			community_cards_changed = true;
 			write_log(Preferences()->debug_gui(), "[GUI] COpenHoldemView::UpdateDisplay() Drawing common card %i: [%s]\n",
         i, p_card->ToString());
 			DrawCard(p_card,
@@ -288,6 +291,9 @@ void COpenHoldemView::UpdateDisplay(const bool update_all) {
 					  _client_rect.right/2 + cc[i][0] + CARDSIZEX, _client_rect.bottom/2 + cc[i][1] + CARDSIZEY,
 					  false);
 		}
+	}
+	if (community_cards_changed && p_chat_terminal != NULL) {
+		p_chat_terminal->MaybeUpdatePotOddsFromTableState();
 	}
   // Draw collection of player info
 	for (int i=0; i<p_tablemap->nchairs(); i++)
