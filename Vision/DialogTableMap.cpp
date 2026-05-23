@@ -82,25 +82,6 @@ const char* tessPageSegModeLabels[kNumberOfTesseractPageSegModes] = {
 	"Sparse text + OSD",
 	"Auto"
 };
-const int kDefaultColorPresetIndex = -1;
-const int kNewColorPresetIndex = -2;
-const char* kDefaultColorPresetName = "Default";
-
-static CString ColorPresetKey(int index, const char *field)
-{
-	CString key;
-	if (index == kDefaultColorPresetIndex) {
-		key.Format("oscoloripdefault%s", field);
-	} else {
-		key.Format("oscolorip%d%s", index, field);
-	}
-	return key;
-}
-
-static CString ColorPresetNameKey(int index)
-{
-	return ColorPresetKey(index, "name");
-}
 
 static bool ControlHasFocus(CWnd &control)
 {
@@ -321,14 +302,7 @@ BEGIN_MESSAGE_MAP(CDlgTableMap, CDialog)
 	ON_BN_CLICKED(IDC_GROUP_BOX, &CDlgTableMap::OnBnClickedGroupBox)
 	ON_CBN_SELCHANGE(IDC_GROUP_COLOR, &CDlgTableMap::OnGroupColorChange)
 
-	ON_EN_CHANGE(IDC_COLOR_A, &CDlgTableMap::OnOcrRegionChange)
-	ON_EN_CHANGE(IDC_COLOR_R, &CDlgTableMap::OnOcrRegionChange)
-	ON_EN_CHANGE(IDC_COLOR_G, &CDlgTableMap::OnOcrRegionChange)
-	ON_EN_CHANGE(IDC_COLOR_B, &CDlgTableMap::OnOcrRegionChange)
-
-
 	ON_BN_CLICKED(IDC_UPDATE_OCR_NOW, &CDlgTableMap::OnBnClickedUpdateOcrNow)
-	ON_STN_CLICKED(IDC_COLOR_PREVIEW, &CDlgTableMap::OnStnClickedColorPreview)
 	ON_BN_CLICKED(IDC_DELETE_PLAYER_REGIONS, &CDlgTableMap::OnBnClickedDeletePlayerRegions)
 	ON_BN_CLICKED(IDC_DUPLICATE_GROUP_TO_PLAYER, &CDlgTableMap::OnBnClickedDuplicateGroupToPlayer)
 	ON_BN_CLICKED(IDC_CREATE_IMAGE, &CDlgTableMap::OnBnClickedCreateImage)
@@ -1257,29 +1231,19 @@ void CDlgTableMap::OnOcrRegionChange()
 
 	if (sel_region != p_tablemap->r$()->end()) {
 		// OCR image processing settings
-		if (sel_region->second.transform.Find("A", 0) != -1 && m_ColorCombo.GetCurSel() == CB_ERR) {
+		if (sel_region->second.transform.Find("A", 0) != -1 || sel_region->second.transform == "I") {
 			sel_region->second.use_default = m_UseDefault.GetCheck();
 			m_Threshold.GetWindowText(text);
 			sel_region->second.threshold = strtoul(text.GetString(), NULL, 10);
-
+		}
+		if (sel_region->second.transform.Find("A", 0) != -1) {
 			sel_region->second.use_cropping = m_UseCrop.GetCheck();
 			m_CropSize.GetWindowText(text);
 			sel_region->second.crop_size = strtoul(text.GetString(), NULL, 10);
 			sel_region->second.box_color = m_BoxColor.GetCurSel();
 		}
-		if (sel_region->second.transform == "I") {
-			sel_region->second.use_default = m_UseDefault.GetCheck();
-			m_Threshold.GetWindowText(text);
-			sel_region->second.threshold = strtoul(text.GetString(), NULL, 10);
-		}
 	}
 
-
-	if (sel_region != p_tablemap->r$()->end() && sel_region->second.transform.Find("A", 0) != -1 && m_ColorCombo.GetCurSel() != CB_ERR) {
-		CString color_preset_name;
-		m_ColorCombo.GetLBText(m_ColorCombo.GetCurSel(), color_preset_name);
-		SaveColorPreset((int)m_ColorCombo.GetItemData(m_ColorCombo.GetCurSel()), color_preset_name, GetColorPresetInputColor());
-	}
 	theApp.m_pMainWnd->Invalidate(false);
 	Invalidate(false);
 
@@ -1898,13 +1862,6 @@ void CDlgTableMap::disable_ocr_and_clear_all(void)
 	m_BoxColor.EnableWindow(false);
 	box_color = -1;
 	m_BoxColor.SetCurSel(box_color);
-	m_ColorCombo.EnableWindow(false);
-	m_ColorAdd.EnableWindow(false);
-	m_ColorEdit.EnableWindow(false);
-	m_ColorDelete.EnableWindow(false);
-	m_ColorAddPoint.EnableWindow(false);
-	m_ColorClearPoint.EnableWindow(false);
-	ClearColorPresetPreview();
 }
 
 
@@ -2790,12 +2747,6 @@ void CDlgTableMap::update_ocr_r$_display(void) {
 	}
 
 	m_MatchMode.EnableWindow(false);
-	m_ColorCombo.EnableWindow(false);
-	m_ColorAdd.EnableWindow(false);
-	m_ColorEdit.EnableWindow(false);
-	m_ColorDelete.EnableWindow(false);
-	m_ColorAddPoint.EnableWindow(false);
-	m_ColorClearPoint.EnableWindow(false);
 
 	// Auto-Ocr processing
 	if (sel_template != p_tablemap->tpl$()->end())
@@ -2884,13 +2835,6 @@ void CDlgTableMap::update_ocr_r$_display(void) {
 
 	if (selected_transform.Find("AutoOcr") != -1) {
 		m_MatchMode.EnableWindow(true);
-		m_ColorCombo.EnableWindow(true);
-		m_ColorAdd.EnableWindow(true);
-		m_ColorEdit.EnableWindow(m_ColorCombo.GetCurSel() != CB_ERR);
-		bool color_preset_can_have_point = m_ColorCombo.GetCurSel() != CB_ERR && (int)m_ColorCombo.GetItemData(m_ColorCombo.GetCurSel()) != kDefaultColorPresetIndex;
-		m_ColorDelete.EnableWindow(color_preset_can_have_point);
-		m_ColorAddPoint.EnableWindow(color_preset_can_have_point);
-		m_ColorClearPoint.EnableWindow(color_preset_can_have_point);
 	}
 
 	if (sel_region != p_tablemap->r$()->end()) {
@@ -2992,12 +2936,6 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 	}
 
 	m_MatchMode.EnableWindow(false);
-	m_ColorCombo.EnableWindow(false);
-	m_ColorAdd.EnableWindow(false);
-	m_ColorEdit.EnableWindow(false);
-	m_ColorDelete.EnableWindow(false);
-	m_ColorAddPoint.EnableWindow(false);
-	m_ColorClearPoint.EnableWindow(false);
 
 	// Left/top/right/bottom edits/spinners
 	if (!dont_update_spinners && sel_template != p_tablemap->tpl$()->end())
@@ -3075,8 +3013,6 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 			SetEditTextUnlessFocused(m_CropSize, text);
 			m_BoxColor.SetCurSel(sel_region->second.box_color);
 		}
-		PopulateColorPresets();
-		ApplyBestColorPresetForSelectedRegion();
 	}
 
 	if (m_UseCrop.GetCheck()) {
@@ -3109,13 +3045,6 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 
 	if (selected_transform.Find("AutoOcr") != -1) {
 		m_MatchMode.EnableWindow(true);
-		m_ColorCombo.EnableWindow(true);
-		m_ColorAdd.EnableWindow(true);
-		m_ColorEdit.EnableWindow(m_ColorCombo.GetCurSel() != CB_ERR);
-		bool color_preset_can_have_point = m_ColorCombo.GetCurSel() != CB_ERR && (int)m_ColorCombo.GetItemData(m_ColorCombo.GetCurSel()) != kDefaultColorPresetIndex;
-		m_ColorDelete.EnableWindow(color_preset_can_have_point);
-		m_ColorAddPoint.EnableWindow(color_preset_can_have_point);
-		m_ColorClearPoint.EnableWindow(color_preset_can_have_point);
 	}
 
 	if (sel_template != p_tablemap->tpl$()->end()) return;

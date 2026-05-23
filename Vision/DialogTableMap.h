@@ -18,12 +18,21 @@
 #include "resource.h"
 #include "StickyButton.h"
 #include "ScrollHelper.h"
-#include "ColorPickerCB.h"
+#include <vector>
 
 // Region grouping types
 enum {BY_TYPE = 1, BY_NAME = 2};
 
 class CScrollHelper;    // Forward class declaration.
+
+struct ImageProcessingPreset {
+	CString name;
+	bool use_default;
+	int threshold;
+	bool use_cropping;
+	int crop_size;
+	CString match_mode_label;
+};
 
 // CDlgTableMap dialog
 class CDlgTableMap : public CDialog
@@ -56,14 +65,6 @@ protected:
 	afx_msg void OnGroupColorChange();
 	afx_msg void OnBnClickedDeletePlayerRegions();
 	afx_msg void OnBnClickedDuplicateGroupToPlayer();
-	afx_msg void OnColorComboChange();
-	afx_msg void OnBnClickedColorAdd();
-	afx_msg void OnBnClickedColorEdit();
-	afx_msg void OnBnClickedColorDelete();
-	afx_msg void OnBnClickedColorAddPoint();
-	afx_msg void OnBnClickedColorClearPoint();
-	afx_msg void OnBnClickedColorDropper();
-	afx_msg void OnStnClickedColorPreview();
 	afx_msg void OnBnClickedCreateHash0();
 	afx_msg void OnBnClickedCreateHash1();
 	afx_msg void OnBnClickedCreateHash2();
@@ -100,7 +101,9 @@ protected:
 	afx_msg void OnTvnKeydownTablemapTree(NMHDR *pNMHDR, LRESULT *pResult);
 	afx_msg void OnBnClickedUseDefault();
 	afx_msg void OnBnClickedUseCrop();
-	afx_msg void OnBoxColorChange();
+	afx_msg void OnBnClickedImageProcessingPresetAdd();
+	afx_msg void OnBnClickedImageProcessingPresetDelete();
+	afx_msg void OnBnClickedImageProcessingPresetLoad();
 	HTREEITEM GetRecordTypeNode(HTREEITEM item);
 	HTREEITEM GetTextSelItemAndRecordType(CString *sel_text, CString *type_text);
 	void UpdateDialogTitleForSelection(CString sel_text, CString type_text, HTREEITEM type_node);
@@ -126,23 +129,6 @@ protected:
 	void AddNamedGroupsToTree(void);
 	void PopulateDeletePlayerCombo(void);
 	void PopulateDuplicatePlayerCombo(void);
-	void PopulateColorPresets(void);
-	void ApplySelectedColorPreset(bool update_region);
-	void ApplyBestColorPresetForSelectedRegion(void);
-	int ClosestColorPreset(COLORREF color);
-	bool ReadColorPresetColor(int index, COLORREF *color);
-	bool GetSelectedRegionAverageColor(COLORREF *color);
-	bool GetFourByFourAverageColor(int center_x, int center_y, COLORREF *color);
-	void DrawColorPresetPreview(void);
-	void ClearColorPresetPreview(void);
-	bool GetSelectedColorPresetPoint(int *x, int *y);
-	void ClearSelectedColorPresetPoint(void);
-	void CaptureColorPresetPreviewPoint(CPoint point);
-	void CaptureColorPresetPreviewColor(CPoint point);
-	void SetColorPresetInputs(COLORREF color, int alpha = 255);
-	COLORREF GetColorPresetInputColor(void);
-	void SaveColorPreset(int index, CString name, COLORREF color);
-	void DeleteColorPreset(int index);
 	void MoveSelectedRegionBy(int dx, int dy);
 	void CreateHash(int hash_type);
 	void CreateHashesOfAllImages(int hash_type);
@@ -151,7 +137,7 @@ protected:
 	int GetType(CString selected_text);
 	HTREEITEM InsertGroupedRegion(CString itemText);
 
-	CStatic				m_BitmapFrame, m_MatFrame, m_ColorPreview;
+	CStatic				m_BitmapFrame, m_MatFrame;
 	CStickyButton		m_Picker;
 	CSpinButtonCtrl		m_LeftSpin, m_TopSpin, m_BottomSpin, m_RightSpin, m_RadiusSpin, m_ThresholdSpin, m_CropSpin;
 	CComboBox			m_Transform, m_Zoom, m_TrackerFontSet, m_TrackerFontNum, m_TrackerCardNum;
@@ -168,7 +154,7 @@ protected:
 	CButton				m_NudgeUpLeft, m_NudgeUp, m_NudgeUpRight, m_NudgeRight, m_NudgeDownRight, m_NudgeDown;
 	CButton				m_NudgeDownLeft, m_NudgeLeft;
 	CButton				m_UseCrop, m_UseDefault;
-	CButton				m_UpdateOcrNow, m_ColorDropper;
+	CButton				m_UpdateOcrNow;
 	CMenu				m_TableMapMenu;
 	CPen				black_pen, green_pen, red_pen, blue_pen, white_dot_pen, null_pen;
 	CBrush				white_brush, lt_gray_brush, gray_brush, red_brush, yellow_brush;
@@ -193,8 +179,9 @@ private:
 	Mat prepareImage(Mat img_orig, bool binarize = true, int threshold = 100, bool second_pass = false);
 	Mat binarize_array_opencv(Mat image, int threshold);
 	CScrollHelper* m_scrollHelper;
-	int threshold, match_mode, box_color;
+	int threshold, match_mode;
 	bool proceed_scroll = true;
+	std::vector<ImageProcessingPreset> m_ImageProcessingPresets;
 
 	string trim(string str) {
 		return regex_replace(str, regex("\\s"), "");
@@ -216,8 +203,6 @@ public:
 	void update_ocr_display(void);
 	void update_display(void);
 	void UpdateStatus(void);
-	void CaptureColorPresetPoint(CPoint point);
-	void CaptureColorPresetColor(CPoint point);
 	HTREEITEM update_tree(CString node_text);
 	void GroupRegions(void);
 	void UngroupRegions(void);
@@ -229,10 +214,6 @@ public:
 	CEdit				m_Left, m_Top, m_Bottom, m_Right, m_xy;
 	CStickyButton		m_DrawRect;
 	CComboBox			m_MatchMode;
-	CColorPickerCB		m_BoxColor;
-	CComboBox			m_ColorCombo;
-	CEdit				m_ColorA, m_ColorR, m_ColorG, m_ColorB;
-	CButton				m_ColorAdd, m_ColorEdit, m_ColorDelete, m_ColorAddPoint, m_ColorClearPoint;
 	vector<pair<Rect, CString>> ResultBoxes, ResultBoxes2;
 	CString ResultString, ResultString2;
 	Rect	bestRect, bestRect2;
