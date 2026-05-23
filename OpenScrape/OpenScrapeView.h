@@ -119,6 +119,7 @@ public:
 	bool GetGroupColorForRegion(CString name, COLORREF *color);
 
 	bool		drawing_rect, drawing_started;
+	bool		color_point_mode;
 	CPoint		drawrect_start;
 	CString		drawrect_region;
 

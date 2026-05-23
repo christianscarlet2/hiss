@@ -113,6 +113,7 @@ COpenScrapeView::COpenScrapeView()
 	group_color_index = 3;
 
 	drawing_rect = drawing_started = false;
+	color_point_mode = false;
 	group_box_mode = group_box_started = false;
 	hCurDrawRect = ::LoadCursor(AfxGetInstanceHandle(), MAKEINTRESOURCE(IDC_DRAWRECTCURSOR));
 	hCurStandard = ::LoadCursor(NULL, IDC_ARROW);
@@ -977,6 +978,15 @@ void COpenScrapeView::OnLButtonDown(UINT nFlags, CPoint point)
 	COpenScrapeDoc		*pDoc = GetDocument();
 	CString				sel = theApp.m_TableMapDlg->m_TableMapTree.GetItemText(theApp.m_TableMapDlg->m_TableMapTree.GetSelectedItem());
 	CString				text;
+
+	if (color_point_mode) {
+		color_point_mode = false;
+		if (theApp.m_TableMapDlg != NULL) {
+			theApp.m_TableMapDlg->CaptureColorPresetPoint(point);
+		}
+		CView::OnLButtonDown(nFlags, point);
+		return;
+	}
 
 	if (group_box_mode) {
 		group_box_start = point;

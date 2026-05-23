@@ -60,6 +60,7 @@ protected:
 	afx_msg void OnBnClickedColorAdd();
 	afx_msg void OnBnClickedColorEdit();
 	afx_msg void OnBnClickedColorDelete();
+	afx_msg void OnBnClickedColorAddPoint();
 	afx_msg void OnBnClickedCreateHash0();
 	afx_msg void OnBnClickedCreateHash1();
 	afx_msg void OnBnClickedCreateHash2();
@@ -125,6 +126,9 @@ protected:
 	void ApplyBestColorPresetForSelectedRegion(void);
 	int ClosestColorPreset(COLORREF color);
 	bool GetSelectedRegionAverageColor(COLORREF *color);
+	bool GetFourByFourAverageColor(int center_x, int center_y, COLORREF *color);
+	void SetColorPresetInputs(COLORREF color, int alpha = 255);
+	COLORREF GetColorPresetInputColor(void);
 	void SaveColorPreset(int index, CString name, COLORREF color);
 	void DeleteColorPreset(int index);
 	void MoveSelectedRegionBy(int dx, int dy);
@@ -197,6 +201,7 @@ public:
 	void update_ocr_display(void);
 	void update_display(void);
 	void UpdateStatus(void);
+	void CaptureColorPresetPoint(CPoint point);
 	HTREEITEM update_tree(CString node_text);
 	void GroupRegions(void);
 	void UngroupRegions(void);
@@ -210,7 +215,8 @@ public:
 	CComboBox			m_MatchMode;
 	CColorPickerCB		m_BoxColor;
 	CComboBox			m_ColorCombo;
-	CButton				m_ColorAdd, m_ColorEdit, m_ColorDelete;
+	CEdit				m_ColorA, m_ColorR, m_ColorG, m_ColorB;
+	CButton				m_ColorAdd, m_ColorEdit, m_ColorDelete, m_ColorAddPoint;
 	vector<pair<Rect, CString>> ResultBoxes, ResultBoxes2;
 	CString ResultString, ResultString2;
 	Rect	bestRect, bestRect2;
