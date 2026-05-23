@@ -172,7 +172,7 @@ protected:
 	bool				picker_cursor;
 	HCURSOR				hCurPicker, hCurStandard;
 	bool				ignore_changes;
-	CStatic				m_status_cards, m_status_fonts;
+	CEdit				m_status_cards, m_status_fonts;
 	COLORREF			m_crColor;
 
 private:

@@ -34,8 +34,8 @@ void Registry::read_reg(void)
 	// Defaults
 	tablemap_x  = 0;
 	tablemap_y  = 0;
-	tablemap_dx = 600;
-	tablemap_dy = 750;
+	tablemap_dx = 650;
+	tablemap_dy = 940;
 
 	main_x  = tablemap_dx;
 	main_y  = 0;

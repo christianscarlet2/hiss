@@ -49,8 +49,43 @@ COpenScrapeApp::COpenScrapeApp()
 // The one and only COpenScrapeApp object
 COpenScrapeApp theApp;
 
+static const char *kTablemapProfileSection = "Tablemap";
+static const char *kLastTablemapProfileKey = "LastPath";
+
+void COpenScrapeApp::RememberTablemap(CString path)
+{
+	path.Trim();
+	if (path == "") {
+		return;
+	}
+	WriteProfileString(kTablemapProfileSection, kLastTablemapProfileKey, path);
+	if (m_pRecentFileList != NULL) {
+		AddToRecentFileList(path);
+	}
+}
+
+CString COpenScrapeApp::LastRememberedTablemap()
+{
+	CString path = GetProfileString(kTablemapProfileSection, kLastTablemapProfileKey, "");
+	path.Trim();
+	if (path == "") {
+		return "";
+	}
+
+	CFileStatus status;
+	if (CFile::GetStatus(path, status)) {
+		return path;
+	}
+	return "";
+}
+
 CString COpenScrapeApp::MostRecentExistingTablemap()
 {
+	CString last_tablemap = LastRememberedTablemap();
+	if (last_tablemap != "") {
+		return last_tablemap;
+	}
+
 	if (m_pRecentFileList == NULL) {
 		return "";
 	}

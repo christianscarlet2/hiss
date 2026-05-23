@@ -30,6 +30,7 @@ protected: // create from serialization only
 public:
 	static COpenScrapeDoc* GetDocument();
 	virtual BOOL OnNewDocument();
+	virtual BOOL OnSaveDocument(LPCTSTR lpszPathName);
 	virtual void Serialize(CArchive& ar);
 	virtual ~COpenScrapeDoc();
 	// Blink state

@@ -102,6 +102,19 @@ static CString ColorPresetNameKey(int index)
 	return ColorPresetKey(index, "name");
 }
 
+static bool ControlHasFocus(CWnd &control)
+{
+	return ::GetFocus() == control.GetSafeHwnd();
+}
+
+static void SetEditTextUnlessFocused(CEdit &edit, const CString &text)
+{
+	if (ControlHasFocus(edit)) {
+		return;
+	}
+	edit.SetWindowText(text);
+}
+
 // Declare DNN-Recognizer
 //TextRecognitionModel recognizer;
 TessBaseAPI* api = new TessBaseAPI();
@@ -1260,7 +1273,7 @@ void CDlgTableMap::OnOcrRegionChange()
 
 	if (sel_region != p_tablemap->r$()->end()) {
 		// OCR image processing settings
-		if (sel_region->second.transform.Find("A", 0) != -1) {
+		if (sel_region->second.transform.Find("A", 0) != -1 && m_ColorCombo.GetCurSel() == CB_ERR) {
 			sel_region->second.use_default = m_UseDefault.GetCheck();
 			m_Threshold.GetWindowText(text);
 			sel_region->second.threshold = strtoul(text.GetString(), NULL, 10);
@@ -1478,11 +1491,11 @@ void CDlgTableMap::ApplySelectedColorPreset(bool update_region)
 	key = ColorPresetKey(index, "threshold");
 	text = p_tablemap->GetTMSymbol(key);
 	if (!text.IsEmpty()) {
-		m_Threshold.SetWindowText(text);
+		SetEditTextUnlessFocused(m_Threshold, text);
 		m_ThresholdSpin.SetPos(atoi(text.GetString()));
 	} else if (index == kDefaultColorPresetIndex) {
 		text.Format("%d", kDefaultAutoOcrThreshold);
-		m_Threshold.SetWindowText(text);
+		SetEditTextUnlessFocused(m_Threshold, text);
 		m_ThresholdSpin.SetPos(kDefaultAutoOcrThreshold);
 	}
 	key = ColorPresetKey(index, "use_crop");
@@ -1491,11 +1504,11 @@ void CDlgTableMap::ApplySelectedColorPreset(bool update_region)
 	key = ColorPresetKey(index, "crop");
 	text = p_tablemap->GetTMSymbol(key);
 	if (!text.IsEmpty()) {
-		m_CropSize.SetWindowText(text);
+		SetEditTextUnlessFocused(m_CropSize, text);
 		m_CropSpin.SetPos(atoi(text.GetString()));
 	} else if (index == kDefaultColorPresetIndex) {
 		text.Format("%d", kDefaultCropSize);
-		m_CropSize.SetWindowText(text);
+		SetEditTextUnlessFocused(m_CropSize, text);
 		m_CropSpin.SetPos(kDefaultCropSize);
 	}
 	key = ColorPresetKey(index, "box");
@@ -1636,6 +1649,13 @@ bool CDlgTableMap::GetSelectedColorPresetPoint(int *x, int *y)
 
 void CDlgTableMap::ClearSelectedColorPresetPoint(void)
 {
+	CString parent_region_name = "";
+	CString type_text = "";
+	GetTextSelItemAndRecordType(&parent_region_name, &type_text);
+	if (type_text != "Regions") {
+		parent_region_name = "";
+	}
+
 	int sel = m_ColorCombo.GetCurSel();
 	if (sel == CB_ERR) {
 		return;
@@ -1651,7 +1671,13 @@ void CDlgTableMap::ClearSelectedColorPresetPoint(void)
 	point_region_name.Format("oscolorip%dpoint", index);
 	p_tablemap->set_r$()->erase(point_region_name.GetString());
 	ClearColorPresetPreview();
-	update_tree("Regions");
+	HTREEITEM regions_node = update_tree("Regions");
+	if (!parent_region_name.IsEmpty()) {
+		HTREEITEM parent_item = FindItem(parent_region_name, regions_node);
+		if (parent_item != NULL) {
+			m_TableMapTree.SelectItem(parent_item);
+		}
+	}
 	Invalidate(false);
 	theApp.m_pMainWnd->Invalidate(false);
 	COpenScrapeDoc::GetDocument()->SetModifiedFlag(true);
@@ -1894,6 +1920,13 @@ void CDlgTableMap::CaptureColorPresetPreviewPoint(CPoint point)
 
 void CDlgTableMap::CaptureColorPresetPoint(CPoint point)
 {
+	CString parent_region_name = "";
+	CString type_text = "";
+	GetTextSelItemAndRecordType(&parent_region_name, &type_text);
+	if (type_text != "Regions") {
+		parent_region_name = "";
+	}
+
 	int sel = m_ColorCombo.GetCurSel();
 	if (sel == CB_ERR) {
 		return;
@@ -1958,7 +1991,13 @@ void CDlgTableMap::CaptureColorPresetPoint(CPoint point)
 	m_ColorCombo.GetLBText(sel, name);
 	SaveColorPreset(index, name, color);
 	DrawColorPresetPreview();
-	update_tree("Regions");
+	HTREEITEM regions_node = update_tree("Regions");
+	if (!parent_region_name.IsEmpty()) {
+		HTREEITEM parent_item = FindItem(parent_region_name, regions_node);
+		if (parent_item != NULL) {
+			m_TableMapTree.SelectItem(parent_item);
+		}
+	}
 	Invalidate(false);
 	theApp.m_pMainWnd->Invalidate(false);
 	COpenScrapeDoc::GetDocument()->SetModifiedFlag(true);
@@ -3492,11 +3531,11 @@ void CDlgTableMap::update_ocr_r$_display(void) {
 		m_UseDefault.SetCheck(sel_region->second.use_default);
 		if (m_UseDefault.GetCheck()) {
 			text.Format("%d", kDefaultInbuiltThreshold);
-			m_Threshold.SetWindowText(text);
+			SetEditTextUnlessFocused(m_Threshold, text);
 		}
 		else {
 			text.Format("%d", sel_region->second.threshold);
-			m_Threshold.SetWindowText(text);
+			SetEditTextUnlessFocused(m_Threshold, text);
 		}
 	}
 
@@ -3506,25 +3545,25 @@ void CDlgTableMap::update_ocr_r$_display(void) {
 		m_UseCrop.SetCheck(sel_region->second.use_cropping);
 		if (m_UseDefault.GetCheck()) {
 			text.Format("%d", kDefaultAutoOcrThreshold);
-			m_Threshold.SetWindowText(text);
+			SetEditTextUnlessFocused(m_Threshold, text);
 		}
 		else {
 			text.Format("%d", sel_region->second.threshold);
-			m_Threshold.SetWindowText(text);
+			SetEditTextUnlessFocused(m_Threshold, text);
 		}
 
 		if (!m_UseCrop.GetCheck()) {
 			text.Format("%d", kDefaultCropSize);
-			m_CropSize.SetWindowText(text);
+			SetEditTextUnlessFocused(m_CropSize, text);
 			m_BoxColor.SetCurSel(kDefaultBoxColor);
 		}
 		else {
 			text.Format("%d", sel_region->second.crop_size);
-			m_CropSize.SetWindowText(text);
+			SetEditTextUnlessFocused(m_CropSize, text);
 			m_BoxColor.SetCurSel(sel_region->second.box_color);
 		}
 		PopulateColorPresets();
-		ApplyBestColorPresetForSelectedRegion();
+		ApplySelectedColorPreset(false);
 	}
 
 	if (m_UseCrop.GetCheck()) {
@@ -3716,11 +3755,11 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 		m_UseDefault.SetCheck(sel_region->second.use_default);
 		if (m_UseDefault.GetCheck()) {
 			text.Format("%d", kDefaultInbuiltThreshold);
-			m_Threshold.SetWindowText(text);
+			SetEditTextUnlessFocused(m_Threshold, text);
 		}
 		else {
 			text.Format("%d", sel_region->second.threshold);
-			m_Threshold.SetWindowText(text);
+			SetEditTextUnlessFocused(m_Threshold, text);
 		}
 	}
 
@@ -3730,21 +3769,21 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 		m_UseCrop.SetCheck(sel_region->second.use_cropping);
 		if (m_UseDefault.GetCheck()) {
 			text.Format("%d", kDefaultAutoOcrThreshold);
-			m_Threshold.SetWindowText(text);
+			SetEditTextUnlessFocused(m_Threshold, text);
 		}
 		else {
 			text.Format("%d", sel_region->second.threshold);
-			m_Threshold.SetWindowText(text);
+			SetEditTextUnlessFocused(m_Threshold, text);
 		}
 
 		if (!m_UseCrop.GetCheck()) {
 			text.Format("%d", kDefaultCropSize);
-			m_CropSize.SetWindowText(text);
+			SetEditTextUnlessFocused(m_CropSize, text);
 			m_BoxColor.SetCurSel(kDefaultBoxColor);
 		}
 		else {
 			text.Format("%d", sel_region->second.crop_size);
-			m_CropSize.SetWindowText(text);
+			SetEditTextUnlessFocused(m_CropSize, text);
 			m_BoxColor.SetCurSel(sel_region->second.box_color);
 		}
 		PopulateColorPresets();
@@ -4225,22 +4264,15 @@ void CDlgTableMap::OnDeltaposThresholdSpin(NMHDR* pNMHDR, LRESULT* pResult)
 
 	if (ignore_changes)  return;
 
-	sel_region->second.threshold = max(0, min(300, pNMUpDown->iPos + pNMUpDown->iDelta));
+	int new_threshold = max(0, min(300, pNMUpDown->iPos + pNMUpDown->iDelta));
 	CString text;
-	text.Format("%d", sel_region->second.threshold);
+	text.Format("%d", new_threshold);
 	ignore_changes = true;
 	m_Threshold.SetWindowText(text);
-	m_ThresholdSpin.SetPos(sel_region->second.threshold);
+	m_ThresholdSpin.SetPos(new_threshold);
 	ignore_changes = false;
 
-	//update_ocr_display();
-	ignore_changes = true;
-	update_ocr_r$_display();
-	ignore_changes = false;
-	Invalidate(false);
-	theApp.m_pMainWnd->Invalidate(false);
-
-	pDoc->SetModifiedFlag(true);
+	OnOcrRegionChange();
 
 	*pResult = 0;
 }
@@ -4263,22 +4295,15 @@ void CDlgTableMap::OnDeltaposCropSpin(NMHDR* pNMHDR, LRESULT* pResult)
 
 	if (ignore_changes)  return;
 
-	sel_region->second.crop_size = max(2, min(100, pNMUpDown->iPos + pNMUpDown->iDelta));
+	int new_crop_size = max(2, min(100, pNMUpDown->iPos + pNMUpDown->iDelta));
 	CString text;
-	text.Format("%d", sel_region->second.crop_size);
+	text.Format("%d", new_crop_size);
 	ignore_changes = true;
 	m_CropSize.SetWindowText(text);
-	m_CropSpin.SetPos(sel_region->second.crop_size);
+	m_CropSpin.SetPos(new_crop_size);
 	ignore_changes = false;
 
-	//update_ocr_display();
-	ignore_changes = true;
-	update_ocr_r$_display();
-	ignore_changes = false;
-	Invalidate(false);
-	theApp.m_pMainWnd->Invalidate(false);
-
-	pDoc->SetModifiedFlag(true);
+	OnOcrRegionChange();
 
 	*pResult = 0;
 }

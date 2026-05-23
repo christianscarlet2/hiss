@@ -89,8 +89,8 @@ using namespace tesseract;
 
 // Window constants for the improved GUI
 const int kBordersize     =   2;
-const int kSizeXForEditor = 630;
-const int kSizeYForEditor = 870;
+const int kSizeXForEditor = 650;
+const int kSizeYForEditor = 940;
 const int kYOffsetEditor  =  69;
 
 

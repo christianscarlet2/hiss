@@ -355,6 +355,45 @@ static bool CStringContainsNoCase(CString haystack, CString needle)
 	return haystack.Find(needle) >= 0;
 }
 
+static bool GetTablemapSize(CString size_name, int *width, int *height)
+{
+	if (p_tablemap == NULL || width == NULL || height == NULL) {
+		return false;
+	}
+
+	ZMapCI size_iter = p_tablemap->z$()->find(size_name);
+	if (size_iter == p_tablemap->z$()->end()) {
+		return false;
+	}
+
+	*width = size_iter->second.width;
+	*height = size_iter->second.height;
+	return true;
+}
+
+static bool TableCandidateFitsTablemapSize(const STableList &candidate)
+{
+	int min_width = 0;
+	int min_height = 0;
+	int max_width = 0;
+	int max_height = 0;
+	if (!GetTablemapSize("clientsizemin", &min_width, &min_height)) {
+		return true;
+	}
+	if (!GetTablemapSize("clientsizemax", &max_width, &max_height)) {
+		max_width = min_width;
+		max_height = min_height;
+	}
+
+	RECT rect = {0};
+	if (!GetClientWindowCaptureRect(candidate.hwnd, &rect)) {
+		::GetClientRect(candidate.hwnd, &rect);
+	}
+	int width = rect.right - rect.left;
+	int height = rect.bottom - rect.top;
+	return width >= min_width && width <= max_width && height >= min_height && height <= max_height;
+}
+
 bool CMainFrame::TableCandidateMatchesTitleText(const STableList &candidate)
 {
 	CString title = candidate.title;
@@ -388,13 +427,26 @@ bool CMainFrame::AutoConnectToTablemapTitleText()
 	g_tlist.RemoveAll();
 	EnumWindows(EnumProcTopLevelWindowList, NULL);
 
+	int first_title_match = -1;
 	for (int i = 0; i < g_tlist.GetSize(); ++i) {
 		if (TableCandidateMatchesTitleText(g_tlist[i])) {
-			AttachToTableCandidate(g_tlist[i]);
-			ForceRedraw();
-			BringOpenScrapeBackToFront();
-			return true;
+			if (first_title_match < 0) {
+				first_title_match = i;
+			}
+			if (TableCandidateFitsTablemapSize(g_tlist[i])) {
+				AttachToTableCandidate(g_tlist[i]);
+				ForceRedraw();
+				BringOpenScrapeBackToFront();
+				return true;
+			}
 		}
+	}
+
+	if (first_title_match >= 0) {
+		AttachToTableCandidate(g_tlist[first_title_match]);
+		ForceRedraw();
+		BringOpenScrapeBackToFront();
+		return true;
 	}
 
 	return false;

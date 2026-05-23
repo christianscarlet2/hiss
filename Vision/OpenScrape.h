@@ -37,6 +37,7 @@ public:
 	virtual BOOL InitInstance();
 	afx_msg void OnAppAbout();
 	DECLARE_MESSAGE_MAP()
+public:
   void ArrangeWindows();
 	void LoadMostRecentTablemapIfNeeded();
 	CString MostRecentExistingTablemap();

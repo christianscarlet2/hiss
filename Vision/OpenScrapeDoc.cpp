@@ -95,7 +95,20 @@ BOOL COpenScrapeDoc::OnOpenDocument(LPCTSTR lpszPathName)
 	InvalidateRect(theApp.m_pMainWnd->GetSafeHwnd(), NULL, true);
 	if (theApp.m_TableMapDlg)  theApp.m_TableMapDlg->Invalidate(true);
 
+	if (valid_open) {
+		theApp.RememberTablemap(lpszPathName);
+	}
+
 	return valid_open;
+}
+
+BOOL COpenScrapeDoc::OnSaveDocument(LPCTSTR lpszPathName)
+{
+	BOOL saved = CDocument::OnSaveDocument(lpszPathName);
+	if (saved) {
+		theApp.RememberTablemap(lpszPathName);
+	}
+	return saved;
 }
 
 // COpenScrapeDoc serialization
