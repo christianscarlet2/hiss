@@ -1457,7 +1457,6 @@ void CDlgTableMap::update_ocr_display(void)
 	if (m_UseCrop.GetCheck()) {
 		m_CropSize.EnableWindow(true);
 		m_CropSpin.EnableWindow(true);
-		m_BoxColor.EnableWindow(true);
 	}
 
 	update_ocr_r$_display();
@@ -1846,21 +1845,18 @@ void CDlgTableMap::disable_ocr_and_clear_all(void)
 	m_UseDefault.EnableWindow(false);
 	m_Threshold.EnableWindow(false);
 	m_ThresholdSpin.EnableWindow(false);
-	threshold = 0;
+	threshold = 100;
 	m_Threshold.SetWindowText(to_string(threshold).c_str());
 	m_MatchMode.EnableWindow(false);
-	match_mode = -1;
-	PopulateTemplateMatchModes();
+	match_mode = kDefaultTesseractPageSegModeIndex;
+	PopulateTesseractMatchModes();
 	m_MatchMode.SetCurSel(match_mode);
 
 	m_UseCrop.EnableWindow(false);
 	m_CropSize.EnableWindow(false);
 	m_CropSpin.EnableWindow(false);
-	crop_size = 0;
+	crop_size = 30;
 	m_CropSize.SetWindowText(to_string(crop_size).c_str());
-	m_BoxColor.EnableWindow(false);
-	box_color = -1;
-	m_BoxColor.SetCurSel(box_color);
 }
 
 
@@ -2785,7 +2781,7 @@ void CDlgTableMap::update_ocr_r$_display(void) {
 		m_UseDefault.SetCheck(sel_region->second.use_default);
 		m_UseCrop.SetCheck(sel_region->second.use_cropping);
 		if (m_UseDefault.GetCheck()) {
-			text.Format("%d", kDefaultAutoOcrThreshold);
+			text.Format("%d", 100);
 			SetEditTextUnlessFocused(m_Threshold, text);
 		}
 		else {
@@ -2794,26 +2790,22 @@ void CDlgTableMap::update_ocr_r$_display(void) {
 		}
 
 		if (!m_UseCrop.GetCheck()) {
-			text.Format("%d", kDefaultCropSize);
+			text.Format("%d", 30);
 			SetEditTextUnlessFocused(m_CropSize, text);
-			m_BoxColor.SetCurSel(kDefaultBoxColor);
 		}
 		else {
 			text.Format("%d", sel_region->second.crop_size);
 			SetEditTextUnlessFocused(m_CropSize, text);
-			m_BoxColor.SetCurSel(sel_region->second.box_color);
 		}
 	}
 
 	if (m_UseCrop.GetCheck()) {
 		m_CropSize.EnableWindow(true);
 		m_CropSpin.EnableWindow(true);
-		m_BoxColor.EnableWindow(true);
 	}
 	else {
 		m_CropSize.EnableWindow(false);
 		m_CropSpin.EnableWindow(false);
-		m_BoxColor.EnableWindow(false);
 	}
 
 	if (!m_UseDefault.GetCheck()) {
