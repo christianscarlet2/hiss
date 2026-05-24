@@ -812,8 +812,6 @@ void CDlgTableMap::OnPaint()
 		}
 	}
 
-	DrawColorPresetPreview();
-
 	// Do not call CDialog::OnPaint() for painting messages
 }
 
@@ -1334,7 +1332,6 @@ void CDlgTableMap::OnRegionChange()
 			sel_region->second.use_cropping = m_UseCrop.GetCheck();
 			m_CropSize.GetWindowText(text);
 			sel_region->second.crop_size = strtoul(text.GetString(), NULL, 10);
-			sel_region->second.box_color = m_BoxColor.GetCurSel();
 		}
 		if (sel_region->second.transform == "I") {
 			sel_region->second.use_default = m_UseDefault.GetCheck();
@@ -1903,7 +1900,7 @@ Mat CDlgTableMap::prepareImage(Mat img_orig, bool binarize, int threshold, bool 
 	Mat img_bounded = img_resized.clone();
 	img_bounded.convertTo(img_bounded, CV_8UC3);
 	cvtColor(img_bounded, img_bounded, COLOR_GRAY2BGR);
-	m_crColor = m_BoxColor.GetSelectedColorValue();
+	const Scalar previewColor(255, 255, 255);
 
 	/* Add border to bestRect ROI + resize it to fit 30-33px height for capital letter
 	// for optimal 0% error rate on Tesseract recognition: https://groups.google.com/g/tesseract-ocr/c/Wdh_JJwnw94/m/24JHDYQbBQAJ
@@ -1978,7 +1975,7 @@ Mat CDlgTableMap::prepareImage(Mat img_orig, bool binarize, int threshold, bool 
 		for (size_t i = 0; i < maxIndex.size(); i++) {
 			int j = maxIndex[i];
 			best_rect = boundRect[j];
-			rectangle(img_bounded, best_rect, Scalar(GetBValue(m_crColor), GetGValue(m_crColor), GetRValue(m_crColor)), 1);
+			rectangle(img_bounded, best_rect, previewColor, 1);
 			boundRect2.push_back(best_rect);
 		}
 		// Second find nearest big box from region center
@@ -2008,7 +2005,7 @@ Mat CDlgTableMap::prepareImage(Mat img_orig, bool binarize, int threshold, bool 
 			bestRect = best_rect;
 
 		// Draw best box
-		rectangle(img_bounded, best_rect, Scalar(GetBValue(m_crColor), GetGValue(m_crColor), GetRValue(m_crColor)), 2);
+		rectangle(img_bounded, best_rect, previewColor, 2);
 
 		return img_bounded;
 	}
@@ -2997,25 +2994,21 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 		if (!m_UseCrop.GetCheck()) {
 			text.Format("%d", kDefaultCropSize);
 			SetEditTextUnlessFocused(m_CropSize, text);
-			m_BoxColor.SetCurSel(kDefaultBoxColor);
 		}
 		else {
 			text.Format("%d", sel_region->second.crop_size);
 			SetEditTextUnlessFocused(m_CropSize, text);
-			m_BoxColor.SetCurSel(sel_region->second.box_color);
 		}
 	}
 
 	if (m_UseCrop.GetCheck()) {
 		m_CropSize.EnableWindow(true);
 		m_CropSpin.EnableWindow(true);
-		m_BoxColor.EnableWindow(true);
 	}
 	else {
 		m_UseCrop.SetCheck(false);
 		m_CropSize.EnableWindow(false);
 		m_CropSpin.EnableWindow(false);
-		m_BoxColor.EnableWindow(false);
 	}
 
 	if (!m_UseDefault.GetCheck()) {
@@ -6517,6 +6510,108 @@ void CDlgTableMap::OnBnClickedUseCrop()
 	Invalidate(false);
 
 	pDoc->SetModifiedFlag(true);
+}
+
+ImageProcessingPreset CDlgTableMap::GetCurrentImageProcessingPreset()
+{
+	ImageProcessingPreset preset;
+	preset.name = "Preset";
+	preset.use_default = m_UseDefault.GetCheck() != 0;
+	preset.use_cropping = m_UseCrop.GetCheck() != 0;
+
+	CString text;
+	m_Threshold.GetWindowText(text);
+	preset.threshold = _ttoi(text);
+	m_CropSize.GetWindowText(text);
+	preset.crop_size = _ttoi(text);
+
+	int selected_mode = m_MatchMode.GetCurSel();
+	if (selected_mode != CB_ERR) {
+		m_MatchMode.GetLBText(selected_mode, preset.match_mode_label);
+	}
+	else {
+		preset.match_mode_label = _T("");
+	}
+
+	return preset;
+}
+
+void CDlgTableMap::ApplyImageProcessingPreset(const ImageProcessingPreset& preset)
+{
+	m_UseDefault.SetCheck(preset.use_default ? BST_CHECKED : BST_UNCHECKED);
+	m_UseCrop.SetCheck(preset.use_cropping ? BST_CHECKED : BST_UNCHECKED);
+	m_Threshold.SetWindowText(CString().Format(_T("%d"), preset.threshold));
+	m_CropSize.SetWindowText(CString().Format(_T("%d"), preset.crop_size));
+
+	if (!preset.match_mode_label.IsEmpty()) {
+		for (int i = 0; i < m_MatchMode.GetCount(); ++i) {
+			CString mode;
+			m_MatchMode.GetLBText(i, mode);
+			if (mode == preset.match_mode_label) {
+				m_MatchMode.SetCurSel(i);
+				break;
+			}
+		}
+	}
+
+	update_ocr_display();
+	OnOcrRegionChange();
+	Invalidate(false);
+}
+
+void CDlgTableMap::RefreshImageProcessingPresetList()
+{
+	m_ImageProcessingPreset.ResetContent();
+	for (size_t i = 0; i < m_ImageProcessingPresets.size(); ++i) {
+		m_ImageProcessingPreset.AddString(m_ImageProcessingPresets[i].name);
+	}
+
+	if (m_ImageProcessingPresets.empty()) {
+		m_ImageProcessingPreset.SetCurSel(CB_ERR);
+	}
+	else {
+		m_ImageProcessingPreset.SetCurSel(0);
+	}
+}
+
+void CDlgTableMap::AddImageProcessingPreset()
+{
+	ImageProcessingPreset preset = GetCurrentImageProcessingPreset();
+	CString base_name;
+	base_name.Format(_T("Preset %d"), static_cast<int>(m_ImageProcessingPresets.size() + 1));
+	preset.name = base_name;
+
+	for (size_t i = 0; i < m_ImageProcessingPresets.size(); ++i) {
+		if (m_ImageProcessingPresets[i].name == preset.name) {
+			preset.name.Format(_T("Preset %d"), static_cast<int>(m_ImageProcessingPresets.size() + 1 + i));
+		}
+	}
+
+	m_ImageProcessingPresets.push_back(preset);
+	RefreshImageProcessingPresetList();
+	m_ImageProcessingPreset.SetWindowText(preset.name);
+}
+
+void CDlgTableMap::DeleteSelectedImageProcessingPreset()
+{
+	int selected = m_ImageProcessingPreset.GetCurSel();
+	if (selected == CB_ERR || selected >= static_cast<int>(m_ImageProcessingPresets.size())) {
+		return;
+	}
+
+	m_ImageProcessingPresets.erase(m_ImageProcessingPresets.begin() + selected);
+	RefreshImageProcessingPresetList();
+}
+
+void CDlgTableMap::LoadSelectedImageProcessingPreset()
+{
+	int selected = m_ImageProcessingPreset.GetCurSel();
+	if (selected == CB_ERR || selected >= static_cast<int>(m_ImageProcessingPresets.size())) {
+		AfxMessageBox(_T("Select an image processing preset to load."));
+		return;
+	}
+
+	ApplyImageProcessingPreset(m_ImageProcessingPresets[selected]);
 }
 
 void CDlgTableMap::OnBnClickedUpdateOcrNow()
