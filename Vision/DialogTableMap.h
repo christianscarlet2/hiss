@@ -154,7 +154,10 @@ protected:
 	CButton				m_NudgeUpLeft, m_NudgeUp, m_NudgeUpRight, m_NudgeRight, m_NudgeDownRight, m_NudgeDown;
 	CButton				m_NudgeDownLeft, m_NudgeLeft;
 	CButton				m_UseCrop, m_UseDefault;
-	CButton\t\t\tm_UpdateOcrNow;\r\n\tCComboBox\t\tm_ImageProcessingPreset;\r\n\tCButton\t\t\tm_AddPreset, m_DeletePreset, m_LoadPreset;\r\n\tCMenu				m_TableMapMenu;
+	CButton			m_UpdateOcrNow;
+	CComboBox		m_ImageProcessingPreset;
+	CButton			m_AddPreset, m_DeletePreset, m_LoadPreset;
+	CMenu				m_TableMapMenu;
 	CPen				black_pen, green_pen, red_pen, blue_pen, white_dot_pen, null_pen;
 	CBrush				white_brush, lt_gray_brush, gray_brush, red_brush, yellow_brush;
 	LOGFONT				lf_fixed;
@@ -164,7 +167,7 @@ protected:
 	HBITMAP				h_picker_bitmap, h_drawrect_bitmap;
 	bool				picker_cursor;
 	HCURSOR				hCurPicker, hCurStandard;
-	bool				ignore_changes;        CEdit                           m_status_cards, m_status_fonts;
+	bool\t\t\t\tignore_changes;\r\n\tCEdit\t\t\tm_status_cards, m_status_fonts;
 
 private:
         void AddImageProcessingPreset();
