@@ -267,9 +267,8 @@ void CDlgTableMap::DoDataExchange(CDataExchange* pDX)
 	DDX_Text(pDX, IDC_CROP_SIZE, crop_size);
 	DDV_MinMaxInt(pDX, crop_size, 1, 100);
 	DDX_Control(pDX, IDC_CROP_SPIN, m_CropSpin);
-	DDX_Control(pDX, IDC_BOX_COLOR, m_BoxColor);
+	DDX_Control(pDX, IDC_IMAGE_PROC_PRESET, m_ImageProcessingPreset);
 	DDX_Control(pDX, IDC_UPDATE_OCR_NOW, m_UpdateOcrNow);
-	DDX_ColorPickerCB(pDX, IDC_BOX_COLOR, m_crColor);
 }
 
 
@@ -352,7 +351,9 @@ BEGIN_MESSAGE_MAP(CDlgTableMap, CDialog)
 	ON_EN_CHANGE(IDC_CROP_SIZE, &CDlgTableMap::OnOcrRegionChange)
 	ON_EN_KILLFOCUS(IDC_CROP_SIZE, &CDlgTableMap::OnOcrRegionChange)
 	ON_NOTIFY(UDN_DELTAPOS, IDC_CROP_SPIN, &CDlgTableMap::OnDeltaposCropSpin)
-	ON_CBN_SELCHANGE(IDC_BOX_COLOR, &CDlgTableMap::OnBoxColorChange)
+	ON_BN_CLICKED(IDC_IMAGE_PROC_PRESET_ADD, &CDlgTableMap::OnBnClickedImageProcessingPresetAdd)
+	ON_BN_CLICKED(IDC_IMAGE_PROC_PRESET_DELETE, &CDlgTableMap::OnBnClickedImageProcessingPresetDelete)
+	ON_BN_CLICKED(IDC_IMAGE_PROC_PRESET_LOAD, &CDlgTableMap::OnBnClickedImageProcessingPresetLoad)
 END_MESSAGE_MAP()
 
 // Mandatory value for the spin-buttons.
@@ -485,25 +486,23 @@ BOOL CDlgTableMap::OnInitDialog()
 	PopulateDuplicatePlayerCombo();
 
 	//m_ImgProc.SetWindowText("Inbuilt image processing");
-	m_UseDefault.SetCheck(true);
-	threshold = 0;
+	m_UseDefault.SetCheck(false);
+	threshold = 100;
 	m_Threshold.SetWindowText(to_string(threshold).c_str());
 	m_ThresholdSpin.SetRange(0, 300);
-	m_ThresholdSpin.SetPos(0);
+	m_ThresholdSpin.SetPos(threshold);
 	m_ThresholdSpin.SetBuddy(&m_Threshold);
-	match_mode = -1;
-	PopulateTemplateMatchModes();
-	m_MatchMode.SetCurSel(match_mode);
+	PopulateTesseractMatchModes();
+	m_MatchMode.SetCurSel(kDefaultTesseractPageSegModeIndex);
 
-	m_UseCrop.SetCheck(false);
-	crop_size = 0;
+	m_UseCrop.SetCheck(true);
+	crop_size = 30;
 	m_CropSize.SetWindowText(to_string(crop_size).c_str());
-	m_BoxColor.SetWindowPos(NULL, 0, 0, 72, 200, SWP_NOMOVE | SWP_NOZORDER);
-	m_CropSpin.SetRange(2, 100);
-	m_CropSpin.SetPos(0);
+	m_CropSpin.SetRange(1, 100);
+	m_CropSpin.SetPos(crop_size);
 	m_CropSpin.SetBuddy(&m_CropSize);
-	box_color = -1;
-	m_BoxColor.SetCurSel(box_color);
+
+	RefreshImageProcessingPresetList();
 
 	m_Zoom.AddString("None");
 	m_Zoom.AddString("2x");

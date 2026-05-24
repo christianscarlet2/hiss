@@ -167,7 +167,8 @@ protected:
 	HBITMAP				h_picker_bitmap, h_drawrect_bitmap;
 	bool				picker_cursor;
 	HCURSOR				hCurPicker, hCurStandard;
-	bool\t\t\t\tignore_changes;\r\n\tCEdit\t\t\tm_status_cards, m_status_fonts;
+	bool				ignore_changes;
+	CEdit			m_status_cards, m_status_fonts;
 
 private:
         void AddImageProcessingPreset();
