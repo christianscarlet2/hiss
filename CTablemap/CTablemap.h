@@ -60,7 +60,7 @@ struct STablemapRegion {
 	int				threshold;
 	bool			use_cropping;
 	int				crop_size;
-	int				box_color;
+
 	CString			transform;
 };
 

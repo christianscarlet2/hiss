@@ -117,7 +117,6 @@
 #define IDC_THRESHOLD                   1096
 #define IDC_RADIO_INBUILT               1102
 #define IDC_USE_CROP                    1106
-#define IDC_BOX_COLOR                   1107
 #define IDC_MATCH_MODE                  1109
 #define IDC_CROP_SIZE                   1110
 #define IDC_IMG_PROC                    1111
@@ -128,20 +127,11 @@
 #define IDC_DELETE_PLAYER_REGIONS       1119
 #define IDC_DUPLICATE_PLAYER            1120
 #define IDC_DUPLICATE_GROUP_TO_PLAYER   1121
-#define IDC_COLOR_COMBO                 1122
-#define IDC_COLOR_ADD                   1123
-#define IDC_COLOR_EDIT                  1124
-#define IDC_COLOR_DELETE                1125
-#define IDC_COLOR_SETTINGS              1126
-#define IDC_COLOR_A                     1127
-#define IDC_COLOR_R                     1128
-#define IDC_COLOR_G                     1129
-#define IDC_COLOR_B                     1130
-#define IDC_COLOR_ADD_POINT             1131
-#define IDC_COLOR_PREVIEW               1132
-#define IDC_COLOR_CLEAR_POINT           1133
 #define IDC_UPDATE_OCR_NOW              1134
-#define IDC_COLOR_DROPPER               1135
+#define IDC_IMAGE_PROC_PRESET           1135
+#define IDC_IMAGE_PROC_PRESET_ADD       1136
+#define IDC_IMAGE_PROC_PRESET_DELETE    1137
+#define IDC_IMAGE_PROC_PRESET_LOAD      1138
 #define ID_MAIN_TOOLBAR_GREENCIRCLE     32771
 #define ID_VIEW_CONNECTTOWINDOW         32772
 #define ID_VIEW_SHOWREGIONBOXES         32774
@@ -172,7 +162,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        153
 #define _APS_NEXT_COMMAND_VALUE         32795
-#define _APS_NEXT_CONTROL_VALUE         1136
+#define _APS_NEXT_CONTROL_VALUE         1139
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

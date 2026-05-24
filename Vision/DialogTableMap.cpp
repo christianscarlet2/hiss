@@ -1162,38 +1162,6 @@ void CDlgTableMap::draw_image_bitmap(void)
 	ReleaseDC(pDC);
 }
 
-void CDlgTableMap::OnBoxColorChange()
-{
-	COpenScrapeDoc* pDoc = COpenScrapeDoc::GetDocument();
-	CString				text, alpha, red, green, blue;
-	RMapI				sel_region = p_tablemap->set_r$()->end();
-
-	CString				sel_text = "", type_text = "";
-	HTREEITEM type_node = GetTextSelItemAndRecordType(&sel_text, &type_text);
-
-	// Get iterator for selected region and template
-	sel_region = p_tablemap->set_r$()->find(sel_text.GetString());
-
-	// the last item is "Custom...".
-	CString strText;
-	m_BoxColor.GetLBText(m_BoxColor.GetCurSel(), strText);
-
-	if (strText == "Custom...")
-	{
-		CColorDialog dlg;
-
-		if (dlg.DoModal() == IDOK)
-		{
-			m_BoxColor.SetItemData(m_BoxColor.GetCurSel(), dlg.GetColor());
-		}
-	}
-
-	sel_region->second.box_color = m_BoxColor.GetCurSel();
-
-	OnOcrRegionChange();
-	Invalidate(false);
-}
-
 void CDlgTableMap::OnOcrRegionChange()
 {
 	COpenScrapeDoc* pDoc = COpenScrapeDoc::GetDocument();
@@ -3669,7 +3637,6 @@ void CDlgTableMap::OnBnClickedNew() {
 				new_region.threshold = 0;
 				new_region.use_cropping = false;
 				new_region.crop_size = 0;
-				new_region.box_color = -1;
 
 				// Insert the new record in the existing array of z$ records
 				if (!p_tablemap->r$_insert(new_region))
@@ -4400,7 +4367,6 @@ void CDlgTableMap::OnBnClickedEdit()
 		new_region.threshold = r_iter->second.threshold;
 		new_region.use_cropping = r_iter->second.use_cropping;
 		new_region.crop_size = r_iter->second.crop_size;
-		new_region.box_color = r_iter->second.box_color;
 
 		if (!p_tablemap->r$_insert(new_region))
 		{
@@ -6511,6 +6477,21 @@ void CDlgTableMap::OnBnClickedUseCrop()
 	pDoc->SetModifiedFlag(true);
 }
 
+void CDlgTableMap::OnBnClickedImageProcessingPresetAdd()
+{
+	AddImageProcessingPreset();
+}
+
+void CDlgTableMap::OnBnClickedImageProcessingPresetDelete()
+{
+	DeleteSelectedImageProcessingPreset();
+}
+
+void CDlgTableMap::OnBnClickedImageProcessingPresetLoad()
+{
+	LoadSelectedImageProcessingPreset();
+}
+
 ImageProcessingPreset CDlgTableMap::GetCurrentImageProcessingPreset()
 {
 	ImageProcessingPreset preset;
@@ -6569,7 +6550,7 @@ void CDlgTableMap::RefreshImageProcessingPresetList()
 		m_ImageProcessingPreset.SetCurSel(CB_ERR);
 	}
 	else {
-		m_ImageProcessingPreset.SetCurSel(0);
+		m_ImageProcessingPreset.SetCurSel(static_cast<int>(m_ImageProcessingPresets.size() - 1));
 	}
 }
 

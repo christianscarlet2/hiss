@@ -787,7 +787,6 @@ bool COpenScrapeView::DuplicateRegionGroupToPlayer(CString group_name, CString t
 				point_region.threshold = -1;
 				point_region.use_cropping = false;
 				point_region.crop_size = -1;
-				point_region.box_color = -1;
 				p_tablemap->r$_insert(point_region);
 				new_members.push_back(point_region_name);
 			}

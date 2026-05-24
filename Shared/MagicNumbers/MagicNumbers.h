@@ -603,10 +603,9 @@ const int kOneCharacterExtraForTerminatingNull = 1;
 
 // OCR constant
 const int kDefaultInbuiltThreshold = 65;		// Set Inbuilt OCR default Pdiff threshold to 65% of available pixels for image matching
-const int kDefaultAutoOcrThreshold = 125;		// Default threshold for OCV OCR image binarization processing
+const int kDefaultAutoOcrThreshold = 100;		// Default threshold for OCV OCR image binarization processing
 const int kDefaultMatchMode = 0;  // TM_SQDIFF
-const int kDefaultCropSize = 40;
-const int kDefaultBoxColor = 3;
+const int kDefaultCropSize = 30;
 const int kYOffsetScroll = 40;
 
 // Function to access the name of the action constants.
