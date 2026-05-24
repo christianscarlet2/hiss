@@ -6520,8 +6520,14 @@ void CDlgTableMap::ApplyImageProcessingPreset(const ImageProcessingPreset& prese
 {
 	m_UseDefault.SetCheck(preset.use_default ? BST_CHECKED : BST_UNCHECKED);
 	m_UseCrop.SetCheck(preset.use_cropping ? BST_CHECKED : BST_UNCHECKED);
-	m_Threshold.SetWindowText(CString().Format(_T("%d"), preset.threshold));
-	m_CropSize.SetWindowText(CString().Format(_T("%d"), preset.crop_size));
+
+	CString threshold_text;
+	threshold_text.Format(_T("%d"), preset.threshold);
+	m_Threshold.SetWindowText(threshold_text);
+
+	CString crop_size_text;
+	crop_size_text.Format(_T("%d"), preset.crop_size);
+	m_CropSize.SetWindowText(crop_size_text);
 
 	if (!preset.match_mode_label.IsEmpty()) {
 		for (int i = 0; i < m_MatchMode.GetCount(); ++i) {
@@ -6602,6 +6608,16 @@ void CDlgTableMap::OnBnClickedUpdateOcrNow()
 	ignore_changes = previous_ignore_changes;
 	theApp.m_pMainWnd->Invalidate(false);
 	Invalidate(false);
+}
+
+void CDlgTableMap::CaptureColorPresetPoint(CPoint point)
+{
+	UNREFERENCED_PARAMETER(point);
+}
+
+void CDlgTableMap::CaptureColorPresetColor(CPoint point)
+{
+	UNREFERENCED_PARAMETER(point);
 }
 
 void CDlgTableMap::OnOperationsCreateHashesImages0()

@@ -216,6 +216,8 @@ public:
 	void UpdateDisplayOfAllRegions();
 	HTREEITEM GetTypeNode(CString type);
 	HTREEITEM FindItem(CString s, HTREEITEM start);
+	void CaptureColorPresetPoint(CPoint point);
+	void CaptureColorPresetColor(CPoint point);
 
 	CTreeCtrl			m_TableMapTree;
 	CEdit				m_Left, m_Top, m_Bottom, m_Right, m_xy;
