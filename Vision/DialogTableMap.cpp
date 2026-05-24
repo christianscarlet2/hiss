@@ -1237,7 +1237,6 @@ void CDlgTableMap::OnOcrRegionChange()
 			sel_region->second.use_cropping = m_UseCrop.GetCheck();
 			m_CropSize.GetWindowText(text);
 			sel_region->second.crop_size = strtoul(text.GetString(), NULL, 10);
-			sel_region->second.box_color = m_BoxColor.GetCurSel();
 		}
 	}
 
