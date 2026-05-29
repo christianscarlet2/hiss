@@ -278,8 +278,11 @@ bool COCRNameMapping::DeleteMapping(int id)
 
 bool COCRNameMapping::SaveMapping(const char *actual_username, const char *ocr_detected_name, int id_site, bool verified)
 {
-	if (_pgconn == NULL || PQstatus(_pgconn) != CONNECTION_OK)
+	if (_pgconn == NULL || PQstatus(_pgconn) != CONNECTION_OK) {
+		write_log(Preferences()->debug_pokertracker(),
+			"[COCRNameMapping] SaveMapping skipped: no PT4 connection (pgconn=%p)\n", _pgconn);
 		return false;
+	}
 
 	if (actual_username == NULL || ocr_detected_name == NULL)
 		return false;
@@ -310,6 +313,10 @@ bool COCRNameMapping::SaveMapping(const char *actual_username, const char *ocr_d
 	}
 
 	PQclear(res);
+
+	write_log(Preferences()->debug_pokertracker(),
+		"[COCRNameMapping] SaveMapping ok: ocr=[%s] -> actual=[%s] site=%d verified=%d\n",
+		ocr_detected_name, actual_username, id_site, verified ? 1 : 0);
 
 	// Clear cache entry so it gets reloaded
 	CString cache_key;

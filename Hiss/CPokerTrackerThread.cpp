@@ -43,6 +43,26 @@ CPokerTrackerThread	*p_pokertracker_thread = NULL;
 
 SPlayerData _player_data[kMaxNumberOfPlayers];
 
+// Copies src into dst keeping only ASCII letters [A-Za-z], digits [0-9], and
+// underscores. Matches the source-level sanitization done in CScraper, used
+// here as a defensive second pass before the PT4 lookup. dst_len is the
+// destination buffer size including the terminator; result is always nul-terminated.
+static void SanitizeOcrName(const char *src, char *dst, size_t dst_len)
+{
+	if (dst == NULL || dst_len == 0) {
+		return;
+	}
+	size_t out = 0;
+	for (size_t i = 0; src != NULL && src[i] != '\0' && out + 1 < dst_len; ++i) {
+		unsigned char c = (unsigned char)src[i];
+		if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+				|| (c >= '0' && c <= '9') || c == '_') {
+			dst[out++] = (char)c;
+		}
+	}
+	dst[out] = '\0';
+}
+
 
 CString CPokerTrackerThread::CreateConnectionString(
 	const CString ip_address, const CString port, const CString username,
@@ -277,6 +297,11 @@ bool CPokerTrackerThread::CheckIfNameExistsInDB(int chair)
 	}
 	
 	int siteid = pt_lookup.GetSiteId();
+	if (_ocr_name_mapping == NULL || siteid == kUndefined) {
+		write_log(Preferences()->debug_pokertracker(),
+			"[PokerTracker] CheckIfNameExistsInDB() Mapping path disabled: ocr_name_mapping=%p siteid=%d\n",
+			_ocr_name_mapping, siteid);
+	}
 
 	// 1) Confirmed fast-path: a verified detected->actual mapping already exists.
 	if (_ocr_name_mapping != NULL && siteid != kUndefined)
@@ -312,12 +337,44 @@ bool CPokerTrackerThread::CheckIfNameExistsInDB(int chair)
 		}
 		return true;
 	}
-	else
+
+	// No PT4 player matched the raw OCR. Strip non-alphanumeric noise
+	// (dashes, tildes, dots, spaces, etc.) and try again with the clean form.
+	char sanitized[kMaxLengthOfPlayername];
+	SanitizeOcrName(oh_scraped_name, sanitized, kMaxLengthOfPlayername);
+
+	if (sanitized[0] != '\0' && strcmp(sanitized, oh_scraped_name) != 0
+			&& FindName(sanitized, best_name))
 	{
-		write_log(Preferences()->debug_pokertracker(), "[PokerTracker] CheckIfNameExistsInDB() Name not found in database\n");
-		SetPlayerName(chair, false, "", "");
-		return false;
+		bool exact_match = (strcmp(sanitized, best_name) == 0);
+		write_log(Preferences()->debug_pokertracker(),
+			"[PokerTracker] CheckIfNameExistsInDB() Matched after sanitization (exact=%d): [%s] -> [%s] -> [%s]\n",
+			exact_match, oh_scraped_name, sanitized, best_name);
+		SetPlayerName(chair, true, best_name, oh_scraped_name);
+		_player_data[chair].verified = exact_match;
+		if (_ocr_name_mapping != NULL && siteid != kUndefined) {
+			_ocr_name_mapping->SaveMapping(best_name, oh_scraped_name, siteid, exact_match);
+		}
+		return true;
 	}
+
+	// Still no PT4 match. Record the cleaned form as an unverified candidate
+	// (raw_ocr -> sanitized) so future scrapes resolve to the cleaned name and
+	// the user can review/promote it in the mappings UI. Skip very short
+	// results to avoid polluting the table with pure OCR noise from empty seats.
+	if (strlen(sanitized) >= 2 && _ocr_name_mapping != NULL && siteid != kUndefined) {
+		write_log(Preferences()->debug_pokertracker(),
+			"[PokerTracker] CheckIfNameExistsInDB() No PT4 match; saving sanitized fallback mapping: [%s] -> [%s]\n",
+			oh_scraped_name, sanitized);
+		_ocr_name_mapping->SaveMapping(sanitized, oh_scraped_name, siteid, false);
+		SetPlayerName(chair, true, sanitized, oh_scraped_name);
+		_player_data[chair].verified = false;
+		return true;
+	}
+
+	write_log(Preferences()->debug_pokertracker(), "[PokerTracker] CheckIfNameExistsInDB() Name not found in database\n");
+	SetPlayerName(chair, false, "", "");
+	return false;
 }
 
 /* Returns true, if the name looks ok, but differs from the last one. */

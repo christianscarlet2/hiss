@@ -718,14 +718,22 @@ static bool IsLikelyPlayerNameCharacter(TCHAR ch) {
 }
 
 static CString NormalizeScrapedPlayerName(CString name) {
+	// Strip every character that isn't a letter, digit, or underscore.
+	// OCR noise (dashes, tildes, dots, accents, stray punctuation, internal
+	// spaces) is dropped at the source so the table state, mapping queries,
+	// HUD, JSON API and view all see the same clean form.
 	name.Trim();
-	while (!name.IsEmpty() && !IsLikelyPlayerNameCharacter(name[0])) {
-		name.Delete(0);
+	CString result;
+	for (int i = 0; i < name.GetLength(); ++i) {
+		TCHAR c = name[i];
+		if ((c >= 'A' && c <= 'Z')
+				|| (c >= 'a' && c <= 'z')
+				|| (c >= '0' && c <= '9')
+				|| c == '_') {
+			result += c;
+		}
 	}
-	while (!name.IsEmpty() && !IsLikelyPlayerNameCharacter(name[name.GetLength() - 1])) {
-		name.Delete(name.GetLength() - 1);
-	}
-	return name;
+	return result;
 }
 
 void CScraper::ScrapeName(int chair) {
