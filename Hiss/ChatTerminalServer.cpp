@@ -8,6 +8,7 @@
 #include "CHandresetDetector.h"
 #include "CTableState.h"
 #include "CPokerTrackerThread.h"
+#include "COCRNameMapping.h"
 #include "HudManager.h"
 #include "..\CTablemap\CTablemap.h"
 
@@ -181,6 +182,83 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 			relative = "index.html";
 		}
 		ServeFile(client, relative);
+		return;
+	}
+
+	// Mappings verification UI: page + static assets + JSON API.
+	if (path.CompareNoCase("/mappings") == 0 || path.CompareNoCase("/mappings/") == 0) {
+		ServeFile(client, "mappings.html");
+		return;
+	}
+	if (path.Left(10).CompareNoCase("/mappings/") == 0) {
+		CString relative(path.Mid(10));
+		if (relative.IsEmpty()) {
+			relative = "mappings.html";
+		}
+		ServeFile(client, relative);
+		return;
+	}
+
+	if (path.CompareNoCase("/api/mappings") == 0) {
+		COCRNameMapping *mapping = (p_pokertracker_thread != NULL) ? p_pokertracker_thread->OCRNameMapping() : NULL;
+		std::vector<SOCRNameMappingRow> rows;
+		bool ok = false;
+		if (mapping != NULL) {
+			bool only_unverified = (QueryValue(query, "unverified") == "1");
+			ok = mapping->ListMappings(only_unverified, 1000, &rows);
+		}
+		CStringA body;
+		if (!ok) {
+			body = "{\"error\":\"could not query mappings (is PT4 connected?)\",\"rows\":[]}";
+		} else {
+			body = "{\"rows\":[";
+			for (size_t i = 0; i < rows.size(); ++i) {
+				if (i > 0) body += ",";
+				CStringA entry;
+				entry.Format("{\"id\":%d,\"actual\":\"%s\",\"ocr\":\"%s\",\"site\":%d,\"verified\":%s,\"confidence\":%.2f,\"updated\":\"%s\"}",
+					rows[i].id,
+					JsonEscape(rows[i].actual_username).GetString(),
+					JsonEscape(rows[i].ocr_detected_name).GetString(),
+					rows[i].id_site,
+					rows[i].verified ? "true" : "false",
+					rows[i].confidence,
+					JsonEscape(rows[i].last_updated).GetString());
+				body += entry;
+			}
+			body += "]}";
+		}
+		CStringA response;
+		response.Format(
+			"HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+			body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	if (path.CompareNoCase("/api/mappings/verify") == 0
+			|| path.CompareNoCase("/api/mappings/unverify") == 0
+			|| path.CompareNoCase("/api/mappings/delete") == 0) {
+		COCRNameMapping *mapping = (p_pokertracker_thread != NULL) ? p_pokertracker_thread->OCRNameMapping() : NULL;
+		int id = atoi(QueryValue(query, "id"));
+		bool ok = false;
+		if (mapping != NULL && id > 0) {
+			if (path.CompareNoCase("/api/mappings/verify") == 0) {
+				ok = mapping->SetVerified(id, true);
+			} else if (path.CompareNoCase("/api/mappings/unverify") == 0) {
+				ok = mapping->SetVerified(id, false);
+			} else {
+				ok = mapping->DeleteMapping(id);
+			}
+		}
+		CStringA body;
+		body.Format("{\"ok\":%s}", ok ? "true" : "false");
+		CStringA response;
+		response.Format(
+			"HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+			body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
 		return;
 	}
 

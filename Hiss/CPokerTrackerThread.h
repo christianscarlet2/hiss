@@ -58,6 +58,9 @@ public:
 	bool				CheckIfNameExistsInDB(int chair);
 	bool				_connected;
 	PGconn *		_pgconn;
+	// Exposed so the admin UI (HTTP server) can list/verify/delete mappings
+	// against the same instance whose lookup cache needs invalidating.
+	COCRNameMapping *	OCRNameMapping() { return _ocr_name_mapping; }
 private:
 	// private functions and variables - not available via accessors or mutators
 	UINT			PokertrackerThreadFunction(LPVOID pParam);

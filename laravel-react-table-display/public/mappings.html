@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenHoldem Name Mappings</title>
+    <link rel="stylesheet" href="/mappings/assets/mappings.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="title" id="title">OCR Name Mappings</div>
+      <div class="meta">
+        <label><input type="checkbox" id="unverifiedOnly" /> Unverified only</label>
+        <button id="refresh">Refresh</button>
+        <span class="status" id="status">Loading...</span>
+      </div>
+    </header>
+    <main>
+      <table id="mappings">
+        <thead>
+          <tr>
+            <th>OCR Detected</th>
+            <th>Actual</th>
+            <th>Site</th>
+            <th>Verified</th>
+            <th>Conf</th>
+            <th>Updated</th>
+            <th class="actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </main>
+    <script src="/mappings/assets/mappings.js"></script>
+  </body>
+</html>

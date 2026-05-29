@@ -163,6 +163,8 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "View Scraper &Output\tF11",   ID_VIEW_SCRAPEROUTPUT
         MENUITEM "Shoot &Replay Frame\tF12",    ID_VIEW_SHOOTREPLAYFRAME
+        MENUITEM SEPARATOR
+        MENUITEM "Verify Name &Mappings...",    ID_EDIT_VERIFYNAMEMAPPINGS
     END
     MENUITEM "&Problem Solver",             ID_HELP_PROBLEMSOLVER
     POPUP "&Help"
@@ -1420,6 +1422,7 @@ STRINGTABLE
 BEGIN
     ID_MAIN_TOOLBAR_SCRAPER_OUTPUT "Scraper output\nScraper output"
     ID_VIEW_SCRAPEROUTPUT   "View images that get captured by the scraper-engine\nScraper output"
+    ID_EDIT_VERIFYNAMEMAPPINGS "Review and verify OCR -> actual player name mappings used for PokerTracker lookups\nVerify name mappings"
 END
 
 STRINGTABLE

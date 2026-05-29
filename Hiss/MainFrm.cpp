@@ -67,6 +67,7 @@
 #include "OpenHoldem.h"
 #include "OpenHoldemDoc.h"
 #include "ReactTableWindow.h"
+#include "ReactMappingsWindow.h"
 #include "SAPrefsDialog.h"
 #include "Singletons.h"
 
@@ -91,6 +92,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
 	ON_COMMAND(ID_EDIT_VIEWLOG, &CMainFrame::OnEditViewLog)
 	ON_COMMAND(ID_EDIT_TAGLOG, &CMainFrame::OnEditTagLog)
   ON_COMMAND(ID_EDIT_CLEARLOG, &CMainFrame::OnEditClearLog)
+	ON_COMMAND(ID_EDIT_VERIFYNAMEMAPPINGS, &CMainFrame::OnEditVerifyNameMappings)
 	ON_COMMAND(ID_VIEW_SCRAPEROUTPUT, &CMainFrame::OnScraperOutput)
 	ON_COMMAND(ID_VIEW_SHOOTREPLAYFRAME, &CMainFrame::OnViewShootreplayframe)
 	ON_COMMAND(ID_HELP_HELP, &CMainFrame::OnHelp)
@@ -177,6 +179,13 @@ CMainFrame::~CMainFrame() {
 		}
 		delete p_react_table_window;
 		p_react_table_window = NULL;
+	}
+	if (p_react_mappings_window != NULL) {
+		if (::IsWindow(p_react_mappings_window->GetSafeHwnd())) {
+			p_react_mappings_window->DestroyWindow();
+		}
+		delete p_react_mappings_window;
+		p_react_mappings_window = NULL;
 	}
 	if (p_chat_terminal != NULL) {
 		if (::IsWindow(p_chat_terminal->GetSafeHwnd())) {
@@ -326,6 +335,35 @@ void CMainFrame::OnEditTagLog() {
 
 void CMainFrame::OnEditClearLog() {
   clear_log();
+}
+
+// Menu -> Edit -> Verify Name Mappings...
+// Opens the OCR -> actual-name mapping verification page in an embedded
+// browser window (served by the chat-terminal HTTP server at /mappings/).
+void CMainFrame::OnEditVerifyNameMappings() {
+	if (p_chat_terminal_server == NULL) {
+		MessageBox("Terminal API server is not running; cannot open mappings window.",
+			"Verify Name Mappings", MB_OK | MB_ICONERROR);
+		return;
+	}
+	if (p_react_mappings_window != NULL && ::IsWindow(p_react_mappings_window->GetSafeHwnd())) {
+		// Already open — bring it to front and refresh.
+		p_react_mappings_window->ShowWindow(SW_SHOW);
+		p_react_mappings_window->SetForegroundWindow();
+		p_react_mappings_window->NavigateToMappings(p_chat_terminal_server->port());
+		return;
+	}
+	if (p_react_mappings_window != NULL) {
+		delete p_react_mappings_window;
+		p_react_mappings_window = NULL;
+	}
+	p_react_mappings_window = new CReactMappingsWindow();
+	if (!p_react_mappings_window->Create(this, p_chat_terminal_server->port())) {
+		delete p_react_mappings_window;
+		p_react_mappings_window = NULL;
+		MessageBox("Could not create the mappings window.",
+			"Verify Name Mappings", MB_OK | MB_ICONERROR);
+	}
 }
 
 // Menu -> Edit -> View Scraper Output

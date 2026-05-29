@@ -33,7 +33,8 @@ static CString EscapeSqlLiteral(const char *value)
 }
 
 COCRNameMapping::COCRNameMapping()
-	: _pgconn(NULL)
+	: _pgconn(NULL),
+	  _invalidate_pending(0)
 {
 }
 
@@ -112,6 +113,12 @@ bool COCRNameMapping::LookupActualName(const char *ocr_detected_name, int id_sit
 
 	if (mapping == NULL)
 		return false;
+
+	// If the admin UI changed a mapping, drop our cache so the new state is
+	// picked up immediately. Cache mutation happens only on this (PT) thread.
+	if (InterlockedExchange(&_invalidate_pending, 0) != 0) {
+		_cache.clear();
+	}
 
 	// Build cache key
 	CString cache_key;
@@ -238,9 +245,9 @@ bool COCRNameMapping::SetVerified(int id, bool verified)
 	if (res) PQclear(res);
 	PQfinish(conn);
 
-	// Invalidate the in-memory cache so the lookup path picks up the new state
-	// on the next scrape (the cached "not found" entry would otherwise mask it).
-	ClearCache();
+	// Signal the PT thread to drop its lookup cache so the new verified state
+	// is picked up on the next scrape.
+	InterlockedExchange(&_invalidate_pending, 1);
 	return ok;
 }
 
@@ -265,7 +272,7 @@ bool COCRNameMapping::DeleteMapping(int id)
 	if (res) PQclear(res);
 	PQfinish(conn);
 
-	ClearCache();
+	InterlockedExchange(&_invalidate_pending, 1);
 	return ok;
 }
 

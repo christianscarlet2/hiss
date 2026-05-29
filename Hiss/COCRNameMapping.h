@@ -70,6 +70,10 @@ public:
 private:
 	PGconn *_pgconn;
 	std::map<std::string, SOCRNameMapping> _cache;  // Key: "ocr_name|site_id"
+	// Atomic flag toggled by the admin UI when it changes a mapping; the next
+	// LookupActualName from the PT thread clears its own cache when set. This
+	// avoids concurrent map mutation across threads.
+	volatile LONG _invalidate_pending;
 
 	bool _ExecuteMappingQuery(const char *ocr_detected_name, int id_site, SOCRNameMapping *mapping);
 	PGconn *_OpenAdminConnection();

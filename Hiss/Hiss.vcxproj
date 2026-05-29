@@ -339,6 +339,7 @@
     <ClCompile Include="MyCToolBar.cpp" />
     <ClCompile Include="OpenHoldemView.cpp" />
     <ClCompile Include="ReactTableWindow.cpp" />
+    <ClCompile Include="ReactMappingsWindow.cpp" />
     <ClCompile Include="ScintillaWnd.cpp" />
     <ClCompile Include="VerifyFunctionAndListNames.cpp" />
     <ClCompile Include="COpenHoldemHopperCommunication.cpp" />
@@ -581,6 +582,7 @@
     <ClInclude Include="OpenHoldem.h" />
     <ClInclude Include="OpenHoldemDoc.h" />
     <ClInclude Include="ReactTableWindow.h" />
+    <ClInclude Include="ReactMappingsWindow.h" />
     <ClInclude Include="COpenHoldemStarter.h" />
     <ClInclude Include="CWatchdog.h" />
     <ClInclude Include="Resource.h" />
