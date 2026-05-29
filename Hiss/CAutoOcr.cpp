@@ -410,6 +410,14 @@ void CAutoOcr::process_ocr(Mat img_orig, const SAutoOcrSettings &settings, bool 
 }
 
 CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
+	// Tesseract's TessBaseAPI is NOT thread-safe and CAutoOcr's instance
+	// members (ResultBoxes, ResultString, bestRect, ...) are shared across
+	// calls. CScraper drives OCR from the heartbeat thread while the scraper-
+	// output dialog can drive it from the UI thread; concurrent calls were
+	// crashing inside tesseract53.dll (0xc0000005). Serialize through the
+	// existing critical section.
+	CSLock ocr_lock(m_critsec);
+
 	// Return string value from image. "" when OCR failed
 	Mat img_resized, img_resized2;
 	ResultBoxes.clear(); ResultBoxes2.clear();
@@ -575,6 +583,7 @@ RECT CAutoOcr::detectTemplate(Mat area, Mat tpl, int match_mode) {
 #undef ENT
 
 CString CAutoOcr::GetDetectTemplateResult(CString area_name, CString tpl_name, RECT* rect_result) {
+	CSLock ocr_lock(m_critsec);
 	//  Detect template
 	CString				text, selected_transform, separation;
 	RMapCI				r_iter = p_tablemap->r$()->find(area_name.GetString());
@@ -699,6 +708,7 @@ CString CAutoOcr::GetDetectTemplateResult(CString area_name, CString tpl_name, R
 }
 
 vector<CString> CAutoOcr::GetDetectTemplatesResult(CString area_name) {
+	CSLock ocr_lock(m_critsec);
 	//  Detect template
 	CString				text, selected_transform, separation;
 	RMapCI				r_iter = p_tablemap->r$()->find(area_name.GetString());

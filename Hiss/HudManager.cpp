@@ -34,17 +34,18 @@ CString CHudManager::ProfilePath(void) const
 	return _profile_path;
 }
 
-const std::vector<SHudStatValue> &CHudManager::StatsForChair(int chair) const
+std::vector<SHudStatValue> CHudManager::StatsForChair(int chair) const
 {
-	static std::vector<SHudStatValue> empty;
+	CSingleLock lock(&_mutex, TRUE);
 	if (chair < 0 || chair >= kMaxNumberOfPlayers) {
-		return empty;
+		return std::vector<SHudStatValue>();
 	}
-	return _chair_stats[chair];
+	return _chair_stats[chair];  // copy under lock; caller iterates safely
 }
 
 int CHudManager::SamplesForChair(int chair) const
 {
+	CSingleLock lock(&_mutex, TRUE);
 	if (chair < 0 || chair >= kMaxNumberOfPlayers) {
 		return -1;
 	}
@@ -378,6 +379,8 @@ CString CHudManager::FormatValue(CString symbol, double value) const
 
 void CHudManager::RefreshIfNeeded(CString hand_number, bool force)
 {
+	CSingleLock lock(&_mutex, TRUE);
+
 	DWORD now = GetTickCount();
 	if (!force && hand_number == _last_hand_number && now - _last_refresh_tick < 2500) {
 		return;

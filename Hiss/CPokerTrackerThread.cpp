@@ -16,6 +16,7 @@
 
 #include <assert.h>
 #include <process.h>
+#include <afxmt.h>
 #include <comdef.h>
 #include "CAutoConnector.h"
 #include "CEngineContainer.h"
@@ -482,8 +483,17 @@ bool CPokerTrackerThread::FindName(const char *oh_scraped_name, char *best_name)
 	return result;
 }
 
+// Serializes every PT4 query through the single shared _pgconn. libpq is
+// not thread-safe per connection, and now that HudManager::RefreshIfNeeded
+// is called from both the UI thread and the HTTP server thread (in addition
+// to the heartbeat thread's symbol evaluation), concurrent PQexec calls were
+// corrupting libpq state and producing silent access violations.
+static CCriticalSection g_update_stat_mutex;
+
 double UpdateStat(int m_chr, int stat)
 {
+	CSingleLock pt_lock(&g_update_stat_mutex, TRUE);
+
 	PGresult	*res = NULL;
 	double		result = kUndefined;
 	clock_t		updStart, updEnd;

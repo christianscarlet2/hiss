@@ -2,6 +2,7 @@
 #define INC_HUD_MANAGER_H
 
 #include <vector>
+#include <afxmt.h>
 #include "..\Shared\MagicNumbers\MagicNumbers.h"
 
 struct SHudStatDefinition {
@@ -24,7 +25,10 @@ public:
 	bool LoadProfile(CString path, CString *message = NULL);
 	bool IsEnabled(void) const;
 	CString ProfilePath(void) const;
-	const std::vector<SHudStatValue> &StatsForChair(int chair) const;
+	// Returns a copy under lock so callers can safely iterate without holding
+	// the mutex; the previous "const &" form raced with RefreshIfNeeded
+	// running on the HTTP / UI threads and corrupted the vector.
+	std::vector<SHudStatValue> StatsForChair(int chair) const;
 	// Cached total PokerTracker 4 hands ("sample size") for a seat, or -1 if unknown.
 	int SamplesForChair(int chair) const;
 	void RefreshIfNeeded(CString hand_number, bool force = false);
@@ -48,6 +52,9 @@ private:
 	std::vector<SHudStatDefinition> _definitions;
 	std::vector<SHudStatValue> _chair_stats[kMaxNumberOfPlayers];
 	int _chair_samples[kMaxNumberOfPlayers];
+	// Serializes RefreshIfNeeded (writer) against StatsForChair/SamplesForChair
+	// (readers) so the HTTP server, UI paint, and heartbeat threads don't race.
+	mutable CCriticalSection _mutex;
 };
 
 extern CHudManager *p_hud_manager;
