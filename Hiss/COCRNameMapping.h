@@ -17,12 +17,25 @@
 #include "libpq-fe.h"
 #include <map>
 #include <string>
+#include <vector>
 
 struct SOCRNameMapping
 {
 	char	actual_username[kMaxLengthOfPlayername];
 	bool	verified;
 	bool	found;
+};
+
+// Row returned by ListMappings() for the verification UI.
+struct SOCRNameMappingRow
+{
+	int		id;
+	CString	actual_username;
+	CString	ocr_detected_name;
+	int		id_site;
+	bool	verified;
+	double	confidence;
+	CString	last_updated;
 };
 
 class COCRNameMapping
@@ -47,11 +60,19 @@ public:
 	// Clear cache (e.g., on new session or table)
 	void ClearCache();
 
+	// Admin / verification UI helpers. These open their own short-lived
+	// PostgreSQL connection (using the OpenHoldem preferences) so they don't
+	// race with the PokerTracker thread's use of the main libpq connection.
+	bool ListMappings(bool only_unverified, int limit, std::vector<SOCRNameMappingRow> *out);
+	bool SetVerified(int id, bool verified);
+	bool DeleteMapping(int id);
+
 private:
 	PGconn *_pgconn;
 	std::map<std::string, SOCRNameMapping> _cache;  // Key: "ocr_name|site_id"
-	
+
 	bool _ExecuteMappingQuery(const char *ocr_detected_name, int id_site, SOCRNameMapping *mapping);
+	PGconn *_OpenAdminConnection();
 };
 
 #endif // INC_COCRNAMEMAPPING_H

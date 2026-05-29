@@ -142,6 +142,133 @@ bool COCRNameMapping::LookupActualName(const char *ocr_detected_name, int id_sit
 	return false;
 }
 
+// Opens a fresh PostgreSQL connection using the saved PT4 preferences.
+// Used by the admin/verification UI so its queries don't share libpq state
+// with the PokerTracker thread's connection (libpq is not thread-safe per-conn).
+// Returns NULL on failure. Caller must PQfinish() the result.
+PGconn *COCRNameMapping::_OpenAdminConnection()
+{
+	CString conn_str;
+	conn_str.Format("host=%s port=%s user=%s password=%s dbname='%s'",
+		Preferences()->pt_ip_addr(),
+		Preferences()->pt_port(),
+		Preferences()->pt_user(),
+		Preferences()->pt_pass(),
+		Preferences()->pt_dbname());
+	PGconn *conn = PQconnectdb(conn_str.GetString());
+	if (conn == NULL || PQstatus(conn) != CONNECTION_OK) {
+		if (conn != NULL) {
+			PQfinish(conn);
+		}
+		return NULL;
+	}
+	return conn;
+}
+
+bool COCRNameMapping::ListMappings(bool only_unverified, int limit, std::vector<SOCRNameMappingRow> *out)
+{
+	if (out == NULL) {
+		return false;
+	}
+	out->clear();
+
+	PGconn *conn = _OpenAdminConnection();
+	if (conn == NULL) {
+		return false;
+	}
+
+	CString query;
+	query.Format(
+		"SELECT id, actual_username, ocr_detected_name, id_site, verified, "
+		"COALESCE(confidence, 0), COALESCE(to_char(last_updated, 'YYYY-MM-DD HH24:MI:SS'), '') "
+		"FROM ocr_name_mappings %s "
+		"ORDER BY verified ASC, last_updated DESC NULLS LAST, id DESC "
+		"LIMIT %d",
+		only_unverified ? "WHERE verified = false" : "",
+		limit > 0 ? limit : 500);
+
+	PGresult *res = PQexec(conn, query.GetString());
+	if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+		write_log(Preferences()->debug_pokertracker(),
+			"[COCRNameMapping] ListMappings query failed: %s\n", PQerrorMessage(conn));
+		if (res) PQclear(res);
+		PQfinish(conn);
+		return false;
+	}
+
+	int rows = PQntuples(res);
+	out->reserve(rows);
+	for (int i = 0; i < rows; ++i) {
+		SOCRNameMappingRow row;
+		row.id = atoi(PQgetvalue(res, i, 0));
+		row.actual_username = PQgetvalue(res, i, 1);
+		row.ocr_detected_name = PQgetvalue(res, i, 2);
+		row.id_site = atoi(PQgetvalue(res, i, 3));
+		row.verified = (strcmp(PQgetvalue(res, i, 4), "t") == 0);
+		row.confidence = atof(PQgetvalue(res, i, 5));
+		row.last_updated = PQgetvalue(res, i, 6);
+		out->push_back(row);
+	}
+
+	PQclear(res);
+	PQfinish(conn);
+	return true;
+}
+
+bool COCRNameMapping::SetVerified(int id, bool verified)
+{
+	if (id <= 0) {
+		return false;
+	}
+	PGconn *conn = _OpenAdminConnection();
+	if (conn == NULL) {
+		return false;
+	}
+
+	CString query;
+	query.Format(
+		"UPDATE ocr_name_mappings SET verified = %s, last_updated = CURRENT_TIMESTAMP WHERE id = %d",
+		verified ? "true" : "false", id);
+	PGresult *res = PQexec(conn, query.GetString());
+	bool ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
+	if (!ok) {
+		write_log(Preferences()->debug_pokertracker(),
+			"[COCRNameMapping] SetVerified failed for id=%d: %s\n", id, PQerrorMessage(conn));
+	}
+	if (res) PQclear(res);
+	PQfinish(conn);
+
+	// Invalidate the in-memory cache so the lookup path picks up the new state
+	// on the next scrape (the cached "not found" entry would otherwise mask it).
+	ClearCache();
+	return ok;
+}
+
+bool COCRNameMapping::DeleteMapping(int id)
+{
+	if (id <= 0) {
+		return false;
+	}
+	PGconn *conn = _OpenAdminConnection();
+	if (conn == NULL) {
+		return false;
+	}
+
+	CString query;
+	query.Format("DELETE FROM ocr_name_mappings WHERE id = %d", id);
+	PGresult *res = PQexec(conn, query.GetString());
+	bool ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
+	if (!ok) {
+		write_log(Preferences()->debug_pokertracker(),
+			"[COCRNameMapping] DeleteMapping failed for id=%d: %s\n", id, PQerrorMessage(conn));
+	}
+	if (res) PQclear(res);
+	PQfinish(conn);
+
+	ClearCache();
+	return ok;
+}
+
 bool COCRNameMapping::SaveMapping(const char *actual_username, const char *ocr_detected_name, int id_site, bool verified)
 {
 	if (_pgconn == NULL || PQstatus(_pgconn) != CONNECTION_OK)

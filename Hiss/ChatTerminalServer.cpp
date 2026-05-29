@@ -39,15 +39,56 @@ bool CChatTerminalServer::Start(unsigned short port)
 		return false;
 	}
 
-	_port = port;
+	// Try the requested port, then up to 9 successors. This lets multiple
+	// Hiss instances run simultaneously: each binds the next free port and
+	// the embedded React page (relative /api URL) follows automatically.
+	// We deliberately do NOT set SO_REUSEADDR so a second instance fails
+	// fast on a port already in use and moves on to the next.
+	const int kMaxPortAttempts = 10;
+	SOCKET listen_socket = INVALID_SOCKET;
+	unsigned short bound_port = 0;
+	for (int attempt = 0; attempt < kMaxPortAttempts; ++attempt) {
+		unsigned short candidate = (unsigned short)(port + attempt);
+		listen_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+		if (listen_socket == INVALID_SOCKET) {
+			break;
+		}
+		sockaddr_in address;
+		memset(&address, 0, sizeof(address));
+		address.sin_family = AF_INET;
+		address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+		address.sin_port = htons(candidate);
+		if (::bind(listen_socket, (sockaddr *)&address, sizeof(address)) == 0
+				&& ::listen(listen_socket, SOMAXCONN) == 0) {
+			bound_port = candidate;
+			break;
+		}
+		closesocket(listen_socket);
+		listen_socket = INVALID_SOCKET;
+	}
+
+	if (bound_port == 0) {
+		ChatTerminalAppend(kChatTerminalContext, "Terminal API server failed to bind a localhost port.");
+		WSACleanup();
+		return false;
+	}
+
+	_listen_socket = listen_socket;
+	_port = bound_port;
 	_stop = false;
 	_thread = AfxBeginThread(ServerThread, this, THREAD_PRIORITY_NORMAL, 0, CREATE_SUSPENDED, NULL);
 	if (_thread == NULL) {
+		closesocket(_listen_socket);
+		_listen_socket = INVALID_SOCKET;
 		WSACleanup();
 		return false;
 	}
 	_thread->m_bAutoDelete = false;
 	_thread->ResumeThread();
+
+	CString ready;
+	ready.Format("Terminal API server listening on http://127.0.0.1:%u", _port);
+	ChatTerminalAppend(kChatTerminalContext, ready);
 	return true;
 }
 
@@ -76,37 +117,8 @@ UINT CChatTerminalServer::ServerThread(LPVOID param)
 
 void CChatTerminalServer::Run(void)
 {
-	_listen_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (_listen_socket == INVALID_SOCKET) {
-		return;
-	}
-
-	BOOL reuse = TRUE;
-	setsockopt(_listen_socket, SOL_SOCKET, SO_REUSEADDR, (const char *)&reuse, sizeof(reuse));
-
-	sockaddr_in address;
-	memset(&address, 0, sizeof(address));
-	address.sin_family = AF_INET;
-	address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-	address.sin_port = htons(_port);
-
-	if (::bind(_listen_socket, (sockaddr *)&address, sizeof(address)) == SOCKET_ERROR) {
-		ChatTerminalAppend(kChatTerminalContext, "Terminal API server failed to bind localhost port.");
-		closesocket(_listen_socket);
-		_listen_socket = INVALID_SOCKET;
-		return;
-	}
-	if (::listen(_listen_socket, SOMAXCONN) == SOCKET_ERROR) {
-		closesocket(_listen_socket);
-		_listen_socket = INVALID_SOCKET;
-		return;
-	}
-
-	CString ready;
-	ready.Format("Terminal API server listening on http://127.0.0.1:%u", _port);
-	ChatTerminalAppend(kChatTerminalContext, ready);
-
-	while (!_stop) {
+	// The listen socket is already bound/listening (set up in Start()).
+	while (!_stop && _listen_socket != INVALID_SOCKET) {
 		SOCKET client = ::accept(_listen_socket, NULL, NULL);
 		if (client == INVALID_SOCKET) {
 			if (!_stop) {
@@ -327,14 +339,25 @@ CStringA CChatTerminalServer::JsonEscape(CString value)
 	CStringA input(value);
 	CStringA escaped;
 	for (int i = 0; i < input.GetLength(); ++i) {
-		char c = input[i];
+		unsigned char c = (unsigned char)input[i];
 		switch (c) {
 		case '\\': escaped += "\\\\"; break;
 		case '"': escaped += "\\\""; break;
-		case '\r': break;
+		case '\r': /* drop, JSON shouldn't carry CR */ break;
 		case '\n': escaped += "\\n"; break;
 		case '\t': escaped += "\\t"; break;
-		default: escaped += c; break;
+		case '\b': escaped += "\\b"; break;
+		case '\f': escaped += "\\f"; break;
+		default:
+			if (c < 0x20) {
+				// Any other control byte (e.g. OCR noise) — emit \u00XX.
+				char buf[8];
+				sprintf_s(buf, sizeof(buf), "\\u%04x", c);
+				escaped += buf;
+			} else {
+				escaped += (char)c;
+			}
+			break;
 		}
 	}
 	return escaped;

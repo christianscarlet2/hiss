@@ -12,8 +12,9 @@ CREATE TABLE IF NOT EXISTS ocr_name_mappings (
     confidence REAL DEFAULT 0.0,  -- Confidence score (0-1) based on how many times name was seen
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(ocr_detected_name, id_site),
-    FOREIGN KEY(id_site) REFERENCES site(id_site) ON DELETE CASCADE
+    UNIQUE(ocr_detected_name, id_site)
+    -- No FK to a sites table: PT4 schema variants name it differently
+    -- (e.g. "site" vs "lookup_sites"). id_site is treated as an opaque int.
 );
 
 -- Create indexes for fast lookups

@@ -120,9 +120,10 @@ function App() {
 
   var table = state || { nchairs: 10, players: [], commonCards: [], limits: {}, pot: 0, handnumber: '' };
   var limits = table.limits || {};
+  var instancePort = window.location.port || '80';
   return e('main', { className: 'app' },
     e('header', { className: 'topbar' },
-      e('div', { className: 'title' }, 'OpenHoldem React Table Display'),
+      e('div', { className: 'title' }, 'OpenHoldem React Table Display — port ' + instancePort),
       e('div', { className: 'meta' },
         e('span', null, 'Hand ' + (table.handnumber || '-')),
         e('span', null, 'Blinds ' + money(limits.sblind) + ' / ' + money(limits.bblind)),
