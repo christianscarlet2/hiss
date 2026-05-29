@@ -23,17 +23,20 @@ const int k_advanced_stat_update_every    =    5;
 const int k_min_hands_for_slower_updates  = 1000;
 const int k_min_name_length_to_skip_lev_dist  = 10;
 
-struct SPlayerData 
+struct SPlayerData
 {
 	char			scraped_name[kMaxLengthOfPlayername];
 	char			pt_name[kMaxLengthOfPlayername];
-	bool			found;
+	bool			found;        // scraped name fuzzy-matched to a PT4 player
+	bool			verified;     // detected->actual mapping is verified in ocr_name_mappings
 	// Stats are now in the DLL
 	//double			stat[k_max_number_of_supported_pokertracker_stats];
-	int				skipped_updates;           
+	int				skipped_updates;
 };
 
 extern SPlayerData _player_data[kMaxNumberOfPlayers];
+
+class COCRNameMapping;
 
 double	UpdateStat(const int m_chair, const int stat);
 
@@ -82,6 +85,8 @@ private:
 	const char* GetPlayerScrapedName(int chair){return _player_data[chair].scraped_name;}
 
 	CString			_conn_str;
+
+	COCRNameMapping	*_ocr_name_mapping;
 
 	HANDLE			_m_stop_thread;
 	HANDLE			_m_wait_thread;

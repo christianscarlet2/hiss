@@ -14,6 +14,24 @@
 #include "stdafx.h"
 #include "COCRNameMapping.h"
 
+// Escape a string for safe inclusion inside a single-quoted SQL literal
+// by doubling any embedded single quotes.
+static CString EscapeSqlLiteral(const char *value)
+{
+	CString result;
+	if (value == NULL) {
+		return result;
+	}
+	for (const char *c = value; *c != '\0'; ++c) {
+		if (*c == '\'') {
+			result += "''";
+		} else {
+			result += *c;
+		}
+	}
+	return result;
+}
+
 COCRNameMapping::COCRNameMapping()
 	: _pgconn(NULL)
 {
@@ -51,7 +69,7 @@ bool COCRNameMapping::_ExecuteMappingQuery(const char *ocr_detected_name, int id
 		"SELECT actual_username, verified FROM ocr_name_mappings "
 		"WHERE ocr_detected_name = '%s' AND id_site = %d AND verified = true "
 		"LIMIT 1",
-		ocr_detected_name, id_site);
+		EscapeSqlLiteral(ocr_detected_name).GetString(), id_site);
 
 	PGresult *res = PQexec(_pgconn, query);
 
@@ -132,14 +150,19 @@ bool COCRNameMapping::SaveMapping(const char *actual_username, const char *ocr_d
 	if (actual_username == NULL || ocr_detected_name == NULL)
 		return false;
 
+	CString escaped_actual = EscapeSqlLiteral(actual_username);
+	CString escaped_ocr = EscapeSqlLiteral(ocr_detected_name);
 	CString query;
+	// On conflict, refresh the mapping but never downgrade an already-verified
+	// row back to unverified (a later fuzzy re-match must not undo a confirmation).
 	query.Format(
 		"INSERT INTO ocr_name_mappings (actual_username, ocr_detected_name, id_site, verified) "
 		"VALUES ('%s', '%s', %d, %s) "
 		"ON CONFLICT (ocr_detected_name, id_site) DO UPDATE SET "
-		"actual_username = '%s', verified = %s, last_updated = CURRENT_TIMESTAMP",
-		actual_username, ocr_detected_name, id_site, verified ? "true" : "false",
-		actual_username, verified ? "true" : "false");
+		"actual_username = EXCLUDED.actual_username, "
+		"verified = ocr_name_mappings.verified OR EXCLUDED.verified, "
+		"last_updated = CURRENT_TIMESTAMP",
+		escaped_actual.GetString(), escaped_ocr.GetString(), id_site, verified ? "true" : "false");
 
 	PGresult *res = PQexec(_pgconn, query);
 

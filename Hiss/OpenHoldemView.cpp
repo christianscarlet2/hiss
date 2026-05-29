@@ -34,15 +34,32 @@
 #include "CSymbolEngineTableLimits.h"
 #include "..\CTablemap\CTablemap.h"
 #include "CTableState.h"
+#include "CPokerTrackerThread.h"
 #include "CWhiteInfoBox.h"
 #include "ChatTerminalWindow.h"
 #include "HudManager.h"
+#include "..\PokerTracker_Query_Definitions\pokertracker_query_definitions.h"
 
 #include "OpenHoldem.h"
 #include "OpenHoldemDoc.h"
 
+// Format a non-negative integer with thousands separators, e.g. 1234 -> "1,234".
+static CString FormatThousands(int value) {
+	CString digits;
+	digits.Format("%d", value < 0 ? 0 : value);
+	CString out;
+	int count = 0;
+	for (int i = digits.GetLength() - 1; i >= 0; --i) {
+		out = CString(digits[i]) + out;
+		if (++count % 3 == 0 && i > 0) {
+			out = "," + out;
+		}
+	}
+	return out;
+}
+
 // Table layouts
-int		cc[kNumberOfCommunityCards][2] = 
+int		cc[kNumberOfCommunityCards][2] =
 { 
 	{-(CARDSIZEX*2 + 3*2 + CARDSIZEX/2), -(CARDSIZEY/2)},	
 	{-(CARDSIZEX*1 + 3*1 + CARDSIZEX/2), -(CARDSIZEY/2)},
@@ -778,12 +795,14 @@ void COpenHoldemView::DrawNameBox(const int chair) {
 	top = _client_rect.bottom * pc[p_tablemap->nchairs()][chair][1] + 15;
 	right = _client_rect.right * pc[p_tablemap->nchairs()][chair][0] + 35;
 	bottom = _client_rect.bottom * pc[p_tablemap->nchairs()][chair][1] + 30;
+  // Bold + green when the scraped name matched a PokerTracker 4 player.
+	bool name_matched = (chair >= kFirstChair && chair <= kLastChair) && _player_data[chair].found;
   // Set font basics
 	_logfont.lfHeight = -12;
-	_logfont.lfWeight = FW_NORMAL;
+	_logfont.lfWeight = name_matched ? FW_BOLD : FW_NORMAL;
 	cFont.CreateFontIndirect(&_logfont);
 	oldfont = pDC->SelectObject(&cFont);
-	pDC->SetTextColor(COLOR_BLACK);
+	pDC->SetTextColor(name_matched ? RGB(0, 150, 0) : COLOR_BLACK);
   if (p_table_state->Player(chair)->seated() || p_table_state->Player(chair)->active()) {
     pTempPen = (CPen*)pDC->SelectObject(&_black_pen);
 		oldpen.FromHandle((HPEN)pTempPen);					// Save old pen
@@ -931,7 +950,9 @@ void COpenHoldemView::DrawHudStats(const int chair) {
 	int ycenter = _client_rect.bottom * pc[p_tablemap->nchairs()][chair][1];
 	CRect erase_rect(xcenter - 70, ycenter + 46, xcenter + 70, ycenter + 92);
 	pDC->FillSolidRect(&erase_rect, COLOR_GRAY);
-	if (stats.empty() || !p_table_state->Player(chair)->seated()) {
+	// Stats + sample size are only shown once the name mapping is verified ("confirmed").
+	bool name_verified = (chair >= kFirstChair && chair <= kLastChair) && _player_data[chair].verified;
+	if (!name_verified || !p_table_state->Player(chair)->seated()) {
 		ReleaseDC(pDC);
 		return;
 	}
@@ -947,6 +968,20 @@ void COpenHoldemView::DrawHudStats(const int chair) {
 	int y = erase_rect.top;
 	const int row_height = 12;
 	const int gap = 4;
+
+	// Sample size (total PokerTracker 4 hands) shown next to the HUD stats.
+	{
+		double hands = PT_DLL_GetStat("pt_hands", chair);
+		int sample_size = (hands != kUndefined && hands >= 0) ? (int)hands : 0;
+		CString text;
+		text.Format("n=%s", FormatThousands(sample_size).GetString());
+		CSize size = pDC->GetTextExtent(text);
+		CRect text_rect(x, y, x + size.cx + 2, y + row_height);
+		pDC->SetTextColor(COLOR_WHITE);
+		pDC->DrawText(text, -1, &text_rect, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+		x += size.cx + gap + 2;
+	}
+
 	for (size_t i = 0; i < stats.size(); ++i) {
 		CString text;
 		text.Format("%s %s", stats[i].abbreviation.GetString(), stats[i].value.GetString());

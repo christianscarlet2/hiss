@@ -172,6 +172,7 @@
     <ClCompile Include="CTablePositioner.cpp" />
     <ClCompile Include="CTablepointChecker.cpp" />
     <ClCompile Include="CPokerTrackerLookUp.cpp" />
+    <ClCompile Include="COCRNameMapping.cpp" />
     <ClCompile Include="CPokerTrackerThread.cpp" />
     <ClCompile Include="CIteratorThread.cpp" />
     <ClCompile Include="PrWinHandranges.cpp" />
@@ -392,6 +393,7 @@
     <ClInclude Include="CSharedMem.h" />
     <ClInclude Include="..\CCritSec\CCritSec.h" />
     <ClInclude Include="CPokerTrackerLookUp.h" />
+    <ClInclude Include="COCRNameMapping.h" />
     <ClInclude Include="CPokerTrackerThread.h" />
     <ClInclude Include="BringKeyboard.h" />
     <ClInclude Include="CAutoplayer.h" />

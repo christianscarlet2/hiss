@@ -7,8 +7,10 @@
 #include "CSymbolEngineChipAmounts.h"
 #include "CHandresetDetector.h"
 #include "CTableState.h"
+#include "CPokerTrackerThread.h"
 #include "HudManager.h"
 #include "..\CTablemap\CTablemap.h"
+#include "..\PokerTracker_Query_Definitions\pokertracker_query_definitions.h"
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -366,21 +368,46 @@ CStringA CChatTerminalServer::BuildTableStateJson(void)
 		if (chair > 0) json += ",";
 		CPlayer *player = p_table_state == NULL ? NULL : p_table_state->Player(chair);
 		CString name = player == NULL ? "" : player->name();
-		json.AppendFormat("{\"chair\":%d,\"name\":\"%s\",\"seated\":%s,\"active\":%s,\"dealer\":%s,\"balance\":%.2f,\"bet\":%.2f,\"cards\":[",
+
+		// PokerTracker name-match state for this seat.
+		//   matched  = scraped name fuzzy-matched to a PT4 player (name shown bold + green)
+		//   verified = mapping confirmed in ocr_name_mappings (stats + sample size shown)
+		bool name_matched = false;
+		bool name_verified = false;
+		CString pt_name = "";
+		int pt_samples = -1;  // -1 => unknown / not displayed
+		bool seated_player = player != NULL && player->seated();
+		if (seated_player && chair >= kFirstChair && chair <= kLastChair) {
+			// Reading pt_hands also drives the name-matching / verification flow.
+			double hands = PT_DLL_GetStat("pt_hands", chair);
+			name_matched = _player_data[chair].found;
+			name_verified = _player_data[chair].verified;
+			pt_name = _player_data[chair].pt_name;
+			if (name_verified && hands != kUndefined && hands >= 0) {
+				pt_samples = (int)hands;
+			}
+		}
+
+		json.AppendFormat("{\"chair\":%d,\"name\":\"%s\",\"seated\":%s,\"active\":%s,\"dealer\":%s,\"balance\":%.2f,\"bet\":%.2f,\"matched\":%s,\"verified\":%s,\"ptname\":\"%s\",\"samples\":%d,\"cards\":[",
 			chair,
 			JsonEscape(name).GetString(),
 			player != NULL && player->seated() ? "true" : "false",
 			player != NULL && player->active() ? "true" : "false",
 			player != NULL && player->dealer() ? "true" : "false",
 			player == NULL ? 0 : player->_balance.GetValue(),
-			player == NULL ? 0 : player->_bet.GetValue());
+			player == NULL ? 0 : player->_bet.GetValue(),
+			name_matched ? "true" : "false",
+			name_verified ? "true" : "false",
+			JsonEscape(pt_name).GetString(),
+			pt_samples);
 		for (int card_index = 0; card_index < kMaxNumberOfCardsPerPlayer; ++card_index) {
 			if (card_index > 0) json += ",";
 			CString card = player == NULL ? "" : player->hole_cards(card_index)->ToString();
 			json.AppendFormat("\"%s\"", JsonEscape(card).GetString());
 		}
 		json += "],\"hud\":[";
-		if (p_hud_manager != NULL && p_hud_manager->IsEnabled()) {
+		// Stats are only exposed once the name mapping is verified ("confirmed").
+		if (name_verified && p_hud_manager != NULL && p_hud_manager->IsEnabled()) {
 			const std::vector<SHudStatValue> &stats = p_hud_manager->StatsForChair(chair);
 			for (size_t stat_index = 0; stat_index < stats.size(); ++stat_index) {
 				if (stat_index > 0) json += ",";

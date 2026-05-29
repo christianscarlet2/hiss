@@ -20,6 +20,7 @@
 #include "CAutoConnector.h"
 #include "CEngineContainer.h"
 #include "CLevDistance.h"
+#include "COCRNameMapping.h"
 #include "..\PokerTracker_Query_Definitions\pokertracker_query_definitions.h"
 #include "CPokerTrackerLookUp.h"
 
@@ -66,7 +67,9 @@ CPokerTrackerThread::CPokerTrackerThread()
 	_connected = false;
 	_m_stop_thread = NULL;
 	_m_wait_thread = NULL;
-	_pgconn = NULL; 
+	_pgconn = NULL;
+
+	_ocr_name_mapping = new COCRNameMapping();
 
 	pUpdateStat(UpdateStat);
 }
@@ -76,6 +79,8 @@ CPokerTrackerThread::~CPokerTrackerThread()
   // !!! Probably not needed, as we call Singleton::StopThreads()
   // when we exit an instance and here happens a freezing
 	// StopThread();
+	delete _ocr_name_mapping;
+	_ocr_name_mapping = NULL;
 }
 
 void CPokerTrackerThread::StartThread()
@@ -156,6 +161,7 @@ void CPokerTrackerThread::Connect(void) {
 			Preferences()->pt_dbname());
 
 		_connected = true;
+		_ocr_name_mapping->SetConnection(_pgconn);
 	}	else {
 		write_log(Preferences()->debug_pokertracker(), "[PokerTracker] ERROR opening PostgreSQL DB: %s\n\n", PQerrorMessage(_pgconn));
 		PQfinish(_pgconn);
@@ -173,6 +179,7 @@ void CPokerTrackerThread::Reconnect(void) {
       if (PQstatus(_pgconn) == CONNECTION_OK) {
         write_log(Preferences()->debug_pokertracker(), "[PokerTracker] PostgreSQL DB reconnected after bad connection\n");
         _connected = true;
+        _ocr_name_mapping->SetConnection(_pgconn);
       } else {
         write_log(Preferences()->debug_pokertracker(), "[PokerTracker] ERROR reconnecting to PostgreSQL DB: %s\n\n", PQerrorMessage(_pgconn));
         PQfinish(_pgconn);
@@ -192,6 +199,10 @@ void CPokerTrackerThread::Disconnect(void) {
   }
 	_pgconn = NULL;
 	_connected = false;
+	if (_ocr_name_mapping != NULL) {
+		_ocr_name_mapping->SetConnection(NULL);
+		_ocr_name_mapping->ClearCache();
+	}
 }
 
 bool CPokerTrackerThread::IsConnected() {
@@ -265,12 +276,40 @@ bool CPokerTrackerThread::CheckIfNameExistsInDB(int chair)
 		return true;
 	}
 	
-	// We have not found the name in PT, go find it
-	// First see if we can find the exact scraped name
+	int siteid = pt_lookup.GetSiteId();
+
+	// 1) Confirmed fast-path: a verified detected->actual mapping already exists.
+	if (_ocr_name_mapping != NULL && siteid != kUndefined)
+	{
+		SOCRNameMapping mapping;
+		if (_ocr_name_mapping->LookupActualName(oh_scraped_name, siteid, &mapping)
+			&& mapping.found && mapping.verified)
+		{
+			write_log(Preferences()->debug_pokertracker(), "[PokerTracker] CheckIfNameExistsInDB() Verified mapping found: [%s] -> [%s]\n",
+				oh_scraped_name, mapping.actual_username);
+			SetPlayerName(chair, true, mapping.actual_username, oh_scraped_name);
+			_player_data[chair].verified = true;
+			return true;
+		}
+	}
+
+	// 2) Fuzzy match against the PT4 player table (Levenshtein, with escalations).
 	if (FindName(oh_scraped_name, best_name))
 	{
-		write_log(Preferences()->debug_pokertracker(), "[PokerTracker] CheckIfNameExistsInDB() Name found in database\n");
+		// An exact (case-sensitive, non-truncated) match is auto-confirmed;
+		// a fuzzy match is only a candidate until verified.
+		bool exact_match = (strcmp(oh_scraped_name, best_name) == 0);
+		write_log(Preferences()->debug_pokertracker(), "[PokerTracker] CheckIfNameExistsInDB() Name found in database (exact=%d)\n", exact_match);
 		SetPlayerName(chair, true, best_name, oh_scraped_name);
+		_player_data[chair].verified = exact_match;
+
+		// 3) Auto-learn: persist the detected->actual mapping so imperfect OCR
+		// names resolve to the correct player next time. Exact matches are stored
+		// verified; fuzzy matches are stored as unverified candidates.
+		if (_ocr_name_mapping != NULL && siteid != kUndefined)
+		{
+			_ocr_name_mapping->SaveMapping(best_name, oh_scraped_name, siteid, exact_match);
+		}
 		return true;
 	}
 	else
@@ -312,6 +351,9 @@ bool CPokerTrackerThread::CheckIfNameHasChanged(int chair)
 void CPokerTrackerThread::SetPlayerName(int chr, bool found, const char* pt_name, const char* scraped_name)
 {
 	_player_data[chr].found = found;
+	if (!found) {
+		_player_data[chr].verified = false;
+	}
 	bool logResult = false;
 	if (0 != memcmp(_player_data[chr].pt_name, pt_name, kMaxLengthOfPlayername) )
 	{
