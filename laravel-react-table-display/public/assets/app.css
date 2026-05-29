@@ -170,6 +170,11 @@ body {
   font-size: 12px;
 }
 
+.name.matched {
+  color: #00b000;
+  font-weight: 700;
+}
+
 .active-dot {
   display: inline-block;
   width: 5px;
@@ -196,6 +201,12 @@ body {
   font-size: 10px;
   line-height: 12px;
   text-shadow: 0 1px 1px #111;
+}
+
+.hud-samples {
+  white-space: nowrap;
+  font-weight: 700;
+  color: #fff;
 }
 
 .hud-stat {

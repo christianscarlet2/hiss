@@ -15,6 +15,9 @@ CHudManager::CHudManager()
 {
 	_enabled = false;
 	_last_refresh_tick = 0;
+	for (int chair = 0; chair < kMaxNumberOfPlayers; ++chair) {
+		_chair_samples[chair] = -1;
+	}
 	CString message;
 	LoadProfileFromPath(kDefaultHudProfilePath, &message, false);
 }
@@ -36,6 +39,14 @@ const std::vector<SHudStatValue> &CHudManager::StatsForChair(int chair) const
 		return empty;
 	}
 	return _chair_stats[chair];
+}
+
+int CHudManager::SamplesForChair(int chair) const
+{
+	if (chair < 0 || chair >= kMaxNumberOfPlayers) {
+		return -1;
+	}
+	return _chair_samples[chair];
 }
 
 bool CHudManager::LoadProfile(CString path, CString *message)
@@ -365,10 +376,6 @@ CString CHudManager::FormatValue(CString symbol, double value) const
 
 void CHudManager::RefreshIfNeeded(CString hand_number, bool force)
 {
-	if (!IsEnabled()) {
-		return;
-	}
-
 	DWORD now = GetTickCount();
 	if (!force && hand_number == _last_hand_number && now - _last_refresh_tick < 2500) {
 		return;
@@ -376,8 +383,19 @@ void CHudManager::RefreshIfNeeded(CString hand_number, bool force)
 
 	_last_hand_number = hand_number;
 	_last_refresh_tick = now;
+
+	bool build_stats = IsEnabled();
 	for (int chair = 0; chair < kMaxNumberOfPlayers; ++chair) {
+		// Always refresh the sample size (and, as a side effect, drive the
+		// name-matching / verification flow) so player names can highlight even
+		// when the HUD overlay is turned off. This is throttled by the guard above.
+		double hands = PT_DLL_GetStat("pt_hands", chair);
+		_chair_samples[chair] = (hands != kUndefined && hands >= 0) ? (int)hands : -1;
+
 		_chair_stats[chair].clear();
+		if (!build_stats) {
+			continue;
+		}
 		for (size_t i = 0; i < _definitions.size(); ++i) {
 			CString pt_symbol;
 			pt_symbol.Format("pt_%s%d", _definitions[i].symbol.GetString(), chair);

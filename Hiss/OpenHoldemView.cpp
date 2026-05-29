@@ -38,7 +38,6 @@
 #include "CWhiteInfoBox.h"
 #include "ChatTerminalWindow.h"
 #include "HudManager.h"
-#include "..\PokerTracker_Query_Definitions\pokertracker_query_definitions.h"
 
 #include "OpenHoldem.h"
 #include "OpenHoldemDoc.h"
@@ -970,9 +969,12 @@ void COpenHoldemView::DrawHudStats(const int chair) {
 	const int gap = 4;
 
 	// Sample size (total PokerTracker 4 hands) shown next to the HUD stats.
+	// Read from the throttled HUD cache rather than querying the DB on every paint.
 	{
-		double hands = PT_DLL_GetStat("pt_hands", chair);
-		int sample_size = (hands != kUndefined && hands >= 0) ? (int)hands : 0;
+		int sample_size = p_hud_manager->SamplesForChair(chair);
+		if (sample_size < 0) {
+			sample_size = 0;
+		}
 		CString text;
 		text.Format("n=%s", FormatThousands(sample_size).GetString());
 		CSize size = pDC->GetTextExtent(text);

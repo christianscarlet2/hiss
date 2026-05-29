@@ -25,6 +25,8 @@ public:
 	bool IsEnabled(void) const;
 	CString ProfilePath(void) const;
 	const std::vector<SHudStatValue> &StatsForChair(int chair) const;
+	// Cached total PokerTracker 4 hands ("sample size") for a seat, or -1 if unknown.
+	int SamplesForChair(int chair) const;
 	void RefreshIfNeeded(CString hand_number, bool force = false);
 
 private:
@@ -45,6 +47,7 @@ private:
 	DWORD _last_refresh_tick;
 	std::vector<SHudStatDefinition> _definitions;
 	std::vector<SHudStatValue> _chair_stats[kMaxNumberOfPlayers];
+	int _chair_samples[kMaxNumberOfPlayers];
 };
 
 extern CHudManager *p_hud_manager;

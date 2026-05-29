@@ -26,6 +26,11 @@ function money(value) {
   return value.toFixed(2);
 }
 
+function thousands(value) {
+  value = Math.max(0, Math.round(Number(value || 0)));
+  return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
 function CardView(props) {
   var value = props.value || '';
   var text = value && value !== 'NC' ? value : '';
@@ -52,18 +57,25 @@ function Player(props) {
     e('div', { className: 'holecards' }, cards.map(function (card, index) {
       return e(CardView, { key: index, value: card });
     })),
-    e('div', { className: 'name' },
+    e('div', { className: 'name' + (player.matched ? ' matched' : ''), title: player.ptname || '' },
       player.active ? e('span', { className: 'active-dot' }) : null,
       player.name || ('p' + player.chair)
     ),
     e('div', { className: 'balance' }, player.seated ? money(player.balance) : ('Out (' + money(player.balance) + ')')),
-    (player.hud || []).length ? e('div', { className: 'hud' }, (player.hud || []).map(function (stat, index) {
-      return e('span', {
-        key: index,
-        className: 'hud-stat ' + (stat.important ? 'important' : 'normal'),
-        title: stat.name || stat.abbr
-      }, (stat.abbr || '') + ' ' + (stat.value || '-'));
-    })) : null,
+    (player.samples >= 0 || (player.hud || []).length) ? e('div', { className: 'hud' },
+      player.samples >= 0 ? e('span', {
+        key: 'samples',
+        className: 'hud-samples',
+        title: 'PokerTracker 4 hands sampled'
+      }, 'n=' + thousands(player.samples)) : null,
+      (player.hud || []).map(function (stat, index) {
+        return e('span', {
+          key: index,
+          className: 'hud-stat ' + (stat.important ? 'important' : 'normal'),
+          title: stat.name || stat.abbr
+        }, (stat.abbr || '') + ' ' + (stat.value || '-'));
+      })
+    ) : null,
     player.dealer ? e('div', { className: 'dealer' }, 'D') : null
   );
 }

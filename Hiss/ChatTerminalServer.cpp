@@ -10,7 +10,6 @@
 #include "CPokerTrackerThread.h"
 #include "HudManager.h"
 #include "..\CTablemap\CTablemap.h"
-#include "..\PokerTracker_Query_Definitions\pokertracker_query_definitions.h"
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -378,13 +377,13 @@ CStringA CChatTerminalServer::BuildTableStateJson(void)
 		int pt_samples = -1;  // -1 => unknown / not displayed
 		bool seated_player = player != NULL && player->seated();
 		if (seated_player && chair >= kFirstChair && chair <= kLastChair) {
-			// Reading pt_hands also drives the name-matching / verification flow.
-			double hands = PT_DLL_GetStat("pt_hands", chair);
+			// found/verified and the cached sample size are refreshed (throttled)
+			// by p_hud_manager->RefreshIfNeeded() above.
 			name_matched = _player_data[chair].found;
 			name_verified = _player_data[chair].verified;
 			pt_name = _player_data[chair].pt_name;
-			if (name_verified && hands != kUndefined && hands >= 0) {
-				pt_samples = (int)hands;
+			if (name_verified && p_hud_manager != NULL) {
+				pt_samples = p_hud_manager->SamplesForChair(chair);
 			}
 		}
 
