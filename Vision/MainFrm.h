@@ -32,6 +32,7 @@ class CMainFrame : public CFrameWnd {
 	afx_msg void OnViewPrev();
 	afx_msg void OnViewNext();
 	afx_msg void OnToolsCloneRegions();
+	afx_msg void OnToolsShiftRegions();
 	afx_msg void OnEditUpdatehashes();
 	afx_msg void OnEditDuplicateregion();
 	afx_msg void OnTimer(UINT_PTR nIDEvent);

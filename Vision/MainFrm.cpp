@@ -24,6 +24,7 @@
 
 #include "CRegionCloner.h"
 #include "DialogCopyRegion.h"
+#include "DialogEdit.h"
 #include "DialogSelectTable.h"
 #include "global.h"
 #include "ListOfSymbols.h"
@@ -56,6 +57,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
 	ON_COMMAND(ID_VIEW_NEXT, &CMainFrame::OnViewNext)
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_NEXT, &CMainFrame::OnViewNext)
 	ON_COMMAND(ID_TOOLS_CLONEREGIONS, &CMainFrame::OnToolsCloneRegions)
+	ON_COMMAND(ID_TOOLS_SHIFTREGIONS, &CMainFrame::OnToolsShiftRegions)
 
 	ON_COMMAND(ID_EDIT_UPDATEHASHES, &CMainFrame::OnEditUpdatehashes)
 	ON_WM_TIMER()
@@ -731,7 +733,7 @@ void CMainFrame::OnViewRefresh()
 		SaveBmpPbits();
 
 		// Update saved rect
-		if (!GetFullWindowCaptureRect(pDoc->attached_hwnd, &crect)) {
+		if (!GetClientWindowCaptureRect(pDoc->attached_hwnd, &crect)) {
 			::GetClientRect(pDoc->attached_hwnd, &crect);
 		}
 		pDoc->attached_rect.left = crect.left;
@@ -822,7 +824,7 @@ void CMainFrame::OnViewPrev()
 		SaveBmpPbits();
 
 		// Update saved rect
-		if (!GetFullWindowCaptureRect(pDoc->attached_hwnd, &crect)) {
+		if (!GetClientWindowCaptureRect(pDoc->attached_hwnd, &crect)) {
 			::GetClientRect(pDoc->attached_hwnd, &crect);
 		}
 		pDoc->attached_rect.left = crect.left;
@@ -882,7 +884,7 @@ void CMainFrame::OnViewNext()
 		SaveBmpPbits();
 
 		// Update saved rect
-		if (!GetFullWindowCaptureRect(pDoc->attached_hwnd, &crect)) {
+		if (!GetClientWindowCaptureRect(pDoc->attached_hwnd, &crect)) {
 			::GetClientRect(pDoc->attached_hwnd, &crect);
 		}
 		pDoc->attached_rect.left = crect.left;
@@ -914,6 +916,104 @@ void CMainFrame::OnToolsCloneRegions()
 	CRegionCloner *p_region__cloner = new(CRegionCloner);
 	p_region__cloner->CloneRegions();
 	delete(p_region__cloner);
+}
+
+static unsigned int ShiftCoordinateClamped(unsigned int value, int delta)
+{
+	int result = (int)value + delta;
+	return result < 0 ? 0 : (unsigned int)result;
+}
+
+void CMainFrame::OnToolsShiftRegions()
+{
+	COpenScrapeDoc *pDoc = COpenScrapeDoc::GetDocument();
+	if (pDoc == NULL || p_tablemap == NULL) {
+		return;
+	}
+
+	// Default offset converts coordinates that were placed against the old
+	// full-window screenshot into client-area coordinates, i.e. subtract the
+	// attached window's non-client area (title bar + borders).
+	int default_dx = 0;
+	int default_dy = 0;
+	if (pDoc->attached_hwnd != NULL && ::IsWindow(pDoc->attached_hwnd)) {
+		RECT window_rect = {0};
+		RECT client_rect = {0};
+		if (WindowCapture::GetFullWindowScreenRect(pDoc->attached_hwnd, &window_rect)
+				&& WindowCapture::GetClientScreenRect(pDoc->attached_hwnd, &client_rect)) {
+			default_dx = -(client_rect.left - window_rect.left);
+			default_dy = -(client_rect.top - window_rect.top);
+		}
+	}
+
+	CDlgEdit dlg;
+	dlg.m_titletext = "Shift all regions by dx,dy (pixels). Negative moves up/left.";
+	dlg.m_result.Format("%d,%d", default_dx, default_dy);
+	if (dlg.DoModal() != IDOK) {
+		return;
+	}
+
+	int dx = 0;
+	int dy = 0;
+	if (sscanf_s(dlg.m_result.GetString(), "%d , %d", &dx, &dy) != 2) {
+		MessageBox("Could not parse the shift. Enter two integers like \"-8,-31\".",
+			"Shift all regions", MB_OK | MB_ICONERROR);
+		return;
+	}
+	if (dx == 0 && dy == 0) {
+		return;
+	}
+
+	CString confirm;
+	confirm.Format("Shift %d region(s) and %d template(s) by (%d, %d)?\n\n"
+		"Coordinates are clamped to 0 at the top/left edge.",
+		(int)p_tablemap->r$()->size(), (int)p_tablemap->tpl$()->size(), dx, dy);
+	if (MessageBox(confirm, "Shift all regions", MB_OKCANCEL | MB_ICONQUESTION) != IDOK) {
+		return;
+	}
+
+	for (RMapI r_iter = p_tablemap->set_r$()->begin(); r_iter != p_tablemap->set_r$()->end(); ++r_iter) {
+		r_iter->second.left = ShiftCoordinateClamped(r_iter->second.left, dx);
+		r_iter->second.right = ShiftCoordinateClamped(r_iter->second.right, dx);
+		r_iter->second.top = ShiftCoordinateClamped(r_iter->second.top, dy);
+		r_iter->second.bottom = ShiftCoordinateClamped(r_iter->second.bottom, dy);
+	}
+	for (TPLMapI tpl_iter = p_tablemap->set_tpl$()->begin(); tpl_iter != p_tablemap->set_tpl$()->end(); ++tpl_iter) {
+		tpl_iter->second.left = ShiftCoordinateClamped(tpl_iter->second.left, dx);
+		tpl_iter->second.right = ShiftCoordinateClamped(tpl_iter->second.right, dx);
+		tpl_iter->second.top = ShiftCoordinateClamped(tpl_iter->second.top, dy);
+		tpl_iter->second.bottom = ShiftCoordinateClamped(tpl_iter->second.bottom, dy);
+	}
+
+	// Color-preset sample points are stored as absolute pixel coordinates in
+	// "oscolorip<n>pointx"/"pointy" symbols (the relative pointrelx/pointrely
+	// variants are left untouched).
+	for (SMapI s_iter = p_tablemap->s$()->begin(); s_iter != p_tablemap->s$()->end(); ++s_iter) {
+		CString name = s_iter->second.name;
+		if (name.Left(9) != "oscolorip") {
+			continue;
+		}
+		int delta;
+		if (name.Right(6) == "pointx") {
+			delta = dx;
+		} else if (name.Right(6) == "pointy") {
+			delta = dy;
+		} else {
+			continue;
+		}
+		int value = atoi(s_iter->second.text.GetString()) + delta;
+		if (value < 0) {
+			value = 0;
+		}
+		s_iter->second.text.Format("%d", value);
+	}
+
+	pDoc->SetModifiedFlag(true);
+	if (theApp.m_TableMapDlg != NULL) {
+		theApp.m_TableMapDlg->update_display();
+		theApp.m_TableMapDlg->Invalidate(false);
+	}
+	ForceRedraw();
 }
 
 void CMainFrame::OnGroupregionsBytype()
@@ -1015,7 +1115,7 @@ void CMainFrame::SaveBmpPbits(void)
 	}
 
 	// Save bitmap of connected window
-	pDoc->attached_bitmap = CaptureCompositedWindowBitmap(pDoc->attached_hwnd, &width, &height);
+	pDoc->attached_bitmap = CaptureCompositedClientBitmap(pDoc->attached_hwnd, &width, &height);
 	if (pDoc->attached_bitmap == NULL) {
 		MessageBox("Unable to capture the attached window.", "Screen scrape failed", MB_OK | MB_ICONERROR);
 		return;

@@ -2370,7 +2370,7 @@ CString CDlgTableMap::GetDetectTemplateResult(CString area_name, CString tpl_nam
 	hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL);
 	int attached_width = 0;
 	int attached_height = 0;
-	HBITMAP attached_bitmap = CaptureCompositedWindowBitmap(pDoc->attached_hwnd, &attached_width, &attached_height);
+	HBITMAP attached_bitmap = CaptureCompositedClientBitmap(pDoc->attached_hwnd, &attached_width, &attached_height);
 	if (attached_bitmap == NULL) {
 		DeleteDC(hdcScreen);
 		return "";
