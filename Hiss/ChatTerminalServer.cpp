@@ -4,6 +4,7 @@
 #include "CEngineContainer.h"
 #include "CSymbolEngineTableLimits.h"
 #include "CSymbolEngineGameType.h"
+#include "CSymbolEngineIsOmaha.h"
 #include "CSymbolEngineChipAmounts.h"
 #include "CHandresetDetector.h"
 #include "CTableState.h"
@@ -451,12 +452,13 @@ CStringA CChatTerminalServer::BuildTableStateJson(void)
 	double ante = p_engine_container == NULL ? 0 : p_engine_container->symbol_engine_tablelimits()->ante();
 	double pot = p_engine_container == NULL ? 0 : p_engine_container->symbol_engine_chip_amounts()->pot();
 	int gametype = p_engine_container == NULL ? 0 : p_engine_container->symbol_engine_gametype()->gametype();
+	bool is_omaha = p_engine_container != NULL && p_engine_container->symbol_engine_isomaha()->isomaha();
 	if (p_hud_manager != NULL) {
 		p_hud_manager->RefreshIfNeeded(handnumber, false);
 	}
 
-	json.Format("{\"nchairs\":%d,\"handnumber\":\"%s\",\"limits\":{\"sblind\":%.2f,\"bblind\":%.2f,\"ante\":%.2f,\"gametype\":%d},\"pot\":%.2f,",
-		nchairs, JsonEscape(handnumber).GetString(), sblind, bblind, ante, gametype, pot);
+	json.Format("{\"nchairs\":%d,\"handnumber\":\"%s\",\"isomaha\":%s,\"limits\":{\"sblind\":%.2f,\"bblind\":%.2f,\"ante\":%.2f,\"gametype\":%d},\"pot\":%.2f,",
+		nchairs, JsonEscape(handnumber).GetString(), is_omaha ? "true" : "false", sblind, bblind, ante, gametype, pot);
 	json += "\"commonCards\":[";
 	for (int i = 0; i < kNumberOfCommunityCards; ++i) {
 		if (i > 0) json += ",";

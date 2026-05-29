@@ -18,6 +18,10 @@
 #include "MainFrm.h"
 #include <io.h>
 #include <process.h>
+#include <tlhelp32.h>
+#include <map>
+#include <set>
+#include <vector>
 #include "..\DLLs\Files_DLL\Files.h"
 #include "..\DLLs\StringFunctions_DLL\string_functions.h"
 #include "..\DLLs\WindowFunctions_DLL\window_functions.h"
@@ -167,6 +171,74 @@ CMainFrame::CMainFrame() {
 	_prev_wrect.top = 0;
 }
 
+// Walks the process tree rooted at our own PID and terminates every
+// msedgewebview2.exe descendant (the React-rendering child processes spawned
+// by our embedded WebView2 windows, plus their own renderer/gpu children).
+// Scoped strictly to descendants by parent-PID matching so we never touch
+// WebView2 processes belonging to other Hiss instances or other apps.
+static void KillOurWebView2Descendants() {
+	DWORD self_pid = GetCurrentProcessId();
+
+	HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if (snap == INVALID_HANDLE_VALUE) {
+		return;
+	}
+
+	// Snapshot every running process once, indexed both by pid and by parent
+	// so we can BFS the descendant tree without re-snapshotting.
+	struct ProcInfo {
+		DWORD parent_pid;
+		CString name;
+	};
+	std::map<DWORD, ProcInfo> by_pid;
+	std::map<DWORD, std::vector<DWORD> > by_parent;
+
+	PROCESSENTRY32 entry;
+	memset(&entry, 0, sizeof(entry));
+	entry.dwSize = sizeof(entry);
+	if (Process32First(snap, &entry)) {
+		do {
+			ProcInfo info;
+			info.parent_pid = entry.th32ParentProcessID;
+			info.name = entry.szExeFile;
+			info.name.MakeLower();
+			by_pid[entry.th32ProcessID] = info;
+			by_parent[entry.th32ParentProcessID].push_back(entry.th32ProcessID);
+		} while (Process32Next(snap, &entry));
+	}
+	CloseHandle(snap);
+
+	// BFS from self_pid, terminating any msedgewebview2.exe we descend into.
+	// Use a visited set to guard against PID-reuse cycles in the snapshot.
+	std::vector<DWORD> stack;
+	std::set<DWORD> visited;
+	stack.push_back(self_pid);
+	visited.insert(self_pid);
+	while (!stack.empty()) {
+		DWORD pid = stack.back();
+		stack.pop_back();
+		std::map<DWORD, std::vector<DWORD> >::const_iterator it = by_parent.find(pid);
+		if (it == by_parent.end()) {
+			continue;
+		}
+		for (size_t i = 0; i < it->second.size(); ++i) {
+			DWORD child_pid = it->second[i];
+			if (!visited.insert(child_pid).second) {
+				continue;
+			}
+			stack.push_back(child_pid);
+			std::map<DWORD, ProcInfo>::const_iterator pit = by_pid.find(child_pid);
+			if (pit != by_pid.end() && pit->second.name == "msedgewebview2.exe") {
+				HANDLE h = OpenProcess(PROCESS_TERMINATE, FALSE, child_pid);
+				if (h != NULL) {
+					TerminateProcess(h, 0);
+					CloseHandle(h);
+				}
+			}
+		}
+	}
+}
+
 CMainFrame::~CMainFrame() {
 	if (p_chat_terminal_server != NULL) {
 		p_chat_terminal_server->Stop();
@@ -200,6 +272,11 @@ CMainFrame::~CMainFrame() {
   if (p_openholdem_statusbar != NULL) {
     delete p_openholdem_statusbar;
   }
+
+	// Sweep any WebView2 (React frontend) processes that descend from us.
+	// Scoped to our own subtree by parent-PID matching, so other Hiss
+	// instances' React windows are left alone.
+	KillOurWebView2Descendants();
 }
 
 int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct) {

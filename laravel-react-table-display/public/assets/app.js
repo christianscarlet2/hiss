@@ -42,11 +42,12 @@ function CardView(props) {
 function Player(props) {
   var player = props.player;
   var nchairs = props.nchairs;
+  var maxHoleCards = props.isOmaha ? 4 : 2;
   var pos = pc[nchairs] && pc[nchairs][player.chair] ? pc[nchairs][player.chair] : [.5, .5];
   var style = { left: (pos[0] * 100) + '%', top: (pos[1] * 100) + '%' };
   var cards = [];
   var rawCards = player.cards || [];
-  for (var i = 0; i < rawCards.length && cards.length < 4; i += 1) {
+  for (var i = 0; i < rawCards.length && cards.length < maxHoleCards; i += 1) {
     if (rawCards[i] && rawCards[i] !== 'NC') {
       cards.push(rawCards[i]);
     }
@@ -139,7 +140,7 @@ function App() {
         e('div', { className: 'pot' }, 'Pot ' + money(table.pot))
       ),
       (table.players || []).map(function (player) {
-        return e(Player, { key: player.chair, player: player, nchairs: table.nchairs });
+        return e(Player, { key: player.chair, player: player, nchairs: table.nchairs, isOmaha: !!table.isomaha });
       })
     )
   );

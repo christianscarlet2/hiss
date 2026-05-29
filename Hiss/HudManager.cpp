@@ -3,6 +3,8 @@
 
 #include <math.h>
 #include <float.h>
+#include "CPokerTrackerThread.h"
+#include "CTableState.h"
 #include "..\PokerTracker_Query_Definitions\pokertracker_query_definitions.h"
 #include "..\Shared\MagicNumbers\MagicNumbers.h"
 
@@ -383,6 +385,20 @@ void CHudManager::RefreshIfNeeded(CString hand_number, bool force)
 
 	_last_hand_number = hand_number;
 	_last_refresh_tick = now;
+
+	// PT_DLL_GetStat ultimately dereferences p_pokertracker_thread, p_table_state
+	// and other singletons inside UpdateStat. Skip the whole refresh until those
+	// are wired up so that early HTTP polls / display updates don't crash.
+	bool pt_ready = (p_pokertracker_thread != NULL)
+		&& p_pokertracker_thread->IsConnected()
+		&& (p_table_state != NULL);
+	if (!pt_ready) {
+		for (int chair = 0; chair < kMaxNumberOfPlayers; ++chair) {
+			_chair_samples[chair] = -1;
+			_chair_stats[chair].clear();
+		}
+		return;
+	}
 
 	bool build_stats = IsEnabled();
 	for (int chair = 0; chair < kMaxNumberOfPlayers; ++chair) {
