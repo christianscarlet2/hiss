@@ -3,8 +3,14 @@
   var status = document.getElementById('status');
   var refresh = document.getElementById('refresh');
   var unverifiedOnly = document.getElementById('unverifiedOnly');
+  var filterOcr = document.getElementById('filterOcr');
+  var filterActual = document.getElementById('filterActual');
   var title = document.getElementById('title');
   title.textContent = 'OCR Name Mappings — port ' + (window.location.port || '80');
+
+  // Holds the most recent server response so the OCR/Actual filters can
+  // re-render without hitting the API on every keystroke.
+  var allRows = [];
 
   function escapeHtml(value) {
     return String(value == null ? '' : value).replace(/[&<>"']/g, function (ch) {
@@ -31,12 +37,31 @@
       var data;
       try { data = JSON.parse(xhr.responseText); }
       catch (e) { setStatus(e.message, true); return; }
-      if (data.error) { setStatus(data.error, true); render([]); return; }
-      var rows = data.rows || [];
-      render(rows);
-      setStatus(rows.length + ' mapping' + (rows.length === 1 ? '' : 's'));
+      if (data.error) { setStatus(data.error, true); allRows = []; applyFilters(); return; }
+      allRows = data.rows || [];
+      applyFilters();
     };
     xhr.send();
+  }
+
+  function applyFilters() {
+    var ocrNeedle = (filterOcr.value || '').trim().toLowerCase();
+    var actualNeedle = (filterActual.value || '').trim().toLowerCase();
+    var filtered = allRows;
+    if (ocrNeedle || actualNeedle) {
+      filtered = allRows.filter(function (r) {
+        if (ocrNeedle && String(r.ocr || '').toLowerCase().indexOf(ocrNeedle) < 0) return false;
+        if (actualNeedle && String(r.actual || '').toLowerCase().indexOf(actualNeedle) < 0) return false;
+        return true;
+      });
+    }
+    render(filtered);
+    var total = allRows.length;
+    if (filtered.length === total) {
+      setStatus(total + ' mapping' + (total === 1 ? '' : 's'));
+    } else {
+      setStatus(filtered.length + ' of ' + total + ' shown');
+    }
   }
 
   function render(rows) {
@@ -91,5 +116,7 @@
 
   refresh.addEventListener('click', load);
   unverifiedOnly.addEventListener('change', load);
+  filterOcr.addEventListener('input', applyFilters);
+  filterActual.addEventListener('input', applyFilters);
   load();
 })();

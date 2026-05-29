@@ -38,6 +38,19 @@ body {
 
 .meta label { cursor: pointer; }
 
+.filter {
+  background: #1a1d20;
+  color: #f6f7f8;
+  border: 1px solid #555b62;
+  border-radius: 3px;
+  padding: 3px 8px;
+  font-size: 13px;
+  width: 160px;
+}
+
+.filter::placeholder { color: #7a8088; }
+.filter:focus { outline: none; border-color: #6bd47a; }
+
 button {
   background: #3a3f45;
   color: #f6f7f8;
