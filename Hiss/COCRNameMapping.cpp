@@ -53,6 +53,11 @@ void COCRNameMapping::ClearCache()
 	_cache.clear();
 }
 
+bool COCRNameMapping::ConsumeInvalidate()
+{
+	return InterlockedExchange(&_invalidate_pending, 0) != 0;
+}
+
 bool COCRNameMapping::_ExecuteMappingQuery(const char *ocr_detected_name, int id_site, SOCRNameMapping *mapping)
 {
 	if (_pgconn == NULL || PQstatus(_pgconn) != CONNECTION_OK)
@@ -116,7 +121,7 @@ bool COCRNameMapping::LookupActualName(const char *ocr_detected_name, int id_sit
 
 	// If the admin UI changed a mapping, drop our cache so the new state is
 	// picked up immediately. Cache mutation happens only on this (PT) thread.
-	if (InterlockedExchange(&_invalidate_pending, 0) != 0) {
+	if (ConsumeInvalidate()) {
 		_cache.clear();
 	}
 

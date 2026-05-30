@@ -60,6 +60,11 @@ public:
 	// Clear cache (e.g., on new session or table)
 	void ClearCache();
 
+	// Atomically test-and-clear the "a mapping was changed in the UI" flag.
+	// Returns true exactly once per UI change, to the first caller that consumes
+	// it. Used by the PT thread to force re-resolution of already-seated players.
+	bool ConsumeInvalidate();
+
 	// Admin / verification UI helpers. These open their own short-lived
 	// PostgreSQL connection (using the OpenHoldem preferences) so they don't
 	// race with the PokerTracker thread's use of the main libpq connection.

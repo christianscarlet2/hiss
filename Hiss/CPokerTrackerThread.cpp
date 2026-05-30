@@ -289,7 +289,21 @@ bool CPokerTrackerThread::CheckIfNameExistsInDB(int chair)
 		write_log(Preferences()->debug_pokertracker(), "[PokerTracker] CheckIfNameExistsInDB() Name looks like a bad scrape\n");
 		return false;
 	}
-	
+
+	// If a mapping was changed in the admin UI, the per-chair cache below would
+	// otherwise hide the change for every player already seated under the same
+	// OCR name. Drop the mapping cache and force every chair to re-resolve once.
+	if (_ocr_name_mapping != NULL && _ocr_name_mapping->ConsumeInvalidate())
+	{
+		write_log(Preferences()->debug_pokertracker(),
+			"[PokerTracker] CheckIfNameExistsInDB() Mapping change pending; re-resolving all chairs\n");
+		_ocr_name_mapping->ClearCache();
+		for (int c = kFirstChair; c <= kLastChair; ++c)
+		{
+			_player_data[c].found = false;
+		}
+	}
+
 	// We already have the name, and it has not changed since we last checked, so do nothing
 	if (_player_data[chair].found && 0 == strcmp(_player_data[chair].scraped_name, oh_scraped_name))
 	{
