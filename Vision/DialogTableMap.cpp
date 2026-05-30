@@ -99,6 +99,11 @@ const int kOcrScaleUpFactor = 3;
 // Kept at 1 (original region size) so the upscale doesn't enlarge the preview.
 const int kOcrViewScaleFactor = 1;
 
+// Unsharp-mask sharpening applied before binarization so thin digit strokes
+// stay distinct (e.g. a "7" is not flattened into a "1"). Amount 0 disables it.
+const double kOcrSharpenAmount = 1.0;
+const double kOcrSharpenSigma = 1.0;
+
 static bool ControlHasFocus(CWnd &control)
 {
 	return ::GetFocus() == control.GetSafeHwnd();
@@ -283,6 +288,8 @@ void CDlgTableMap::DoDataExchange(CDataExchange* pDX)
 	DDX_Text(pDX, IDC_CROP_SIZE, crop_size);
 	DDV_MinMaxInt(pDX, crop_size, 1, 100);
 	DDX_Control(pDX, IDC_CROP_SPIN, m_CropSpin);
+	DDX_Control(pDX, IDC_SHARPEN, m_Sharpen);
+	DDX_Control(pDX, IDC_SHARPEN_SPIN, m_SharpenSpin);
 	DDX_Control(pDX, IDC_IMAGE_PROC_PRESET, m_ImageProcessingPreset);
 	DDX_Control(pDX, IDC_UPDATE_OCR_NOW, m_UpdateOcrNow);
 }
@@ -1907,6 +1914,14 @@ Mat CDlgTableMap::prepareImage(Mat img_orig, bool binarize, int threshold, bool 
 	cvtColor(img_orig, img_resized, COLOR_BGR2GRAY);
 	resize(img_resized, img_resized, Size(basewidth, hsize), INTER_LANCZOS4);
 
+	// Sharpen (unsharp mask) before binarization so thin strokes stay crisp and
+	// digits like 7 don't get rounded into 1.
+	if (kOcrSharpenAmount > 0.0) {
+		Mat blurred;
+		GaussianBlur(img_resized, blurred, Size(0, 0), kOcrSharpenSigma);
+		addWeighted(img_resized, 1.0 + kOcrSharpenAmount, blurred, -kOcrSharpenAmount, 0, img_resized);
+	}
+
 	if (binarize) {
 		img_resized = binarize_array_opencv(img_resized, threshold);
 	}
@@ -2080,7 +2095,29 @@ void CDlgTableMap::process_ocr(Mat img_orig, bool fast, bool second_pass) {
 	api2->Clear();
 }
 
-CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast) {
+// Balance/stack fields are shown on the table in big blinds, e.g. "2.28 BB".
+// Strip a trailing "BB" unit. Tesseract frequently misreads "BB" as "88", so a
+// trailing "88" is also dropped, but only when a numeric value remains so a
+// genuine value is never destroyed.
+static CString StripBalanceUnitSuffix(CString s) {
+	s.Trim();
+	int n = s.GetLength();
+	int end = n;
+	while (end > 0 && (s[end - 1] == 'B' || s[end - 1] == 'b'))
+		end--;
+	if (end < n) {
+		s = s.Left(end);
+	}
+	else if (s.GetLength() >= 2 && s.Right(2) == "88") {
+		CString candidate = s.Left(s.GetLength() - 2);
+		if (candidate.FindOneOf("0123456789") != -1)
+			s = candidate;
+	}
+	s.Trim(" .");
+	return s;
+}
+
+CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast, CString region_name) {
 	// Return string value from image. "" when OCR failed
 	Mat img_resized, img_resized2;
 	ResultBoxes.clear(); ResultBoxes2.clear();
@@ -2120,15 +2157,28 @@ CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast)
 		ocr_result2 = ResultString2;
 	}
 
-	// Clean results from unwanted chars
+	// Clean results from unwanted chars.
+	// NOTE: the blacklist string below historically contains plain characters
+	// such as '8' and several letters; never strip anything that is a valid OCR
+	// character (digits, letters, '.', '_') or numeric values like "2.28" lose
+	// their digits (the "8 being stripped" bug).
 	const char* blacklist = "��??�!%&*+;=?@�^���������������������������������܀��P�~����������/\"`#<{([])}>|�������++��++++++--+-+��++--�-+----++++++++�_���a�GpSs�tFTOd8fen=�==()�����vn��";
 	for (size_t i = 0; i < strlen(blacklist); i++) {
-		if (ocr_result.Find(blacklist[i]) != -1)
-			ocr_result.Replace(blacklist[i], '\0');
-		if (ocr_result2.Find(blacklist[i]) != -1)
-			ocr_result2.Replace(blacklist[i], '\0');
+		char c = blacklist[i];
+		if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+			(c >= 'a' && c <= 'z') || c == '.' || c == '_')
+			continue;	// keep valid OCR characters (fixes stripped digits/letters)
+		if (ocr_result.Find(c) != -1)
+			ocr_result.Replace(c, '\0');
+		if (ocr_result2.Find(c) != -1)
+			ocr_result2.Replace(c, '\0');
 	}
 
+	// Balance/stack fields carry a "BB" unit suffix that must be dropped.
+	if (CString(region_name).MakeLower().Find("balance") != -1) {
+		ocr_result = StripBalanceUnitSuffix(ocr_result);
+		ocr_result2 = StripBalanceUnitSuffix(ocr_result2);
+	}
 
 	if (ocr_result != "")
 		result_list.push_back(ocr_result);
@@ -2869,7 +2919,7 @@ void CDlgTableMap::update_ocr_r$_display(void) {
 				Mat input(h, w, CV_8UC4);
 				BITMAPINFOHEADER bi = { sizeof(bi), w, -h, 1, 32, BI_RGB };
 				GetDIBits(hdc_bitmap_transform_ocr, bitmap_transform_ocr, 0, h, input.data, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
-				text = get_ocr_result(input, selected_transform);
+				text = get_ocr_result(input, selected_transform, false, sel_text);
 			}
 			else {
 				text = "";
@@ -3180,7 +3230,7 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 				Mat input(h, w, CV_8UC4);
 				BITMAPINFOHEADER bi = { sizeof(bi), w, -h, 1, 32, BI_RGB };
 				GetDIBits(hdc_bitmap_transform_ocr, bitmap_transform_ocr, 0, h, input.data, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
-				text = get_ocr_result(input, selected_transform);
+				text = get_ocr_result(input, selected_transform, false, sel_text);
 			}
 			else {
 				text = "";
@@ -3689,6 +3739,7 @@ void CDlgTableMap::OnBnClickedNew() {
 				new_region.use_cropping = false;
 				new_region.crop_size = 0;
 				new_region.match_mode = -1;
+				new_region.sharpen = -1;
 
 				// Insert the new record in the existing array of z$ records
 				if (!p_tablemap->r$_insert(new_region))
@@ -4436,6 +4487,7 @@ void CDlgTableMap::OnBnClickedEdit()
 		new_region.use_cropping = r_iter->second.use_cropping;
 		new_region.crop_size = r_iter->second.crop_size;
 		new_region.match_mode = r_iter->second.match_mode;
+		new_region.sharpen = r_iter->second.sharpen;
 
 		if (!p_tablemap->r$_insert(new_region))
 		{

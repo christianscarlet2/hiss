@@ -530,6 +530,7 @@ int CTablemap::LoadTablemap(const CString _fname) {
 				hold_region.use_cropping = false;
 				hold_region.crop_size = -1;
 				hold_region.match_mode = -1;
+				hold_region.sharpen = -1;
 
 				goto EndRegion;
 				//WarnAboutGeneralTableMapError(linenum, ERR_SYNTAX);
@@ -575,6 +576,13 @@ int CTablemap::LoadTablemap(const CString _fname) {
 				hold_region.match_mode = -1;
 			else
 				hold_region.match_mode = atol(token.GetString());
+
+			// Sharpen amount in percent. Absent in old tablemaps -> -1 (use default).
+			token = strLine.Tokenize(" \t", pos);
+			if (token.GetLength() == 0)
+				hold_region.sharpen = -1;
+			else
+				hold_region.sharpen = atol(token.GetString());
 
 			// flags
 			//token = strLine.Tokenize(" \t", pos);
@@ -1005,10 +1013,11 @@ int CTablemap::SaveTablemap(CArchive& ar, const char *version_text)
 	WriteSectionHeader(ar, "regions");
 	for (RMapCI r_iter=_r$.begin(); r_iter!=_r$.end(); r_iter++)
 	{
-		s.Format("r$%-18s %3d %3d %3d %3d %8x %4d %s %d %3d %d %3d %d\r\n", r_iter->second.name.GetString(),
+		s.Format("r$%-18s %3d %3d %3d %3d %8x %4d %s %d %3d %d %3d %d %d\r\n", r_iter->second.name.GetString(),
 			r_iter->second.left, r_iter->second.top, r_iter->second.right, r_iter->second.bottom,
 			r_iter->second.color, r_iter->second.radius, r_iter->second.transform, r_iter->second.use_default,
-			r_iter->second.threshold, r_iter->second.use_cropping, r_iter->second.crop_size, r_iter->second.match_mode);
+			r_iter->second.threshold, r_iter->second.use_cropping, r_iter->second.crop_size, r_iter->second.match_mode,
+			r_iter->second.sharpen);
 		ar.WriteString(s);
 	}
 	ar.WriteString("\r\n");

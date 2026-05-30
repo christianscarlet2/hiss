@@ -415,6 +415,16 @@ Mat CAutoOcr::prepareImage(Mat img_orig, const SAutoOcrSettings &settings, bool 
 	cvtColor(img_orig, img_resized, COLOR_BGR2GRAY);
 	resize(img_resized, img_resized, Size(basewidth, hsize), INTER_LANCZOS4);
 
+	// Sharpen (unsharp mask) before binarization so thin strokes stay crisp and
+	// digits like 7 don't get rounded into 1.
+	{
+		const double sharpen_amount = 1.0;
+		const double sharpen_sigma = 1.0;
+		Mat blurred;
+		GaussianBlur(img_resized, blurred, Size(0, 0), sharpen_sigma);
+		addWeighted(img_resized, 1.0 + sharpen_amount, blurred, -sharpen_amount, 0, img_resized);
+	}
+
 	if (binarize) {
 		img_resized = binarize_array_opencv(img_resized, threshold);
 	}
@@ -571,6 +581,28 @@ void CAutoOcr::process_ocr(Mat img_orig, const SAutoOcrSettings &settings, bool 
 	}
 }
 
+// Balance/stack fields are shown on the table in big blinds, e.g. "2.28 BB".
+// Strip a trailing "BB" unit. Tesseract frequently misreads "BB" as "88", so a
+// trailing "88" is also dropped, but only when a numeric value remains so a
+// genuine value is never destroyed.
+static CString StripBalanceUnitSuffix(CString s) {
+	s.Trim();
+	int n = s.GetLength();
+	int end = n;
+	while (end > 0 && (s[end - 1] == 'B' || s[end - 1] == 'b'))
+		end--;
+	if (end < n) {
+		s = s.Left(end);
+	}
+	else if (s.GetLength() >= 2 && s.Right(2) == "88") {
+		CString candidate = s.Left(s.GetLength() - 2);
+		if (candidate.FindOneOf("0123456789") != -1)
+			s = candidate;
+	}
+	s.Trim(" .");
+	return s;
+}
+
 CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
 	// Tesseract's TessBaseAPI is NOT thread-safe and CAutoOcr's instance
 	// members (ResultBoxes, ResultString, bestRect, ...) are shared across
@@ -640,13 +672,23 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
 	// Clean OCR noise from unwanted chars.
 	const char* blacklist = "��??�!%&*+;=?@�^���������������������������������܀��P�~����������\"`#<{([])}>|�������++��++++++--+-+��++--�-+----++++++++�_���a�GpSs�tFTOd8fen=�==()�����vn��";
 	for (size_t i = 0; i < strlen(blacklist); i++) {
-		if (ocr_result.Find(blacklist[i]) != -1)
-			ocr_result.Remove(blacklist[i]);
-		if (ocr_result2.Find(blacklist[i]) != -1)
-			ocr_result2.Remove(blacklist[i]);
+		char c = blacklist[i];
+		if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+			(c >= 'a' && c <= 'z') || c == '.' || c == '_')
+			continue;	// keep valid OCR characters (fixes stripped digits/letters)
+		if (ocr_result.Find(c) != -1)
+			ocr_result.Remove(c);
+		if (ocr_result2.Find(c) != -1)
+			ocr_result2.Remove(c);
 	}
 	ocr_result.Trim();
 	ocr_result2.Trim();
+
+	// Balance/stack fields carry a "BB" unit suffix that must be dropped.
+	if (CString(region->first).MakeLower().Find("balance") != -1) {
+		ocr_result = StripBalanceUnitSuffix(ocr_result);
+		ocr_result2 = StripBalanceUnitSuffix(ocr_result2);
+	}
 
 	if (ocr_result != "")
 		lst.push_back(ocr_result);

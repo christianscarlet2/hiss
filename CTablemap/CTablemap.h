@@ -61,6 +61,7 @@ struct STablemapRegion {
 	bool			use_cropping;
 	int				crop_size;
 	int				match_mode;		// Tesseract page-seg mode value; -1 = unset/use default
+	int				sharpen;		// Unsharp-mask amount in percent (100 = 1.0x); <0 = default
 
 	CString			transform;
 };

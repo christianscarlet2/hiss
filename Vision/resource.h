@@ -132,6 +132,8 @@
 #define IDC_IMAGE_PROC_PRESET_ADD       1136
 #define IDC_IMAGE_PROC_PRESET_DELETE    1137
 #define IDC_IMAGE_PROC_PRESET_LOAD      1138
+#define IDC_SHARPEN                     1139
+#define IDC_SHARPEN_SPIN                1140
 #define ID_MAIN_TOOLBAR_GREENCIRCLE     32771
 #define ID_VIEW_CONNECTTOWINDOW         32772
 #define ID_VIEW_SHOWREGIONBOXES         32774
@@ -163,7 +165,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        153
 #define _APS_NEXT_COMMAND_VALUE         32796
-#define _APS_NEXT_CONTROL_VALUE         1139
+#define _APS_NEXT_CONTROL_VALUE         1141
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

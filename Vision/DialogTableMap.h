@@ -184,7 +184,7 @@ private:
 	void DetectAndShowTemplate(string name);
 	CString GetDetectTemplateResult(CString area_name, CString tpl_name, RECT* rect_result);
 	CString GetDetectTemplatesResult(CString area_name);
-	CString get_ocr_result(Mat img_orig, CString transform, bool fast = false);
+	CString get_ocr_result(Mat img_orig, CString transform, bool fast = false, CString region_name = "");
 	void process_ocr(Mat img_orig, bool fast = false, bool second_pass = false);
 	Mat prepareImage(Mat img_orig, bool binarize = true, int threshold = 100, bool second_pass = false);
 	Mat ScaleOcrViewImage(Mat img_bounded);
