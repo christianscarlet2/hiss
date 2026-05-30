@@ -72,7 +72,7 @@ static int SafeTessInit(TessBaseAPI *tess)
 	if (tess == NULL) {
 		return -1;
 	}
-	return tess->Init("tessdata", "eng");
+	return tess->Init("tessdata", "my_model");
 }
 
 static void SafeTessEnd(TessBaseAPI *tess)

@@ -623,11 +623,11 @@ BOOL CDlgTableMap::OnInitDialog()
 
 	// New automatic OCR based on tesseract-ocr
 	// Load Tesseract text recognition network
-	if (api->Init("tessdata", "eng") == -1) {		// OEM_LSTM_ONLY
+	if (api->Init("tessdata", "my_model") == -1) {		// OEM_LSTM_ONLY
 		MessageBox("Failed to load tessdata files.\nMake sure tessdata folder is present and/or datas are not corrupted.", "AutoOcr error", MB_OK);
 		return FALSE;
 	}
-	if (api2->Init("tessdata", "eng") == -1) {		// OEM_LSTM_ONLY
+	if (api2->Init("tessdata", "my_model") == -1) {		// OEM_LSTM_ONLY
 		MessageBox("Failed to load tessdata files.\nMake sure tessdata folder is present and/or datas are not corrupted.", "AutoOcr error", MB_OK);
 		return FALSE;
 	}
