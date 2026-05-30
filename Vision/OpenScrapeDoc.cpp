@@ -130,12 +130,45 @@ void COpenScrapeDoc::Serialize(CArchive& ar)
 		// We do no longer do this here.
 		// There is also no longer any need to auto-correct old v1-TMs
 		// that are older than 3 years old.
-		ret = p_tablemap->LoadTablemap((char *) ar.m_strFileName.GetString());
+		//
+		// LoadTablemap opens the file with a raw CFile and reads via CArchive,
+		// neither of which is wrapped in a try/catch. If the open/read throws
+		// (most commonly the file being locked/open in another program), MFC
+		// would otherwise report only the useless generic "Failed to load
+		// document". Catch it here and surface the actual reason.
+		try
+		{
+			ret = p_tablemap->LoadTablemap((char *) ar.m_strFileName.GetString());
+		}
+		catch (CException *e)
+		{
+			char reason[512] = { 0 };
+			e->GetErrorMessage(reason, sizeof(reason));
+			s.Format("Could not load the tablemap (file/read exception):\n\n%s\n\nFile: %s\n\n"
+				"This usually means the file is open or locked by another program "
+				"(a text editor, another OpenScrape/Hiss/trainer instance, antivirus, a sync tool, etc.).\n"
+				"Close it elsewhere and try again.",
+				reason, ar.m_strFileName.GetString());
+			MessageBox(pMyMainWnd->GetSafeHwnd(), s.GetString(), "Table map load error", MB_OK);
+			e->Delete();
+			is_dirty = false;
+			valid_open = false;
+			return;
+		}
+		catch (...)
+		{
+			s.Format("Could not load the tablemap due to an unexpected error.\n\nFile: %s",
+				ar.m_strFileName.GetString());
+			MessageBox(pMyMainWnd->GetSafeHwnd(), s.GetString(), "Table map load error", MB_OK);
+			is_dirty = false;
+			valid_open = false;
+			return;
+		}
 		if (ret == SUCCESS)
 		{
 			valid_open = true;
 		}
-		else 
+		else
 		{
 			s.Format("Error %d loading table map: %s.", ret, k_tablemap_errors_and_parse_errors_explained[ret]);
 			MessageBox(pMyMainWnd->GetSafeHwnd(), s.GetString(), "Table map load error", MB_OK);
