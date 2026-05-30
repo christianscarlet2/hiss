@@ -58,6 +58,8 @@
     tr.appendChild(tdImg);
 
     var tdTxt = document.createElement('td');
+    var wrap = document.createElement('div');
+    wrap.className = 'labelrow';
     var input = document.createElement('input');
     input.className = 'label';
     input.type = 'text';
@@ -65,7 +67,12 @@
     input.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { doSave(); }
     });
-    tdTxt.appendChild(input);
+    var unit = document.createElement('span');
+    unit.className = 'unit';
+    unit.textContent = '+ BB';   // " BB" is appended to the .gt.txt on save
+    wrap.appendChild(input);
+    wrap.appendChild(unit);
+    tdTxt.appendChild(wrap);
     tr.appendChild(tdTxt);
 
     var tdAct = document.createElement('td');

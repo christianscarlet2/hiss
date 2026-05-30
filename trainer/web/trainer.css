@@ -42,8 +42,10 @@ td.img img {
   max-width: 300px; max-height: 80px;
 }
 td.region { color: #7f8a93; font-size: 11px; }
+.labelrow { display: flex; align-items: center; gap: 8px; }
 input.label {
-  width: 100%; max-width: 360px; padding: 7px 9px; font-size: 15px;
+  flex: 0 1 300px; padding: 7px 9px; font-size: 15px;
   background: #11151a; color: #e6e9ec; border: 1px solid #39414a; border-radius: 4px;
 }
 input.label:focus { outline: none; border-color: #3a82da; }
+.unit { color: #9aa3ab; font-weight: 600; white-space: nowrap; }

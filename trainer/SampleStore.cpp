@@ -138,12 +138,21 @@ CStringA CSampleStore::WriteSampleFiles(const STrainerSample &sample, const CStr
 	}
 	fclose(fp);
 
-	// Ground-truth text.
+	// Ground-truth text. These are balance fields shown in big blinds, so the
+	// label written to the .gt.txt always carries the " BB" unit even though the
+	// user only types the numeric value in the React view (which shows "+ BB").
+	CStringA label = text;
+	label.Trim();
+	CStringA lower = label; lower.MakeLower();
+	if (lower.GetLength() < 2 || lower.Right(2) != "bb") {
+		label += " BB";
+	}
+
 	fp = NULL;
 	if (fopen_s(&fp, txt_path.GetString(), "w") != 0 || fp == NULL) {
 		return "";
 	}
-	fputs(text.GetString(), fp);
+	fputs(label.GetString(), fp);
 	fputs("\n", fp);
 	fclose(fp);
 
