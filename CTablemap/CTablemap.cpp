@@ -16,6 +16,8 @@
 
 #include <assert.h>
 #include <Math.h>
+#include <fstream>
+#include <string>
 #include "../CTransform/CTransform.h"
 #include "..\DLLs\StringFunctions_DLL\string_functions.h"
 #include "..\DLLs\WindowFunctions_DLL\window_functions.h"
@@ -266,6 +268,26 @@ bool CTablemap::FontGroupInUse(int font_index) {
   return (!font_group.empty());
 }
 
+// Drop-in replacement for the old CArchive/CStdioFile ReadString(CString&).
+// Reads lines from an in-memory copy of the whole file so we never depend on
+// MFC's CFile-layer incremental reads (which threw a spurious CFileException
+// "The parameter is incorrect" partway through some tablemaps on this toolset).
+struct STablemapLineReader {
+	const std::string *data;
+	size_t pos;
+	bool ReadString(CString &out) {
+		if (data == NULL || pos >= data->size()) return false;
+		size_t nl = data->find('\n', pos);
+		size_t end = (nl == std::string::npos) ? data->size() : nl;
+		size_t linelen = end - pos;
+		// strip a trailing CR (CRLF files)
+		if (linelen > 0 && (*data)[pos + linelen - 1] == '\r') linelen--;
+		out = CString(data->c_str() + pos, (int)linelen);
+		pos = (nl == std::string::npos) ? data->size() : nl + 1;
+		return true;
+	}
+};
+
 int CTablemap::LoadTablemap(const CString _fname) {
 #ifdef OPENHOLDEM_PROGRAM
 	write_log(Preferences()->debug_tablemap_loader(), "[CTablemap] Loadtablemap: %s\n", _fname);
@@ -290,11 +312,36 @@ int CTablemap::LoadTablemap(const CString _fname) {
 	int linenum = 1;
 	try
 	{
-	// Open the selected file
-	CFile cfFile(_filename, CFile::modeRead | CFile::shareDenyNone);
-	// Load its contents into a CArchive
-	CArchive ar (&cfFile, CArchive::load);
-	// Read the first line of the CArchive into strLine
+	// Read the WHOLE file into memory with std::ifstream, then parse from an
+	// in-memory line reader. MFC's CFile-based readers (CArchive *and* CStdioFile)
+	// throw a spurious CFileException ("The parameter is incorrect", OS error 87)
+	// partway through some otherwise-clean tablemaps on this toolset. Reading the
+	// file in one shot via the CRT stream avoids that path entirely. The reader
+	// exposes the identical ReadString(CString&) interface, so the parser below is
+	// unchanged.
+	std::string _tm_filedata;
+	{
+		std::ifstream ifs(_filename.GetString(), std::ios::binary);
+		if (!ifs.is_open()) {
+			CString m;
+			m.Format("Could not open the tablemap file (the path may be wrong, "
+				"or the file is locked by another program):\n\n%s", _filename.GetString());
+			MessageBox_Error_Warning(m, "Table map load error");
+			return ERR_EOF;
+		}
+		ifs.seekg(0, std::ios::end);
+		std::streamoff flen = ifs.tellg();
+		ifs.seekg(0, std::ios::beg);
+		if (flen > 0) {
+			_tm_filedata.resize((size_t)flen);
+			ifs.read(&_tm_filedata[0], flen);
+			_tm_filedata.resize((size_t)ifs.gcount());
+		}
+	}
+	STablemapLineReader ar;
+	ar.data = &_tm_filedata;
+	ar.pos = 0;
+	// Read the first line of the file into strLine
 	strLine = "";
 	// Failed, so quit
 	if (!ar.ReadString(strLine))
