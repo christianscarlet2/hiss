@@ -127,6 +127,15 @@ static bool FileTimeIsNewer(const FILETIME &left, const FILETIME &right) {
   return CompareFileTime(&left, &right) > 0;
 }
 
+static bool GetFileWriteTime(const std::string &path, FILETIME *time) {
+  WIN32_FILE_ATTRIBUTE_DATA data = {0};
+  if (!GetFileAttributesEx(path.c_str(), GetFileExInfoStandard, &data)) {
+    return false;
+  }
+  *time = data.ftLastWriteTime;
+  return true;
+}
+
 static void FindLatestTablemapInDirectory(const std::string &directory,
     std::string *latest_path, FILETIME *latest_time) {
   if (!DirectoryExists(directory)) {
@@ -908,6 +917,18 @@ static bool CopyReleaseOptimizedToRelease(const std::string &repo_root) {
     }
     const std::string source = JoinPath(source_root, files[i]);
     const std::string destination = JoinPath(destination_root, files[i]);
+
+    // Don't let a stale optimized copy clobber a freshly built file. Some
+    // projects (e.g. Vision, trainer) build the "Release - Optimized" solution
+    // configuration straight into Release\, leaving the copy in
+    // Release - Optimized\ stale. Skip when the destination is newer.
+    FILETIME source_time, destination_time;
+    if (GetFileWriteTime(source, &source_time) && GetFileWriteTime(destination, &destination_time)
+        && FileTimeIsNewer(destination_time, source_time)) {
+      PostProgress((int)i + 1, (int)files.size());
+      continue;
+    }
+
     const std::string destination_dir = ParentDirectory(destination);
     if (!EnsureDirectoryTree(destination_dir) || !CopyFile(source.c_str(), destination.c_str(), FALSE)) {
       char status[256] = {0};
