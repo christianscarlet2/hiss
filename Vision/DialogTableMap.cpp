@@ -342,12 +342,12 @@ BEGIN_MESSAGE_MAP(CDlgTableMap, CDialog)
 	ON_BN_CLICKED(IDC_CREATE_HASH2, &CDlgTableMap::OnBnClickedCreateHash2)
 	ON_BN_CLICKED(IDC_CREATE_HASH3, &CDlgTableMap::OnBnClickedCreateHash3)
 	ON_COMMAND(ID_OPERATIONS_CREATE_HASHES_IMAGES_0, &CDlgTableMap::OnOperationsCreateHashesImages0)
-	ON_BN_CLICKED(IDC_USE_DEFAULT, &CDlgTableMap::OnOcrRegionChange)
+	ON_BN_CLICKED(IDC_USE_DEFAULT, &CDlgTableMap::OnBnClickedUseDefault)
 	ON_EN_CHANGE(IDC_THRESHOLD, &CDlgTableMap::OnOcrRegionChange)
 	ON_EN_KILLFOCUS(IDC_THRESHOLD, &CDlgTableMap::OnOcrRegionChange)
 	ON_NOTIFY(UDN_DELTAPOS, IDC_THRESHOLD_SPIN, &CDlgTableMap::OnDeltaposThresholdSpin)
 	ON_CBN_SELCHANGE(IDC_MATCH_MODE, &CDlgTableMap::OnOcrRegionChange)
-	ON_BN_CLICKED(IDC_USE_CROP, &CDlgTableMap::OnOcrRegionChange)
+	ON_BN_CLICKED(IDC_USE_CROP, &CDlgTableMap::OnBnClickedUseCrop)
 	ON_EN_CHANGE(IDC_CROP_SIZE, &CDlgTableMap::OnOcrRegionChange)
 	ON_EN_KILLFOCUS(IDC_CROP_SIZE, &CDlgTableMap::OnOcrRegionChange)
 	ON_NOTIFY(UDN_DELTAPOS, IDC_CROP_SPIN, &CDlgTableMap::OnDeltaposCropSpin)
@@ -1205,6 +1205,14 @@ void CDlgTableMap::OnOcrRegionChange()
 			sel_region->second.use_cropping = m_UseCrop.GetCheck();
 			m_CropSize.GetWindowText(text);
 			sel_region->second.crop_size = strtoul(text.GetString(), NULL, 10);
+
+			// Tesseract page-seg mode: store the combo's item data (the mode value, not the index)
+			int selected_item = m_MatchMode.GetCurSel();
+			if (selected_item >= 0) {
+				DWORD_PTR selected_match_mode = m_MatchMode.GetItemData(selected_item);
+				if (selected_match_mode != CB_ERR)
+					sel_region->second.match_mode = static_cast<int>(selected_match_mode);
+			}
 		}
 	}
 
@@ -1299,6 +1307,14 @@ void CDlgTableMap::OnRegionChange()
 			sel_region->second.use_cropping = m_UseCrop.GetCheck();
 			m_CropSize.GetWindowText(text);
 			sel_region->second.crop_size = strtoul(text.GetString(), NULL, 10);
+
+			// Tesseract page-seg mode: store the combo's item data (the mode value, not the index)
+			int selected_item = m_MatchMode.GetCurSel();
+			if (selected_item >= 0) {
+				DWORD_PTR selected_match_mode = m_MatchMode.GetItemData(selected_item);
+				if (selected_match_mode != CB_ERR)
+					sel_region->second.match_mode = static_cast<int>(selected_match_mode);
+			}
 		}
 		if (sel_region->second.transform == "I") {
 			sel_region->second.use_default = m_UseDefault.GetCheck();
@@ -2742,6 +2758,7 @@ void CDlgTableMap::update_ocr_r$_display(void) {
 
 	if (selected_transform.Find("AutoOcr") != -1) {
 		PopulateTesseractMatchModes();
+		SelectTesseractMatchMode(sel_region->second.match_mode);
 		m_UseDefault.SetCheck(sel_region->second.use_default);
 		m_UseCrop.SetCheck(sel_region->second.use_cropping);
 		if (m_UseDefault.GetCheck()) {
@@ -2947,6 +2964,7 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 
 	if (selected_transform.Find("AutoOcr") != -1) {
 		PopulateTesseractMatchModes();
+		SelectTesseractMatchMode(sel_region->second.match_mode);
 		m_UseDefault.SetCheck(sel_region->second.use_default);
 		m_UseCrop.SetCheck(sel_region->second.use_cropping);
 		if (m_UseDefault.GetCheck()) {
@@ -3637,6 +3655,7 @@ void CDlgTableMap::OnBnClickedNew() {
 				new_region.threshold = 0;
 				new_region.use_cropping = false;
 				new_region.crop_size = 0;
+				new_region.match_mode = -1;
 
 				// Insert the new record in the existing array of z$ records
 				if (!p_tablemap->r$_insert(new_region))
@@ -3818,6 +3837,22 @@ void CDlgTableMap::PopulateTesseractMatchModes(void)
 	if (selected_item < 0)
 		selected_item = kDefaultTesseractPageSegModeIndex;
 	m_MatchMode.SetCurSel(selected_item);
+}
+
+// Select the combo entry whose item data matches the region's stored page-seg
+// mode value. Falls back to the default mode when unset (-1) or not found.
+// Assumes the combo has already been filled via PopulateTesseractMatchModes().
+void CDlgTableMap::SelectTesseractMatchMode(int match_mode_value)
+{
+	if (match_mode_value >= 0) {
+		for (int i = 0; i < m_MatchMode.GetCount(); ++i) {
+			if (static_cast<int>(m_MatchMode.GetItemData(i)) == match_mode_value) {
+				m_MatchMode.SetCurSel(i);
+				return;
+			}
+		}
+	}
+	m_MatchMode.SetCurSel(kDefaultTesseractPageSegModeIndex);
 }
 
 int CDlgTableMap::SelectedTesseractPageSegMode(void)
@@ -4367,6 +4402,7 @@ void CDlgTableMap::OnBnClickedEdit()
 		new_region.threshold = r_iter->second.threshold;
 		new_region.use_cropping = r_iter->second.use_cropping;
 		new_region.crop_size = r_iter->second.crop_size;
+		new_region.match_mode = r_iter->second.match_mode;
 
 		if (!p_tablemap->r$_insert(new_region))
 		{
@@ -6457,6 +6493,20 @@ void CDlgTableMap::OnBnClickedUseDefault()
 {
 	COpenScrapeDoc* pDoc = COpenScrapeDoc::GetDocument();
 
+	if (!ignore_changes) {
+		// Persist only the toggled flag, so the stored threshold/crop are kept
+		// (they are intentionally not read here: the displayed value may be a
+		// default placeholder while "Use Default" is checked).
+		CString sel_text = "", type_text = "";
+		GetTextSelItemAndRecordType(&sel_text, &type_text);
+		RMapI sel_region = p_tablemap->set_r$()->find(sel_text.GetString());
+		TPLMapI sel_template = p_tablemap->set_tpl$()->find(sel_text.GetString());
+		if (sel_region != p_tablemap->r$()->end())
+			sel_region->second.use_default = m_UseDefault.GetCheck();
+		if (sel_template != p_tablemap->tpl$()->end())
+			sel_template->second.use_default = m_UseDefault.GetCheck();
+	}
+
 	update_ocr_display();
 
 	theApp.m_pMainWnd->Invalidate(false);
@@ -6468,6 +6518,15 @@ void CDlgTableMap::OnBnClickedUseDefault()
 void CDlgTableMap::OnBnClickedUseCrop()
 {
 	COpenScrapeDoc* pDoc = COpenScrapeDoc::GetDocument();
+
+	if (!ignore_changes) {
+		// Persist only the toggled flag, keeping the stored crop_size intact.
+		CString sel_text = "", type_text = "";
+		GetTextSelItemAndRecordType(&sel_text, &type_text);
+		RMapI sel_region = p_tablemap->set_r$()->find(sel_text.GetString());
+		if (sel_region != p_tablemap->r$()->end())
+			sel_region->second.use_cropping = m_UseCrop.GetCheck();
+	}
 
 	update_ocr_display();
 

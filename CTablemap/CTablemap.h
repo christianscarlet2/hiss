@@ -60,6 +60,7 @@ struct STablemapRegion {
 	int				threshold;
 	bool			use_cropping;
 	int				crop_size;
+	int				match_mode;		// Tesseract page-seg mode value; -1 = unset/use default
 
 	CString			transform;
 };

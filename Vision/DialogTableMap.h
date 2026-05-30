@@ -120,6 +120,7 @@ protected:
 	void update_t$_display();
 	void PopulateTemplateMatchModes(void);
 	void PopulateTesseractMatchModes(void);
+	void SelectTesseractMatchMode(int match_mode_value);
 	int SelectedTesseractPageSegMode(void);
 	COLORREF get_color_under_mouse(UINT *nFlags, CPoint *point);
 	CString GetGroupName(CString regionName);
@@ -175,6 +176,8 @@ private:
         void DeleteSelectedImageProcessingPreset();
         void LoadSelectedImageProcessingPreset();
         void RefreshImageProcessingPresetList();
+        void SaveImageProcessingPresetsToRegistry();
+        void LoadImageProcessingPresetsFromRegistry();
         ImageProcessingPreset GetCurrentImageProcessingPreset();
         void ApplyImageProcessingPreset(const ImageProcessingPreset& preset);
 	RECT detectTemplate(Mat area, Mat tpl, int match_mode);
