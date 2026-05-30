@@ -392,6 +392,14 @@ static std::string ParentDirectory(const std::string &path) {
   return trimmed.substr(0, slash);
 }
 
+static std::string FileNameOnly(const std::string &path) {
+  const size_t slash = path.find_last_of("\\/");
+  if (slash == std::string::npos) {
+    return path;
+  }
+  return path.substr(slash + 1);
+}
+
 static std::string FindRepoRoot() {
   std::string candidate = ExeDirectory();
   for (int i = 0; i < 5; ++i) {
@@ -886,6 +894,16 @@ static bool CopyReleaseOptimizedToRelease(const std::string &repo_root) {
 
   PostProgress(0, (int)files.size());
   for (size_t i = 0; i < files.size(); ++i) {
+    // Never copy our own running executable (and its build artifacts) over the
+    // copy in Release: DeveloperToolbar.exe is locked while this app is running,
+    // so the copy would fail with "could not copy ... already running". The
+    // toolbar is also excluded from the build (see Hiss.sln), so this is the
+    // single deliverable the refresh intentionally skips.
+    const std::string leaf = FileNameOnly(files[i]);
+    if (_strnicmp(leaf.c_str(), "DeveloperToolbar.", 17) == 0) {
+      PostProgress((int)i + 1, (int)files.size());
+      continue;
+    }
     const std::string source = JoinPath(source_root, files[i]);
     const std::string destination = JoinPath(destination_root, files[i]);
     const std::string destination_dir = ParentDirectory(destination);
