@@ -1011,11 +1011,25 @@ int CTablemap::LoadTablemap(const CString _fname) {
 	{
 		char reason[512] = { 0 };
 		e->GetErrorMessage(reason, sizeof(reason));
+		const char *cls = "CException";
+		if (e->GetRuntimeClass() != NULL && e->GetRuntimeClass()->m_lpszClassName != NULL)
+			cls = e->GetRuntimeClass()->m_lpszClassName;
+		long oserr = -1;
+		if (e->IsKindOf(RUNTIME_CLASS(CFileException)))
+			oserr = ((CFileException *)e)->m_lOsError;
 		e->Delete();
 		CString detail;
-		detail.Format("Exception while reading the tablemap near line %d:\n%s\n\nFile: %s\n\n"
-			"(This is usually a file/read problem rather than a tablemap-content error.)",
-			linenum, reason, _filename.GetString());
+		detail.Format("MFC exception loading tablemap.\n\nType: %s\nOS error: %ld\nReason: %s\n"
+			"Line: %d\nLine text: >>>%s<<<\n\nFile: %s",
+			cls, oserr, reason, linenum, strLine.GetString(), _filename.GetString());
+		MessageBox_Error_Warning(detail, "Table map load error");
+		return ERR_SYNTAX;
+	}
+	catch (...)
+	{
+		CString detail;
+		detail.Format("Non-MFC exception loading tablemap.\n\nLine: %d\nLine text: >>>%s<<<\n\nFile: %s",
+			linenum, strLine.GetString(), _filename.GetString());
 		MessageBox_Error_Warning(detail, "Table map load error");
 		return ERR_SYNTAX;
 	}
