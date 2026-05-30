@@ -11,7 +11,7 @@ static const int kOcrScaleUpFactor = 3;
 static const int kOcrViewScaleFactor = 1;
 static const double kOcrSharpenSigma = 1.0;
 static const int kOcrCharSpacingPx = 6;
-static const int kDefaultAutoOcrThreshold = 100;
+static const int kDefaultAutoOcrThreshold = 65;
 static const int kDefaultCropSize = 30;
 static const char *kGeneralWhitelist =
 	"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._";

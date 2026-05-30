@@ -395,6 +395,14 @@ bool CAutoOcr::TryColorPresetSettings(Mat img_orig, RMapCI region, SAutoOcrSetti
 	return true;
 }
 
+// Matches Vision/trainer: upscale the prepared region before binarization/OCR
+// so Tesseract sees larger glyphs, and restrict output to characters that occur
+// on tables (balance regions narrow this to digits + dot in get_ocr_result).
+static const int kOcrScaleUpFactor = 3;
+static const int kOcrCharSpacingPx = 6;   // on the upscaled image
+static const char *kGeneralWhitelist =
+	"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._";
+
 // Widen the gaps between characters on a binarized image so glyphs that sit too
 // close (e.g. "17.71") get separated before OCR. Builds a vertical projection
 // profile and inserts gap_px blank columns into each existing gap; because it
@@ -458,12 +466,12 @@ Mat CAutoOcr::prepareImage(Mat img_orig, const SAutoOcrSettings &settings, bool 
 	int basewidth, hsize;
 	float wpercent;
 	if (img_orig.cols > img_orig.rows * 1.25) {
-		basewidth = MAT_WIDTH;
+		basewidth = MAT_WIDTH * kOcrScaleUpFactor;
 		wpercent = (basewidth / static_cast<float>(img_orig.cols));
 		hsize = static_cast<int>(static_cast<float>(img_orig.rows) * wpercent);
 	}
 	else {
-		hsize = MAT_HEIGHT;
+		hsize = MAT_HEIGHT * kOcrScaleUpFactor;
 		wpercent = (hsize / static_cast<float>(img_orig.rows));
 		basewidth = static_cast<int>(static_cast<float>(img_orig.cols) * wpercent);
 	}
@@ -486,7 +494,7 @@ Mat CAutoOcr::prepareImage(Mat img_orig, const SAutoOcrSettings &settings, bool 
 	if (binarize) {
 		img_resized = binarize_array_opencv(img_resized, threshold);
 		// Separate characters that sit too close so OCR can tell them apart.
-		img_resized = AddCharacterSpacing(img_resized, 2);
+		img_resized = AddCharacterSpacing(img_resized, kOcrCharSpacingPx);
 	}
 	Mat img_bounded = img_resized.clone();
 
@@ -699,11 +707,18 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
 	settings.threshold = tablemap_threshold;
 	settings.use_cropping = region->second.use_cropping;
 	settings.crop_size = region->second.crop_size > 0 ? region->second.crop_size : 40;
-	settings.page_seg_mode = tesseract::PSM_SINGLE_WORD;
+	// Match Vision/trainer: default to Single column (PSM 4); honor a per-region
+	// Tesseract page-seg mode if one was chosen in the tablemap.
+	settings.page_seg_mode = (region->second.match_mode >= 0)
+		? region->second.match_mode
+		: (int)tesseract::PSM_SINGLE_COLUMN;
 	settings.sharpen = region->second.sharpen >= 0 ? region->second.sharpen : 100;
-	// Balance fields are pure numbers; restrict OCR to digits and a dot.
+	// Balance fields are pure numbers; restrict OCR to digits and a dot. Other
+	// regions use the general character set (matches Vision/trainer).
 	if (CString(region->first).MakeLower().Find("balance") != -1)
 		settings.whitelist = "0123456789.";
+	else
+		settings.whitelist = kGeneralWhitelist;
 	TryColorPresetSettings(img_orig, region, &settings);
 	tablemap_threshold = settings.threshold;
 

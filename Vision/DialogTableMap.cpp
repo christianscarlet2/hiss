@@ -519,7 +519,7 @@ BOOL CDlgTableMap::OnInitDialog()
 
 	//m_ImgProc.SetWindowText("Inbuilt image processing");
 	m_UseDefault.SetCheck(false);
-	threshold = 100;
+	threshold = 65;
 	m_Threshold.SetWindowText(to_string(threshold).c_str());
 	m_ThresholdSpin.SetRange(0, 300);
 	m_ThresholdSpin.SetPos(threshold);
@@ -1873,7 +1873,7 @@ void CDlgTableMap::disable_ocr_and_clear_all(void)
 	m_UseDefault.EnableWindow(false);
 	m_Threshold.EnableWindow(false);
 	m_ThresholdSpin.EnableWindow(false);
-	threshold = 100;
+	threshold = 65;
 	m_Threshold.SetWindowText(to_string(threshold).c_str());
 	m_MatchMode.EnableWindow(false);
 	match_mode = kDefaultTesseractPageSegModeIndex;
@@ -2946,7 +2946,7 @@ void CDlgTableMap::update_ocr_r$_display(void) {
 		m_UseDefault.SetCheck(sel_region->second.use_default);
 		m_UseCrop.SetCheck(sel_region->second.use_cropping);
 		if (m_UseDefault.GetCheck()) {
-			text.Format("%d", 100);
+			text.Format("%d", 65);
 			SetEditTextUnlessFocused(m_Threshold, text);
 		}
 		else {
@@ -3157,7 +3157,7 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 		m_UseDefault.SetCheck(sel_region->second.use_default);
 		m_UseCrop.SetCheck(sel_region->second.use_cropping);
 		if (m_UseDefault.GetCheck()) {
-			text.Format("%d", kDefaultAutoOcrThreshold);
+			text.Format("%d", 65);
 			SetEditTextUnlessFocused(m_Threshold, text);
 		}
 		else {
@@ -3875,8 +3875,8 @@ void CDlgTableMap::OnBnClickedNew() {
 				new_region.color = 0;
 				new_region.radius = 0;
 				new_region.transform = "N";
-				new_region.use_default = true;
-				new_region.threshold = 0;
+				new_region.use_default = false;
+				new_region.threshold = 65;
 				new_region.use_cropping = false;
 				new_region.crop_size = 0;
 				new_region.match_mode = -1;
