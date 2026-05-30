@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tesseract Trainer — Samples</title>
+  <link rel="stylesheet" href="/trainer/trainer.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="title">Training Samples</div>
+    <label class="muted"><input type="checkbox" id="hideSaved"> Hide saved</label>
+    <span class="spacer"></span>
+    <span id="status" class="muted">Loading…</span>
+    <button id="saveAll">Save All</button>
+  </header>
+  <main>
+    <table id="samples">
+      <thead>
+        <tr><th class="imgcol">Image</th><th class="txtcol">Text</th><th class="actcol">Action</th></tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </main>
+  <script src="/trainer/trainer.js"></script>
+</body>
+</html>

@@ -25,6 +25,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ManualMode", "ManualMode\Ma
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OHReplay", "OHReplay\OHReplay.vcxproj", "{339B71A7-4462-40FD-AE9C-ABA2EB73999A}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "trainer", "trainer\trainer.vcxproj", "{B2F7C3A4-9D1E-4E55-8C2A-1F6E0A7B9C34}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "poker-eval", "pokereval\poker-eval.vcxproj", "{A4DEF05E-E072-493E-B282-84731D60BCF0}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SciLexer", "scintilla\vcbuild\SciLexer.vcxproj", "{E757A486-9770-4DB4-8299-00E22986E604}"
@@ -130,6 +132,18 @@ Global
 		{339B71A7-4462-40FD-AE9C-ABA2EB73999A}.Release|Any CPU.ActiveCfg = Release|Win32
 		{339B71A7-4462-40FD-AE9C-ABA2EB73999A}.Release|Win32.ActiveCfg = Release|Win32
 		{339B71A7-4462-40FD-AE9C-ABA2EB73999A}.Release|Win32.Build.0 = Release|Win32
+		{B2F7C3A4-9D1E-4E55-8C2A-1F6E0A7B9C34}.Debug|Any CPU.ActiveCfg = Debug|Win32
+		{B2F7C3A4-9D1E-4E55-8C2A-1F6E0A7B9C34}.Debug|Any CPU.Build.0 = Debug|Win32
+		{B2F7C3A4-9D1E-4E55-8C2A-1F6E0A7B9C34}.Debug|Win32.ActiveCfg = Debug|Win32
+		{B2F7C3A4-9D1E-4E55-8C2A-1F6E0A7B9C34}.Debug|Win32.Build.0 = Debug|Win32
+		{B2F7C3A4-9D1E-4E55-8C2A-1F6E0A7B9C34}.Release - Optimized|Any CPU.ActiveCfg = Release|Win32
+		{B2F7C3A4-9D1E-4E55-8C2A-1F6E0A7B9C34}.Release - Optimized|Any CPU.Build.0 = Release|Win32
+		{B2F7C3A4-9D1E-4E55-8C2A-1F6E0A7B9C34}.Release - Optimized|Win32.ActiveCfg = Release|Win32
+		{B2F7C3A4-9D1E-4E55-8C2A-1F6E0A7B9C34}.Release - Optimized|Win32.Build.0 = Release|Win32
+		{B2F7C3A4-9D1E-4E55-8C2A-1F6E0A7B9C34}.Release|Any CPU.ActiveCfg = Release|Win32
+		{B2F7C3A4-9D1E-4E55-8C2A-1F6E0A7B9C34}.Release|Any CPU.Build.0 = Release|Win32
+		{B2F7C3A4-9D1E-4E55-8C2A-1F6E0A7B9C34}.Release|Win32.ActiveCfg = Release|Win32
+		{B2F7C3A4-9D1E-4E55-8C2A-1F6E0A7B9C34}.Release|Win32.Build.0 = Release|Win32
 		{A4DEF05E-E072-493E-B282-84731D60BCF0}.Debug|Any CPU.ActiveCfg = Debug|Win32
 		{A4DEF05E-E072-493E-B282-84731D60BCF0}.Debug|Any CPU.Build.0 = Debug|Win32
 		{A4DEF05E-E072-493E-B282-84731D60BCF0}.Debug|Win32.ActiveCfg = Release|Win32

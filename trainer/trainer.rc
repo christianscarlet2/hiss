@@ -1,0 +1,66 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+#include "afxres.h"
+#undef APSTUDIO_READONLY_SYMBOLS
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+
+/////////////////////////////////////////////////////////////////////////////
+// Icon
+IDR_MAINFRAME           ICON                    "res\\trainer.ico"
+IDI_TRAINER             ICON                    "res\\trainer.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+// Dialog
+IDD_TRAINER_DIALOG DIALOGEX 0, 0, 300, 110
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX
+CAPTION "Tesseract Trainer"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "Load Tablemap...",IDC_LOAD_TM,7,7,90,16
+    PUSHBUTTON      "Connect (click a window)",IDC_CONNECT,103,7,110,16
+    PUSHBUTTON      "Open Table",IDC_OPEN_TABLE,219,7,74,16
+    PUSHBUTTON      "Start",IDC_STARTSTOP,7,31,90,16
+    CONTROL         "Ignore bad scrapes",IDC_IGNORE_BAD,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,103,34,110,10
+    LTEXT           "Idle.",IDC_STATUS,7,58,286,44
+END
+
+/////////////////////////////////////////////////////////////////////////////
+// Version
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,0
+ PRODUCTVERSION 1,0,0,0
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904e4"
+        BEGIN
+            VALUE "FileDescription", "Tesseract Trainer"
+            VALUE "FileVersion", "1.0.0.0"
+            VALUE "InternalName", "trainer.exe"
+            VALUE "OriginalFilename", "trainer.exe"
+            VALUE "ProductName", "Tesseract Trainer"
+            VALUE "ProductVersion", "1.0.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1252
+    END
+END
+
+#endif    // English (United States) resources
