@@ -2263,7 +2263,7 @@ CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast,
 	// such as '8' and several letters; never strip anything that is a valid OCR
 	// character (digits, letters, '.', '_') or numeric values like "2.28" lose
 	// their digits (the "8 being stripped" bug).
-	const char* blacklist = "��??�!%&*+;=?@�^���������������������������������܀��P�~����������/\"`#<{([])}>|�������++��++++++--+-+��++--�-+----++++++++�_���a�GpSs�tFTOd8fen=�==()�����vn��";
+	const char* blacklist = "��??�!%&*+;=?@�^���������������������������������܀���~����������/\"`#<{([])}>|�������++��++++++--+-+��++--�-+----++++++++������=�==()�������";
 	for (size_t i = 0; i < strlen(blacklist); i++) {
 		char c = blacklist[i];
 		if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
