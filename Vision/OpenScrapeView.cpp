@@ -2193,14 +2193,14 @@ static CString TrainingDirectory()
 	return dir;
 }
 
-// Lowest free "sample_NNNN" base name (neither .png nor .txt present).
+// Lowest free "sample_NNNN" base name (neither .png nor .gt.txt present).
 static CString NextTrainingBaseName(const CString &dir)
 {
 	for (int i = 1; i < 100000; ++i) {
 		CString base;
 		base.Format("sample_%04d", i);
 		CString png = dir + base + ".png";
-		CString txt = dir + base + ".txt";
+		CString txt = dir + base + ".gt.txt";
 		if (GetFileAttributes(png) == INVALID_FILE_ATTRIBUTES
 			&& GetFileAttributes(txt) == INVALID_FILE_ATTRIBUTES) {
 			return base;
@@ -2279,7 +2279,7 @@ void COpenScrapeView::HandleTrainingCapture(CRect rect)
 	CString dir = TrainingDirectory();
 	CString base = NextTrainingBaseName(dir);
 	CString png_path = dir + base + ".png";
-	CString txt_path = dir + base + ".txt";
+	CString txt_path = dir + base + ".gt.txt";
 
 	bool image_ok = false;
 	try {
