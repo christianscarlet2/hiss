@@ -94,6 +94,11 @@ const char* kTesseractCharWhitelist =
 // Extra upscale applied to the prepared image before binarization / OCR.
 const int kOcrScaleUpFactor = 3;
 
+// The OCR preview is shown at this (smaller) factor so it doesn't overflow the
+// dialog, even though Tesseract still recognizes the kOcrScaleUpFactor image.
+// Kept at 1 (original region size) so the upscale doesn't enlarge the preview.
+const int kOcrViewScaleFactor = 1;
+
 static bool ControlHasFocus(CWnd &control)
 {
 	return ::GetFocus() == control.GetSafeHwnd();
@@ -1868,6 +1873,18 @@ Mat CDlgTableMap::binarize_array_opencv(Mat image, int threshold) {
 	return ret;
 }
 
+// Downscale the preview image from the OCR working scale (kOcrScaleUpFactor)
+// to the smaller view scale (kOcrViewScaleFactor). Any rectangles already drawn
+// on it are in the upscaled space, so a uniform resize keeps them aligned.
+Mat CDlgTableMap::ScaleOcrViewImage(Mat img_bounded) {
+	if (img_bounded.empty() || kOcrViewScaleFactor == kOcrScaleUpFactor)
+		return img_bounded;
+	Mat scaled;
+	double f = static_cast<double>(kOcrViewScaleFactor) / kOcrScaleUpFactor;
+	resize(img_bounded, scaled, Size(), f, f, INTER_AREA);
+	return scaled;
+}
+
 Mat CDlgTableMap::prepareImage(Mat img_orig, bool binarize, int threshold, bool second_pass) {
 	// Prepare image for OCR
 	//  !!  Do not change those settings and values !!   //
@@ -1919,7 +1936,7 @@ Mat CDlgTableMap::prepareImage(Mat img_orig, bool binarize, int threshold, bool 
 		m_CropSize.GetWindowText(txt);
 		double cropSize = (double)atoi(txt) / 100;
 		if (cropSize < 0.01)
-			return img_bounded;
+			return ScaleOcrViewImage(img_bounded);
 
 		process_ocr(img_resized, false, second_pass);
 		vector<pair<Rect, CString>> resBoxes;
@@ -1930,7 +1947,7 @@ Mat CDlgTableMap::prepareImage(Mat img_orig, bool binarize, int threshold, bool 
 
 		// Exit here if no box found (generally an empty region)
 		if (resBoxes.empty())
-			return img_bounded;
+			return ScaleOcrViewImage(img_bounded);
 
 		// filter contours
 		vector<Rect> boundRect, boundRect2;
@@ -1944,7 +1961,7 @@ Mat CDlgTableMap::prepareImage(Mat img_orig, bool binarize, int threshold, bool 
 
 		// Exit if no valid box found (generally an empty region)
 		if (boundRect.empty())
-			return img_bounded;
+			return ScaleOcrViewImage(img_bounded);
 
 		vector<double> boxArea, boxDist;
 		double wCenter = img_bounded.cols / 2;
@@ -2004,12 +2021,12 @@ Mat CDlgTableMap::prepareImage(Mat img_orig, bool binarize, int threshold, bool 
 		// Draw best box
 		rectangle(img_bounded, best_rect, previewColor, 2);
 
-		return img_bounded;
+		return ScaleOcrViewImage(img_bounded);
 	}
 	//////////////////////////////////////////////////
 
 	process_ocr(img_resized, false, second_pass);
-	return img_bounded;
+	return ScaleOcrViewImage(img_bounded);
 }
 
 void CDlgTableMap::process_ocr(Mat img_orig, bool fast, bool second_pass) {

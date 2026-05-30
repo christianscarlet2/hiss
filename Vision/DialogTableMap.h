@@ -187,6 +187,7 @@ private:
 	CString get_ocr_result(Mat img_orig, CString transform, bool fast = false);
 	void process_ocr(Mat img_orig, bool fast = false, bool second_pass = false);
 	Mat prepareImage(Mat img_orig, bool binarize = true, int threshold = 100, bool second_pass = false);
+	Mat ScaleOcrViewImage(Mat img_bounded);
 	Mat binarize_array_opencv(Mat image, int threshold);
 	CScrollHelper* m_scrollHelper;
 	int threshold, match_mode;
