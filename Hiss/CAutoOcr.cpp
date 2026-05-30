@@ -161,10 +161,24 @@ bool CAutoOcr::EnsureTesseractInitialized() {
 		return false;
 	}
 
-	char enable_tesseract_ocr[8] = {0};
-	if (GetEnvironmentVariable("HISS_ENABLE_TESSERACT_OCR", enable_tesseract_ocr, sizeof(enable_tesseract_ocr)) == 0) {
-		_api_init_failed = true;
-		return false;
+	// OCR is enabled by default. It still loads lazily (on first use, below) so
+	// Hiss startup never blocks on Tesseract being ready. HISS_ENABLE_TESSERACT_OCR
+	// is honored ONLY as an explicit kill-switch: previously a *missing* variable
+	// disabled OCR permanently, but the variable is never set anywhere, so every
+	// OCR region (player names, balances, bets, ...) scraped empty and the HUD --
+	// which depends on PT4 name verification of those scraped names -- disappeared.
+	// The concurrency crash that originally motivated gating OCR is now serialized
+	// through m_critsec in get_ocr_result()/GetDetectTemplate*(), so it is safe to
+	// re-enable by default.
+	char disable_tesseract_ocr[16] = {0};
+	if (GetEnvironmentVariable("HISS_ENABLE_TESSERACT_OCR", disable_tesseract_ocr, sizeof(disable_tesseract_ocr)) != 0) {
+		CString flag(disable_tesseract_ocr);
+		flag.Trim();
+		flag.MakeLower();
+		if (flag == "0" || flag == "false" || flag == "no" || flag == "off") {
+			_api_init_failed = true;
+			return false;
+		}
 	}
 
 	// New automatic OCR based on tesseract-ocr. Load the recognition network
@@ -624,7 +638,7 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
 	}
 
 	// Clean OCR noise from unwanted chars.
-	const char* blacklist = "®©??™!%&*+;=?@²^æÆÇçÉéèêëïîíìÄÅÂÀàáâäåúùûüôöòñÑÿÖÜ€£¥Pƒ~ªº¿¬¬½¼¡«»\"`#<{([])}>|¦¦¦¦¦¦¦++¦¦++++++--+-+¦¦++--¦-+----++++++++¦_¦¦¯aßGpSsµtFTOd8fen=±==()÷˜°··vn²¦";
+	const char* blacklist = "ï¿½ï¿½??ï¿½!%&*+;=?@ï¿½^ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ü€ï¿½ï¿½Pï¿½~ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½\"`#<{([])}>|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½++ï¿½ï¿½++++++--+-+ï¿½ï¿½++--ï¿½-+----++++++++ï¿½_ï¿½ï¿½ï¿½aï¿½GpSsï¿½tFTOd8fen=ï¿½==()ï¿½ï¿½ï¿½ï¿½ï¿½vnï¿½ï¿½";
 	for (size_t i = 0; i < strlen(blacklist); i++) {
 		if (ocr_result.Find(blacklist[i]) != -1)
 			ocr_result.Remove(blacklist[i]);
