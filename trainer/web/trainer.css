@@ -20,11 +20,16 @@ button {
   padding: 6px 12px; cursor: pointer; font-size: 13px;
 }
 button:hover { background: #379159; }
-button.row-save { background: #2f6fbf; padding: 5px 10px; margin-right: 5px; }
+/* Compact, single-line row actions */
+td.actions { white-space: nowrap; }
+button.row-save, button.row-del, button.row-under {
+  padding: 4px 8px; font-size: 12px; margin-right: 4px; white-space: nowrap;
+}
+button.row-save { background: #2f6fbf; }
 button.row-save:hover { background: #3a82da; }
-button.row-del { background: #b5443b; padding: 5px 10px; margin-right: 5px; }
+button.row-del { background: #b5443b; }
 button.row-del:hover { background: #cf5249; }
-button.row-under { background: #6a6f77; padding: 5px 10px; }
+button.row-under { background: #6a6f77; margin-right: 0; }
 button.row-under:hover { background: #7d838c; }
 button.danger { background: #b5443b; }
 button.danger:hover { background: #cf5249; }
@@ -35,7 +40,7 @@ table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #2c3036; vertical-align: middle; }
 th { color: #9aa3ab; font-weight: 500; position: sticky; top: 49px; background: #202327; }
 .imgcol { width: 320px; }
-.actcol { width: 120px; }
+.actcol { width: 1%; white-space: nowrap; }
 tr.saved { opacity: .5; }
 td.img img {
   background: #0c0e10; border: 1px solid #333; image-rendering: pixelated;

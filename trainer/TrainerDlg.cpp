@@ -33,6 +33,62 @@ static const PsmEntry kPsmModes[] = {
 static const int kNumPsmModes = sizeof(kPsmModes) / sizeof(kPsmModes[0]);
 static const int kDefaultPsmIndex = 7;   // Single column
 
+static const char *kTrainerRegKey = "Software\\Hiss\\Trainer";
+
+static void RegWriteString(const char *name, const CString &value)
+{
+	HKEY key; DWORD disp;
+	if (RegCreateKeyEx(HKEY_CURRENT_USER, kTrainerRegKey, 0, NULL,
+		REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &key, &disp) == ERROR_SUCCESS) {
+		RegSetValueEx(key, name, 0, REG_SZ, (const BYTE *)value.GetString(), value.GetLength() + 1);
+		RegCloseKey(key);
+	}
+}
+
+static CString RegReadString(const char *name)
+{
+	CString out;
+	HKEY key;
+	if (RegOpenKeyEx(HKEY_CURRENT_USER, kTrainerRegKey, 0, KEY_READ, &key) == ERROR_SUCCESS) {
+		char buf[1024] = { 0 };
+		DWORD size = sizeof(buf), type = 0;
+		if (RegQueryValueEx(key, name, NULL, &type, (LPBYTE)buf, &size) == ERROR_SUCCESS && type == REG_SZ) {
+			out = buf;
+		}
+		RegCloseKey(key);
+	}
+	return out;
+}
+
+struct STrainerFindWindow { CString title; CString cls; HWND self; HWND result; };
+
+static BOOL CALLBACK TrainerFindWindowProc(HWND hwnd, LPARAM lparam)
+{
+	STrainerFindWindow *f = (STrainerFindWindow *)lparam;
+	if (hwnd == f->self) return TRUE;
+	if (!IsWindowVisible(hwnd) || GetWindow(hwnd, GW_OWNER) != NULL) return TRUE;
+	char t[512] = { 0 };
+	::GetWindowTextA(hwnd, t, sizeof(t) - 1);
+	if (f->title != CString(t)) return TRUE;
+	if (!f->cls.IsEmpty()) {
+		char c[256] = { 0 };
+		::GetClassNameA(hwnd, c, sizeof(c) - 1);
+		if (f->cls != CString(c)) return TRUE;
+	}
+	f->result = hwnd;
+	return FALSE;
+}
+
+// First visible top-level window matching the saved title (and class, if known).
+static HWND FindTopWindow(const CString &title, const CString &cls, HWND self)
+{
+	if (title.IsEmpty()) return NULL;
+	STrainerFindWindow f;
+	f.title = title; f.cls = cls; f.self = self; f.result = NULL;
+	EnumWindows(TrainerFindWindowProc, (LPARAM)&f);
+	return f.result;
+}
+
 CTrainerDlg *CTrainerDlg::s_instance = NULL;
 
 CTrainerDlg::CTrainerDlg(CWnd *pParent)
@@ -112,11 +168,11 @@ BOOL CTrainerDlg::OnInitDialog()
 
 	PopulateModeCombos();
 
-	// Defaults (mirror Vision's disable_ocr_and_clear_all).
-	CheckDlgButton(IDC_USE_DEFAULT, BST_CHECKED);
-	m_threshold.SetWindowText("100");
+	// Defaults: Use Default OFF, threshold 65.
+	CheckDlgButton(IDC_USE_DEFAULT, BST_UNCHECKED);
+	m_threshold.SetWindowText("65");
 	m_thresholdSpin.SetRange(0, 300);
-	m_thresholdSpin.SetPos(100);
+	m_thresholdSpin.SetPos(65);
 	m_thresholdSpin.SetBuddy(&m_threshold);
 	CheckDlgButton(IDC_USE_CROP, BST_UNCHECKED);
 	m_cropSize.SetWindowText("30");
@@ -128,17 +184,43 @@ BOOL CTrainerDlg::OnInitDialog()
 	m_sharpenSpin.SetPos(100);
 	m_sharpenSpin.SetBuddy(&m_sharpen);
 
+	// Restore the OCR settings the user had on last exit (overrides defaults).
+	LoadOcrSettings();
+
 	CString status;
 	status.Format("Ready. OCR model: %s. Server: %s.\nLoad a tablemap, then Connect and click a window.",
 		ocr_ok ? "my_model" : "FAILED (check tessdata\\my_model)",
 		(_server != NULL && _server->port() != 0) ? "running" : "FAILED");
 	SetStatus(status);
+
+	// Reload the last tablemap and reconnect to the last window if it's open.
+	RestoreLastSession();
 	return TRUE;
 }
 
 void CTrainerDlg::SetStatus(const CString &text)
 {
 	SetDlgItemText(IDC_STATUS, text);
+}
+
+bool CTrainerDlg::DoLoadTablemap(const CString &path)
+{
+	_regions.clear();
+	if (!LoadBalanceRegions(path, &_regions)) {
+		SetStatus("Failed to read the tablemap file.");
+		return false;
+	}
+	_last.assign(_regions.size(), std::vector<BYTE>());
+	_committed.assign(_regions.size(), std::vector<BYTE>());
+	_have_baseline.assign(_regions.size(), false);
+	_selected = _regions.empty() ? -1 : 0;
+
+	RegWriteString("last_tablemap", path);
+
+	CString status;
+	status.Format("Loaded %d balance region(s) from %s", (int)_regions.size(), path.GetString());
+	SetStatus(status);
+	return true;
 }
 
 void CTrainerDlg::OnBnClickedLoadTm()
@@ -148,19 +230,7 @@ void CTrainerDlg::OnBnClickedLoadTm()
 	if (dlg.DoModal() != IDOK) {
 		return;
 	}
-	_regions.clear();
-	if (!LoadBalanceRegions(dlg.GetPathName(), &_regions)) {
-		SetStatus("Failed to read the tablemap file.");
-		return;
-	}
-	_last.assign(_regions.size(), std::vector<BYTE>());
-	_committed.assign(_regions.size(), std::vector<BYTE>());
-	_have_baseline.assign(_regions.size(), false);
-	_selected = _regions.empty() ? -1 : 0;
-
-	CString status;
-	status.Format("Loaded %d balance region(s) (p0balance..p8balance).", (int)_regions.size());
-	SetStatus(status);
+	DoLoadTablemap(dlg.GetPathName());
 }
 
 LRESULT CALLBACK CTrainerDlg::LowLevelMouseProc(int code, WPARAM wParam, LPARAM lParam)
@@ -213,6 +283,15 @@ LRESULT CTrainerDlg::OnAttachWindow(WPARAM wParam, LPARAM lParam)
 		return 0;
 	}
 
+	AttachToWindow(target);
+	return 0;
+}
+
+void CTrainerDlg::AttachToWindow(HWND target)
+{
+	if (target == NULL || !::IsWindow(target)) {
+		return;
+	}
 	_attached = target;
 	for (size_t i = 0; i < _have_baseline.size(); ++i) {
 		_have_baseline[i] = false;
@@ -225,12 +304,77 @@ LRESULT CTrainerDlg::OnAttachWindow(WPARAM wParam, LPARAM lParam)
 	}
 	SetTimer(TRAINER_TIMER, kCaptureIntervalMs, NULL);
 
+	// Remember this window so we can reconnect to it next launch.
 	char title[256] = { 0 };
 	::GetWindowTextA(target, title, sizeof(title) - 1);
+	char cls[256] = { 0 };
+	::GetClassNameA(target, cls, sizeof(cls) - 1);
+	RegWriteString("last_window_title", CString(title));
+	RegWriteString("last_window_class", CString(cls));
+
 	CString status;
 	status.Format("Connected to: %s\nScreenshot view open. Click a region to preview; Start to capture.", title);
 	SetStatus(status);
-	return 0;
+}
+
+void CTrainerDlg::RestoreLastSession()
+{
+	CString last_tm = RegReadString("last_tablemap");
+	if (!last_tm.IsEmpty() && GetFileAttributes(last_tm) != INVALID_FILE_ATTRIBUTES) {
+		DoLoadTablemap(last_tm);
+	}
+	CString last_title = RegReadString("last_window_title");
+	if (!last_title.IsEmpty()) {
+		HWND w = FindTopWindow(last_title, RegReadString("last_window_class"), GetSafeHwnd());
+		if (w != NULL) {
+			AttachToWindow(w);
+		}
+	}
+}
+
+void CTrainerDlg::SaveOcrSettings()
+{
+	CString t;
+	int ti = m_transform.GetCurSel();
+	CString tr;
+	if (ti >= 0) m_transform.GetLBText(ti, tr);
+	RegWriteString("ocr_transform", tr);
+	RegWriteString("ocr_use_default", (IsDlgButtonChecked(IDC_USE_DEFAULT) == BST_CHECKED) ? "1" : "0");
+	m_threshold.GetWindowText(t); RegWriteString("ocr_threshold", t);
+	int sel = m_matchMode.GetCurSel();
+	CString mode;
+	if (sel >= 0) mode.Format("%d", (int)m_matchMode.GetItemData(sel));
+	RegWriteString("ocr_mode", mode);
+	RegWriteString("ocr_use_crop", (IsDlgButtonChecked(IDC_USE_CROP) == BST_CHECKED) ? "1" : "0");
+	m_cropSize.GetWindowText(t); RegWriteString("ocr_crop", t);
+	m_sharpen.GetWindowText(t); RegWriteString("ocr_sharpen", t);
+}
+
+void CTrainerDlg::LoadOcrSettings()
+{
+	CString v;
+	v = RegReadString("ocr_transform");
+	if (!v.IsEmpty()) {
+		int i = m_transform.FindStringExact(-1, v);
+		if (i >= 0) m_transform.SetCurSel(i);
+	}
+	v = RegReadString("ocr_use_default");
+	if (!v.IsEmpty()) CheckDlgButton(IDC_USE_DEFAULT, v == "1" ? BST_CHECKED : BST_UNCHECKED);
+	v = RegReadString("ocr_threshold");
+	if (!v.IsEmpty()) { m_threshold.SetWindowText(v); m_thresholdSpin.SetPos(atoi(v)); }
+	v = RegReadString("ocr_mode");
+	if (!v.IsEmpty()) {
+		int val = atoi(v);
+		for (int i = 0; i < m_matchMode.GetCount(); ++i) {
+			if ((int)m_matchMode.GetItemData(i) == val) { m_matchMode.SetCurSel(i); break; }
+		}
+	}
+	v = RegReadString("ocr_use_crop");
+	if (!v.IsEmpty()) CheckDlgButton(IDC_USE_CROP, v == "1" ? BST_CHECKED : BST_UNCHECKED);
+	v = RegReadString("ocr_crop");
+	if (!v.IsEmpty()) { m_cropSize.SetWindowText(v); m_cropSpin.SetPos(atoi(v)); }
+	v = RegReadString("ocr_sharpen");
+	if (!v.IsEmpty()) { m_sharpen.SetWindowText(v); m_sharpenSpin.SetPos(atoi(v)); }
 }
 
 LRESULT CTrainerDlg::OnRegionSelected(WPARAM wParam, LPARAM lParam)
@@ -526,6 +670,7 @@ void CTrainerDlg::UpdatePreview()
 
 void CTrainerDlg::OnDestroy()
 {
+	SaveOcrSettings();   // persist Image Processing settings for next launch
 	KillTimer(TRAINER_TIMER);
 	_capturing = false;
 	if (_mouse_hook != NULL) {

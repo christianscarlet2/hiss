@@ -76,6 +76,7 @@
     tr.appendChild(tdTxt);
 
     var tdAct = document.createElement('td');
+    tdAct.className = 'actions';
     var btnSave = document.createElement('button');
     btnSave.className = 'row-save'; btnSave.textContent = 'Save'; btnSave.tabIndex = -1;
     var btnDel = document.createElement('button');

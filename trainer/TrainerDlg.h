@@ -32,6 +32,11 @@ protected:
 private:
 	void SetStatus(const CString &text);
 	void PopulateModeCombos();
+	bool DoLoadTablemap(const CString &path);
+	void AttachToWindow(HWND target);
+	void RestoreLastSession();
+	void SaveOcrSettings();
+	void LoadOcrSettings();
 	STrainerOcrSettings ReadSettings();
 	void CaptureTick();
 	void UpdatePreview();
