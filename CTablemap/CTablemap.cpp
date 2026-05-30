@@ -288,6 +288,89 @@ struct STablemapLineReader {
 	}
 };
 
+// ---------------------------------------------------------------------------
+// Copyable diagnostic popup: a modal window with a read-only multiline edit
+// control so the text can be selected/copied (and it is auto-copied to the
+// clipboard). Pure Win32, no resource, works in both OpenScrape and Hiss.
+// ---------------------------------------------------------------------------
+static LRESULT CALLBACK OHCopyBoxProc(HWND h, UINT m, WPARAM w, LPARAM l) {
+	switch (m) {
+	case WM_SIZE: {
+		HWND edit = ::GetDlgItem(h, 100);
+		if (edit) ::MoveWindow(edit, 6, 6, LOWORD(l) - 12, HIWORD(l) - 12, TRUE);
+		return 0; }
+	case WM_KEYDOWN:
+		if (w == VK_ESCAPE) { ::DestroyWindow(h); return 0; }
+		break;
+	case WM_CLOSE:
+		::DestroyWindow(h);
+		return 0;
+	}
+	return ::DefWindowProc(h, m, w, l);
+}
+
+static void ShowCopyableTextBox(const CString &text, const CString &title) {
+	// Edit controls need CRLF line breaks; our detail strings use bare '\n'.
+	CString body = text;
+	body.Replace("\n", "\r\n");
+
+	// Convenience: also drop the text on the clipboard.
+	HWND active = ::GetActiveWindow();
+	if (::OpenClipboard(active)) {
+		::EmptyClipboard();
+		int bytes = body.GetLength() + 1;
+		HGLOBAL hmem = ::GlobalAlloc(GMEM_MOVEABLE, bytes);
+		if (hmem) {
+			char *p = (char *)::GlobalLock(hmem);
+			if (p) { memcpy(p, body.GetString(), bytes); ::GlobalUnlock(hmem); ::SetClipboardData(CF_TEXT, hmem); }
+		}
+		::CloseClipboard();
+	}
+
+	HINSTANCE hInst = AfxGetInstanceHandle();
+	static bool registered = false;
+	const char *cls = "OHTablemapErrorBox";
+	if (!registered) {
+		WNDCLASSA wc = { 0 };
+		wc.lpfnWndProc = OHCopyBoxProc;
+		wc.hInstance = hInst;
+		wc.hCursor = ::LoadCursor(NULL, IDC_ARROW);
+		wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
+		wc.lpszClassName = cls;
+		::RegisterClassA(&wc);
+		registered = true;
+	}
+
+	int W = 720, H = 460;
+	RECT dr; ::GetWindowRect(::GetDesktopWindow(), &dr);
+	int x = (dr.right - W) / 2, y = (dr.bottom - H) / 2;
+	if (active) ::EnableWindow(active, FALSE);
+	HWND dlg = ::CreateWindowExA(WS_EX_DLGMODALFRAME | WS_EX_TOPMOST, cls, title,
+		WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE, x, y, W, H,
+		active, NULL, hInst, NULL);
+	if (dlg == NULL) {
+		if (active) ::EnableWindow(active, TRUE);
+		::MessageBoxA(active, body.GetString(), title, MB_OK | MB_ICONERROR);
+		return;
+	}
+	HWND edit = ::CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", body,
+		WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
+		6, 6, W - 12, H - 12, dlg, (HMENU)100, hInst, NULL);
+	::SendMessage(edit, WM_SETFONT, (WPARAM)::GetStockObject(DEFAULT_GUI_FONT), TRUE);
+	::SendMessage(edit, EM_SETSEL, 0, -1);
+	::SetFocus(edit);
+
+	// Local modal message loop; exits when the window is destroyed.
+	MSG msg;
+	while (::IsWindow(dlg) && ::GetMessage(&msg, NULL, 0, 0)) {
+		if (!::IsDialogMessage(dlg, &msg)) {
+			::TranslateMessage(&msg);
+			::DispatchMessage(&msg);
+		}
+	}
+	if (active) { ::EnableWindow(active, TRUE); ::SetForegroundWindow(active); }
+}
+
 int CTablemap::LoadTablemap(const CString _fname) {
 #ifdef OPENHOLDEM_PROGRAM
 	write_log(Preferences()->debug_tablemap_loader(), "[CTablemap] Loadtablemap: %s\n", _fname);
@@ -326,7 +409,7 @@ int CTablemap::LoadTablemap(const CString _fname) {
 			CString m;
 			m.Format("Could not open the tablemap file (the path may be wrong, "
 				"or the file is locked by another program):\n\n%s", _filename.GetString());
-			MessageBox_Error_Warning(m, "Table map load error");
+			ShowCopyableTextBox(m, "Table map load error");
 			return ERR_EOF;
 		}
 		ifs.seekg(0, std::ios::end);
@@ -1022,7 +1105,7 @@ int CTablemap::LoadTablemap(const CString _fname) {
 		detail.Format("MFC exception loading tablemap.\n\nType: %s\nOS error: %ld\nReason: %s\n"
 			"Line: %d\nLine text: >>>%s<<<\n\nFile: %s",
 			cls, oserr, reason, linenum, strLine.GetString(), _filename.GetString());
-		MessageBox_Error_Warning(detail, "Table map load error");
+		ShowCopyableTextBox(detail, "Table map load error");
 		return ERR_SYNTAX;
 	}
 	catch (...)
@@ -1030,7 +1113,7 @@ int CTablemap::LoadTablemap(const CString _fname) {
 		CString detail;
 		detail.Format("Non-MFC exception loading tablemap.\n\nLine: %d\nLine text: >>>%s<<<\n\nFile: %s",
 			linenum, strLine.GetString(), _filename.GetString());
-		MessageBox_Error_Warning(detail, "Table map load error");
+		ShowCopyableTextBox(detail, "Table map load error");
 		return ERR_SYNTAX;
 	}
 }
