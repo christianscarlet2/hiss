@@ -145,14 +145,14 @@ LRESULT CTrainerDlg::OnAttachWindow(WPARAM wParam, LPARAM lParam)
 	pt.x = (int)wParam;
 	pt.y = (int)lParam;
 
-	HWND target = WindowFromPoint(pt);
+	HWND target = ::WindowFromPoint(pt);
 	if (target != NULL) {
-		target = GetAncestor(target, GA_ROOT);
+		target = ::GetAncestor(target, GA_ROOT);
 	}
 	// Don't attach to our own windows.
-	HWND self_root = GetAncestor(GetSafeHwnd(), GA_ROOT);
-	if (target == NULL || target == self_root
-		|| (_web != NULL && target == GetAncestor(_web->GetSafeHwnd(), GA_ROOT))) {
+	HWND self_root = ::GetAncestor(GetSafeHwnd(), GA_ROOT);
+	HWND web_root = (_web != NULL && ::IsWindow(_web->GetSafeHwnd())) ? ::GetAncestor(_web->GetSafeHwnd(), GA_ROOT) : NULL;
+	if (target == NULL || target == self_root || (web_root != NULL && target == web_root)) {
 		SetStatus("Ignored a click on the trainer's own window. Click Connect and pick the table.");
 		return 0;
 	}
@@ -164,7 +164,7 @@ LRESULT CTrainerDlg::OnAttachWindow(WPARAM wParam, LPARAM lParam)
 	}
 
 	char title[256] = { 0 };
-	GetWindowTextA(target, title, sizeof(title) - 1);
+	::GetWindowTextA(target, title, sizeof(title) - 1);
 	CString status;
 	status.Format("Connected to: %s\nClick Start to begin capturing.", title);
 	SetStatus(status);

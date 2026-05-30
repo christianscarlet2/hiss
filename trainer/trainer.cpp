@@ -17,7 +17,6 @@ BOOL CTrainerApp::InitInstance()
 	// COM is required by WebView2.
 	::CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 
-	AfxEnableControlContainer();
 	CWinApp::InitInstance();
 
 	CTrainerDlg dlg;
