@@ -138,6 +138,8 @@
     <ClCompile Include="SampleStore.cpp" />
     <ClCompile Include="TrainerServer.cpp" />
     <ClCompile Include="TrainerWebWindow.cpp" />
+    <ClCompile Include="TrainerOcr.cpp" />
+    <ClCompile Include="ScreenshotView.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="stdafx.h" />
@@ -148,6 +150,8 @@
     <ClInclude Include="SampleStore.h" />
     <ClInclude Include="TrainerServer.h" />
     <ClInclude Include="TrainerWebWindow.h" />
+    <ClInclude Include="TrainerOcr.h" />
+    <ClInclude Include="ScreenshotView.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="res\trainer.ico" />

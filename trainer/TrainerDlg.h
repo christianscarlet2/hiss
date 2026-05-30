@@ -2,10 +2,12 @@
 
 #include "resource.h"
 #include "TablemapRegions.h"
+#include "TrainerOcr.h"
 #include <vector>
 
 class CTrainerServer;
 class CTrainerWebWindow;
+class CScreenshotView;
 
 class CTrainerDlg : public CDialog {
 public:
@@ -20,30 +22,45 @@ protected:
 	afx_msg void OnBnClickedConnect();
 	afx_msg void OnBnClickedStartStop();
 	afx_msg void OnBnClickedOpenTable();
+	afx_msg void OnBnClickedClearTraining();
 	afx_msg void OnTimer(UINT_PTR nIDEvent);
 	afx_msg LRESULT OnAttachWindow(WPARAM wParam, LPARAM lParam);
+	afx_msg LRESULT OnRegionSelected(WPARAM wParam, LPARAM lParam);
 	afx_msg void OnDestroy();
 	DECLARE_MESSAGE_MAP()
 
 private:
 	void SetStatus(const CString &text);
+	void PopulateModeCombos();
+	STrainerOcrSettings ReadSettings();
 	void CaptureTick();
-	CStringA OcrCrop(const cv::Mat &bgr, int *mean_conf);
-	static bool LooksBlank(const cv::Mat &bgr);
+	void UpdatePreview();
+	void DrawMatToStatic(int ctrl_id, const cv::Mat &bgr);
+	void ClearPreview();
+
+	// OCR settings controls
+	CComboBox m_transform;
+	CComboBox m_matchMode;
+	CEdit m_threshold, m_cropSize, m_sharpen, m_ocrResult;
+	CSpinButtonCtrl m_thresholdSpin, m_cropSpin, m_sharpenSpin;
 
 	std::vector<STrainerRegion> _regions;
-	std::vector<std::vector<BYTE> > _last;       // per-region previous pixels
-	std::vector<std::vector<BYTE> > _committed;  // per-region last snapshotted
+	std::vector<std::vector<BYTE> > _last;
+	std::vector<std::vector<BYTE> > _committed;
 	std::vector<bool> _have_baseline;
 
 	HWND _attached;
 	bool _capturing;
 	HHOOK _mouse_hook;
 
+	HBITMAP _frame;        // latest captured client bitmap (owned)
+	int _frame_w, _frame_h;
+	int _selected;         // selected region index, -1 = none
+
 	CTrainerServer *_server;
 	CTrainerWebWindow *_web;
-	tesseract::TessBaseAPI *_ocr;
-	bool _ocr_ready;
+	CScreenshotView *_screenshot;
+	CTrainerOcr _ocr;
 	HICON _icon;
 
 	static CTrainerDlg *s_instance;

@@ -20,8 +20,16 @@ button {
   padding: 6px 12px; cursor: pointer; font-size: 13px;
 }
 button:hover { background: #379159; }
-button.row-save { background: #2f6fbf; padding: 5px 10px; }
+button.row-save { background: #2f6fbf; padding: 5px 10px; margin-right: 5px; }
 button.row-save:hover { background: #3a82da; }
+button.row-del { background: #b5443b; padding: 5px 10px; margin-right: 5px; }
+button.row-del:hover { background: #cf5249; }
+button.row-under { background: #6a6f77; padding: 5px 10px; }
+button.row-under:hover { background: #7d838c; }
+button.danger { background: #b5443b; }
+button.danger:hover { background: #cf5249; }
+button.warn { background: #b9892f; }
+button.warn:hover { background: #d39e3a; }
 main { padding: 10px 14px 40px; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #2c3036; vertical-align: middle; }

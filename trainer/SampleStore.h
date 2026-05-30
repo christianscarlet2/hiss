@@ -26,6 +26,10 @@ public:
 	bool GetImage(int id, std::vector<unsigned char> *out);
 	bool Save(int id, const CStringA &text);               // write png + .gt.txt
 	int SaveAllPending();                                  // returns count saved
+	bool Delete(int id);                                   // remove one row
+	void ClearAll();                                       // remove all rows
+	int ClearUnder(int id);                                // remove every row below this one
+	int DeleteDuplicates();                                // remove >=97% identical crops
 
 private:
 	CRITICAL_SECTION _cs;

@@ -183,6 +183,46 @@ void CTrainerServer::HandleClient(SOCKET client)
 		return;
 	}
 
+	// API: delete one sample.
+	if (path.CompareNoCase("/api/sample/delete") == 0) {
+		int id = atoi(QueryValue(query, "id"));
+		bool ok = (p_sample_store != NULL && id > 0 && p_sample_store->Delete(id));
+		CStringA body;
+		body.Format("{\"ok\":%s}", ok ? "true" : "false");
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	// API: clear every sample.
+	if (path.CompareNoCase("/api/samples/clear") == 0) {
+		if (p_sample_store != NULL) p_sample_store->ClearAll();
+		CStringA response = Response("{\"ok\":true}", "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	// API: clear every sample below the given one.
+	if (path.CompareNoCase("/api/sample/clearunder") == 0) {
+		int id = atoi(QueryValue(query, "id"));
+		int removed = (p_sample_store != NULL && id > 0) ? p_sample_store->ClearUnder(id) : 0;
+		CStringA body;
+		body.Format("{\"removed\":%d}", removed);
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	// API: delete near-duplicate (>=97% identical) crops.
+	if (path.CompareNoCase("/api/samples/dedup") == 0) {
+		int removed = (p_sample_store != NULL) ? p_sample_store->DeleteDuplicates() : 0;
+		CStringA body;
+		body.Format("{\"removed\":%d}", removed);
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
 	// Static page.
 	if (path.CompareNoCase("/") == 0 || path.CompareNoCase("/trainer") == 0 || path.CompareNoCase("/trainer/") == 0) {
 		ServeFile(client, "trainer.html");

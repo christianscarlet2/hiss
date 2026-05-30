@@ -17,17 +17,41 @@ IDI_TRAINER             ICON                    "res\\trainer.ico"
 
 /////////////////////////////////////////////////////////////////////////////
 // Dialog
-IDD_TRAINER_DIALOG DIALOGEX 0, 0, 300, 110
+IDD_TRAINER_DIALOG DIALOGEX 0, 0, 360, 262
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX
 CAPTION "Tesseract Trainer"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
-    PUSHBUTTON      "Load Tablemap...",IDC_LOAD_TM,7,7,90,16
-    PUSHBUTTON      "Connect (click a window)",IDC_CONNECT,103,7,110,16
-    PUSHBUTTON      "Open Table",IDC_OPEN_TABLE,219,7,74,16
-    PUSHBUTTON      "Start",IDC_STARTSTOP,7,31,90,16
-    CONTROL         "Ignore bad scrapes",IDC_IGNORE_BAD,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,103,34,110,10
-    LTEXT           "Idle.",IDC_STATUS,7,58,286,44
+    PUSHBUTTON      "Load Tablemap...",IDC_LOAD_TM,7,7,80,16
+    PUSHBUTTON      "Connect (click a window)",IDC_CONNECT,91,7,104,16
+    PUSHBUTTON      "Open Table",IDC_OPEN_TABLE,199,7,66,16
+    PUSHBUTTON      "Clear Training Files",IDC_CLEAR_TRAINING,269,7,84,16
+    PUSHBUTTON      "Start",IDC_STARTSTOP,7,28,60,16
+    CONTROL         "Ignore bad scrapes",IDC_IGNORE_BAD,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,73,32,120,10
+
+    GROUPBOX        "Image Processing (OCR)",IDC_STATIC,7,50,346,96
+    LTEXT           "Transform:",IDC_STATIC,14,65,40,8
+    COMBOBOX        IDC_TRANSFORM,58,63,90,60,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    CONTROL         "Use default",IDC_USE_DEFAULT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,160,65,70,10
+    LTEXT           "Threshold:",IDC_STATIC,14,85,40,8
+    EDITTEXT        IDC_THRESHOLD,58,83,30,14,ES_AUTOHSCROLL | ES_NUMBER
+    CONTROL         "",IDC_THRESHOLD_SPIN,"msctls_updown32",UDS_SETBUDDYINT | UDS_ARROWKEYS | UDS_NOTHOUSANDS,88,83,11,14
+    LTEXT           "Mode:",IDC_STATIC,110,85,24,8
+    COMBOBOX        IDC_MATCH_MODE,136,83,100,120,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    CONTROL         "Use cropping",IDC_USE_CROP,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,244,85,90,10
+    LTEXT           "Crop %:",IDC_STATIC,14,105,40,8
+    EDITTEXT        IDC_CROP_SIZE,58,103,30,14,ES_AUTOHSCROLL | ES_NUMBER
+    CONTROL         "",IDC_CROP_SPIN,"msctls_updown32",UDS_SETBUDDYINT | UDS_ARROWKEYS | UDS_NOTHOUSANDS,88,103,11,14
+    LTEXT           "Sharpen %:",IDC_STATIC,110,105,44,8
+    EDITTEXT        IDC_SHARPEN,156,103,30,14,ES_AUTOHSCROLL | ES_NUMBER
+    CONTROL         "",IDC_SHARPEN_SPIN,"msctls_updown32",UDS_SETBUDDYINT | UDS_ARROWKEYS | UDS_NOTHOUSANDS,186,103,11,14
+
+    GROUPBOX        "OCR Preview (selected region)",IDC_STATIC,7,150,346,64
+    CONTROL         "",IDC_OCR_PREVIEW,"Static",SS_BLACKFRAME,14,164,210,42
+    LTEXT           "Result:",IDC_STATIC,232,166,30,8
+    EDITTEXT        IDC_OCR_RESULT,232,178,114,14,ES_AUTOHSCROLL | ES_READONLY
+
+    LTEXT           "Idle.",IDC_STATUS,7,220,346,36
 END
 
 /////////////////////////////////////////////////////////////////////////////

@@ -187,3 +187,78 @@ int CSampleStore::SaveAllPending()
 	LeaveCriticalSection(&_cs);
 	return count;
 }
+
+bool CSampleStore::Delete(int id)
+{
+	bool found = false;
+	EnterCriticalSection(&_cs);
+	for (size_t i = 0; i < _samples.size(); ++i) {
+		if (_samples[i].id == id) {
+			_samples.erase(_samples.begin() + i);
+			found = true;
+			break;
+		}
+	}
+	LeaveCriticalSection(&_cs);
+	return found;
+}
+
+void CSampleStore::ClearAll()
+{
+	EnterCriticalSection(&_cs);
+	_samples.clear();
+	LeaveCriticalSection(&_cs);
+}
+
+int CSampleStore::ClearUnder(int id)
+{
+	int removed = 0;
+	EnterCriticalSection(&_cs);
+	for (size_t i = 0; i < _samples.size(); ++i) {
+		if (_samples[i].id == id) {
+			removed = (int)(_samples.size() - (i + 1));
+			_samples.erase(_samples.begin() + (i + 1), _samples.end());
+			break;
+		}
+	}
+	LeaveCriticalSection(&_cs);
+	return removed;
+}
+
+int CSampleStore::DeleteDuplicates()
+{
+	int removed = 0;
+	EnterCriticalSection(&_cs);
+	size_t n = _samples.size();
+	// Build a normalized grayscale signature per sample (decoded once).
+	std::vector<cv::Mat> sig(n);
+	for (size_t i = 0; i < n; ++i) {
+		if (_samples[i].png.empty()) continue;
+		cv::Mat raw(1, (int)_samples[i].png.size(), CV_8UC1, (void *)&_samples[i].png[0]);
+		cv::Mat img = cv::imdecode(raw, cv::IMREAD_GRAYSCALE);
+		if (!img.empty()) {
+			cv::resize(img, sig[i], cv::Size(64, 32), 0, 0, cv::INTER_AREA);
+		}
+	}
+	std::vector<bool> drop(n, false);
+	for (size_t i = 0; i < n; ++i) {
+		if (drop[i] || sig[i].empty()) continue;
+		for (size_t j = i + 1; j < n; ++j) {
+			if (drop[j] || sig[j].empty()) continue;
+			cv::Mat diff;
+			cv::absdiff(sig[i], sig[j], diff);
+			double similarity = 1.0 - (cv::mean(diff)[0] / 255.0);
+			if (similarity >= 0.97) {   // same or >=97% identical
+				drop[j] = true;
+			}
+		}
+	}
+	for (size_t i = n; i-- > 0; ) {
+		if (drop[i]) {
+			_samples.erase(_samples.begin() + i);
+			++removed;
+		}
+	}
+	LeaveCriticalSection(&_cs);
+	return removed;
+}

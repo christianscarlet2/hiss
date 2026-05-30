@@ -3,8 +3,12 @@
 #include "TrainerDlg.h"
 #include "TrainerServer.h"
 #include "TrainerWebWindow.h"
+#include "ScreenshotView.h"
 #include "SampleStore.h"
 #include "WindowCapture.h"
+
+using namespace cv;
+using namespace tesseract;
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -13,7 +17,21 @@
 #define WM_TRAINER_ATTACH   (WM_APP + 1)
 #define TRAINER_TIMER       1
 const UINT kCaptureIntervalMs = 150;
-const int  kMinOcrConfidence = 55;   // below this, "ignore bad scrapes" drops it
+const int  kMinOcrConfidence = 55;
+
+struct PsmEntry { const char *label; int value; };
+static const PsmEntry kPsmModes[] = {
+	{ "Single block", PSM_SINGLE_BLOCK },
+	{ "Single line", PSM_SINGLE_LINE },
+	{ "Single word", PSM_SINGLE_WORD },
+	{ "Single char", PSM_SINGLE_CHAR },
+	{ "Sparse text", PSM_SPARSE_TEXT },
+	{ "Sparse text + OSD", PSM_SPARSE_TEXT_OSD },
+	{ "Auto", PSM_AUTO },
+	{ "Single column", PSM_SINGLE_COLUMN },
+};
+static const int kNumPsmModes = sizeof(kPsmModes) / sizeof(kPsmModes[0]);
+static const int kDefaultPsmIndex = 7;   // Single column
 
 CTrainerDlg *CTrainerDlg::s_instance = NULL;
 
@@ -23,10 +41,12 @@ CTrainerDlg::CTrainerDlg(CWnd *pParent)
 	_attached = NULL;
 	_capturing = false;
 	_mouse_hook = NULL;
+	_frame = NULL;
+	_frame_w = _frame_h = 0;
+	_selected = -1;
 	_server = NULL;
 	_web = NULL;
-	_ocr = NULL;
-	_ocr_ready = false;
+	_screenshot = NULL;
 	_icon = NULL;
 }
 
@@ -37,6 +57,15 @@ CTrainerDlg::~CTrainerDlg()
 void CTrainerDlg::DoDataExchange(CDataExchange *pDX)
 {
 	CDialog::DoDataExchange(pDX);
+	DDX_Control(pDX, IDC_TRANSFORM, m_transform);
+	DDX_Control(pDX, IDC_MATCH_MODE, m_matchMode);
+	DDX_Control(pDX, IDC_THRESHOLD, m_threshold);
+	DDX_Control(pDX, IDC_THRESHOLD_SPIN, m_thresholdSpin);
+	DDX_Control(pDX, IDC_CROP_SIZE, m_cropSize);
+	DDX_Control(pDX, IDC_CROP_SPIN, m_cropSpin);
+	DDX_Control(pDX, IDC_SHARPEN, m_sharpen);
+	DDX_Control(pDX, IDC_SHARPEN_SPIN, m_sharpenSpin);
+	DDX_Control(pDX, IDC_OCR_RESULT, m_ocrResult);
 }
 
 BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
@@ -44,39 +73,64 @@ BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_BN_CLICKED(IDC_CONNECT, &CTrainerDlg::OnBnClickedConnect)
 	ON_BN_CLICKED(IDC_STARTSTOP, &CTrainerDlg::OnBnClickedStartStop)
 	ON_BN_CLICKED(IDC_OPEN_TABLE, &CTrainerDlg::OnBnClickedOpenTable)
+	ON_BN_CLICKED(IDC_CLEAR_TRAINING, &CTrainerDlg::OnBnClickedClearTraining)
 	ON_WM_TIMER()
 	ON_WM_DESTROY()
 	ON_MESSAGE(WM_TRAINER_ATTACH, &CTrainerDlg::OnAttachWindow)
+	ON_MESSAGE(WM_TRAINER_REGION_SELECTED, &CTrainerDlg::OnRegionSelected)
 END_MESSAGE_MAP()
+
+void CTrainerDlg::PopulateModeCombos()
+{
+	m_transform.AddString("AutoOcr0");
+	m_transform.AddString("AutoOcr1");
+	m_transform.SetCurSel(0);
+
+	for (int i = 0; i < kNumPsmModes; ++i) {
+		int item = m_matchMode.AddString(kPsmModes[i].label);
+		m_matchMode.SetItemData(item, (DWORD_PTR)kPsmModes[i].value);
+	}
+	m_matchMode.SetCurSel(kDefaultPsmIndex);
+}
 
 BOOL CTrainerDlg::OnInitDialog()
 {
 	CDialog::OnInitDialog();
 
 	_icon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
-	if (_icon != NULL) {
-		SetIcon(_icon, TRUE);
-		SetIcon(_icon, FALSE);
-	}
+	if (_icon != NULL) { SetIcon(_icon, TRUE); SetIcon(_icon, FALSE); }
 
-	// In-memory sample store shared with the HTTP server.
 	if (p_sample_store == NULL) {
 		p_sample_store = new CSampleStore();
 	}
-
-	// Local HTTP server for the WebView2 table.
 	_server = new CTrainerServer();
 	if (_server->Start()) {
 		p_trainer_server = _server;
 	}
 
-	// Tesseract with the user's model for OCR pre-fill.
-	_ocr = new tesseract::TessBaseAPI();
-	_ocr_ready = (_ocr->Init("tessdata", "my_model") == 0);
+	bool ocr_ok = _ocr.Init("tessdata", "my_model");
+
+	PopulateModeCombos();
+
+	// Defaults (mirror Vision's disable_ocr_and_clear_all).
+	CheckDlgButton(IDC_USE_DEFAULT, BST_CHECKED);
+	m_threshold.SetWindowText("100");
+	m_thresholdSpin.SetRange(0, 300);
+	m_thresholdSpin.SetPos(100);
+	m_thresholdSpin.SetBuddy(&m_threshold);
+	CheckDlgButton(IDC_USE_CROP, BST_UNCHECKED);
+	m_cropSize.SetWindowText("30");
+	m_cropSpin.SetRange(1, 100);
+	m_cropSpin.SetPos(30);
+	m_cropSpin.SetBuddy(&m_cropSize);
+	m_sharpen.SetWindowText("100");
+	m_sharpenSpin.SetRange(0, 500);
+	m_sharpenSpin.SetPos(100);
+	m_sharpenSpin.SetBuddy(&m_sharpen);
 
 	CString status;
 	status.Format("Ready. OCR model: %s. Server: %s.\nLoad a tablemap, then Connect and click a window.",
-		_ocr_ready ? "my_model" : "FAILED (check tessdata\\my_model)",
+		ocr_ok ? "my_model" : "FAILED (check tessdata\\my_model)",
 		(_server != NULL && _server->port() != 0) ? "running" : "FAILED");
 	SetStatus(status);
 	return TRUE;
@@ -102,6 +156,7 @@ void CTrainerDlg::OnBnClickedLoadTm()
 	_last.assign(_regions.size(), std::vector<BYTE>());
 	_committed.assign(_regions.size(), std::vector<BYTE>());
 	_have_baseline.assign(_regions.size(), false);
+	_selected = _regions.empty() ? -1 : 0;
 
 	CString status;
 	status.Format("Loaded %d balance region(s) (p0balance..p8balance).", (int)_regions.size());
@@ -113,14 +168,13 @@ LRESULT CALLBACK CTrainerDlg::LowLevelMouseProc(int code, WPARAM wParam, LPARAM 
 	if (code == HC_ACTION && wParam == WM_LBUTTONDOWN && s_instance != NULL) {
 		MSLLHOOKSTRUCT *info = (MSLLHOOKSTRUCT *)lParam;
 		POINT pt = info->pt;
-		// Disarm and hand off to the dialog; swallow this click.
 		HHOOK hook = s_instance->_mouse_hook;
 		s_instance->_mouse_hook = NULL;
 		if (hook != NULL) {
 			UnhookWindowsHookEx(hook);
 		}
 		s_instance->PostMessage(WM_TRAINER_ATTACH, (WPARAM)pt.x, (LPARAM)pt.y);
-		return 1;   // do not deliver the click to the clicked window
+		return 1;
 	}
 	return CallNextHookEx(NULL, code, wParam, lParam);
 }
@@ -128,7 +182,7 @@ LRESULT CALLBACK CTrainerDlg::LowLevelMouseProc(int code, WPARAM wParam, LPARAM 
 void CTrainerDlg::OnBnClickedConnect()
 {
 	if (_mouse_hook != NULL) {
-		return;   // already arming
+		return;
 	}
 	s_instance = this;
 	_mouse_hook = SetWindowsHookEx(WH_MOUSE_LL, LowLevelMouseProc, AfxGetInstanceHandle(), 0);
@@ -149,25 +203,43 @@ LRESULT CTrainerDlg::OnAttachWindow(WPARAM wParam, LPARAM lParam)
 	if (target != NULL) {
 		target = ::GetAncestor(target, GA_ROOT);
 	}
-	// Don't attach to our own windows.
 	HWND self_root = ::GetAncestor(GetSafeHwnd(), GA_ROOT);
 	HWND web_root = (_web != NULL && ::IsWindow(_web->GetSafeHwnd())) ? ::GetAncestor(_web->GetSafeHwnd(), GA_ROOT) : NULL;
-	if (target == NULL || target == self_root || (web_root != NULL && target == web_root)) {
+	HWND shot_root = (_screenshot != NULL && ::IsWindow(_screenshot->GetSafeHwnd())) ? ::GetAncestor(_screenshot->GetSafeHwnd(), GA_ROOT) : NULL;
+	if (target == NULL || target == self_root
+		|| (web_root != NULL && target == web_root)
+		|| (shot_root != NULL && target == shot_root)) {
 		SetStatus("Ignored a click on the trainer's own window. Click Connect and pick the table.");
 		return 0;
 	}
 
 	_attached = target;
-	// Reset per-region baselines so the first stable values aren't treated as changes.
 	for (size_t i = 0; i < _have_baseline.size(); ++i) {
 		_have_baseline[i] = false;
 	}
 
+	// Open the screenshot view and start the always-on frame timer.
+	if (_screenshot == NULL) {
+		_screenshot = new CScreenshotView();
+		_screenshot->Create(this);
+	}
+	SetTimer(TRAINER_TIMER, kCaptureIntervalMs, NULL);
+
 	char title[256] = { 0 };
 	::GetWindowTextA(target, title, sizeof(title) - 1);
 	CString status;
-	status.Format("Connected to: %s\nClick Start to begin capturing.", title);
+	status.Format("Connected to: %s\nScreenshot view open. Click a region to preview; Start to capture.", title);
 	SetStatus(status);
+	return 0;
+}
+
+LRESULT CTrainerDlg::OnRegionSelected(WPARAM wParam, LPARAM lParam)
+{
+	int idx = (int)wParam;
+	if (idx >= 0 && idx < (int)_regions.size()) {
+		_selected = idx;
+		UpdatePreview();
+	}
 	return 0;
 }
 
@@ -183,13 +255,14 @@ void CTrainerDlg::OnBnClickedStartStop()
 	}
 	_capturing = !_capturing;
 	if (_capturing) {
-		SetTimer(TRAINER_TIMER, kCaptureIntervalMs, NULL);
+		for (size_t i = 0; i < _have_baseline.size(); ++i) {
+			_have_baseline[i] = false;   // capture changes from now on
+		}
 		SetDlgItemText(IDC_STARTSTOP, "Stop");
 		SetStatus("Capturing... change balances on the table to generate samples.");
 	} else {
-		KillTimer(TRAINER_TIMER);
 		SetDlgItemText(IDC_STARTSTOP, "Start");
-		SetStatus("Stopped.");
+		SetStatus("Stopped (screenshot view still live).");
 	}
 }
 
@@ -209,6 +282,53 @@ void CTrainerDlg::OnBnClickedOpenTable()
 	}
 }
 
+void CTrainerDlg::OnBnClickedClearTraining()
+{
+	if (AfxMessageBox("Delete ALL files in the training\\ folder?", MB_YESNO | MB_ICONWARNING) != IDYES) {
+		return;
+	}
+	char path[MAX_PATH] = { 0 };
+	::GetModuleFileName(NULL, path, MAX_PATH);
+	char *last = strrchr(path, '\\');
+	if (last != NULL) *(last + 1) = '\0';
+	CString dir = CString(path) + "training\\";
+
+	CString pattern = dir + "*.*";
+	WIN32_FIND_DATA fd;
+	HANDLE h = FindFirstFile(pattern, &fd);
+	int deleted = 0;
+	if (h != INVALID_HANDLE_VALUE) {
+		do {
+			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+				CString f = dir + fd.cFileName;
+				if (DeleteFile(f)) ++deleted;
+			}
+		} while (FindNextFile(h, &fd));
+		FindClose(h);
+	}
+	CString status;
+	status.Format("Deleted %d file(s) from %s", deleted, dir.GetString());
+	SetStatus(status);
+}
+
+STrainerOcrSettings CTrainerDlg::ReadSettings()
+{
+	STrainerOcrSettings s = DefaultOcrSettings();
+	s.use_default = (IsDlgButtonChecked(IDC_USE_DEFAULT) == BST_CHECKED);
+	CString t;
+	m_threshold.GetWindowText(t); s.threshold = atoi(t);
+	int sel = m_matchMode.GetCurSel();
+	s.page_seg_mode = (sel >= 0) ? (int)m_matchMode.GetItemData(sel) : (int)PSM_SINGLE_COLUMN;
+	s.use_cropping = (IsDlgButtonChecked(IDC_USE_CROP) == BST_CHECKED);
+	m_cropSize.GetWindowText(t); s.crop_size = atoi(t);
+	m_sharpen.GetWindowText(t); s.sharpen = atoi(t);
+	int ti = m_transform.GetCurSel();
+	CString tr;
+	if (ti >= 0) m_transform.GetLBText(ti, tr);
+	s.transform = tr.IsEmpty() ? CString("AutoOcr0") : tr;
+	return s;
+}
+
 void CTrainerDlg::OnTimer(UINT_PTR nIDEvent)
 {
 	if (nIDEvent == TRAINER_TIMER) {
@@ -217,7 +337,6 @@ void CTrainerDlg::OnTimer(UINT_PTR nIDEvent)
 	CDialog::OnTimer(nIDEvent);
 }
 
-// Crop region rect from a 32-bit DIB bitmap into a top-down BGRA buffer.
 static bool CropRegionBgra(HBITMAP bmp, int bmpW, int bmpH, RECT r,
 	std::vector<BYTE> *out, int *outW, int *outH)
 {
@@ -230,7 +349,6 @@ static bool CropRegionBgra(HBITMAP bmp, int bmpW, int bmpH, RECT r,
 	if (w < 2 || h < 2) {
 		return false;
 	}
-
 	HDC hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL);
 	HDC hdc_src = CreateCompatibleDC(hdcScreen);
 	HBITMAP old_src = (HBITMAP)SelectObject(hdc_src, bmp);
@@ -256,40 +374,8 @@ static bool CropRegionBgra(HBITMAP bmp, int bmpW, int bmpH, RECT r,
 	SelectObject(hdc_src, old_src);
 	DeleteDC(hdc_src);
 	DeleteDC(hdcScreen);
-
-	*outW = w;
-	*outH = h;
+	*outW = w; *outH = h;
 	return true;
-}
-
-bool CTrainerDlg::LooksBlank(const cv::Mat &bgr)
-{
-	cv::Mat gray;
-	cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
-	double mn = 0, mx = 0;
-	cv::minMaxLoc(gray, &mn, &mx);
-	return (mx - mn) < 25.0;   // near-uniform = empty seat / no value
-}
-
-CStringA CTrainerDlg::OcrCrop(const cv::Mat &bgr, int *mean_conf)
-{
-	*mean_conf = 0;
-	if (!_ocr_ready || _ocr == NULL) {
-		return "";
-	}
-	cv::Mat gray;
-	cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
-	_ocr->SetPageSegMode(tesseract::PSM_SINGLE_LINE);
-	_ocr->SetImage(gray.data, gray.cols, gray.rows, 1, (int)gray.step);
-	_ocr->Recognize(0);
-	char *text = _ocr->GetUTF8Text();
-	CStringA result(text != NULL ? text : "");
-	if (text != NULL) {
-		delete[] text;
-	}
-	*mean_conf = _ocr->MeanTextConf();
-	result.Trim(" \r\n\t");
-	return result;
 }
 
 void CTrainerDlg::CaptureTick()
@@ -308,70 +394,148 @@ void CTrainerDlg::CaptureTick()
 		if (bmp != NULL) DeleteObject(bmp);
 		return;
 	}
+	if (_frame != NULL) DeleteObject(_frame);
+	_frame = bmp;
+	_frame_w = bw;
+	_frame_h = bh;
 
-	bool ignore_bad = (IsDlgButtonChecked(IDC_IGNORE_BAD) == BST_CHECKED);
+	if (_screenshot != NULL && ::IsWindow(_screenshot->GetSafeHwnd())) {
+		_screenshot->UpdateFrame(_frame, bw, bh, _regions, _selected);
+	}
 
-	for (size_t i = 0; i < _regions.size(); ++i) {
-		std::vector<BYTE> cur;
-		int w = 0, h = 0;
-		if (!CropRegionBgra(bmp, bw, bh, _regions[i].rect, &cur, &w, &h)) {
-			continue;
-		}
-
-		if (!_have_baseline[i]) {
-			_last[i] = cur;
-			_committed[i] = cur;
-			_have_baseline[i] = true;
-			continue;
-		}
-		if (cur != _last[i]) {
-			_last[i] = cur;     // still changing/animating — wait for it to settle
-			continue;
-		}
-		// Stable this tick. Snapshot only if it differs from the last committed value.
-		if (cur == _committed[i]) {
-			continue;
-		}
-		_committed[i] = cur;
-
-		// Build a BGR Mat for OCR + PNG encoding.
-		cv::Mat bgra((int)h, (int)w, CV_8UC4, &cur[0]);
-		cv::Mat bgr;
-		cv::cvtColor(bgra, bgr, cv::COLOR_BGRA2BGR);
-
-		int conf = 0;
-		CStringA guess = OcrCrop(bgr, &conf);
-
-		if (ignore_bad) {
-			if (guess.IsEmpty() || conf < kMinOcrConfidence || LooksBlank(bgr)) {
-				continue;   // drop bad scrape
+	if (_capturing) {
+		bool ignore_bad = (IsDlgButtonChecked(IDC_IGNORE_BAD) == BST_CHECKED);
+		STrainerOcrSettings settings = ReadSettings();
+		for (size_t i = 0; i < _regions.size(); ++i) {
+			std::vector<BYTE> cur;
+			int w = 0, h = 0;
+			if (!CropRegionBgra(_frame, bw, bh, _regions[i].rect, &cur, &w, &h)) {
+				continue;
 			}
-		}
+			if (!_have_baseline[i]) {
+				_last[i] = cur; _committed[i] = cur; _have_baseline[i] = true;
+				continue;
+			}
+			if (cur != _last[i]) { _last[i] = cur; continue; }   // still settling
+			if (cur == _committed[i]) { continue; }
+			_committed[i] = cur;
 
-		std::vector<unsigned char> png;
-		std::vector<int> params;
-		params.push_back(cv::IMWRITE_PNG_COMPRESSION);
-		params.push_back(3);
-		if (!cv::imencode(".png", bgr, png, params) || png.empty()) {
-			continue;
-		}
-		if (p_sample_store != NULL) {
-			p_sample_store->Add(CStringA(_regions[i].name), png, guess);
+			Mat bgra((int)h, (int)w, CV_8UC4, &cur[0]);
+			Mat bgr;
+			cvtColor(bgra, bgr, COLOR_BGRA2BGR);
+
+			Mat preview; CString text; int conf = 0;
+			_ocr.Run(bgr, settings, _regions[i].name, &preview, &text, &conf);
+
+			if (text.IsEmpty()) {
+				continue;   // completely empty OCR — never add
+			}
+			if (ignore_bad && conf < kMinOcrConfidence) {
+				continue;
+			}
+			std::vector<unsigned char> png;
+			std::vector<int> params;
+			params.push_back(IMWRITE_PNG_COMPRESSION);
+			params.push_back(3);
+			if (!imencode(".png", bgr, png, params) || png.empty()) {
+				continue;
+			}
+			if (p_sample_store != NULL) {
+				p_sample_store->Add(CStringA(_regions[i].name), png, CStringA(text));
+			}
 		}
 	}
 
-	DeleteObject(bmp);
+	UpdatePreview();
+}
+
+void CTrainerDlg::ClearPreview()
+{
+	CWnd *frame = GetDlgItem(IDC_OCR_PREVIEW);
+	if (frame != NULL) {
+		CClientDC dc(frame);
+		CRect rc; frame->GetClientRect(&rc);
+		dc.FillSolidRect(&rc, RGB(0, 0, 0));
+	}
+}
+
+void CTrainerDlg::DrawMatToStatic(int ctrl_id, const Mat &bgr)
+{
+	CWnd *frame = GetDlgItem(ctrl_id);
+	if (frame == NULL || bgr.empty()) {
+		return;
+	}
+	Mat bgra;
+	cvtColor(bgr, bgra, COLOR_BGR2BGRA);   // 32bpp = always DWORD-aligned rows
+
+	CRect rc;
+	frame->GetClientRect(&rc);
+	CClientDC dc(frame);
+	dc.FillSolidRect(&rc, RGB(0, 0, 0));
+
+	BITMAPINFO bi;
+	ZeroMemory(&bi, sizeof(bi));
+	bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
+	bi.bmiHeader.biWidth = bgra.cols;
+	bi.bmiHeader.biHeight = -bgra.rows;   // top-down
+	bi.bmiHeader.biPlanes = 1;
+	bi.bmiHeader.biBitCount = 32;
+	bi.bmiHeader.biCompression = BI_RGB;
+
+	// Fit inside the frame, preserving aspect ratio.
+	double scale = min((double)rc.Width() / bgra.cols, (double)rc.Height() / bgra.rows);
+	if (scale <= 0) scale = 1.0;
+	int dw = (int)(bgra.cols * scale);
+	int dh = (int)(bgra.rows * scale);
+	int ox = (rc.Width() - dw) / 2;
+	int oy = (rc.Height() - dh) / 2;
+
+	SetStretchBltMode(dc.GetSafeHdc(), COLORONCOLOR);
+	StretchDIBits(dc.GetSafeHdc(), ox, oy, dw, dh, 0, 0, bgra.cols, bgra.rows,
+		bgra.data, &bi, DIB_RGB_COLORS, SRCCOPY);
+}
+
+void CTrainerDlg::UpdatePreview()
+{
+	if (_selected < 0 || _selected >= (int)_regions.size() || _frame == NULL) {
+		return;
+	}
+	std::vector<BYTE> cur;
+	int w = 0, h = 0;
+	if (!CropRegionBgra(_frame, _frame_w, _frame_h, _regions[_selected].rect, &cur, &w, &h)) {
+		return;
+	}
+	Mat bgra((int)h, (int)w, CV_8UC4, &cur[0]);
+	Mat bgr;
+	cvtColor(bgra, bgr, COLOR_BGRA2BGR);
+
+	Mat preview; CString text; int conf = 0;
+	_ocr.Run(bgr, ReadSettings(), _regions[_selected].name, &preview, &text, &conf);
+
+	if (text.IsEmpty() || preview.empty()) {
+		ClearPreview();
+		CString r; r.Format("%s: (empty)", _regions[_selected].name.GetString());
+		m_ocrResult.SetWindowText(r);
+		return;
+	}
+	DrawMatToStatic(IDC_OCR_PREVIEW, preview);
+	CString r;
+	r.Format("%s = \"%s\"  (conf %d)", _regions[_selected].name.GetString(), text.GetString(), conf);
+	m_ocrResult.SetWindowText(r);
 }
 
 void CTrainerDlg::OnDestroy()
 {
-	if (_capturing) {
-		KillTimer(TRAINER_TIMER);
-		_capturing = false;
-	}
+	KillTimer(TRAINER_TIMER);
+	_capturing = false;
 	if (_mouse_hook != NULL) {
 		UnhookWindowsHookEx(_mouse_hook);
 		_mouse_hook = NULL;
+	}
+	if (_screenshot != NULL) {
+		_screenshot->DestroyWindow();
+		delete _screenshot;
+		_screenshot = NULL;
 	}
 	if (_web != NULL) {
 		_web->DestroyWindow();
@@ -384,10 +548,9 @@ void CTrainerDlg::OnDestroy()
 		delete _server;
 		_server = NULL;
 	}
-	if (_ocr != NULL) {
-		_ocr->End();
-		delete _ocr;
-		_ocr = NULL;
+	if (_frame != NULL) {
+		DeleteObject(_frame);
+		_frame = NULL;
 	}
 	if (p_sample_store != NULL) {
 		delete p_sample_store;
