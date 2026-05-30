@@ -404,45 +404,50 @@ static Mat AddCharacterSpacing(const Mat& binary, int gap_px) {
 	if (binary.empty() || binary.channels() != 1 || gap_px <= 0)
 		return binary;
 
-	int total = binary.rows * binary.cols;
-	int white = countNonZero(binary);
-	uchar fg = (white <= total - white) ? 255 : 0;
+	try {
+		int total = binary.rows * binary.cols;
+		int white = countNonZero(binary);
+		uchar fg = (white <= total - white) ? 255 : 0;
 
-	Mat ink;
-	compare(binary, fg, ink, CMP_EQ);
-	Mat col_has_ink;
-	reduce(ink, col_has_ink, 0, REDUCE_MAX, CV_32S);
+		Mat ink;
+		compare(binary, fg, ink, CMP_EQ);
+		Mat col_has_ink;		// 1 x cols (CV_8U)
+		reduce(ink, col_has_ink, 0, REDUCE_MAX);
 
-	std::vector<std::pair<int, int>> spans;
-	bool in_char = false;
-	int start = 0;
-	for (int c = 0; c < binary.cols; c++) {
-		bool has_ink = col_has_ink.at<int>(0, c) > 0;
-		if (has_ink && !in_char) { in_char = true; start = c; }
-		else if (!has_ink && in_char) { in_char = false; spans.push_back({ start, c }); }
+		std::vector<std::pair<int, int>> spans;
+		bool in_char = false;
+		int start = 0;
+		for (int c = 0; c < binary.cols; c++) {
+			bool has_ink = col_has_ink.at<uchar>(0, c) > 0;
+			if (has_ink && !in_char) { in_char = true; start = c; }
+			else if (!has_ink && in_char) { in_char = false; spans.push_back({ start, c }); }
+		}
+		if (in_char) spans.push_back({ start, binary.cols });
+		if (spans.size() <= 1)
+			return binary;
+
+		uchar bg = static_cast<uchar>(255 - fg);
+		int extra = gap_px * static_cast<int>(spans.size() - 1);
+		Mat out(binary.rows, binary.cols + extra, binary.type(), Scalar(bg));
+
+		int read_x = 0, write_x = 0;
+		for (size_t i = 0; i < spans.size(); i++) {
+			int seg_w = spans[i].second - read_x;
+			binary(Rect(read_x, 0, seg_w, binary.rows)).copyTo(out(Rect(write_x, 0, seg_w, binary.rows)));
+			write_x += seg_w;
+			read_x = spans[i].second;
+			if (i + 1 < spans.size())
+				write_x += gap_px;
+		}
+		if (read_x < binary.cols) {
+			int seg_w = binary.cols - read_x;
+			binary(Rect(read_x, 0, seg_w, binary.rows)).copyTo(out(Rect(write_x, 0, seg_w, binary.rows)));
+		}
+		return out;
 	}
-	if (in_char) spans.push_back({ start, binary.cols });
-	if (spans.size() <= 1)
-		return binary;
-
-	uchar bg = static_cast<uchar>(255 - fg);
-	int extra = gap_px * static_cast<int>(spans.size() - 1);
-	Mat out(binary.rows, binary.cols + extra, binary.type(), Scalar(bg));
-
-	int read_x = 0, write_x = 0;
-	for (size_t i = 0; i < spans.size(); i++) {
-		int seg_w = spans[i].second - read_x;
-		binary(Rect(read_x, 0, seg_w, binary.rows)).copyTo(out(Rect(write_x, 0, seg_w, binary.rows)));
-		write_x += seg_w;
-		read_x = spans[i].second;
-		if (i + 1 < spans.size())
-			write_x += gap_px;
+	catch (const cv::Exception&) {
+		return binary;			// never let preprocessing crash OCR
 	}
-	if (read_x < binary.cols) {
-		int seg_w = binary.cols - read_x;
-		binary(Rect(read_x, 0, seg_w, binary.rows)).copyTo(out(Rect(write_x, 0, seg_w, binary.rows)));
-	}
-	return out;
 }
 
 Mat CAutoOcr::prepareImage(Mat img_orig, const SAutoOcrSettings &settings, bool binarize, int threshold, bool second_pass) {
