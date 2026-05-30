@@ -230,7 +230,7 @@ bool CBetsizeInputBox::GetI3EditRegion() {
 		  int r_height = r_iter->second.bottom - r_iter->second.top;
 		  if (r_width > 0 && r_height > 0) {
 			  area_found = true;
-			  p_auto_ocr->GetDetectTemplateResult(r_iter->second.name, "editbet", &_i3_edit_region);
+			  AutoOcr()->GetDetectTemplateResult(r_iter->second.name, "editbet", &_i3_edit_region);
 			  if (!EqualRect(&_i3_edit_region, &zero_rect))
 				  return true;
 		  }

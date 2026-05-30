@@ -159,7 +159,7 @@ bool CScraper::EvaluateRegion(CString name, CString *result) {
 			GetDIBits(hdcCompatible, r_iter->second.cur_bmp, 0, h, input.data, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
 			//imshow("Output", input);
 			//waitKey();
-			*result = p_auto_ocr->get_ocr_result(input, r_iter).GetString();
+			*result = AutoOcr()->get_ocr_result(input, r_iter).GetString();
 		}
 		else
 			trans.DoTransform(r_iter, hdcCompatible, result);
@@ -204,7 +204,7 @@ void CScraper::ScrapeButtons(CString area_name, CString needed_buttons) {
 			// Action buttons
 			if (needed_buttons == "action") {
 				for (int i = 0; i < k_max_action_buttons; i++) {
-					result = p_auto_ocr->GetDetectTemplateResult(r_iter->second.name, k_action_button_name[i], &button_region);
+					result = AutoOcr()->GetDetectTemplateResult(r_iter->second.name, k_action_button_name[i], &button_region);
 					if (result == "true") {
 						p_casino_interface->_technical_autoplayer_buttons[i].SetState(result);
 						p_casino_interface->_technical_autoplayer_buttons[i].SetLabel(k_action_button_name[i]);
@@ -232,7 +232,7 @@ void CScraper::ScrapeButtons(CString area_name, CString needed_buttons) {
 			// betpot buttons
 			if (needed_buttons == "betpot") {
 				for (int i = 0; i < k_max_betpot_buttons; i++) {
-					result = p_auto_ocr->GetDetectTemplateResult(r_iter->second.name, k_betpot_button_name[i], &button_region);
+					result = AutoOcr()->GetDetectTemplateResult(r_iter->second.name, k_betpot_button_name[i], &button_region);
 					if (result == "true") {
 						p_casino_interface->_technical_betpot_buttons[i].SetState(result);
 						//p_casino_interface->_technical_betpot_buttons[i].SetLabel(k_betpot_button_name[i]);
@@ -245,7 +245,7 @@ void CScraper::ScrapeButtons(CString area_name, CString needed_buttons) {
 					// i86X-buttons
 					CString button_name;
 					button_name.Format("spam%d", i);
-					result = p_auto_ocr->GetDetectTemplateResult(r_iter->second.name, button_name, &button_region);
+					result = AutoOcr()->GetDetectTemplateResult(r_iter->second.name, button_name, &button_region);
 					if (result == "true") {
 						p_casino_interface->_technical_i86X_spam_buttons[i].SetState(result);
 						//p_casino_interface->_technical_i86X_spam_buttons[i].SetLabel(button_name);
@@ -621,7 +621,7 @@ void CScraper::ScrapePlayerCards(int chair) {
 		int r_width = r_iter->second.right - r_iter->second.left;
 		int r_height = r_iter->second.bottom - r_iter->second.top;
 		if (r_width > 0 && r_height > 0)
-			result = p_auto_ocr->GetDetectTemplatesResult(r_iter->second.name);
+			result = AutoOcr()->GetDetectTemplatesResult(r_iter->second.name);
 		int i = 0;
 		for (auto & element : result) {
 			int card = CardString2CardNumber(element);
@@ -652,7 +652,7 @@ void CScraper::ScrapeCommonCards() {
 		int r_width = r_iter->second.right - r_iter->second.left;
 		int r_height = r_iter->second.bottom - r_iter->second.top;
 		if (r_width > 0 && r_height > 0)
-			result = p_auto_ocr->GetDetectTemplatesResult(r_iter->second.name);
+			result = AutoOcr()->GetDetectTemplatesResult(r_iter->second.name);
 		// Clear common cards first
 		for (int i = 0; i < kNumberOfCommunityCards; i++) {
 			p_table_state->CommonCards(i)->ClearValue();

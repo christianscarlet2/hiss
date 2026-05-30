@@ -1,4 +1,4 @@
-ï»¿//******************************************************************************
+//******************************************************************************
 //
 // This file is part of the OpenHoldem project
 //    Source code:           https://github.com/OpenHoldem/openholdembot/
@@ -20,6 +20,15 @@
 
 CAutoOcr *p_auto_ocr = NULL;
 
+CAutoOcr *AutoOcr() {
+	static CCritSec auto_ocr_creation_critsec;
+	CSLock lock(auto_ocr_creation_critsec);
+	if (p_auto_ocr == NULL) {
+		p_auto_ocr = new CAutoOcr;
+	}
+	return p_auto_ocr;
+}
+
 #define __HDC_HEADER 		HBITMAP		old_bitmap = NULL; \
 	HDC				hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL); \
 	HDC				hdcCompatible = CreateCompatibleDC(hdcScreen); \
@@ -40,8 +49,8 @@ CAutoOcr *p_auto_ocr = NULL;
 
 // Declare DNN-Recognizer
 //TextRecognitionModel recognizer;
-TessBaseAPI* api = new TessBaseAPI;
-TessBaseAPI* api2 = new TessBaseAPI;
+TessBaseAPI* api = NULL;
+TessBaseAPI* api2 = NULL;
 
 static CString TakeTessUtf8Text(char *text)
 {
@@ -53,42 +62,148 @@ static CString TakeTessUtf8Text(char *text)
 	return result;
 }
 
+static TessBaseAPI *SafeCreateTessBaseAPI()
+{
+	return new TessBaseAPI;
+}
+
+static int SafeTessInit(TessBaseAPI *tess)
+{
+	if (tess == NULL) {
+		return -1;
+	}
+	return tess->Init("tessdata", "eng");
+}
+
+static void SafeTessEnd(TessBaseAPI *tess)
+{
+	if (tess == NULL) {
+		return;
+	}
+	tess->End();
+}
+
+static bool SafeTessSetImageAndRecognize(TessBaseAPI *tess, const Mat &img)
+{
+	if (tess == NULL || img.empty() || img.data == NULL) {
+		return false;
+	}
+	tess->SetImage(img.data, img.cols, img.rows, img.channels(), img.step);
+	tess->Recognize(0);
+	return true;
+}
+
+static char *SafeTessGetUTF8Text(TessBaseAPI *tess)
+{
+	if (tess == NULL) {
+		return NULL;
+	}
+	return tess->GetUTF8Text();
+}
+
+static ResultIterator *SafeTessGetIterator(TessBaseAPI *tess)
+{
+	if (tess == NULL) {
+		return NULL;
+	}
+	return tess->GetIterator();
+}
+
+static bool SafeResultIteratorBoundingBox(ResultIterator *ri,
+	PageIteratorLevel level, int *x1, int *y1, int *x2, int *y2)
+{
+	if (ri == NULL) {
+		return false;
+	}
+	return ri->BoundingBox(level, x1, y1, x2, y2);
+}
+
+static bool SafeResultIteratorNext(ResultIterator *ri, PageIteratorLevel level)
+{
+	if (ri == NULL) {
+		return false;
+	}
+	return ri->Next(level);
+}
+
 //
 // Constructor and destructor
 //
 CAutoOcr::CAutoOcr() :
 	_api_initialized(false),
-	_api2_initialized(false) {
-	// New automatic OCR based on tesseract-ocr
-	// Load Tesseract text recognition network
-	if (api->Init("tessdata", "eng") == -1) {		// OEM_LSTM_ONLY
-		MessageBox(NULL, "Failed to load tessdata files.\nMake sure tessdata folder is present and/or datas are not corrupted.", "AutoOcr error", MB_OK);
-		return;
-	}
-	_api_initialized = true;
-	if (api2->Init("tessdata", "eng") == -1) {		// OEM_LSTM_ONLY
-		MessageBox(NULL, "Failed to load tessdata files.\nMake sure tessdata folder is present and/or datas are not corrupted.", "AutoOcr error", MB_OK);
-		return;
-	}
-	_api2_initialized = true;
+	_api2_initialized(false),
+	_api_init_failed(false) {
 }
 
 CAutoOcr::~CAutoOcr() {
 	// Unload network
 	if (api != NULL) {
 		if (_api_initialized) {
-			api->End();
+			SafeTessEnd(api);
 		}
 		delete api;
 		api = NULL;
 	}
 	if (api2 != NULL) {
 		if (_api2_initialized) {
-			api2->End();
+			SafeTessEnd(api2);
 		}
 		delete api2;
 		api2 = NULL;
 	}
+}
+
+bool CAutoOcr::EnsureTesseractInitialized() {
+	if (_api_initialized && _api2_initialized) {
+		return true;
+	}
+	if (_api_init_failed) {
+		return false;
+	}
+
+	char enable_tesseract_ocr[8] = {0};
+	if (GetEnvironmentVariable("HISS_ENABLE_TESSERACT_OCR", enable_tesseract_ocr, sizeof(enable_tesseract_ocr)) == 0) {
+		_api_init_failed = true;
+		return false;
+	}
+
+	// New automatic OCR based on tesseract-ocr. Load the recognition network
+	// lazily so Hiss startup does not depend on Tesseract being ready.
+	if (!_api_initialized) {
+		if (api == NULL) {
+			api = SafeCreateTessBaseAPI();
+			if (api == NULL) {
+				_api_init_failed = true;
+				MessageBox(NULL, "Failed to create Tesseract OCR instance.", "AutoOcr error", MB_OK);
+				return false;
+			}
+		}
+		if (SafeTessInit(api) == -1) {		// OEM_LSTM_ONLY
+			_api_init_failed = true;
+			MessageBox(NULL, "Failed to load tessdata files.\nMake sure tessdata folder is present and/or datas are not corrupted.", "AutoOcr error", MB_OK);
+			return false;
+		}
+		_api_initialized = true;
+	}
+
+	if (!_api2_initialized) {
+		if (api2 == NULL) {
+			api2 = SafeCreateTessBaseAPI();
+			if (api2 == NULL) {
+				_api_init_failed = true;
+				MessageBox(NULL, "Failed to create Tesseract OCR instance.", "AutoOcr error", MB_OK);
+				return false;
+			}
+		}
+		if (SafeTessInit(api2) == -1) {		// OEM_LSTM_ONLY
+			_api_init_failed = true;
+			MessageBox(NULL, "Failed to load tessdata files.\nMake sure tessdata folder is present and/or datas are not corrupted.", "AutoOcr error", MB_OK);
+			return false;
+		}
+		_api2_initialized = true;
+	}
+
+	return true;
 }
 
 
@@ -388,7 +503,7 @@ Mat CAutoOcr::prepareImage(Mat img_orig, const SAutoOcrSettings &settings, bool 
 }
 
 void CAutoOcr::process_ocr(Mat img_orig, const SAutoOcrSettings &settings, bool fast, bool second_pass) {
-	if (!_api_initialized || !_api2_initialized || img_orig.empty() || img_orig.data == NULL) {
+	if (!EnsureTesseractInitialized() || img_orig.empty() || img_orig.data == NULL) {
 		return;
 	}
 
@@ -397,16 +512,20 @@ void CAutoOcr::process_ocr(Mat img_orig, const SAutoOcrSettings &settings, bool 
 	api2->SetPageSegMode(page_seg_mode);
 	api->SetVariable("user_defined_dpi", "300");
 	api2->SetVariable("user_defined_dpi", "300");
-	api->SetImage(img_orig.data, img_orig.cols, img_orig.rows, img_orig.channels(), img_orig.step);
-	api->Recognize(0);
+	if (!SafeTessSetImageAndRecognize(api, img_orig)) {
+		_api_init_failed = true;
+		return;
+	}
 
 	if (settings.use_cropping == true) {
-		ResultIterator* ri = api->GetIterator();
+		ResultIterator* ri = SafeTessGetIterator(api);
 		PageIteratorLevel level = tesseract::RIL_WORD;
 		if (ri != 0) {
 			do {
 				int x1, y1, x2, y2;
-				ri->BoundingBox(level, &x1, &y1, &x2, &y2);
+				if (!SafeResultIteratorBoundingBox(ri, level, &x1, &y1, &x2, &y2)) {
+					continue;
+				}
 				if (x1 < 0 || y1 < 0 || x2 <= x1 || y2 <= y1 || x2 > img_orig.cols || y2 > img_orig.rows) {
 					continue;
 				}
@@ -417,25 +536,25 @@ void CAutoOcr::process_ocr(Mat img_orig, const SAutoOcrSettings &settings, bool 
 				catch (exception e) {
 					continue;
 				}
-				api2->SetImage(img_cropped.data, img_cropped.cols, img_cropped.rows, img_cropped.channels(), img_cropped.step);
-				api2->Recognize(0);
-				CString word = TakeTessUtf8Text(api2->GetUTF8Text());
+				if (!SafeTessSetImageAndRecognize(api2, img_cropped)) {
+					_api_init_failed = true;
+					return;
+				}
+				CString word = TakeTessUtf8Text(SafeTessGetUTF8Text(api2));
 				pair<Rect, CString> matchPair({ x1, y1, x2 - x1, y2 - y1 }, word);
 				if (second_pass)
 					ResultBoxes2.push_back(matchPair);
 				else
 					ResultBoxes.push_back(matchPair);
-			} while (ri->Next(level));
+			} while (SafeResultIteratorNext(ri, level));
 		}
 	}
 	else {
 		if (second_pass)
-			ResultString2 = TakeTessUtf8Text(api->GetUTF8Text());
+			ResultString2 = TakeTessUtf8Text(SafeTessGetUTF8Text(api));
 		else
-			ResultString = TakeTessUtf8Text(api->GetUTF8Text());
+			ResultString = TakeTessUtf8Text(SafeTessGetUTF8Text(api));
 	}
-	api->Clear();
-	api2->Clear();
 }
 
 CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
@@ -443,12 +562,12 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
 	// members (ResultBoxes, ResultString, bestRect, ...) are shared across
 	// calls. CScraper drives OCR from the heartbeat thread while the scraper-
 	// output dialog can drive it from the UI thread; concurrent calls were
-	// crashing inside tesseract53.dll (0xc0000005). Serialize through the
+	// crashing inside tesseract55.dll (0xc0000005). Serialize through the
 	// existing critical section.
 	CSLock ocr_lock(m_critsec);
 
 	// Return string value from image. "" when OCR failed
-	if (!_api_initialized || !_api2_initialized || img_orig.empty() || img_orig.data == NULL) {
+	if (!EnsureTesseractInitialized() || img_orig.empty() || img_orig.data == NULL) {
 		return "";
 	}
 
@@ -505,7 +624,7 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
 	}
 
 	// Clean OCR noise from unwanted chars.
-	const char* blacklist = "Â®Â©â„—â“’â„¢!%&*+;=?@Â²^Ã¦Ã†Ã‡Ã§Ã‰Ã©Ã¨ÃªÃ«Ã¯Ã®Ã­Ã¬Ã„Ã…Ã‚Ã€Ã Ã¡Ã¢Ã¤Ã¥ÃºÃ¹Ã»Ã¼Ã´Ã¶Ã²Ã±Ã‘Ã¿Ã–Ãœâ‚¬Â£Â¥â‚§Æ’~ÂªÂºÂ¿âŒÂ¬Â½Â¼Â¡Â«Â»\"`#<{([])}>|â”‚â–‘â–’â–“â”¤â•¡â•¢â•–â••â•£â•‘â•—â•â•œâ•›â”â””â”´â”¬â”œâ”€â”¼â•â•Ÿâ•šâ•”â•©â•¦â• â•â•¬â•§â•¨â•¤â•¥â•™â•˜â•’â•“â•«â•ªâ”˜â”Œâ–ˆâ–„â–Œâ–â–€Î±ÃŸÎ“Ï€Î£ÏƒÂµÏ„Î¦Î˜Î©Î´âˆÏ†Îµâˆ©â‰¡Â±â‰¥â‰¤âŒ âŒ¡Ã·â‰ˆÂ°âˆ™Â·âˆšâ¿Â²â– ";
+	const char* blacklist = "®©??™!%&*+;=?@²^æÆÇçÉéèêëïîíìÄÅÂÀàáâäåúùûüôöòñÑÿÖÜ€£¥Pƒ~ªº¿¬¬½¼¡«»\"`#<{([])}>|¦¦¦¦¦¦¦++¦¦++++++--+-+¦¦++--¦-+----++++++++¦_¦¦¯aßGpSsµtFTOd8fen=±==()÷˜°··vn²¦";
 	for (size_t i = 0; i < strlen(blacklist); i++) {
 		if (ocr_result.Find(blacklist[i]) != -1)
 			ocr_result.Remove(blacklist[i]);

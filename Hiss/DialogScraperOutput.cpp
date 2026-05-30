@@ -255,14 +255,14 @@ void CDlgScraperOutput::DoBitblt(HBITMAP bitmap, RMapCI r_iter) {
 			hdcCompat2, 0, 0, SRCCOPY );
 
 	// Output result
-	if (r_iter->second.transform[0] == 'A' && p_auto_ocr != NULL) {
+	if (r_iter->second.transform[0] == 'A') {
 		int region_width = r_iter->second.right - r_iter->second.left + 1;
 		int region_height = r_iter->second.bottom - r_iter->second.top + 1;
 		if (region_width > 0 && region_height > 0) {
 			Mat input(region_height, region_width, CV_8UC4);
 			BITMAPINFOHEADER bi = { sizeof(bi), region_width, -region_height, 1, 32, BI_RGB };
 			GetDIBits(hdcCompat1, bitmap, 0, region_height, input.data, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
-			res = p_auto_ocr->get_ocr_result(input, r_iter);
+			res = AutoOcr()->get_ocr_result(input, r_iter);
 		}
 	} else {
 		trans.DoTransform(r_iter, hdcCompat1, &res);

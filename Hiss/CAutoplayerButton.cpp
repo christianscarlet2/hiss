@@ -72,7 +72,7 @@ bool CAutoplayerButton::Click() {
 			int r_height = r_iter->second.bottom - r_iter->second.top;
 			if (r_width > 0 && r_height > 0) {
 				area_found = true;
-				p_auto_ocr->GetDetectTemplateResult(area_name, _technical_name, &button_region);
+				AutoOcr()->GetDetectTemplateResult(area_name, _technical_name, &button_region);
 				if (!EqualRect(&button_region, &zero_rect))
 					break;
 			}

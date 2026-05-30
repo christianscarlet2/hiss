@@ -92,7 +92,7 @@
       <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
-      <AdditionalDependencies>psapi.lib;$(OutDir)String_Functions.lib;$(OutDir)window_Functions.lib;archive.lib;bz2d.lib;gif.lib;jpeg.lib;libcurl-d.lib;libcrypto.lib;libpng16.lib;libsharpyuv.lib;libwebp.lib;libwebpmux.lib;lz4.lib;lzma.lib;openjp2.lib;tiffd.lib;zlibd.lib;zstd.lib;leptonica-1.83.1d.lib;tesseract53d.lib;opencv_world480d.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>psapi.lib;$(OutDir)String_Functions.lib;$(OutDir)window_Functions.lib;archive.lib;bz2d.lib;gif.lib;jpeg.lib;libcurl-d.lib;libcrypto.lib;libpng16.lib;libsharpyuv.lib;libwebp.lib;libwebpmux.lib;lz4.lib;lzma.lib;openjp2.lib;tiffd.lib;zlibd.lib;zstd.lib;leptonica-1.83.1d.lib;tesseract55d.lib;opencv_world480d.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)Vision.exe</OutputFile>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
@@ -135,7 +135,7 @@
       <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
-      <AdditionalDependencies>psapi.lib;$(OutDir)String_Functions.lib;$(OutDir)window_Functions.lib;archive.lib;bz2d.lib;gif.lib;jpeg.lib;libcurl-d.lib;libcrypto.lib;libpng16.lib;libsharpyuv.lib;libwebp.lib;libwebpmux.lib;lz4.lib;lzma.lib;openjp2.lib;tiffd.lib;zlibd.lib;zstd.lib;leptonica-1.83.1d.lib;tesseract53.lib;opencv_world480.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>psapi.lib;$(OutDir)String_Functions.lib;$(OutDir)window_Functions.lib;archive.lib;bz2d.lib;gif.lib;jpeg.lib;libcurl-d.lib;libcrypto.lib;libpng16.lib;libsharpyuv.lib;libwebp.lib;libwebpmux.lib;lz4.lib;lzma.lib;openjp2.lib;tiffd.lib;zlibd.lib;zstd.lib;leptonica-1.83.1d.lib;tesseract55.lib;opencv_world480.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)Vision.exe</OutputFile>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
@@ -308,7 +308,7 @@
     <Content Include="..\lib\leptonica-1.83.1.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\lib\tesseract53.dll">
+    <Content Include="..\lib\tesseract55.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="..\lib\opencv_world480.dll">
@@ -370,7 +370,7 @@
     <Content Include="..\lib\leptonica-1.83.1d.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\lib\tesseract53d.dll">
+    <Content Include="..\lib\tesseract55d.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="..\lib\opencv_world480d.dll">

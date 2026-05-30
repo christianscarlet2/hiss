@@ -50,6 +50,7 @@ private:
 	bool ReadColorPresetColor(int index, COLORREF *color);
 	bool ReadColorPresetSamplePoint(int index, RMapCI region, int *rel_x, int *rel_y);
 	bool TryColorPresetSettings(Mat img_orig, RMapCI region, SAutoOcrSettings *settings);
+	bool EnsureTesseractInitialized();
 
 	string trim(string str) {
 		return regex_replace(str, regex("\\s"), "");
@@ -68,6 +69,7 @@ private:
 	int         _leaking_GDI_objects;
 	bool        _api_initialized;
 	bool        _api2_initialized;
+	bool        _api_init_failed;
 
 	vector<pair<Rect, CString>> ResultBoxes, ResultBoxes2;
 	CString ResultString, ResultString2;
@@ -77,5 +79,6 @@ private:
 };
 
 extern CAutoOcr *p_auto_ocr;
+CAutoOcr *AutoOcr();
 
 #endif // INC_CAUTO_OCR_H

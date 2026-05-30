@@ -98,9 +98,8 @@ void InstantiateAllSingletons() {
   write_log(Preferences()->debug_singletons(), "[Singletons] Going to create CScraper\n");
   assert(!p_scraper); 
   p_scraper = new CScraper;
-  write_log(Preferences()->debug_singletons(), "[Singletons] Going to create CAutoOcr\n");
+  write_log(Preferences()->debug_singletons(), "[Singletons] Deferring CAutoOcr creation\n");
   assert(!p_auto_ocr);
-  p_auto_ocr = new CAutoOcr;
   write_log(Preferences()->debug_singletons(), "[Singletons] Going to create CLazyScraper\n");
   assert(!p_lazyscraper);
   p_lazyscraper = new CLazyScraper;
