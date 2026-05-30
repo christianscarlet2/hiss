@@ -287,13 +287,15 @@ int CTablemap::LoadTablemap(const CString _fname) {
   assert(_fname != "");
 	_filename = _fname;
 	_filepath = _fname;
+	int linenum = 1;
+	try
+	{
 	// Open the selected file
 	CFile cfFile(_filename, CFile::modeRead | CFile::shareDenyNone);
 	// Load its contents into a CArchive
 	CArchive ar (&cfFile, CArchive::load);
 	// Read the first line of the CArchive into strLine
 	strLine = "";
-	int linenum = 1;
 	// Failed, so quit
 	if (!ar.ReadString(strLine))
 	{
@@ -957,6 +959,19 @@ int CTablemap::LoadTablemap(const CString _fname) {
   InitNChairs();
 	_valid = true;
 	return SUCCESS;
+	}
+	catch (CException *e)
+	{
+		char reason[512] = { 0 };
+		e->GetErrorMessage(reason, sizeof(reason));
+		e->Delete();
+		CString detail;
+		detail.Format("Exception while reading the tablemap near line %d:\n%s\n\nFile: %s\n\n"
+			"(This is usually a file/read problem rather than a tablemap-content error.)",
+			linenum, reason, _filename.GetString());
+		MessageBox_Error_Warning(detail, "Table map load error");
+		return ERR_SYNTAX;
+	}
 }
 
 void CTablemap::WriteSectionHeader(CArchive& ar, CString header)
