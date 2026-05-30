@@ -62,8 +62,8 @@ const char* tplMatchModes[kNumberOfMatchModes] = {
 	"TM_CCOEFF",
 	"TM_CCOEFF_NORMED"
 };
-const int kNumberOfTesseractPageSegModes = 7;
-const int kDefaultTesseractPageSegModeIndex = 2;
+const int kNumberOfTesseractPageSegModes = 8;
+const int kDefaultTesseractPageSegModeIndex = 7;	// "Single column" (PSM 4)
 const int tessPageSegModes[kNumberOfTesseractPageSegModes] = {
 	tesseract::PSM_SINGLE_BLOCK,
 	tesseract::PSM_SINGLE_LINE,
@@ -71,7 +71,8 @@ const int tessPageSegModes[kNumberOfTesseractPageSegModes] = {
 	tesseract::PSM_SINGLE_CHAR,
 	tesseract::PSM_SPARSE_TEXT,
 	tesseract::PSM_SPARSE_TEXT_OSD,
-	tesseract::PSM_AUTO
+	tesseract::PSM_AUTO,
+	tesseract::PSM_SINGLE_COLUMN
 };
 const char* tessPageSegModeLabels[kNumberOfTesseractPageSegModes] = {
 	"Single block",
@@ -80,8 +81,18 @@ const char* tessPageSegModeLabels[kNumberOfTesseractPageSegModes] = {
 	"Single char",
 	"Sparse text",
 	"Sparse text + OSD",
-	"Auto"
+	"Auto",
+	"Single column"
 };
+
+// Restrict Tesseract output to characters that actually occur in tables
+// (letters, digits, dot and underscore). Keeps recognition from inventing
+// punctuation/symbols without breaking text regions such as player names.
+const char* kTesseractCharWhitelist =
+	"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._";
+
+// Extra upscale applied to the prepared image before binarization / OCR.
+const int kOcrScaleUpFactor = 3;
 
 static bool ControlHasFocus(CWnd &control)
 {
@@ -502,6 +513,7 @@ BOOL CDlgTableMap::OnInitDialog()
 	m_CropSpin.SetPos(crop_size);
 	m_CropSpin.SetBuddy(&m_CropSize);
 
+	LoadImageProcessingPresetsFromRegistry();
 	RefreshImageProcessingPresetList();
 
 	m_Zoom.AddString("None");
@@ -1863,13 +1875,15 @@ Mat CDlgTableMap::prepareImage(Mat img_orig, bool binarize, int threshold, bool 
 	Mat img_resized;
 	int basewidth, hsize;
 	float wpercent;
+	// Scale up uniformly (aspect ratio preserved) so Tesseract sees larger
+	// glyphs. Binarization below then runs on the upscaled image.
 	if (img_orig.cols > img_orig.rows * 1.25) {
-		basewidth = MAT_WIDTH;
+		basewidth = MAT_WIDTH * kOcrScaleUpFactor;
 		wpercent = (basewidth / static_cast<float>(img_orig.cols));
 		hsize = static_cast<int>(static_cast<float>(img_orig.rows) * wpercent);
 	}
 	else {
-		hsize = MAT_HEIGHT;
+		hsize = MAT_HEIGHT * kOcrScaleUpFactor;
 		wpercent = (hsize / static_cast<float>(img_orig.rows));
 		basewidth = static_cast<int>(static_cast<float>(img_orig.cols) * wpercent);
 	}
@@ -2005,6 +2019,7 @@ void CDlgTableMap::process_ocr(Mat img_orig, bool fast, bool second_pass) {
 	tesseract::PageSegMode page_seg_mode = static_cast<tesseract::PageSegMode>(SelectedTesseractPageSegMode());
 	api->SetPageSegMode(page_seg_mode);
 	api->SetVariable("user_defined_dpi", "300");
+	api->SetVariable("tessedit_char_whitelist", kTesseractCharWhitelist);
 	api->SetImage(img_orig.data, img_orig.cols, img_orig.rows, img_orig.channels(), img_orig.step);
 	api->Recognize(0);
 
@@ -2026,6 +2041,7 @@ void CDlgTableMap::process_ocr(Mat img_orig, bool fast, bool second_pass) {
 				}
 				api2->SetPageSegMode(page_seg_mode);
 				api2->SetVariable("user_defined_dpi", "300");
+				api2->SetVariable("tessedit_char_whitelist", kTesseractCharWhitelist);
 				api2->SetImage(img_cropped.data, img_cropped.cols, img_cropped.rows, img_cropped.channels(), img_cropped.step);
 				api2->Recognize(0);
 				word = trim(api2->GetUTF8Text()).c_str();
@@ -6604,6 +6620,75 @@ void CDlgTableMap::ApplyImageProcessingPreset(const ImageProcessingPreset& prese
 	Invalidate(false);
 }
 
+// Image processing presets are not tied to a single tablemap, so they are
+// stored in the per-user Vision registry hive (same key as registry.cpp).
+// One record per line: name|use_default|threshold|use_cropping|crop_size|match_mode_label
+void CDlgTableMap::SaveImageProcessingPresetsToRegistry()
+{
+	CString blob;
+	for (size_t i = 0; i < m_ImageProcessingPresets.size(); ++i) {
+		const ImageProcessingPreset& p = m_ImageProcessingPresets[i];
+		CString record;
+		record.Format("%s|%d|%d|%d|%d|%s\n",
+			p.name.GetString(),
+			p.use_default ? 1 : 0,
+			p.threshold,
+			p.use_cropping ? 1 : 0,
+			p.crop_size,
+			p.match_mode_label.GetString());
+		blob += record;
+	}
+
+	HKEY hKey;
+	DWORD dwDisp;
+	if (RegCreateKeyEx(HKEY_CURRENT_USER, "Software\\Hiss\\Vision", 0, NULL,
+		REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &hKey, &dwDisp) == ERROR_SUCCESS) {
+		RegSetValueEx(hKey, "image_processing_presets", 0, REG_SZ,
+			(LPBYTE)(LPCSTR)blob, (DWORD)(blob.GetLength() + 1));
+		RegCloseKey(hKey);
+	}
+}
+
+void CDlgTableMap::LoadImageProcessingPresetsFromRegistry()
+{
+	m_ImageProcessingPresets.clear();
+
+	HKEY hKey;
+	if (RegOpenKeyEx(HKEY_CURRENT_USER, "Software\\Hiss\\Vision", 0, KEY_READ, &hKey) != ERROR_SUCCESS)
+		return;
+
+	DWORD dwType = 0, cbData = 0;
+	if (RegQueryValueEx(hKey, "image_processing_presets", NULL, &dwType, NULL, &cbData) == ERROR_SUCCESS
+		&& dwType == REG_SZ && cbData > 0) {
+		std::vector<char> buffer(cbData + 1, 0);
+		if (RegQueryValueEx(hKey, "image_processing_presets", NULL, &dwType,
+			(LPBYTE)&buffer[0], &cbData) == ERROR_SUCCESS) {
+			buffer[cbData] = 0;
+			CString blob(&buffer[0]);
+
+			int line_pos = 0;
+			CString record = blob.Tokenize("\n", line_pos);
+			while (!record.IsEmpty()) {
+				ImageProcessingPreset preset;
+				int field_pos = 0;
+				preset.name = record.Tokenize("|", field_pos);
+				preset.use_default = atoi(record.Tokenize("|", field_pos)) != 0;
+				preset.threshold = atoi(record.Tokenize("|", field_pos));
+				preset.use_cropping = atoi(record.Tokenize("|", field_pos)) != 0;
+				preset.crop_size = atoi(record.Tokenize("|", field_pos));
+				preset.match_mode_label = record.Tokenize("|", field_pos);
+
+				if (!preset.name.IsEmpty())
+					m_ImageProcessingPresets.push_back(preset);
+
+				record = blob.Tokenize("\n", line_pos);
+			}
+		}
+	}
+
+	RegCloseKey(hKey);
+}
+
 void CDlgTableMap::RefreshImageProcessingPresetList()
 {
 	m_ImageProcessingPreset.ResetContent();
@@ -6633,6 +6718,7 @@ void CDlgTableMap::AddImageProcessingPreset()
 	}
 
 	m_ImageProcessingPresets.push_back(preset);
+	SaveImageProcessingPresetsToRegistry();
 	RefreshImageProcessingPresetList();
 	m_ImageProcessingPreset.SetWindowText(preset.name);
 }
@@ -6645,6 +6731,7 @@ void CDlgTableMap::DeleteSelectedImageProcessingPreset()
 	}
 
 	m_ImageProcessingPresets.erase(m_ImageProcessingPresets.begin() + selected);
+	SaveImageProcessingPresetsToRegistry();
 	RefreshImageProcessingPresetList();
 }
 
