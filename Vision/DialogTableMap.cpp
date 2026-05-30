@@ -101,8 +101,14 @@ const int kOcrViewScaleFactor = 1;
 
 // Unsharp-mask sharpening applied before binarization so thin digit strokes
 // stay distinct (e.g. a "7" is not flattened into a "1"). Amount 0 disables it.
-const double kOcrSharpenAmount = 1.0;
+// The amount is configurable per region (Sharpen % field); this is the default
+// used when a region has none set. Sigma (radius) stays fixed.
+const int kDefaultSharpenPercent = 100;	// 100% == 1.0x unsharp amount
 const double kOcrSharpenSigma = 1.0;
+
+// Blank columns inserted between adjacent characters so glyphs that sit too
+// close (e.g. "17.71") get separated before OCR. Value is in upscaled pixels.
+const int kOcrCharSpacingPx = 6;
 
 static bool ControlHasFocus(CWnd &control)
 {
@@ -374,6 +380,9 @@ BEGIN_MESSAGE_MAP(CDlgTableMap, CDialog)
 	ON_EN_CHANGE(IDC_CROP_SIZE, &CDlgTableMap::OnOcrRegionChange)
 	ON_EN_KILLFOCUS(IDC_CROP_SIZE, &CDlgTableMap::OnOcrRegionChange)
 	ON_NOTIFY(UDN_DELTAPOS, IDC_CROP_SPIN, &CDlgTableMap::OnDeltaposCropSpin)
+	ON_EN_CHANGE(IDC_SHARPEN, &CDlgTableMap::OnOcrRegionChange)
+	ON_EN_KILLFOCUS(IDC_SHARPEN, &CDlgTableMap::OnOcrRegionChange)
+	ON_NOTIFY(UDN_DELTAPOS, IDC_SHARPEN_SPIN, &CDlgTableMap::OnDeltaposSharpenSpin)
 	ON_BN_CLICKED(IDC_IMAGE_PROC_PRESET_ADD, &CDlgTableMap::OnBnClickedImageProcessingPresetAdd)
 	ON_BN_CLICKED(IDC_IMAGE_PROC_PRESET_DELETE, &CDlgTableMap::OnBnClickedImageProcessingPresetDelete)
 	ON_BN_CLICKED(IDC_IMAGE_PROC_PRESET_LOAD, &CDlgTableMap::OnBnClickedImageProcessingPresetLoad)
@@ -402,7 +411,7 @@ BOOL CDlgTableMap::PreTranslateMessage(MSG* pMsg)
 			|| hwndFocus == m_Alpha || hwndFocus == m_Red || hwndFocus == m_Green || hwndFocus == m_Blue)
 			OnRegionChange();
 
-		else if (hwndFocus == m_Threshold || hwndFocus == m_CropSize)
+		else if (hwndFocus == m_Threshold || hwndFocus == m_CropSize || hwndFocus == m_Sharpen)
 			OnOcrRegionChange();
 	}
 
@@ -524,6 +533,12 @@ BOOL CDlgTableMap::OnInitDialog()
 	m_CropSpin.SetRange(1, 100);
 	m_CropSpin.SetPos(crop_size);
 	m_CropSpin.SetBuddy(&m_CropSize);
+
+	sharpen = kDefaultSharpenPercent;
+	m_Sharpen.SetWindowText(to_string(sharpen).c_str());
+	m_SharpenSpin.SetRange(0, 500);
+	m_SharpenSpin.SetPos(sharpen);
+	m_SharpenSpin.SetBuddy(&m_Sharpen);
 
 	LoadImageProcessingPresetsFromRegistry();
 	RefreshImageProcessingPresetList();
@@ -1224,6 +1239,9 @@ void CDlgTableMap::OnOcrRegionChange()
 			sel_region->second.use_default = m_UseDefault.GetCheck();
 			m_Threshold.GetWindowText(text);
 			sel_region->second.threshold = strtoul(text.GetString(), NULL, 10);
+
+			m_Sharpen.GetWindowText(text);
+			sel_region->second.sharpen = strtoul(text.GetString(), NULL, 10);
 		}
 		if (sel_region->second.transform.Find("A", 0) != -1) {
 			sel_region->second.use_cropping = m_UseCrop.GetCheck();
@@ -1328,6 +1346,9 @@ void CDlgTableMap::OnRegionChange()
 			m_Threshold.GetWindowText(text);
 			sel_region->second.threshold = strtoul(text.GetString(), NULL, 10);
 
+			m_Sharpen.GetWindowText(text);
+			sel_region->second.sharpen = strtoul(text.GetString(), NULL, 10);
+
 			sel_region->second.use_cropping = m_UseCrop.GetCheck();
 			m_CropSize.GetWindowText(text);
 			sel_region->second.crop_size = strtoul(text.GetString(), NULL, 10);
@@ -1344,6 +1365,9 @@ void CDlgTableMap::OnRegionChange()
 			sel_region->second.use_default = m_UseDefault.GetCheck();
 			m_Threshold.GetWindowText(text);
 			sel_region->second.threshold = strtoul(text.GetString(), NULL, 10);
+
+			m_Sharpen.GetWindowText(text);
+			sel_region->second.sharpen = strtoul(text.GetString(), NULL, 10);
 		}
 	}
 
@@ -1861,6 +1885,11 @@ void CDlgTableMap::disable_ocr_and_clear_all(void)
 	m_CropSpin.EnableWindow(false);
 	crop_size = 30;
 	m_CropSize.SetWindowText(to_string(crop_size).c_str());
+
+	m_Sharpen.EnableWindow(false);
+	m_SharpenSpin.EnableWindow(false);
+	sharpen = kDefaultSharpenPercent;
+	m_Sharpen.SetWindowText(to_string(sharpen).c_str());
 }
 
 
@@ -1878,6 +1907,58 @@ Mat CDlgTableMap::binarize_array_opencv(Mat image, int threshold) {
 	Mat ret;
 	cv::threshold(blur, ret, 250, 255, THRESH_BINARY); // 250 threshold
 	return ret;
+}
+
+// Widen the gaps between characters on a binarized image. Builds a vertical
+// projection profile, finds the empty columns that already separate glyphs, and
+// inserts gap_px blank columns into each gap. Because it only widens existing
+// gaps it never splits a single glyph. Works for either text polarity (it picks
+// the minority pixel value as "ink").
+static Mat AddCharacterSpacing(const Mat& binary, int gap_px) {
+	if (binary.empty() || binary.channels() != 1 || gap_px <= 0)
+		return binary;
+
+	// Foreground (ink) is the less frequent of black/white.
+	int total = binary.rows * binary.cols;
+	int white = countNonZero(binary);
+	uchar fg = (white <= total - white) ? 255 : 0;
+
+	Mat ink;					// 255 where a pixel is ink, regardless of polarity
+	compare(binary, fg, ink, CMP_EQ);
+	Mat col_has_ink;			// 1 x cols, >0 where the column contains ink
+	reduce(ink, col_has_ink, 0, REDUCE_MAX, CV_32S);
+
+	// Collect character column spans [start, end).
+	std::vector<std::pair<int, int>> spans;
+	bool in_char = false;
+	int start = 0;
+	for (int c = 0; c < binary.cols; c++) {
+		bool has_ink = col_has_ink.at<int>(0, c) > 0;
+		if (has_ink && !in_char) { in_char = true; start = c; }
+		else if (!has_ink && in_char) { in_char = false; spans.push_back({ start, c }); }
+	}
+	if (in_char) spans.push_back({ start, binary.cols });
+	if (spans.size() <= 1)
+		return binary;			// nothing to separate
+
+	uchar bg = static_cast<uchar>(255 - fg);
+	int extra = gap_px * static_cast<int>(spans.size() - 1);
+	Mat out(binary.rows, binary.cols + extra, binary.type(), Scalar(bg));
+
+	int read_x = 0, write_x = 0;
+	for (size_t i = 0; i < spans.size(); i++) {
+		int seg_w = spans[i].second - read_x;	// leading gap (if any) + this glyph
+		binary(Rect(read_x, 0, seg_w, binary.rows)).copyTo(out(Rect(write_x, 0, seg_w, binary.rows)));
+		write_x += seg_w;
+		read_x = spans[i].second;
+		if (i + 1 < spans.size())
+			write_x += gap_px;					// blank columns between glyphs
+	}
+	if (read_x < binary.cols) {					// trailing gap after the last glyph
+		int seg_w = binary.cols - read_x;
+		binary(Rect(read_x, 0, seg_w, binary.rows)).copyTo(out(Rect(write_x, 0, seg_w, binary.rows)));
+	}
+	return out;
 }
 
 // Downscale the preview image from the OCR working scale (kOcrScaleUpFactor)
@@ -1915,15 +1996,21 @@ Mat CDlgTableMap::prepareImage(Mat img_orig, bool binarize, int threshold, bool 
 	resize(img_resized, img_resized, Size(basewidth, hsize), INTER_LANCZOS4);
 
 	// Sharpen (unsharp mask) before binarization so thin strokes stay crisp and
-	// digits like 7 don't get rounded into 1.
-	if (kOcrSharpenAmount > 0.0) {
+	// digits like 7 don't get rounded into 1. Amount comes from the per-region
+	// Sharpen % field (100 = 1.0x); 0 disables it.
+	CString sharpen_txt;
+	m_Sharpen.GetWindowText(sharpen_txt);
+	double sharpen_amount = atoi(sharpen_txt) / 100.0;
+	if (sharpen_amount > 0.0) {
 		Mat blurred;
 		GaussianBlur(img_resized, blurred, Size(0, 0), kOcrSharpenSigma);
-		addWeighted(img_resized, 1.0 + kOcrSharpenAmount, blurred, -kOcrSharpenAmount, 0, img_resized);
+		addWeighted(img_resized, 1.0 + sharpen_amount, blurred, -sharpen_amount, 0, img_resized);
 	}
 
 	if (binarize) {
 		img_resized = binarize_array_opencv(img_resized, threshold);
+		// Separate characters that sit too close so OCR can tell them apart.
+		img_resized = AddCharacterSpacing(img_resized, kOcrCharSpacingPx);
 	}
 
 	Mat img_bounded = img_resized.clone();
@@ -2051,7 +2138,8 @@ void CDlgTableMap::process_ocr(Mat img_orig, bool fast, bool second_pass) {
 	tesseract::PageSegMode page_seg_mode = static_cast<tesseract::PageSegMode>(SelectedTesseractPageSegMode());
 	api->SetPageSegMode(page_seg_mode);
 	api->SetVariable("user_defined_dpi", "300");
-	api->SetVariable("tessedit_char_whitelist", kTesseractCharWhitelist);
+	api->SetVariable("tessedit_char_whitelist",
+		m_ocr_char_whitelist.IsEmpty() ? kTesseractCharWhitelist : m_ocr_char_whitelist.GetString());
 	api->SetImage(img_orig.data, img_orig.cols, img_orig.rows, img_orig.channels(), img_orig.step);
 	api->Recognize(0);
 
@@ -2073,7 +2161,8 @@ void CDlgTableMap::process_ocr(Mat img_orig, bool fast, bool second_pass) {
 				}
 				api2->SetPageSegMode(page_seg_mode);
 				api2->SetVariable("user_defined_dpi", "300");
-				api2->SetVariable("tessedit_char_whitelist", kTesseractCharWhitelist);
+				api2->SetVariable("tessedit_char_whitelist",
+					m_ocr_char_whitelist.IsEmpty() ? kTesseractCharWhitelist : m_ocr_char_whitelist.GetString());
 				api2->SetImage(img_cropped.data, img_cropped.cols, img_cropped.rows, img_cropped.channels(), img_cropped.step);
 				api2->Recognize(0);
 				word = trim(api2->GetUTF8Text()).c_str();
@@ -2126,6 +2215,13 @@ CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast,
 	CString txt;
 	m_Threshold.GetWindowText(txt);
 	threshold = atoi(txt);
+
+	// Balance fields are pure numbers ("2.28 BB"); restrict OCR to digits and a
+	// dot so letters/symbols can't sneak in. Other regions keep the general set.
+	if (CString(region_name).MakeLower().Find("balance") != -1)
+		m_ocr_char_whitelist = "0123456789.";
+	else
+		m_ocr_char_whitelist = kTesseractCharWhitelist;
 
 	if (transform == "AutoOcr0") {
 		img_resized = prepareImage(img_orig, true, threshold);
@@ -2861,6 +2957,11 @@ void CDlgTableMap::update_ocr_r$_display(void) {
 			text.Format("%d", sel_region->second.crop_size);
 			SetEditTextUnlessFocused(m_CropSize, text);
 		}
+
+		text.Format("%d", sel_region->second.sharpen >= 0 ? sel_region->second.sharpen : kDefaultSharpenPercent);
+		SetEditTextUnlessFocused(m_Sharpen, text);
+		m_Sharpen.EnableWindow(true);
+		m_SharpenSpin.EnableWindow(true);
 	}
 
 	if (m_UseCrop.GetCheck()) {
@@ -3067,6 +3168,11 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 			text.Format("%d", sel_region->second.crop_size);
 			SetEditTextUnlessFocused(m_CropSize, text);
 		}
+
+		text.Format("%d", sel_region->second.sharpen >= 0 ? sel_region->second.sharpen : kDefaultSharpenPercent);
+		SetEditTextUnlessFocused(m_Sharpen, text);
+		m_Sharpen.EnableWindow(true);
+		m_SharpenSpin.EnableWindow(true);
 	}
 
 	if (m_UseCrop.GetCheck()) {
@@ -3571,6 +3677,36 @@ void CDlgTableMap::OnDeltaposCropSpin(NMHDR* pNMHDR, LRESULT* pResult)
 	ignore_changes = true;
 	m_CropSize.SetWindowText(text);
 	m_CropSpin.SetPos(new_crop_size);
+	ignore_changes = false;
+
+	OnOcrRegionChange();
+
+	*pResult = 0;
+}
+
+void CDlgTableMap::OnDeltaposSharpenSpin(NMHDR* pNMHDR, LRESULT* pResult)
+{
+	LPNMUPDOWN			pNMUpDown = reinterpret_cast<LPNMUPDOWN>(pNMHDR);
+	RMapI				sel_region = p_tablemap->set_r$()->end();
+
+	CString				sel_text = "", type_text = "";
+	HTREEITEM type_node = GetTextSelItemAndRecordType(&sel_text, &type_text);
+
+	// Get iterator for selected region record
+	sel_region = p_tablemap->set_r$()->find(sel_text.GetString());
+
+	// Exit if we can't find the region record
+	if (sel_region == p_tablemap->r$()->end())
+		return;
+
+	if (ignore_changes)  return;
+
+	int new_sharpen = max(0, min(500, pNMUpDown->iPos + pNMUpDown->iDelta));
+	CString text;
+	text.Format("%d", new_sharpen);
+	ignore_changes = true;
+	m_Sharpen.SetWindowText(text);
+	m_SharpenSpin.SetPos(new_sharpen);
 	ignore_changes = false;
 
 	OnOcrRegionChange();

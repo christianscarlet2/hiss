@@ -395,6 +395,56 @@ bool CAutoOcr::TryColorPresetSettings(Mat img_orig, RMapCI region, SAutoOcrSetti
 	return true;
 }
 
+// Widen the gaps between characters on a binarized image so glyphs that sit too
+// close (e.g. "17.71") get separated before OCR. Builds a vertical projection
+// profile and inserts gap_px blank columns into each existing gap; because it
+// only widens existing gaps it never splits a single glyph. Picks the minority
+// pixel value as "ink" so it works for either text polarity.
+static Mat AddCharacterSpacing(const Mat& binary, int gap_px) {
+	if (binary.empty() || binary.channels() != 1 || gap_px <= 0)
+		return binary;
+
+	int total = binary.rows * binary.cols;
+	int white = countNonZero(binary);
+	uchar fg = (white <= total - white) ? 255 : 0;
+
+	Mat ink;
+	compare(binary, fg, ink, CMP_EQ);
+	Mat col_has_ink;
+	reduce(ink, col_has_ink, 0, REDUCE_MAX, CV_32S);
+
+	std::vector<std::pair<int, int>> spans;
+	bool in_char = false;
+	int start = 0;
+	for (int c = 0; c < binary.cols; c++) {
+		bool has_ink = col_has_ink.at<int>(0, c) > 0;
+		if (has_ink && !in_char) { in_char = true; start = c; }
+		else if (!has_ink && in_char) { in_char = false; spans.push_back({ start, c }); }
+	}
+	if (in_char) spans.push_back({ start, binary.cols });
+	if (spans.size() <= 1)
+		return binary;
+
+	uchar bg = static_cast<uchar>(255 - fg);
+	int extra = gap_px * static_cast<int>(spans.size() - 1);
+	Mat out(binary.rows, binary.cols + extra, binary.type(), Scalar(bg));
+
+	int read_x = 0, write_x = 0;
+	for (size_t i = 0; i < spans.size(); i++) {
+		int seg_w = spans[i].second - read_x;
+		binary(Rect(read_x, 0, seg_w, binary.rows)).copyTo(out(Rect(write_x, 0, seg_w, binary.rows)));
+		write_x += seg_w;
+		read_x = spans[i].second;
+		if (i + 1 < spans.size())
+			write_x += gap_px;
+	}
+	if (read_x < binary.cols) {
+		int seg_w = binary.cols - read_x;
+		binary(Rect(read_x, 0, seg_w, binary.rows)).copyTo(out(Rect(write_x, 0, seg_w, binary.rows)));
+	}
+	return out;
+}
+
 Mat CAutoOcr::prepareImage(Mat img_orig, const SAutoOcrSettings &settings, bool binarize, int threshold, bool second_pass) {
 	// Prepare image for OCR
 	//  !!  Do not change those settings and values !!   //
@@ -416,17 +466,22 @@ Mat CAutoOcr::prepareImage(Mat img_orig, const SAutoOcrSettings &settings, bool 
 	resize(img_resized, img_resized, Size(basewidth, hsize), INTER_LANCZOS4);
 
 	// Sharpen (unsharp mask) before binarization so thin strokes stay crisp and
-	// digits like 7 don't get rounded into 1.
+	// digits like 7 don't get rounded into 1. Amount comes from the region's
+	// Sharpen % setting (100 = 1.0x); 0 disables it.
 	{
-		const double sharpen_amount = 1.0;
+		const double sharpen_amount = settings.sharpen / 100.0;
 		const double sharpen_sigma = 1.0;
-		Mat blurred;
-		GaussianBlur(img_resized, blurred, Size(0, 0), sharpen_sigma);
-		addWeighted(img_resized, 1.0 + sharpen_amount, blurred, -sharpen_amount, 0, img_resized);
+		if (sharpen_amount > 0.0) {
+			Mat blurred;
+			GaussianBlur(img_resized, blurred, Size(0, 0), sharpen_sigma);
+			addWeighted(img_resized, 1.0 + sharpen_amount, blurred, -sharpen_amount, 0, img_resized);
+		}
 	}
 
 	if (binarize) {
 		img_resized = binarize_array_opencv(img_resized, threshold);
+		// Separate characters that sit too close so OCR can tell them apart.
+		img_resized = AddCharacterSpacing(img_resized, 2);
 	}
 	Mat img_bounded = img_resized.clone();
 
@@ -536,6 +591,15 @@ void CAutoOcr::process_ocr(Mat img_orig, const SAutoOcrSettings &settings, bool 
 	api2->SetPageSegMode(page_seg_mode);
 	api->SetVariable("user_defined_dpi", "300");
 	api2->SetVariable("user_defined_dpi", "300");
+	if (!settings.whitelist.IsEmpty()) {
+		api->SetVariable("tessedit_char_whitelist", settings.whitelist.GetString());
+		api2->SetVariable("tessedit_char_whitelist", settings.whitelist.GetString());
+	}
+	else {
+		// Clear any whitelist left over from a previous balance region.
+		api->SetVariable("tessedit_char_whitelist", "");
+		api2->SetVariable("tessedit_char_whitelist", "");
+	}
 	if (!SafeTessSetImageAndRecognize(api, img_orig)) {
 		_api_init_failed = true;
 		return;
@@ -631,6 +695,10 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
 	settings.use_cropping = region->second.use_cropping;
 	settings.crop_size = region->second.crop_size > 0 ? region->second.crop_size : 40;
 	settings.page_seg_mode = tesseract::PSM_SINGLE_WORD;
+	settings.sharpen = region->second.sharpen >= 0 ? region->second.sharpen : 100;
+	// Balance fields are pure numbers; restrict OCR to digits and a dot.
+	if (CString(region->first).MakeLower().Find("balance") != -1)
+		settings.whitelist = "0123456789.";
 	TryColorPresetSettings(img_orig, region, &settings);
 	tablemap_threshold = settings.threshold;
 

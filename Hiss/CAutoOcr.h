@@ -29,6 +29,8 @@ struct SAutoOcrSettings {
 	bool use_cropping;
 	int crop_size;
 	int page_seg_mode;
+	int sharpen;	// Unsharp-mask amount in percent (100 = 1.0x); <0 = default
+	CString whitelist;	// Tesseract char whitelist; empty = no restriction
 };
 
 class CAutoOcr : public CSpaceOptimizedGlobalObject {

@@ -57,6 +57,7 @@ protected:
 	afx_msg void OnDeltaposRadiusSpin(NMHDR *pNMHDR, LRESULT *pResult);
 	afx_msg void OnDeltaposThresholdSpin(NMHDR *pNMHDR, LRESULT *pResult);
 	afx_msg void OnDeltaposCropSpin(NMHDR *pNMHDR, LRESULT *pResult);
+	afx_msg void OnDeltaposSharpenSpin(NMHDR *pNMHDR, LRESULT *pResult);
 	afx_msg void OnBnClickedNew();
 	afx_msg void OnBnClickedDelete();
 	afx_msg void OnBnClickedEdit();
@@ -140,9 +141,9 @@ protected:
 
 	CStatic				m_BitmapFrame, m_MatFrame;
 	CStickyButton		m_Picker;
-	CSpinButtonCtrl		m_LeftSpin, m_TopSpin, m_BottomSpin, m_RightSpin, m_RadiusSpin, m_ThresholdSpin, m_CropSpin;
+	CSpinButtonCtrl		m_LeftSpin, m_TopSpin, m_BottomSpin, m_RightSpin, m_RadiusSpin, m_ThresholdSpin, m_CropSpin, m_SharpenSpin;
 	CComboBox			m_Transform, m_Zoom, m_TrackerFontSet, m_TrackerFontNum, m_TrackerCardNum;
-	CEdit				m_Alpha, m_Red, m_Green, m_Blue, m_RedAvg, m_GreenAvg, m_BlueAvg, m_Radius, m_Result, m_PixelSeparation, m_ImgProc, m_Threshold, m_CropSize;
+	CEdit				m_Alpha, m_Red, m_Green, m_Blue, m_RedAvg, m_GreenAvg, m_BlueAvg, m_Radius, m_Result, m_PixelSeparation, m_ImgProc, m_Threshold, m_CropSize, m_Sharpen;
 	CButton				m_New, m_Delete, m_Edit, m_CreateImage, m_CreateFont, m_FontPlus, m_FontMinus;
 	CButton				m_CreateGroup, m_GroupBox;
 	CComboBox			m_GroupColor;
@@ -191,6 +192,7 @@ private:
 	Mat binarize_array_opencv(Mat image, int threshold);
 	CScrollHelper* m_scrollHelper;
 	int threshold, match_mode;
+	CString m_ocr_char_whitelist;	// Tesseract whitelist for the region being OCR'd
 	bool proceed_scroll = true;
 	std::vector<ImageProcessingPreset> m_ImageProcessingPresets;
 
@@ -232,6 +234,7 @@ public:
 	Rect	bestRect, bestRect2;
 	int		region_grouping;
 	int		crop_size;
+	int		sharpen;
 
 	DECLARE_MESSAGE_MAP()
 };
