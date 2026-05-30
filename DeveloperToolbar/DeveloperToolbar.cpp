@@ -28,6 +28,7 @@
 #define IDC_OPEN_OPENHOLDEM_BUTTON 1009
 #define IDC_ALERT_TEXT 1010
 #define IDC_CLOSE_ALL_BUTTON 1011
+#define IDC_OPEN_SCRCPY_BUTTON 1012
 
 #define TIMER_WINDOW_MONITOR 2001
 
@@ -37,6 +38,7 @@
 
 static const char kWindowClassName[] = "HissDeveloperToolbar";
 static const char kAppTitle[] = "Developer Toolbar";
+static const char kScrcpyPath[] = "C:\\www\\scrcpy-win64-v4.0\\scrcpy.exe";
 static HWND g_main_window = NULL;
 static HWND g_width_edit = NULL;
 static HWND g_height_edit = NULL;
@@ -46,6 +48,7 @@ static HWND g_scale_checkbox = NULL;
 static HWND g_build_button = NULL;
 static HWND g_open_openscrape_button = NULL;
 static HWND g_open_openholdem_button = NULL;
+static HWND g_open_scrcpy_button = NULL;
 static HWND g_close_all_button = NULL;
 static HWND g_build_progress = NULL;
 static HWND g_alert_text = NULL;
@@ -984,6 +987,23 @@ static void OpenRepoExecutable(const char *exe_name, const char *display_name) {
   }
 }
 
+static void OpenExternalExecutable(const char *exe_path, const char *display_name) {
+  if (!FileExists(exe_path)) {
+    char message[512] = {0};
+    sprintf_s(message, "%s was not found:\r\n%s", display_name, exe_path);
+    MessageBox(g_main_window, message, kAppTitle, MB_OK | MB_ICONWARNING | MB_TOPMOST);
+    return;
+  }
+
+  HINSTANCE result = ShellExecute(g_main_window, "open", exe_path, NULL,
+    ParentDirectory(exe_path).c_str(), SW_SHOWNORMAL);
+  if ((INT_PTR)result <= 32) {
+    char message[256] = {0};
+    sprintf_s(message, "Could not open %s.", display_name);
+    MessageBox(g_main_window, message, kAppTitle, MB_OK | MB_ICONERROR | MB_TOPMOST);
+  }
+}
+
 static void CreateChildControls(HWND hwnd) {
   CreateWindow("STATIC", "Width",
     WS_CHILD | WS_VISIBLE,
@@ -1018,11 +1038,15 @@ static void CreateChildControls(HWND hwnd) {
 
   g_open_openholdem_button = CreateWindow("BUTTON", "Hiss",
     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-    16, 118, 160, 28, hwnd, (HMENU)IDC_OPEN_OPENHOLDEM_BUTTON, g_instance, NULL);
+    16, 118, 104, 28, hwnd, (HMENU)IDC_OPEN_OPENHOLDEM_BUTTON, g_instance, NULL);
 
   g_close_all_button = CreateWindow("BUTTON", "Close All",
     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-    186, 118, 160, 28, hwnd, (HMENU)IDC_CLOSE_ALL_BUTTON, g_instance, NULL);
+    126, 118, 104, 28, hwnd, (HMENU)IDC_CLOSE_ALL_BUTTON, g_instance, NULL);
+
+  g_open_scrcpy_button = CreateWindow("BUTTON", "Scrcpy",
+    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+    236, 118, 110, 28, hwnd, (HMENU)IDC_OPEN_SCRCPY_BUTTON, g_instance, NULL);
 
   g_build_progress = CreateWindowEx(0, PROGRESS_CLASS, "",
     WS_CHILD | WS_VISIBLE,
@@ -1063,6 +1087,10 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARA
     }
     if (LOWORD(wparam) == IDC_OPEN_OPENHOLDEM_BUTTON) {
       OpenRepoExecutable("Hiss.exe", "Hiss");
+      return 0;
+    }
+    if (LOWORD(wparam) == IDC_OPEN_SCRCPY_BUTTON) {
+      OpenExternalExecutable(kScrcpyPath, "Scrcpy");
       return 0;
     }
     if (LOWORD(wparam) == IDC_CLOSE_ALL_BUTTON) {

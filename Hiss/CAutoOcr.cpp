@@ -43,28 +43,52 @@ CAutoOcr *p_auto_ocr = NULL;
 TessBaseAPI* api = new TessBaseAPI;
 TessBaseAPI* api2 = new TessBaseAPI;
 
+static CString TakeTessUtf8Text(char *text)
+{
+	if (text == NULL) {
+		return "";
+	}
+	CString result = regex_replace(string(text), regex("\\s"), "").c_str();
+	delete[] text;
+	return result;
+}
+
 //
 // Constructor and destructor
 //
-CAutoOcr::CAutoOcr() {
+CAutoOcr::CAutoOcr() :
+	_api_initialized(false),
+	_api2_initialized(false) {
 	// New automatic OCR based on tesseract-ocr
 	// Load Tesseract text recognition network
 	if (api->Init("tessdata", "eng") == -1) {		// OEM_LSTM_ONLY
 		MessageBox(NULL, "Failed to load tessdata files.\nMake sure tessdata folder is present and/or datas are not corrupted.", "AutoOcr error", MB_OK);
 		return;
 	}
+	_api_initialized = true;
 	if (api2->Init("tessdata", "eng") == -1) {		// OEM_LSTM_ONLY
 		MessageBox(NULL, "Failed to load tessdata files.\nMake sure tessdata folder is present and/or datas are not corrupted.", "AutoOcr error", MB_OK);
 		return;
 	}
+	_api2_initialized = true;
 }
 
 CAutoOcr::~CAutoOcr() {
 	// Unload network
-	api->End();
-	delete[] api;
-	api2->End();
-	delete[] api2;
+	if (api != NULL) {
+		if (_api_initialized) {
+			api->End();
+		}
+		delete api;
+		api = NULL;
+	}
+	if (api2 != NULL) {
+		if (_api2_initialized) {
+			api2->End();
+		}
+		delete api2;
+		api2 = NULL;
+	}
 }
 
 
@@ -364,6 +388,10 @@ Mat CAutoOcr::prepareImage(Mat img_orig, const SAutoOcrSettings &settings, bool 
 }
 
 void CAutoOcr::process_ocr(Mat img_orig, const SAutoOcrSettings &settings, bool fast, bool second_pass) {
+	if (!_api_initialized || !_api2_initialized || img_orig.empty() || img_orig.data == NULL) {
+		return;
+	}
+
 	tesseract::PageSegMode page_seg_mode = static_cast<tesseract::PageSegMode>(settings.page_seg_mode);
 	api->SetPageSegMode(page_seg_mode);
 	api2->SetPageSegMode(page_seg_mode);
@@ -377,10 +405,11 @@ void CAutoOcr::process_ocr(Mat img_orig, const SAutoOcrSettings &settings, bool 
 		PageIteratorLevel level = tesseract::RIL_WORD;
 		if (ri != 0) {
 			do {
-				CString word = ri->GetUTF8Text(level);
-				float conf = ri->Confidence(level);
 				int x1, y1, x2, y2;
 				ri->BoundingBox(level, &x1, &y1, &x2, &y2);
+				if (x1 < 0 || y1 < 0 || x2 <= x1 || y2 <= y1 || x2 > img_orig.cols || y2 > img_orig.rows) {
+					continue;
+				}
 				Mat img_cropped;
 				try {
 					img_cropped = img_orig({ x1, y1, x2 - x1, y2 - y1 });
@@ -390,23 +419,23 @@ void CAutoOcr::process_ocr(Mat img_orig, const SAutoOcrSettings &settings, bool 
 				}
 				api2->SetImage(img_cropped.data, img_cropped.cols, img_cropped.rows, img_cropped.channels(), img_cropped.step);
 				api2->Recognize(0);
-				word = trim(api2->GetUTF8Text()).c_str();
+				CString word = TakeTessUtf8Text(api2->GetUTF8Text());
 				pair<Rect, CString> matchPair({ x1, y1, x2 - x1, y2 - y1 }, word);
 				if (second_pass)
 					ResultBoxes2.push_back(matchPair);
 				else
 					ResultBoxes.push_back(matchPair);
-				//printf("word: '%s';  \tconf: %.2f; BoundingBox: %d,%d,%d,%d;\n",
-				//	word, conf, x1, y1, x2, y2);
 			} while (ri->Next(level));
 		}
 	}
 	else {
 		if (second_pass)
-			ResultString2 = trim(api->GetUTF8Text()).c_str();
+			ResultString2 = TakeTessUtf8Text(api->GetUTF8Text());
 		else
-			ResultString = trim(api->GetUTF8Text()).c_str();
+			ResultString = TakeTessUtf8Text(api->GetUTF8Text());
 	}
+	api->Clear();
+	api2->Clear();
 }
 
 CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
@@ -419,6 +448,10 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
 	CSLock ocr_lock(m_critsec);
 
 	// Return string value from image. "" when OCR failed
+	if (!_api_initialized || !_api2_initialized || img_orig.empty() || img_orig.data == NULL) {
+		return "";
+	}
+
 	Mat img_resized, img_resized2;
 	ResultBoxes.clear(); ResultBoxes2.clear();
 	ResultString = "";

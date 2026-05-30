@@ -66,6 +66,8 @@ private:
 	// Counter of GDI objects (potential memorz leak)
 	// Should be 0 at end of program -- will be checked.
 	int         _leaking_GDI_objects;
+	bool        _api_initialized;
+	bool        _api2_initialized;
 
 	vector<pair<Rect, CString>> ResultBoxes, ResultBoxes2;
 	CString ResultString, ResultString2;
