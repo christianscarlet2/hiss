@@ -376,6 +376,7 @@ int CTablemap::LoadTablemap(const CString _fname) {
 	write_log(Preferences()->debug_tablemap_loader(), "[CTablemap] Loadtablemap: %s\n", _fname);
 #endif
 	CString		strLine = "", strLineType = "", token = "", s = "", e = "", hexval = "", t = "";
+	CString		parse_stage = "(start)";	// diagnostic: last step reached before an exception
 	int			  pos = 0, x = 0, y = 0;
 	// temp
 	STablemapSize      hold_size;
@@ -476,6 +477,7 @@ int CTablemap::LoadTablemap(const CString _fname) {
 		// Extract the line type
 		pos=0;
 		strLineType = strLine.Tokenize(" \t", pos);
+		parse_stage.Format("parsed line type [%s]", strLineType);
 		// Skip comment lines
 		if (strLineType.Left(2) == "//")
 			continue;
@@ -580,8 +582,9 @@ int CTablemap::LoadTablemap(const CString _fname) {
 		}
 
 		// Handle r$ lines (regions)
-		else if (strLineType.Left(2) == "r$") 
+		else if (strLineType.Left(2) == "r$")
 		{
+			parse_stage = "r$: parsing fields";
 			// name
 			hold_region.name = strLineType.Mid(2);
 
@@ -653,8 +656,12 @@ int CTablemap::LoadTablemap(const CString _fname) {
 				return ERR_SYNTAX;
 			}
 
-			// pass OCR fields for old TM format
-			token = strLine.Tokenize(" \t", pos);
+			// pass OCR fields for old TM format.
+			// NOTE: CStringT::Tokenize throws COleException(E_INVALIDARG) ("The
+			// parameter is incorrect") if it is called once pos has been set to -1
+			// (i.e. after the last token was consumed). All the trailing/optional
+			// fields below must therefore guard on (pos >= 0) before tokenizing.
+			token = (pos >= 0) ? strLine.Tokenize(" \t", pos) : CString("");
 			if (token.GetLength() == 0)
 			{
 				hold_region.use_default = true;
@@ -673,44 +680,26 @@ int CTablemap::LoadTablemap(const CString _fname) {
 			hold_region.use_default = atol(token.GetString());
 
 			// threshold
-			token = strLine.Tokenize(" \t", pos);
-			if (token.GetLength() == 0)
-			{
-				//WarnAboutGeneralTableMapError(linenum, ERR_SYNTAX);
-				//return ERR_SYNTAX;
-			}
-
+			token = (pos >= 0) ? strLine.Tokenize(" \t", pos) : CString("");
 			hold_region.threshold = atol(token.GetString());
 
 			// use cropping
-			token = strLine.Tokenize(" \t", pos);
-			if (token.GetLength() == 0)
-			{
-				//WarnAboutGeneralTableMapError(linenum, ERR_SYNTAX);
-				//return ERR_SYNTAX;
-			}
-
+			token = (pos >= 0) ? strLine.Tokenize(" \t", pos) : CString("");
 			hold_region.use_cropping = atol(token.GetString());
 
 			// crop size
-			token = strLine.Tokenize(" \t", pos);
-			if (token.GetLength() == 0)
-			{
-				//WarnAboutGeneralTableMapError(linenum, ERR_SYNTAX);
-				//return ERR_SYNTAX;
-			}
-
+			token = (pos >= 0) ? strLine.Tokenize(" \t", pos) : CString("");
 			hold_region.crop_size = atol(token.GetString());
 
 			// Tesseract page-seg mode (match_mode). Absent in old tablemaps -> -1 (use default).
-			token = strLine.Tokenize(" \t", pos);
+			token = (pos >= 0) ? strLine.Tokenize(" \t", pos) : CString("");
 			if (token.GetLength() == 0)
 				hold_region.match_mode = -1;
 			else
 				hold_region.match_mode = atol(token.GetString());
 
 			// Sharpen amount in percent. Absent in old tablemaps -> -1 (use default).
-			token = strLine.Tokenize(" \t", pos);
+			token = (pos >= 0) ? strLine.Tokenize(" \t", pos) : CString("");
 			if (token.GetLength() == 0)
 				hold_region.sharpen = -1;
 			else
@@ -722,6 +711,11 @@ int CTablemap::LoadTablemap(const CString _fname) {
 			//hold_region.flags = atol(token.GetString());
 
 	EndRegion:
+			parse_stage.Format("r$: about to insert [%s] L=%u T=%u R=%u B=%u color=%lu radius=%d transform=[%s] ud=%d thr=%d crop=%d cropsz=%d mm=%d sh=%d",
+				hold_region.name, hold_region.left, hold_region.top, hold_region.right, hold_region.bottom,
+				(unsigned long)hold_region.color, hold_region.radius, hold_region.transform,
+				(int)hold_region.use_default, hold_region.threshold, (int)hold_region.use_cropping,
+				hold_region.crop_size, hold_region.match_mode, hold_region.sharpen);
 			if (!r$_insert(hold_region))
 			{
 				RMapCI r_iter = _r$.find(hold_region.name);
@@ -732,9 +726,10 @@ int CTablemap::LoadTablemap(const CString _fname) {
 				}
 				else
 				{
-					MessageBox_Error_Warning(strLine, "ERROR adding region record");			
+					MessageBox_Error_Warning(strLine, "ERROR adding region record");
 				}
 			}
+			parse_stage = "r$: inserted OK";
 		}
 
 		// Handle t$ lines (fonts)
@@ -1103,16 +1098,16 @@ int CTablemap::LoadTablemap(const CString _fname) {
 		e->Delete();
 		CString detail;
 		detail.Format("MFC exception loading tablemap.\n\nType: %s\nOS error: %ld\nReason: %s\n"
-			"Line: %d\nLine text: >>>%s<<<\n\nFile: %s",
-			cls, oserr, reason, linenum, strLine.GetString(), _filename.GetString());
+			"Line: %d\nLine text: >>>%s<<<\nStage: %s\n\nFile: %s",
+			cls, oserr, reason, linenum, strLine.GetString(), parse_stage.GetString(), _filename.GetString());
 		ShowCopyableTextBox(detail, "Table map load error");
 		return ERR_SYNTAX;
 	}
 	catch (...)
 	{
 		CString detail;
-		detail.Format("Non-MFC exception loading tablemap.\n\nLine: %d\nLine text: >>>%s<<<\n\nFile: %s",
-			linenum, strLine.GetString(), _filename.GetString());
+		detail.Format("Non-MFC exception loading tablemap.\n\nLine: %d\nLine text: >>>%s<<<\nStage: %s\n\nFile: %s",
+			linenum, strLine.GetString(), parse_stage.GetString(), _filename.GetString());
 		ShowCopyableTextBox(detail, "Table map load error");
 		return ERR_SYNTAX;
 	}
