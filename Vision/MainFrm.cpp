@@ -56,6 +56,9 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_PREV, &CMainFrame::OnViewPrev)
 	ON_COMMAND(ID_VIEW_NEXT, &CMainFrame::OnViewNext)
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_NEXT, &CMainFrame::OnViewNext)
+	ON_COMMAND(ID_MAIN_TOOLBAR_TRAINING, &CMainFrame::OnTrainingData)
+	ON_BN_CLICKED(ID_MAIN_TOOLBAR_TRAINING, &CMainFrame::OnTrainingData)
+	ON_UPDATE_COMMAND_UI(ID_MAIN_TOOLBAR_TRAINING, &CMainFrame::OnUpdateTrainingData)
 	ON_COMMAND(ID_TOOLS_CLONEREGIONS, &CMainFrame::OnToolsCloneRegions)
 	ON_COMMAND(ID_TOOLS_SHIFTREGIONS, &CMainFrame::OnToolsShiftRegions)
 
@@ -905,10 +908,34 @@ void CMainFrame::OnViewNext()
 		BringOpenScrapeBackToFront();
 	}
 
-	else 
+	else
 	{
 		OnViewConnecttowindow();
 	}
+}
+
+void CMainFrame::OnTrainingData()
+{
+	COpenScrapeDoc *pDoc = COpenScrapeDoc::GetDocument();
+	COpenScrapeView *view = (COpenScrapeView *)GetActiveView();
+	if (view == NULL) {
+		return;
+	}
+	if (pDoc == NULL || pDoc->attached_bitmap == NULL) {
+		AfxMessageBox("Connect to a window first so there is a screenshot to capture from.",
+			MB_ICONINFORMATION);
+		return;
+	}
+	// Enter training-capture mode: region overlays hide, the user drags one box,
+	// types the value, and a cropped image + .txt are written to training\.
+	view->SetTrainingMode(true);
+	BringOpenScrapeBackToFront();
+}
+
+void CMainFrame::OnUpdateTrainingData(CCmdUI *pCmdUI)
+{
+	COpenScrapeView *view = (COpenScrapeView *)GetActiveView();
+	pCmdUI->SetCheck(view != NULL && view->training_mode());
 }
 
 void CMainFrame::OnToolsCloneRegions()

@@ -31,6 +31,8 @@ class CMainFrame : public CFrameWnd {
 	afx_msg void OnViewRefresh();
 	afx_msg void OnViewPrev();
 	afx_msg void OnViewNext();
+	afx_msg void OnTrainingData();
+	afx_msg void OnUpdateTrainingData(CCmdUI *pCmdUI);
 	afx_msg void OnToolsCloneRegions();
 	afx_msg void OnToolsShiftRegions();
 	afx_msg void OnEditUpdatehashes();

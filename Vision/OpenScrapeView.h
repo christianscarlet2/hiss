@@ -80,6 +80,14 @@ protected: // create from serialization only
 	CRect preview_close_rect;
 
 	HCURSOR		hCurDrawRect, hCurStandard;
+
+	// Training-data capture mode (gear toolbar button): the user drags one box
+	// over the screenshot, types the value, and a cropped image + .txt are saved.
+	bool		_training_mode;
+	bool		_training_dragging;
+	CPoint		_training_start, _training_cur;
+	void HandleTrainingCapture(CRect rect);
+
 	bool IsRegionSelected(CString name);
 	void ToggleRegionSelection(CString name);
 	void SelectRegionsInsideRect(RECT rect);
@@ -127,6 +135,8 @@ public:
 	bool GetGroupColorForRegion(CString name, COLORREF *color);
 	void SetShowPreview(bool show);
 	bool ShowPreview() const { return show_preview; }
+	void SetTrainingMode(bool on);
+	bool training_mode() const { return _training_mode; }
 
 	bool		drawing_rect, drawing_started;
 	bool		color_point_mode;

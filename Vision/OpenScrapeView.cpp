@@ -138,6 +138,8 @@ COpenScrapeView::COpenScrapeView()
 	color_point_mode = false;
 	color_dropper_mode = false;
 	group_box_mode = group_box_started = false;
+	_training_mode = false;
+	_training_dragging = false;
 	show_preview = true;
 	preview_point = CPoint(0, 0);
 	preview_close_rect.SetRectEmpty();
@@ -1175,6 +1177,11 @@ void COpenScrapeView::OnDraw(CDC* pDC)
 		pDC->SelectObject(oldbrush);
 	}
 
+	// In training-capture mode, hide every region/template/group overlay so the
+	// user draws their box over a clean screenshot. They reappear when the value
+	// has been entered (training mode is turned off again).
+	if (!_training_mode)
+	{
 	// Draw all region rectangles
 	for (RMapCI r_iter=p_tablemap->r$()->begin(); r_iter!=p_tablemap->r$()->end(); r_iter++)
 	{
@@ -1270,6 +1277,7 @@ void COpenScrapeView::OnDraw(CDC* pDC)
 
 	// Clean Up
 	DrawMagnifierPreview(pDC);
+	}	// end if (!_training_mode)
 
 	// Clean Up
 	DeleteObject(hbmp);
@@ -1306,6 +1314,15 @@ void COpenScrapeView::OnLButtonDown(UINT nFlags, CPoint point)
 	COpenScrapeDoc		*pDoc = GetDocument();
 	CString				sel = theApp.m_TableMapDlg->m_TableMapTree.GetItemText(theApp.m_TableMapDlg->m_TableMapTree.GetSelectedItem());
 	CString				text;
+
+	if (_training_mode) {
+		_training_dragging = true;
+		_training_start = point;
+		_training_cur = point;
+		SetCapture();
+		CView::OnLButtonDown(nFlags, point);
+		return;
+	}
 
 	if (show_preview && preview_close_rect.PtInRect(point)) {
 		SetShowPreview(false);
@@ -1526,6 +1543,28 @@ void COpenScrapeView::OnLButtonDown(UINT nFlags, CPoint point)
 void COpenScrapeView::OnLButtonUp(UINT nFlags, CPoint point)
 {
 	COpenScrapeDoc		*pDoc = GetDocument();
+
+	if (_training_mode) {
+		if (_training_dragging) {
+			_training_dragging = false;
+			// Erase the last rubber-band rectangle.
+			{
+				CClientDC dc(this);
+				int old_rop = dc.SetROP2(R2_NOT);
+				CGdiObject *old_brush = dc.SelectStockObject(NULL_BRUSH);
+				dc.Rectangle(CRect(_training_start, _training_cur));
+				dc.SelectObject(old_brush);
+				dc.SetROP2(old_rop);
+			}
+			ReleaseCapture();
+
+			CRect rect(_training_start, point);
+			rect.NormalizeRect();
+			HandleTrainingCapture(rect);
+		}
+		CView::OnLButtonUp(nFlags, point);
+		return;
+	}
 
 	if (group_box_mode && group_box_started)
 	{
@@ -1771,6 +1810,22 @@ void COpenScrapeView::OnMouseMove(UINT nFlags, CPoint point)
 	COpenScrapeDoc		*pDoc = GetDocument();
 	int					width, height;
 	CString				text;
+
+	if (_training_mode) {
+		if (_training_dragging) {
+			// XOR rubber-band: erase the previous rectangle, draw the new one.
+			CClientDC dc(this);
+			int old_rop = dc.SetROP2(R2_NOT);
+			CGdiObject *old_brush = dc.SelectStockObject(NULL_BRUSH);
+			dc.Rectangle(CRect(_training_start, _training_cur));
+			_training_cur = point;
+			dc.Rectangle(CRect(_training_start, _training_cur));
+			dc.SelectObject(old_brush);
+			dc.SetROP2(old_rop);
+		}
+		CView::OnMouseMove(nFlags, point);
+		return;
+	}
 
 	if (show_preview && pDoc->attached_bitmap != NULL && preview_point != point) {
 		preview_point = point;
@@ -2095,6 +2150,12 @@ void COpenScrapeView::OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags)
 
 BOOL COpenScrapeView::OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message)
 {
+	if (_training_mode)
+	{
+		::SetCursor(::LoadCursor(NULL, IDC_CROSS));
+		return true;
+	}
+
 	if (drawing_rect)
 	{
 		::SetCursor(hCurDrawRect);
@@ -2102,6 +2163,151 @@ BOOL COpenScrapeView::OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message)
 	}
 
 	return CView::OnSetCursor(pWnd, nHitTest, message);
+}
+
+// ---------------------------------------------------------------------------
+//  Tesseract training-data capture
+// ---------------------------------------------------------------------------
+
+void COpenScrapeView::SetTrainingMode(bool on)
+{
+	if (_training_mode == on) {
+		return;
+	}
+	_training_mode = on;
+	_training_dragging = false;
+	Invalidate(false);		// hide overlays when turning on, restore when off
+}
+
+// "training\" sub-folder next to Vision.exe, created if needed.
+static CString TrainingDirectory()
+{
+	char path[MAX_PATH] = { 0 };
+	::GetModuleFileName(NULL, path, MAX_PATH);
+	char *last_backslash = strrchr(path, '\\');
+	if (last_backslash != NULL) {
+		*(last_backslash + 1) = '\0';
+	}
+	CString dir = CString(path) + "training\\";
+	CreateDirectory(dir, NULL);
+	return dir;
+}
+
+// Lowest free "sample_NNNN" base name (neither .png nor .txt present).
+static CString NextTrainingBaseName(const CString &dir)
+{
+	for (int i = 1; i < 100000; ++i) {
+		CString base;
+		base.Format("sample_%04d", i);
+		CString png = dir + base + ".png";
+		CString txt = dir + base + ".txt";
+		if (GetFileAttributes(png) == INVALID_FILE_ATTRIBUTES
+			&& GetFileAttributes(txt) == INVALID_FILE_ATTRIBUTES) {
+			return base;
+		}
+	}
+	return "sample_overflow";
+}
+
+void COpenScrapeView::HandleTrainingCapture(CRect rect)
+{
+	COpenScrapeDoc *pDoc = GetDocument();
+	if (pDoc == NULL || pDoc->attached_bitmap == NULL) {
+		SetTrainingMode(false);
+		return;
+	}
+
+	// Clamp the drawn rectangle to the screenshot bounds.
+	int img_w = pDoc->attached_rect.right - pDoc->attached_rect.left;
+	int img_h = pDoc->attached_rect.bottom - pDoc->attached_rect.top;
+	if (rect.left < 0) rect.left = 0;
+	if (rect.top < 0) rect.top = 0;
+	if (rect.right > img_w) rect.right = img_w;
+	if (rect.bottom > img_h) rect.bottom = img_h;
+	if (rect.Width() < 2 || rect.Height() < 2) {
+		SetTrainingMode(false);		// stray click, nothing to capture
+		return;
+	}
+
+	int w = rect.Width();
+	int h = rect.Height();
+
+	// Crop the screenshot region into a top-down 32-bit Mat, then drop alpha.
+	HDC hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL);
+	HDC hdc_src = CreateCompatibleDC(hdcScreen);
+	HBITMAP old_src = (HBITMAP)SelectObject(hdc_src, pDoc->attached_bitmap);
+	HDC hdc_crop = CreateCompatibleDC(hdcScreen);
+	HBITMAP crop_bmp = CreateCompatibleBitmap(hdcScreen, w, h);
+	HBITMAP old_crop = (HBITMAP)SelectObject(hdc_crop, crop_bmp);
+	BitBlt(hdc_crop, 0, 0, w, h, hdc_src, rect.left, rect.top, SRCCOPY);
+
+	cv::Mat crop_bgra(h, w, CV_8UC4);
+	BITMAPINFO bi;
+	ZeroMemory(&bi, sizeof(bi));
+	bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
+	bi.bmiHeader.biWidth = w;
+	bi.bmiHeader.biHeight = -h;		// top-down
+	bi.bmiHeader.biPlanes = 1;
+	bi.bmiHeader.biBitCount = 32;
+	bi.bmiHeader.biCompression = BI_RGB;
+	GetDIBits(hdc_crop, crop_bmp, 0, h, crop_bgra.data, &bi, DIB_RGB_COLORS);
+
+	SelectObject(hdc_crop, old_crop);
+	DeleteObject(crop_bmp);
+	DeleteDC(hdc_crop);
+	SelectObject(hdc_src, old_src);
+	DeleteDC(hdc_src);
+	DeleteDC(hdcScreen);
+
+	cv::Mat crop_bgr;
+	cv::cvtColor(crop_bgra, crop_bgr, cv::COLOR_BGRA2BGR);
+
+	// Ask the user for the ground-truth value for this crop.
+	CDlgEdit dlg;
+	dlg.m_titletext = "Enter the text shown in this region (training label)";
+	dlg.m_result = "";
+	if (dlg.DoModal() != IDOK) {
+		SetTrainingMode(false);
+		return;
+	}
+	dlg.m_result.Trim();
+	if (dlg.m_result.IsEmpty()) {
+		SetTrainingMode(false);
+		return;
+	}
+
+	CString dir = TrainingDirectory();
+	CString base = NextTrainingBaseName(dir);
+	CString png_path = dir + base + ".png";
+	CString txt_path = dir + base + ".txt";
+
+	bool image_ok = false;
+	try {
+		image_ok = cv::imwrite(std::string(png_path.GetString()), crop_bgr);
+	}
+	catch (const cv::Exception &) {
+		image_ok = false;
+	}
+
+	bool text_ok = false;
+	FILE *fp = NULL;
+	if (fopen_s(&fp, txt_path.GetString(), "w") == 0 && fp != NULL) {
+		fputs(dlg.m_result.GetString(), fp);
+		fputs("\n", fp);
+		fclose(fp);
+		text_ok = true;
+	}
+
+	if (image_ok && text_ok) {
+		CString msg;
+		msg.Format("Saved training sample:\n%s\n%s", png_path.GetString(), txt_path.GetString());
+		AfxMessageBox(msg, MB_ICONINFORMATION);
+	}
+	else {
+		AfxMessageBox("Failed to save training sample (is the training\\ folder writable?).", MB_ICONWARNING);
+	}
+
+	SetTrainingMode(false);		// restores the region overlays
 }
 
 void COpenScrapeView::blink_rect(void)

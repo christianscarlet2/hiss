@@ -148,6 +148,7 @@
 #define ID_GROUPREGIONS_BYNAME          32783
 #define ID_MAIN_TOOLBAR_PREV            32785
 #define ID_MAIN_TOOLBAR_NEXT            32786
+#define ID_MAIN_TOOLBAR_TRAINING        32796
 #define ID_VIEW_PREV                    32787
 #define ID_VIEW_NEXT                    32788
 #define ID_TOOLS_CLONEREGIONS           32789
@@ -164,7 +165,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        153
-#define _APS_NEXT_COMMAND_VALUE         32796
+#define _APS_NEXT_COMMAND_VALUE         32797
 #define _APS_NEXT_CONTROL_VALUE         1141
 #define _APS_NEXT_SYMED_VALUE           101
 #endif

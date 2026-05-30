@@ -95,6 +95,8 @@ BEGIN
     BUTTON      ID_MAIN_TOOLBAR_NEXT
     SEPARATOR
     BUTTON      ID_APP_ABOUT
+    SEPARATOR
+    BUTTON      ID_MAIN_TOOLBAR_TRAINING
 END
 
 
@@ -142,6 +144,8 @@ BEGIN
             MENUITEM "By &Type",                    ID_GROUPREGIONS_BYTYPE
             MENUITEM "By &Name",                    ID_GROUPREGIONS_BYNAME
         END
+        MENUITEM SEPARATOR
+        MENUITEM "Capture &Training Data",      ID_MAIN_TOOLBAR_TRAINING
         MENUITEM SEPARATOR
         MENUITEM "Current size: 0x0",           ID_VIEW_CURRENTWINDOWSIZE
     END
@@ -724,6 +728,7 @@ STRINGTABLE
 BEGIN
     ID_MAIN_TOOLBAR_PREV    "Previous frame\nPrevious"
     ID_MAIN_TOOLBAR_NEXT    "Next frame\nNext"
+    ID_MAIN_TOOLBAR_TRAINING "Capture OCR training data: draw a box, type its value\nTraining capture"
 END
 
 STRINGTABLE
