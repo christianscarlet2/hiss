@@ -1,8 +1,0 @@
-total lines: 1115
-L98 len=86: void CFormulaParser::ParseFormulaFileWithUserDefinedBotLogic(CArchive& formula_file) {
-L103 len=72:   p_function_collection->SetFormulaName(FilenameWithoutPathAndExtension(
-L108 len=79:   p_function_collection->Evaluate(k_standard_function_names[k_init_on_startup],
-L144 len=11:     return;
-L160 len=34:   CFile library_file(library_path,
-L164 len=59:   CArchive library_archive(&library_file, CArchive::load); 
-L169 len=58: void CFormulaParser::LoadArchive(CArchive& formula_file) {
