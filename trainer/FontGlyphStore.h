@@ -59,6 +59,12 @@ public:
 	// (the global per-group picker), regenerating each and persisting r$. Returns count.
 	int ApplyToGroup(int group, int a, int r, int g, int b, int radius);
 
+	// Apply colour + radius to EVERY balance region's r$ (so a re-capture binarises
+	// with it, even for regions that currently have no pending glyphs) and regenerate
+	// every pending glyph. Returns the number of pending glyphs regenerated; outputs
+	// the number of regions updated via *regions_out.
+	int ApplyToAll(int a, int r, int g, int b, int radius, int *regions_out);
+
 	// Set which font group this glyph saves to (also becomes the sticky default
 	// for subsequent captures).
 	bool SetGroupFor(int gid, int group);

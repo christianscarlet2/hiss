@@ -7,7 +7,11 @@
       "Bash(awk '{print $8}')",
       "Bash(grep -cE \"^t[0-9]\\\\\\\\\\\\$\" android_8max.tm)",
       "Bash(grep -E \"^t[0-9]\\\\\\\\\\\\$\" android_8max.tm)",
-      "Bash(grep -E '^s\\\\$t[0-9]type' android_8max.tm)"
+      "Bash(grep -E '^s\\\\$t[0-9]type' android_8max.tm)",
+      "Bash(curl -s -m 6 -X POST \"http://127.0.0.1:28700/api/fonts/applyall?a=255&r=11&g=163&b=62&radius=100\")",
+      "PowerShell($pid = \\(Get-Process trainer -ErrorAction SilentlyContinue\\).Id; \"trainer PID = $pid\"; Get-NetTCPConnection -State Listen -OwningProcess $pid -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -ge 28700 -and $_.LocalPort -lt 28720 } | Select-Object LocalAddress, LocalPort, OwningProcess)",
+      "PowerShell($tp = \\(Get-Process trainer -ErrorAction SilentlyContinue\\).Id; \"trainer PID\\(s\\) = $tp\"; Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.OwningProcess -in @\\($tp\\) } | Select-Object LocalAddress, LocalPort, OwningProcess | Format-Table -AutoSize)",
+      "Bash(curl -s -m 6 \"http://127.0.0.1:28700/api/fonts/list\")"
     ]
   }
 }

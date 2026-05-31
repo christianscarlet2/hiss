@@ -226,3 +226,25 @@ void RegionColors_UpdateByName(const CString &name, COLORREF color, int radius)
 	// File IO outside the lock.
 	if (!tm_path.IsEmpty()) SaveRegionColorRadius(tm_path, name, color, radius);
 }
+
+int RegionColors_UpdateAll(COLORREF color, int radius)
+{
+	RC_EnsureInit();
+	// Snapshot the region names + tm path under the lock, update the cache, then do
+	// the file rewrites outside the lock.
+	std::vector<CString> names;
+	CString tm_path;
+	EnterCriticalSection(&g_rc_cs);
+	for (std::map<CString, SRegionColor>::iterator it = g_rc.begin(); it != g_rc.end(); ++it) {
+		it->second.color = color;
+		it->second.radius = radius;
+		names.push_back(it->first);
+	}
+	tm_path = g_rc_tm_path;
+	LeaveCriticalSection(&g_rc_cs);
+	if (!tm_path.IsEmpty()) {
+		for (size_t i = 0; i < names.size(); ++i)
+			SaveRegionColorRadius(tm_path, names[i], color, radius);
+	}
+	return (int)names.size();
+}

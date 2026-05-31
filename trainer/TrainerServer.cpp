@@ -418,6 +418,22 @@ void CTrainerServer::HandleClient(SOCKET client)
 		send(client, response.GetString(), response.GetLength(), 0);
 		return;
 	}
+	// Global colour: write colour + radius to EVERY balance region's r$ (repairs
+	// regions that currently capture nothing) and regenerate all pending glyphs.
+	if (path.CompareNoCase("/api/fonts/applyall") == 0) {
+		int a = atoi(QueryValue(query, "a"));
+		int r = atoi(QueryValue(query, "r"));
+		int g = atoi(QueryValue(query, "g"));
+		int b = atoi(QueryValue(query, "b"));
+		int radius = atoi(QueryValue(query, "radius"));
+		int regions = 0, glyphs = 0;
+		if (p_font_glyph_store != NULL) glyphs = p_font_glyph_store->ApplyToAll(a, r, g, b, radius, &regions);
+		else regions = RegionColors_UpdateAll(RGB(r, g, b) | ((COLORREF)(a & 0xff) << 24), radius);
+		CStringA body; body.Format("{\"ok\":true,\"glyphs\":%d,\"regions\":%d}", glyphs, regions);
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
 	// Apply group + colour + radius to every row strictly below this one, regenerating each.
 	if (path.CompareNoCase("/api/fonts/applybelow") == 0) {
 		int gid = atoi(QueryValue(query, "gid"));

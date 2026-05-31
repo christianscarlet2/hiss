@@ -300,6 +300,31 @@ int CFontGlyphStore::ApplyToGroup(int group, int a, int r, int g, int b, int rad
 	return count;
 }
 
+int CFontGlyphStore::ApplyToAll(int a, int r, int g, int b, int radius, int *regions_out)
+{
+	COLORREF color = ArgbToColorref(a, r, g, b);
+	int count = 0;
+	EnterCriticalSection(&_cs);
+	for (size_t i = 0; i < _entries.size(); ++i) {
+		SFontGlyphEntry &e = _entries[i];
+		e.color = color;
+		e.radius = radius;
+		if (p_trainer_fonts != NULL && !e.src_bgra.empty()) {
+			int center_x = (e.glyph.xb + e.glyph.xe) / 2;
+			TGlyph ng;
+			p_trainer_fonts->RegenGlyphAt(&e.src_bgra[0], e.src_w, e.src_h,
+				color, radius, e.group, center_x, &ng);
+			e.glyph = ng;
+		}
+		++count;
+	}
+	LeaveCriticalSection(&_cs);
+	// Write the colour to EVERY balance region (covers regions with no pending glyphs).
+	int regions = RegionColors_UpdateAll(color, radius);
+	if (regions_out) *regions_out = regions;
+	return count;
+}
+
 bool CFontGlyphStore::SetGroupFor(int gid, int group)
 {
 	if (group < 0 || group >= TFE_NUM_FONT_GROUPS) return false;

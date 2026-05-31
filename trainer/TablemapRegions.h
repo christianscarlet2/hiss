@@ -35,3 +35,4 @@ void RegionColors_Add(const CString &name, COLORREF color, int radius, const CSt
 bool RegionColors_GetByName(const CString &name, COLORREF *color, int *radius);
 bool RegionColors_GetByTransform(const CString &transform, COLORREF *color, int *radius);
 void RegionColors_UpdateByName(const CString &name, COLORREF color, int radius);   // + writes r$
+int  RegionColors_UpdateAll(COLORREF color, int radius);   // set every region; returns count, writes r$

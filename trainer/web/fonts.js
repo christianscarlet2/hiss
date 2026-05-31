@@ -8,6 +8,7 @@
 
   var rendered = {};      // gid -> { tr, input }
   var defaultGroup = 0;   // sticky group new rows default to
+  var gcArmed = false;    // global eyedropper armed? (pick from any thumbnail)
 
   function api(method, url, cb) {
     var xhr = new XMLHttpRequest();
@@ -126,6 +127,22 @@
     imgF.src = '/api/fonts/glyph/full?gid=' + gl.gid;
     tdGF.appendChild(imgF);
     tr.appendChild(tdGF);
+
+    // When the global eyedropper is armed, the Reference/Scrape thumbnails become
+    // pick targets that feed the toolbar colour (with the live magnifier).
+    function armPick(imgEl, which) {
+      imgEl.addEventListener('mousemove', function (e) { if (gcArmed) showMag(imgEl, e); });
+      imgEl.addEventListener('mouseleave', hideMag);
+      imgEl.addEventListener('click', function (e) {
+        if (!gcArmed) return;
+        e.preventDefault();
+        var p = naturalXY(imgEl, e);
+        api('GET', '/api/fonts/glyph/pixel?gid=' + gl.gid + '&img=' + which + '&px=' + p.x + '&py=' + p.y,
+          function (status, data) { if (data && data.ok) gcSetPicked(data.a, data.r, data.g, data.b); });
+      });
+    }
+    armPick(imgR, 'regular');
+    armPick(imgF, 'full');
 
     var tdC = document.createElement('td');
     tdC.className = 'c';
@@ -475,6 +492,8 @@
   var gcRad = document.getElementById('gcRad');
   var gcGroup = document.getElementById('gcGroup');
   var gcApply = document.getElementById('gcApply');
+  var gcApplyAll = document.getElementById('gcApplyAll');
+  var gcEyedrop = document.getElementById('gcEyedrop');
   var gcSwatch = document.getElementById('gcSwatch');
   var gcHelp = document.getElementById('gcHelp');
   var helpOverlay = document.getElementById('helpOverlay');
@@ -492,6 +511,23 @@
   }
   [gcA, gcR, gcG, gcB].forEach(function (inp) { inp.addEventListener('input', gcSync); });
   gcSync();
+
+  // Eyedropper: arm/disarm. While armed, clicking any Reference/Scrape thumbnail
+  // grabs that pixel's colour into the toolbar fields (see armPick in buildRow).
+  function setArmed(on) {
+    gcArmed = on;
+    gcEyedrop.classList.toggle('on', on);
+    document.body.classList.toggle('eyedropping', on);
+    if (!on) hideMag();
+  }
+  gcEyedrop.addEventListener('click', function () { setArmed(!gcArmed); });
+  // Called by a thumbnail pick — fills the fields and disarms.
+  function gcSetPicked(a, r, g, b) {
+    gcA.value = clamp255(a); gcR.value = clamp255(r); gcG.value = clamp255(g); gcB.value = clamp255(b);
+    gcSync();
+    setArmed(false);
+    statusEl.textContent = 'Picked colour rgb(' + clamp255(r) + ',' + clamp255(g) + ',' + clamp255(b) + ') — set radius, then Apply';
+  }
 
   // Selecting a group pre-fills the fields from a region using that transform.
   gcGroup.addEventListener('change', function () {
@@ -514,6 +550,21 @@
     api('POST', q, function (status, data) {
       var n = (data && typeof data.count === 'number') ? data.count : 0;
       statusEl.textContent = 'Applied colour to ' + n + ' Text' + group + ' row(s)';
+      rebuildAll();
+    });
+  });
+
+  // Write the colour/radius to EVERY balance region (repairs regions that scrape
+  // nothing), then regenerate all pending glyphs. Overwrites region colours, so confirm.
+  gcApplyAll.addEventListener('click', function () {
+    if (!confirm('Set this colour + radius on ALL balance regions in the tablemap?\nThis overwrites each region\'s colour. Re-capture afterwards to pull glyphs.')) return;
+    var q = '/api/fonts/applyall?a=' + clamp255(gcA.value) + '&r=' + clamp255(gcR.value)
+      + '&g=' + clamp255(gcG.value) + '&b=' + clamp255(gcB.value)
+      + '&radius=' + (parseInt(gcRad.value, 10) || 0);
+    api('POST', q, function (status, data) {
+      var rg = (data && typeof data.regions === 'number') ? data.regions : 0;
+      var gl = (data && typeof data.glyphs === 'number') ? data.glyphs : 0;
+      statusEl.textContent = 'Set colour on ' + rg + ' region(s), regenerated ' + gl + ' glyph(s). Re-capture to pull from fixed regions.';
       rebuildAll();
     });
   });
