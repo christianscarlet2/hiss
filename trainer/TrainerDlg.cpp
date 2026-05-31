@@ -140,6 +140,7 @@ BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_MESSAGE(WM_TRAINER_REGION_SELECTED, &CTrainerDlg::OnRegionSelected)
 	ON_MESSAGE(WM_TRAINER_OPEN_FONTS, &CTrainerDlg::OnOpenFonts)
 	ON_MESSAGE(WM_TRAINER_CAPTURE_FONTS, &CTrainerDlg::OnCaptureFonts)
+	ON_MESSAGE(WM_TRAINER_RECOGNIZE_ALL, &CTrainerDlg::OnRecognizeAll)
 END_MESSAGE_MAP()
 
 HWND g_trainer_main_hwnd = NULL;
@@ -553,6 +554,39 @@ LRESULT CTrainerDlg::OnCaptureFonts(WPARAM, LPARAM)
 	return 0;
 }
 
+// Re-recognize every table row with the current transform. Runs on the UI thread
+// because AutoOcr uses Tesseract (not thread-safe). Returns the count recognized.
+LRESULT CTrainerDlg::OnRecognizeAll(WPARAM, LPARAM)
+{
+	if (p_sample_store == NULL) return 0;
+	int mode = p_sample_store->TransformMode();
+	int index = p_sample_store->TransformIndex();
+	STrainerOcrSettings settings = ReadSettings();
+
+	std::vector<CSampleStore::SRecogItem> items;
+	p_sample_store->SnapshotForRecognition(&items);
+
+	int recognized = 0;
+	for (size_t i = 0; i < items.size(); ++i) {
+		CSampleStore::SRecogItem &it = items[i];
+		if (it.bgra.empty() || it.bw <= 0 || it.bh <= 0) continue;
+		CString text;
+		if (mode == TRAINER_MODE_TEXT) {
+			if (p_trainer_fonts != NULL)
+				text = p_trainer_fonts->RecognizeBgra(&it.bgra[0], it.bw, it.bh,
+					(COLORREF)it.color, it.radius, index);
+		} else {
+			Mat bgra(it.bh, it.bw, CV_8UC4, &it.bgra[0]);
+			Mat bgr; cvtColor(bgra, bgr, COLOR_BGRA2BGR);
+			Mat preview; int conf = 0;
+			_ocr.Run(bgr, settings, it.region, &preview, &text, &conf);
+		}
+		p_sample_store->SetGuess(it.id, CStringA(text));
+		if (!text.IsEmpty()) ++recognized;
+	}
+	return recognized;
+}
+
 void CTrainerDlg::OpenFontsWindow()
 {
 	if (_server == NULL || _server->port() == 0) {
@@ -631,9 +665,12 @@ void CTrainerDlg::CaptureTick()
 	}
 
 	if (_capturing) {
-		// Recognition now uses the bitmap-font Text0..Text9 transform (selected in
-		// the React table), not Tesseract. The group is whatever the table dropdown set.
-		int group = (p_sample_store != NULL) ? p_sample_store->CurrentGroup() : 0;
+		// The table's recognition engine is whatever the React dropdown selected:
+		// AutoOcr0/1 (Tesseract) or Text0..Text9 (bitmap-font hashing).
+		int mode = (p_sample_store != NULL) ? p_sample_store->TransformMode() : TRAINER_MODE_AUTOOCR;
+		int index = (p_sample_store != NULL) ? p_sample_store->TransformIndex() : 0;
+		bool ignore_bad = (IsDlgButtonChecked(IDC_IGNORE_BAD) == BST_CHECKED);
+		STrainerOcrSettings settings = ReadSettings();
 		for (size_t i = 0; i < _regions.size(); ++i) {
 			std::vector<BYTE> cur;
 			int w = 0, h = 0;
@@ -648,19 +685,26 @@ void CTrainerDlg::CaptureTick()
 			if (cur == _committed[i]) { continue; }
 			_committed[i] = cur;
 
-			// Font-hash recognition on the regular (raw) crop.
-			CString text;
-			if (p_trainer_fonts != NULL) {
-				text = p_trainer_fonts->RecognizeBgra(&cur[0], w, h,
-					_regions[i].color, _regions[i].radius, group);
-			}
-			if (text.IsEmpty()) {
-				continue;   // nothing recognized with the current font group
-			}
-
 			Mat bgra((int)h, (int)w, CV_8UC4, &cur[0]);
 			Mat bgr;
 			cvtColor(bgra, bgr, COLOR_BGRA2BGR);
+
+			CString text;
+			int conf = 100;
+			Mat ocr_preview;
+			if (mode == TRAINER_MODE_TEXT) {
+				if (p_trainer_fonts != NULL)
+					text = p_trainer_fonts->RecognizeBgra(&cur[0], w, h, _regions[i].color, _regions[i].radius, index);
+			} else {
+				_ocr.Run(bgr, settings, _regions[i].name, &ocr_preview, &text, &conf);
+			}
+
+			if (text.IsEmpty()) {
+				continue;   // nothing recognized with the current transform
+			}
+			if (mode == TRAINER_MODE_AUTOOCR && ignore_bad && conf < kMinOcrConfidence) {
+				continue;
+			}
 
 			std::vector<unsigned char> png, png_transformed;
 			std::vector<int> params;
@@ -670,9 +714,12 @@ void CTrainerDlg::CaptureTick()
 			if (!imencode(".png", bgr, png, params) || png.empty()) {
 				continue;
 			}
-			// Transformed (foreground mask) view.
-			if (p_trainer_fonts != NULL) {
-				p_trainer_fonts->MaskPng(&cur[0], w, h, _regions[i].color, _regions[i].radius, &png_transformed);
+			// Transformed view: Tesseract preview for AutoOcr, foreground mask for Text.
+			if (mode == TRAINER_MODE_TEXT) {
+				if (p_trainer_fonts != NULL)
+					p_trainer_fonts->MaskPng(&cur[0], w, h, _regions[i].color, _regions[i].radius, &png_transformed);
+			} else if (!ocr_preview.empty()) {
+				imencode(".png", ocr_preview, png_transformed, params);
 			}
 			if (p_sample_store != NULL) {
 				p_sample_store->Add(CStringA(_regions[i].name), png, png_transformed, CStringA(text),

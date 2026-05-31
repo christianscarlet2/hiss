@@ -7,6 +7,11 @@
 // because they touch GDI capture / create windows).
 #define WM_TRAINER_OPEN_FONTS    (WM_APP + 2)   // open the font-creation window
 #define WM_TRAINER_CAPTURE_FONTS (WM_APP + 3)   // capture+segment the live scrapes into the glyph store
+#define WM_TRAINER_RECOGNIZE_ALL (WM_APP + 4)   // re-recognize every table row with the current transform
+
+// Transform modes stored in the sample store (which engine recognizes the table).
+#define TRAINER_MODE_AUTOOCR 0                  // Tesseract (AutoOcr0/AutoOcr1)
+#define TRAINER_MODE_TEXT    1                  // bitmap-font hashing (Text0..Text9)
 
 // Main dialog HWND, published once the dialog initializes (NULL before then).
 extern HWND g_trainer_main_hwnd;

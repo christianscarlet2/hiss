@@ -28,6 +28,7 @@ protected:
 	afx_msg LRESULT OnRegionSelected(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnOpenFonts(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnCaptureFonts(WPARAM wParam, LPARAM lParam);
+	afx_msg LRESULT OnRecognizeAll(WPARAM wParam, LPARAM lParam);
 	afx_msg void OnDestroy();
 	DECLARE_MESSAGE_MAP()
 

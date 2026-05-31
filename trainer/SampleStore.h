@@ -34,12 +34,19 @@ public:
 		const std::vector<unsigned char> &bgra, int bw, int bh, unsigned long color, int radius);
 	CStringA ListJson();                                   // [{id,region,guess,saved}]
 
-	// Text0..Text9 font group currently driving the table's recognition.
-	void SetCurrentGroup(int group);
-	int  CurrentGroup();
-	// Re-recognize every row's regular image with the given font group; returns
-	// the number of rows whose guess became non-empty.
-	int  RecognizeAll(int group);
+	// Which engine recognizes the table: TRAINER_MODE_AUTOOCR/TRAINER_MODE_TEXT + index.
+	void SetTransform(int mode, int index);
+	int  TransformMode();
+	int  TransformIndex();
+
+	// Snapshot every row's crop for re-recognition on the UI thread, and write
+	// recognized text back by id.
+	struct SRecogItem {
+		int id; CStringA region;
+		std::vector<unsigned char> bgra; int bw, bh; unsigned long color; int radius;
+	};
+	void SnapshotForRecognition(std::vector<SRecogItem> *out);
+	void SetGuess(int id, const CStringA &text);
 	bool GetImage(int id, std::vector<unsigned char> *out);
 	bool Save(int id, const CStringA &text);               // write png + .gt.txt
 	int SaveAllPending();                                  // returns count saved
@@ -52,7 +59,8 @@ private:
 	CRITICAL_SECTION _cs;
 	std::vector<STrainerSample> _samples;
 	int _next_id;
-	int _current_group;
+	int _transform_mode;    // TRAINER_MODE_AUTOOCR / TRAINER_MODE_TEXT
+	int _transform_index;   // 0/1 for AutoOcr, 0..9 for Text
 
 	// Writes <base>.png + <base>.gt.txt (regular) and, when a transformed image
 	// is present, <base>-transformed.png + <base>-transformed.gt.txt (same label).

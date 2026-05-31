@@ -216,21 +216,31 @@ void CTrainerServer::HandleClient(SOCKET client)
 		return;
 	}
 
-	// API: set the active Text0..Text9 font group and re-recognize all rows.
+	// API: set the active transform (AutoOcr0/1 or Text0..Text9) and re-recognize
+	// all rows. Recognition runs on the UI thread (AutoOcr uses Tesseract).
 	if (path.CompareNoCase("/api/transform") == 0) {
-		int group = atoi(QueryValue(query, "group"));
-		int recognized = (p_sample_store != NULL) ? p_sample_store->RecognizeAll(group) : 0;
-		int count = (p_trainer_fonts != NULL) ? p_trainer_fonts->group_count(group) : 0;
+		CStringA t = UrlDecode(QueryValue(query, "t"));
+		int mode = TRAINER_MODE_AUTOOCR, index = 0;
+		if (t.Left(4).CompareNoCase("Text") == 0) { mode = TRAINER_MODE_TEXT; index = atoi(t.Mid(4)); }
+		else if (t.Left(7).CompareNoCase("AutoOcr") == 0) { mode = TRAINER_MODE_AUTOOCR; index = atoi(t.Mid(7)); }
+		if (p_sample_store != NULL) p_sample_store->SetTransform(mode, index);
+		LRESULT recognized = (g_trainer_main_hwnd != NULL)
+			? ::SendMessage(g_trainer_main_hwnd, WM_TRAINER_RECOGNIZE_ALL, 0, 0) : 0;
+		int fonts = (mode == TRAINER_MODE_TEXT && p_trainer_fonts != NULL) ? p_trainer_fonts->group_count(index) : 0;
 		CStringA body;
-		body.Format("{\"ok\":true,\"group\":%d,\"recognized\":%d,\"fonts\":%d}", group, recognized, count);
+		body.Format("{\"ok\":true,\"transform\":\"%s\",\"recognized\":%d,\"fonts\":%d}",
+			t.GetString(), (int)recognized, fonts);
 		CStringA response = Response(body, "application/json; charset=utf-8");
 		send(client, response.GetString(), response.GetLength(), 0);
 		return;
 	}
 
-	// API: font info - current group + per-group record counts (for the dropdown).
+	// API: transform info - current transform + per-group font counts (for the dropdown).
 	if (path.CompareNoCase("/api/fonts/info") == 0) {
-		int cur = (p_sample_store != NULL) ? p_sample_store->CurrentGroup() : 0;
+		int mode = (p_sample_store != NULL) ? p_sample_store->TransformMode() : TRAINER_MODE_AUTOOCR;
+		int idx = (p_sample_store != NULL) ? p_sample_store->TransformIndex() : 0;
+		CStringA cur;
+		cur.Format("%s%d", (mode == TRAINER_MODE_TEXT) ? "Text" : "AutoOcr", idx);
 		CStringA counts = "[";
 		for (int g = 0; g < TFE_NUM_FONT_GROUPS; ++g) {
 			if (g > 0) counts += ",";
@@ -239,7 +249,7 @@ void CTrainerServer::HandleClient(SOCKET client)
 		}
 		counts += "]";
 		CStringA body;
-		body.Format("{\"current\":%d,\"counts\":%s}", cur, counts.GetString());
+		body.Format("{\"current\":\"%s\",\"counts\":%s}", cur.GetString(), counts.GetString());
 		CStringA response = Response(body, "application/json; charset=utf-8");
 		send(client, response.GetString(), response.GetLength(), 0);
 		return;

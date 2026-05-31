@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "SampleStore.h"
 #include "TrainerFonts.h"
+#include "TrainerMessages.h"
 
 CSampleStore *p_sample_store = NULL;
 
@@ -38,7 +39,8 @@ CSampleStore::CSampleStore()
 {
 	InitializeCriticalSection(&_cs);
 	_next_id = 1;
-	_current_group = 0;
+	_transform_mode = TRAINER_MODE_AUTOOCR;   // default to Tesseract so the table populates pre-fonts
+	_transform_index = 0;
 }
 
 CSampleStore::~CSampleStore()
@@ -69,38 +71,57 @@ int CSampleStore::Add(const CStringA &region, const std::vector<unsigned char> &
 	return id;
 }
 
-void CSampleStore::SetCurrentGroup(int group)
+void CSampleStore::SetTransform(int mode, int index)
 {
 	EnterCriticalSection(&_cs);
-	if (group >= 0 && group < TFE_NUM_FONT_GROUPS) _current_group = group;
+	_transform_mode = (mode == TRAINER_MODE_TEXT) ? TRAINER_MODE_TEXT : TRAINER_MODE_AUTOOCR;
+	_transform_index = index;
 	LeaveCriticalSection(&_cs);
 }
 
-int CSampleStore::CurrentGroup()
+int CSampleStore::TransformMode()
 {
 	EnterCriticalSection(&_cs);
-	int g = _current_group;
+	int m = _transform_mode;
 	LeaveCriticalSection(&_cs);
-	return g;
+	return m;
 }
 
-int CSampleStore::RecognizeAll(int group)
+int CSampleStore::TransformIndex()
 {
-	int recognized = 0;
 	EnterCriticalSection(&_cs);
-	if (group >= 0 && group < TFE_NUM_FONT_GROUPS) _current_group = group;
-	if (p_trainer_fonts != NULL) {
-		for (size_t i = 0; i < _samples.size(); ++i) {
-			STrainerSample &s = _samples[i];
-			if (s.bgra.empty() || s.bw <= 0 || s.bh <= 0) continue;
-			CString text = p_trainer_fonts->RecognizeBgra(&s.bgra[0], s.bw, s.bh,
-				(COLORREF)s.color, s.radius, group);
-			s.guess = CStringA(text);
-			if (!s.guess.IsEmpty()) ++recognized;
-		}
+	int i = _transform_index;
+	LeaveCriticalSection(&_cs);
+	return i;
+}
+
+void CSampleStore::SnapshotForRecognition(std::vector<SRecogItem> *out)
+{
+	if (out == NULL) return;
+	out->clear();
+	EnterCriticalSection(&_cs);
+	for (size_t i = 0; i < _samples.size(); ++i) {
+		const STrainerSample &s = _samples[i];
+		SRecogItem item;
+		item.id = s.id;
+		item.region = s.region;
+		item.bgra = s.bgra;
+		item.bw = s.bw;
+		item.bh = s.bh;
+		item.color = s.color;
+		item.radius = s.radius;
+		out->push_back(item);
 	}
 	LeaveCriticalSection(&_cs);
-	return recognized;
+}
+
+void CSampleStore::SetGuess(int id, const CStringA &text)
+{
+	EnterCriticalSection(&_cs);
+	for (size_t i = 0; i < _samples.size(); ++i) {
+		if (_samples[i].id == id) { _samples[i].guess = text; break; }
+	}
+	LeaveCriticalSection(&_cs);
 }
 
 static CStringA JsonEscapeA(const CStringA &value)

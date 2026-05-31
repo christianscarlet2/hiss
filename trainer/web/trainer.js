@@ -9,7 +9,7 @@
 
   // id -> { tr, input, saved, order }  (order = capture order, for tab index)
   var rendered = {};
-  var currentGroup = 0;
+  var currentTransform = 'AutoOcr0';
 
   function api(method, url, cb) {
     var xhr = new XMLHttpRequest();
@@ -199,23 +199,26 @@
     });
   }
 
-  // ---- Text0..Text9 font transform dropdown ----------------------------------
+  // ---- Transform dropdown: AutoOcr0/1 (Tesseract) + Text0..Text9 (fonts) -----
   function buildGroupOptions(counts) {
     textGroup.innerHTML = '';
-    for (var g = 0; g < 10; g++) {
+    var add = function (value, label) {
       var opt = document.createElement('option');
-      opt.value = String(g);
+      opt.value = value; opt.textContent = label; textGroup.appendChild(opt);
+    };
+    add('AutoOcr0', 'AutoOcr0');
+    add('AutoOcr1', 'AutoOcr1');
+    for (var g = 0; g < 10; g++) {
       var n = (counts && typeof counts[g] === 'number') ? counts[g] : 0;
-      opt.textContent = 'Text' + g + ' (' + n + ')';
-      textGroup.appendChild(opt);
+      add('Text' + g, 'Text' + g + ' (' + n + ')');
     }
-    textGroup.value = String(currentGroup);
+    textGroup.value = currentTransform;
   }
 
   function loadFontInfo() {
     api('GET', '/api/fonts/info', function (status, data) {
       if (status === 200 && data) {
-        currentGroup = data.current || 0;
+        if (data.current) currentTransform = data.current;
         buildGroupOptions(data.counts || []);
       } else {
         buildGroupOptions([]);
@@ -235,21 +238,21 @@
   }
 
   textGroup.addEventListener('change', function () {
-    var g = parseInt(textGroup.value, 10);
+    var t = textGroup.value;
     var nRows = Object.keys(rendered).length;
     if (nRows > 0) {
-      if (!confirm('Apply Text' + g + ' to all ' + nRows + ' row(s)?\n\n'
-        + 'This re-recognizes every row from its scrape using font group ' + g
+      if (!confirm('Apply ' + t + ' to all ' + nRows + ' row(s)?\n\n'
+        + 'This re-recognizes every row from its scrape with ' + t
         + ' and overwrites the current text in the table.')) {
-        textGroup.value = String(currentGroup);   // revert
+        textGroup.value = currentTransform;   // revert
         return;
       }
     }
-    api('POST', '/api/transform?group=' + g, function (status, data) {
-      currentGroup = g;
+    api('POST', '/api/transform?t=' + encodeURIComponent(t), function (status, data) {
+      currentTransform = t;
       if (data) {
-        statusEl.textContent = 'Text' + g + ': ' + (data.recognized || 0)
-          + ' recognized via ' + (data.fonts || 0) + ' font(s)';
+        statusEl.textContent = t + ': ' + (data.recognized || 0) + ' recognized'
+          + (t.indexOf('Text') === 0 ? ' via ' + (data.fonts || 0) + ' font(s)' : '');
         loadFontInfo();
       }
       forceReload();
