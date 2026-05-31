@@ -69,6 +69,33 @@ try {
     }
 
     Write-AutoCommitLog "Committed changes with message: $message"
+
+    # Push the committed changes to origin, but ONLY when on the main branch.
+    # A push failure (e.g. offline, auth, non-fast-forward) must NOT fail the
+    # script: the commit already succeeded locally and will be pushed later.
+    $currentBranch = (& git rev-parse --abbrev-ref HEAD).Trim()
+    if ($currentBranch -eq "main") {
+        # git push writes its normal output to stderr. Under
+        # $ErrorActionPreference = "Stop", '2>&1' would turn that first stderr
+        # line into a terminating NativeCommandError before we can inspect the
+        # exit code, so relax the preference just for the push and rely on
+        # $LASTEXITCODE to determine success.
+        $previousErrorAction = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        $pushOutput = & git push origin main 2>&1
+        $pushExitCode = $LASTEXITCODE
+        $ErrorActionPreference = $previousErrorAction
+
+        if ($pushExitCode -eq 0) {
+            Write-AutoCommitLog "Pushed branch 'main' to origin."
+        }
+        else {
+            Write-AutoCommitLog "WARNING: push of branch 'main' to origin failed: $(($pushOutput | Out-String).Trim() -replace '\s+', ' ')"
+        }
+    }
+    else {
+        Write-AutoCommitLog "On branch '$currentBranch' (not main); skipping push."
+    }
 }
 catch {
     Write-AutoCommitLog "ERROR: $($_.Exception.Message)"
