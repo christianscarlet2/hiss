@@ -2,7 +2,6 @@
   var tbody = document.getElementById('tbody');
   var statusEl = document.getElementById('status');
   var captureBtn = document.getElementById('capture');
-  var saveAllBtn = document.getElementById('saveAll');
   var clearAllBtn = document.getElementById('clearAll');
   var emptyHint = document.getElementById('empty');
 
@@ -104,25 +103,70 @@
     tdGrp.appendChild(grpSel);
     tr.appendChild(tdGrp);
 
+    // Apply this row's group to every row below it.
+    var tdAg = document.createElement('td');
+    tdAg.className = 'ag';
+    var applyBtn = document.createElement('button');
+    applyBtn.textContent = 'Apply Group Below';
+    applyBtn.tabIndex = -1;
+    applyBtn.addEventListener('click', function () {
+      var val = grpSel.value;
+      defaultGroup = parseInt(val, 10);
+      var rows = tbody.querySelectorAll('tr');
+      var below = false;
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i] === tr) { below = true; continue; }
+        if (!below) continue;
+        var sel = rows[i].querySelector('td.grp select');
+        var rgid = rows[i].getAttribute('data-gid');
+        if (sel && rgid) {
+          sel.value = val;
+          api('POST', '/api/fonts/setgroup?gid=' + rgid + '&group=' + val, function () {});
+        }
+      }
+    });
+    tdAg.appendChild(applyBtn);
+    tr.appendChild(tdAg);
+
     var tdR = document.createElement('td');
     tdR.className = 'r';
     tdR.textContent = gl.region + ' · Text' + gl.group;
     tdR.title = gl.hexmash || '';
     tr.appendChild(tdR);
 
-    var tdA = document.createElement('td');
-    tdA.className = 'a';
-    var del = document.createElement('button');
-    del.textContent = '✕'; del.tabIndex = -1;
-    del.addEventListener('click', function () {
+    function removeRow(refocus) {
+      // Capture the previous input before removal so we can return focus to it.
+      var prevInput = null;
+      if (refocus) {
+        var ins = tbody.querySelectorAll('input.ch');
+        for (var k = 0; k < ins.length; k++) {
+          if (ins[k] === input) { if (k > 0) prevInput = ins[k - 1]; break; }
+        }
+      }
       api('POST', '/api/fonts/delete?gid=' + gl.gid, function () {
         if (tr.parentNode) tr.parentNode.removeChild(tr);
         delete rendered[gl.gid];
         retab();
+        if (refocus) {
+          var target = (prevInput && tbody.contains(prevInput)) ? prevInput : tbody.querySelector('input.ch');
+          if (target) { target.focus(); target.select(); }
+        }
       });
-    });
+    }
+
+    var tdA = document.createElement('td');
+    tdA.className = 'a';
+    var del = document.createElement('button');
+    del.textContent = '✕'; del.tabIndex = -1;
+    del.addEventListener('click', function () { removeRow(false); });
     tdA.appendChild(del);
     tr.appendChild(tdA);
+
+    // Delete key anywhere in the row removes the whole row, then returns focus
+    // to the previous input field so labeling can continue without the mouse.
+    tr.addEventListener('keydown', function (e) {
+      if (e.key === 'Delete') { e.preventDefault(); removeRow(true); }
+    });
 
     rendered[gl.gid] = { tr: tr, input: input };
     return tr;
@@ -155,13 +199,6 @@
   captureBtn.addEventListener('click', function () {
     statusEl.textContent = 'Capturing…';
     api('POST', '/api/fonts/capture', function () { refresh(); });
-  });
-
-  saveAllBtn.addEventListener('click', function () {
-    api('POST', '/api/fonts/save', function (status, data) {
-      if (data && typeof data.saved === 'number') statusEl.textContent = 'Saved ' + data.saved + ' font(s) to the tablemap';
-      refresh();
-    });
   });
 
   clearAllBtn.addEventListener('click', function () {

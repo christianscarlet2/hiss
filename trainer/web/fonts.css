@@ -96,3 +96,6 @@ td.r { color: #6b7280; font-size: 11px; white-space: nowrap; }
 td.a { width: 1%; white-space: nowrap; }
 td.a button { padding: 1px 7px; background: #8a929c; }
 td.a button:hover { background: #767e88; }
+td.ag { width: 1%; white-space: nowrap; }
+td.ag button { padding: 1px 8px; font-size: 11px; background: #5a6675; }
+td.ag button:hover { background: #4a5563; }
