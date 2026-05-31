@@ -51,12 +51,20 @@ bool LoadBalanceRegions(const CString &tm_path, std::vector<STrainerRegion> *out
 		if (!IsBalanceRegionName(name)) {
 			continue;
 		}
+		// Optional trailing fields: colour, radius, transform.
+		CString scolor = (pos >= 0) ? body.Tokenize(" \t", pos) : CString("");
+		CString sradius = (pos >= 0) ? body.Tokenize(" \t", pos) : CString("");
+		CString stransform = (pos >= 0) ? body.Tokenize(" \t", pos) : CString("");
+
 		STrainerRegion region;
 		region.name = name;
 		region.rect.left = atol(sleft.GetString());
 		region.rect.top = atol(stop.GetString());
 		region.rect.right = atol(sright.GetString());
 		region.rect.bottom = atol(sbottom.GetString());
+		region.color = (COLORREF)strtoul(CStringA(scolor).GetString(), NULL, 16);
+		region.radius = sradius.IsEmpty() ? 0 : atol(sradius.GetString());
+		region.transform = stransform;
 		out->push_back(region);
 	}
 	file.Close();

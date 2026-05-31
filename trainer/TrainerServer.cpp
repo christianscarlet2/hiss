@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "TrainerServer.h"
 #include "SampleStore.h"
+#include "TrainerFonts.h"
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -208,6 +209,35 @@ void CTrainerServer::HandleClient(SOCKET client)
 		int removed = (p_sample_store != NULL && id > 0) ? p_sample_store->ClearUnder(id) : 0;
 		CStringA body;
 		body.Format("{\"removed\":%d}", removed);
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	// API: set the active Text0..Text9 font group and re-recognize all rows.
+	if (path.CompareNoCase("/api/transform") == 0) {
+		int group = atoi(QueryValue(query, "group"));
+		int recognized = (p_sample_store != NULL) ? p_sample_store->RecognizeAll(group) : 0;
+		int count = (p_trainer_fonts != NULL) ? p_trainer_fonts->group_count(group) : 0;
+		CStringA body;
+		body.Format("{\"ok\":true,\"group\":%d,\"recognized\":%d,\"fonts\":%d}", group, recognized, count);
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	// API: font info - current group + per-group record counts (for the dropdown).
+	if (path.CompareNoCase("/api/fonts/info") == 0) {
+		int cur = (p_sample_store != NULL) ? p_sample_store->CurrentGroup() : 0;
+		CStringA counts = "[";
+		for (int g = 0; g < TFE_NUM_FONT_GROUPS; ++g) {
+			if (g > 0) counts += ",";
+			CStringA c; c.Format("%d", (p_trainer_fonts != NULL) ? p_trainer_fonts->group_count(g) : 0);
+			counts += c;
+		}
+		counts += "]";
+		CStringA body;
+		body.Format("{\"current\":%d,\"counts\":%s}", cur, counts.GetString());
 		CStringA response = Response(body, "application/json; charset=utf-8");
 		send(client, response.GetString(), response.GetLength(), 0);
 		return;

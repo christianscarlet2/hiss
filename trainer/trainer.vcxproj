@@ -139,6 +139,7 @@
     <ClCompile Include="TrainerServer.cpp" />
     <ClCompile Include="TrainerWebWindow.cpp" />
     <ClCompile Include="TrainerOcr.cpp" />
+    <ClCompile Include="TrainerFonts.cpp" />
     <ClCompile Include="ScreenshotView.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -151,6 +152,7 @@
     <ClInclude Include="TrainerServer.h" />
     <ClInclude Include="TrainerWebWindow.h" />
     <ClInclude Include="TrainerOcr.h" />
+    <ClInclude Include="TrainerFonts.h" />
     <ClInclude Include="ScreenshotView.h" />
   </ItemGroup>
   <ItemGroup>

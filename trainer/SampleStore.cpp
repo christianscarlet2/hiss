@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "SampleStore.h"
+#include "TrainerFonts.h"
 
 CSampleStore *p_sample_store = NULL;
 
@@ -37,6 +38,7 @@ CSampleStore::CSampleStore()
 {
 	InitializeCriticalSection(&_cs);
 	_next_id = 1;
+	_current_group = 0;
 }
 
 CSampleStore::~CSampleStore()
@@ -45,7 +47,8 @@ CSampleStore::~CSampleStore()
 }
 
 int CSampleStore::Add(const CStringA &region, const std::vector<unsigned char> &png,
-	const std::vector<unsigned char> &png_transformed, const CStringA &guess)
+	const std::vector<unsigned char> &png_transformed, const CStringA &guess,
+	const std::vector<unsigned char> &bgra, int bw, int bh, unsigned long color, int radius)
 {
 	EnterCriticalSection(&_cs);
 	STrainerSample sample;
@@ -55,10 +58,49 @@ int CSampleStore::Add(const CStringA &region, const std::vector<unsigned char> &
 	sample.png_transformed = png_transformed;
 	sample.guess = guess;
 	sample.saved = false;
+	sample.bgra = bgra;
+	sample.bw = bw;
+	sample.bh = bh;
+	sample.color = color;
+	sample.radius = radius;
 	_samples.push_back(sample);
 	int id = sample.id;
 	LeaveCriticalSection(&_cs);
 	return id;
+}
+
+void CSampleStore::SetCurrentGroup(int group)
+{
+	EnterCriticalSection(&_cs);
+	if (group >= 0 && group < TFE_NUM_FONT_GROUPS) _current_group = group;
+	LeaveCriticalSection(&_cs);
+}
+
+int CSampleStore::CurrentGroup()
+{
+	EnterCriticalSection(&_cs);
+	int g = _current_group;
+	LeaveCriticalSection(&_cs);
+	return g;
+}
+
+int CSampleStore::RecognizeAll(int group)
+{
+	int recognized = 0;
+	EnterCriticalSection(&_cs);
+	if (group >= 0 && group < TFE_NUM_FONT_GROUPS) _current_group = group;
+	if (p_trainer_fonts != NULL) {
+		for (size_t i = 0; i < _samples.size(); ++i) {
+			STrainerSample &s = _samples[i];
+			if (s.bgra.empty() || s.bw <= 0 || s.bh <= 0) continue;
+			CString text = p_trainer_fonts->RecognizeBgra(&s.bgra[0], s.bw, s.bh,
+				(COLORREF)s.color, s.radius, group);
+			s.guess = CStringA(text);
+			if (!s.guess.IsEmpty()) ++recognized;
+		}
+	}
+	LeaveCriticalSection(&_cs);
+	return recognized;
 }
 
 static CStringA JsonEscapeA(const CStringA &value)

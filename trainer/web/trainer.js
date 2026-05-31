@@ -5,9 +5,11 @@
   var saveAllBtn = document.getElementById('saveAll');
   var clearAllBtn = document.getElementById('clearAll');
   var dedupBtn = document.getElementById('dedup');
+  var textGroup = document.getElementById('textGroup');
 
   // id -> { tr, input, saved, order }  (order = capture order, for tab index)
   var rendered = {};
+  var currentGroup = 0;
 
   function api(method, url, cb) {
     var xhr = new XMLHttpRequest();
@@ -190,6 +192,64 @@
 
   hideSaved.addEventListener('change', applyHideSaved);
 
+  // ---- Text0..Text9 font transform dropdown ----------------------------------
+  function buildGroupOptions(counts) {
+    textGroup.innerHTML = '';
+    for (var g = 0; g < 10; g++) {
+      var opt = document.createElement('option');
+      opt.value = String(g);
+      var n = (counts && typeof counts[g] === 'number') ? counts[g] : 0;
+      opt.textContent = 'Text' + g + ' (' + n + ')';
+      textGroup.appendChild(opt);
+    }
+    textGroup.value = String(currentGroup);
+  }
+
+  function loadFontInfo() {
+    api('GET', '/api/fonts/info', function (status, data) {
+      if (status === 200 && data) {
+        currentGroup = data.current || 0;
+        buildGroupOptions(data.counts || []);
+      } else {
+        buildGroupOptions([]);
+      }
+    });
+  }
+
+  // Remove all rows and re-fetch (used after a transform re-recognizes everything).
+  function forceReload() {
+    for (var id in rendered) {
+      if (rendered.hasOwnProperty(id) && rendered[id].tr.parentNode) {
+        rendered[id].tr.parentNode.removeChild(rendered[id].tr);
+      }
+    }
+    rendered = {};
+    refresh();
+  }
+
+  textGroup.addEventListener('change', function () {
+    var g = parseInt(textGroup.value, 10);
+    var nRows = Object.keys(rendered).length;
+    if (nRows > 0) {
+      if (!confirm('Apply Text' + g + ' to all ' + nRows + ' row(s)?\n\n'
+        + 'This re-recognizes every row from its scrape using font group ' + g
+        + ' and overwrites the current text in the table.')) {
+        textGroup.value = String(currentGroup);   // revert
+        return;
+      }
+    }
+    api('POST', '/api/transform?group=' + g, function (status, data) {
+      currentGroup = g;
+      if (data) {
+        statusEl.textContent = 'Text' + g + ': ' + (data.recognized || 0)
+          + ' recognized via ' + (data.fonts || 0) + ' font(s)';
+        loadFontInfo();
+      }
+      forceReload();
+    });
+  });
+
+  loadFontInfo();
   refresh();
   setInterval(refresh, 1000);
 })();

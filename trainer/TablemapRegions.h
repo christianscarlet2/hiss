@@ -4,8 +4,11 @@
 
 // A single tablemap region we care about (the balance fields).
 struct STrainerRegion {
-	CString name;
-	RECT    rect;   // left/top/right/bottom in client pixels
+	CString  name;
+	RECT     rect;       // left/top/right/bottom in client pixels
+	COLORREF color;      // ARGB colour cube centre (alpha in high byte)
+	int      radius;     // colour cube radius
+	CString  transform;  // e.g. "Text0".."Text9" / "I" / "N" ...
 };
 
 // Parses a .tm tablemap file and returns only the p0balance..p8balance regions.

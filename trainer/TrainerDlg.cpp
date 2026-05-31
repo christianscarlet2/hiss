@@ -5,6 +5,7 @@
 #include "TrainerWebWindow.h"
 #include "ScreenshotView.h"
 #include "SampleStore.h"
+#include "TrainerFonts.h"
 #include "WindowCapture.h"
 
 using namespace cv;
@@ -159,6 +160,9 @@ BOOL CTrainerDlg::OnInitDialog()
 	if (p_sample_store == NULL) {
 		p_sample_store = new CSampleStore();
 	}
+	if (p_trainer_fonts == NULL) {
+		p_trainer_fonts = new CTrainerFonts();
+	}
 	_server = new CTrainerServer();
 	if (_server->Start()) {
 		p_trainer_server = _server;
@@ -209,6 +213,10 @@ bool CTrainerDlg::DoLoadTablemap(const CString &path)
 	if (!LoadBalanceRegions(path, &_regions)) {
 		SetStatus("Failed to read the tablemap file.");
 		return false;
+	}
+	// Load the t$ font groups + s$tXtype scan modes for Text0..Text9 recognition.
+	if (p_trainer_fonts != NULL) {
+		p_trainer_fonts->LoadFromTablemap(path);
 	}
 	_last.assign(_regions.size(), std::vector<BYTE>());
 	_committed.assign(_regions.size(), std::vector<BYTE>());
@@ -548,8 +556,9 @@ void CTrainerDlg::CaptureTick()
 	}
 
 	if (_capturing) {
-		bool ignore_bad = (IsDlgButtonChecked(IDC_IGNORE_BAD) == BST_CHECKED);
-		STrainerOcrSettings settings = ReadSettings();
+		// Recognition now uses the bitmap-font Text0..Text9 transform (selected in
+		// the React table), not Tesseract. The group is whatever the table dropdown set.
+		int group = (p_sample_store != NULL) ? p_sample_store->CurrentGroup() : 0;
 		for (size_t i = 0; i < _regions.size(); ++i) {
 			std::vector<BYTE> cur;
 			int w = 0, h = 0;
@@ -564,33 +573,35 @@ void CTrainerDlg::CaptureTick()
 			if (cur == _committed[i]) { continue; }
 			_committed[i] = cur;
 
+			// Font-hash recognition on the regular (raw) crop.
+			CString text;
+			if (p_trainer_fonts != NULL) {
+				text = p_trainer_fonts->RecognizeBgra(&cur[0], w, h,
+					_regions[i].color, _regions[i].radius, group);
+			}
+			if (text.IsEmpty()) {
+				continue;   // nothing recognized with the current font group
+			}
+
 			Mat bgra((int)h, (int)w, CV_8UC4, &cur[0]);
 			Mat bgr;
 			cvtColor(bgra, bgr, COLOR_BGRA2BGR);
 
-			Mat preview; CString text; int conf = 0;
-			_ocr.Run(bgr, settings, _regions[i].name, &preview, &text, &conf);
-
-			if (text.IsEmpty()) {
-				continue;   // completely empty OCR — never add
-			}
-			if (ignore_bad && conf < kMinOcrConfidence) {
-				continue;
-			}
 			std::vector<unsigned char> png, png_transformed;
 			std::vector<int> params;
 			params.push_back(IMWRITE_PNG_COMPRESSION);
 			params.push_back(3);
-			// Regular (raw) crop.
+			// Regular (raw) crop for display + training.
 			if (!imencode(".png", bgr, png, params) || png.empty()) {
 				continue;
 			}
-			// Transformed image the OCR actually recognized on (best effort).
-			if (!preview.empty()) {
-				imencode(".png", preview, png_transformed, params);
+			// Transformed (foreground mask) view.
+			if (p_trainer_fonts != NULL) {
+				p_trainer_fonts->MaskPng(&cur[0], w, h, _regions[i].color, _regions[i].radius, &png_transformed);
 			}
 			if (p_sample_store != NULL) {
-				p_sample_store->Add(CStringA(_regions[i].name), png, png_transformed, CStringA(text));
+				p_sample_store->Add(CStringA(_regions[i].name), png, png_transformed, CStringA(text),
+					cur, w, h, (unsigned long)_regions[i].color, _regions[i].radius);
 			}
 		}
 	}
@@ -705,6 +716,10 @@ void CTrainerDlg::OnDestroy()
 	if (p_sample_store != NULL) {
 		delete p_sample_store;
 		p_sample_store = NULL;
+	}
+	if (p_trainer_fonts != NULL) {
+		delete p_trainer_fonts;
+		p_trainer_fonts = NULL;
 	}
 	s_instance = NULL;
 	CDialog::OnDestroy();
