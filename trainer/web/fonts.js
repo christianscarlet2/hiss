@@ -413,6 +413,18 @@
     api('POST', '/api/fonts/clear', function () { refresh(); });
   });
 
+  // Delete every saved t$ font record from the tablemap file (does not touch the
+  // pending glyph list). Destructive and not undoable here, so confirm first.
+  var deleteTmBtn = document.getElementById('deleteTm');
+  deleteTmBtn.addEventListener('click', function () {
+    if (!confirm('Delete ALL font records (t$) from the tablemap file?\nA .tm.bak backup is written first.')) return;
+    api('POST', '/api/fonts/deletealltm', function (status, data) {
+      var n = (data && typeof data.removed === 'number') ? data.removed : 0;
+      var bak = (data && data.backup) ? (' — backup: ' + data.backup) : '';
+      statusEl.textContent = 'Deleted ' + n + ' font record(s) from the .tm' + bak;
+    });
+  });
+
   // Undo the last delete or label/create (Ctrl+Z). A labeled row's font is removed
   // from the tablemap and the row is restored for re-labeling.
   function doUndo() {

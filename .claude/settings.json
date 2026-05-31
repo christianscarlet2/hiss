@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -m 5 \"http://127.0.0.1:28700/api/fonts/list\")",
+      "Bash(curl -s -m 5 -X POST \"http://127.0.0.1:28700/api/fonts/capture\")",
+      "Bash(grep -E '^r\\\\$p[0-8]balance' android_8max.tm)",
+      "Bash(awk '{print $8}')",
+      "Bash(grep -cE \"^t[0-9]\\\\\\\\\\\\$\" android_8max.tm)",
+      "Bash(grep -E \"^t[0-9]\\\\\\\\\\\\$\" android_8max.tm)",
+      "Bash(grep -E '^s\\\\$t[0-9]type' android_8max.tm)"
+    ]
+  }
+}

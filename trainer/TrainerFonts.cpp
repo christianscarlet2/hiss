@@ -571,6 +571,24 @@ CStringA CTrainerFonts::scan_mode(int g)
 	return m;
 }
 
+int CTrainerFonts::DeleteAllFonts()
+{
+	EnterCriticalSection(&_cs);
+	CString path = _tm_path;
+	int count = 0;
+	for (int g = 0; g < TFE_NUM_FONT_GROUPS; g++) {
+		count += (int)_groups[g].size();
+		_groups[g].clear();
+	}
+	LeaveCriticalSection(&_cs);
+	// Back up the on-disk tablemap (fonts still intact) before we overwrite it.
+	if (!path.IsEmpty()) {
+		CopyFile(path, path + ".bak", FALSE);   // FALSE = overwrite any previous backup
+	}
+	SaveToTablemap();   // rewrites the .tm with an empty t$ section
+	return count;
+}
+
 bool CTrainerFonts::SaveToTablemap()
 {
 	EnterCriticalSection(&_cs);

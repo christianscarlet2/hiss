@@ -47,6 +47,10 @@ public:
 	bool SaveToTablemap();
 	CString tm_path() const { return _tm_path; }
 
+	// Delete every font record from all groups (in memory) and persist, removing the
+	// whole t$ section from the .tm. Returns the number of records removed.
+	int DeleteAllFonts();
+
 	// Recognize a top-down 32bpp BGRA crop using font group g and the region's
 	// colour cube. Returns the recognized text (empty if nothing matched).
 	CString RecognizeBgra(const unsigned char *bgra, int w, int h,

@@ -472,6 +472,21 @@ void CTrainerServer::HandleClient(SOCKET client)
 		send(client, response.GetString(), response.GetLength(), 0);
 		return;
 	}
+	// Delete every font record (t$) from the tablemap file (a .tm.bak is written first).
+	if (path.CompareNoCase("/api/fonts/deletealltm") == 0) {
+		int removed = 0;
+		CStringA bak;
+		if (p_trainer_fonts != NULL) {
+			removed = p_trainer_fonts->DeleteAllFonts();
+			bak = CStringA(p_trainer_fonts->tm_path() + ".bak");
+			bak.Replace("\\", "\\\\");   // JSON-escape the path
+			bak.Replace("\"", "\\\"");
+		}
+		CStringA body; body.Format("{\"ok\":true,\"removed\":%d,\"backup\":\"%s\"}", removed, bak.GetString());
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
 	// Save all labeled glyphs into the tablemap's t$ groups, then persist the .tm.
 	if (path.CompareNoCase("/api/fonts/save") == 0) {
 		int written = (p_font_glyph_store != NULL) ? p_font_glyph_store->SaveAll() : 0;
