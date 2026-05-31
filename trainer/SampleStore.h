@@ -8,7 +8,8 @@
 struct STrainerSample {
 	int                   id;
 	CStringA              region;     // e.g. "p3balance"
-	std::vector<unsigned char> png;   // PNG-encoded crop
+	std::vector<unsigned char> png;   // PNG-encoded raw crop (the "regular" view)
+	std::vector<unsigned char> png_transformed; // PNG of the OCR-transformed image
 	CStringA              guess;      // OCR pre-fill / user-edited label
 	bool                  saved;
 	CStringA              saved_base; // base name once written (sample_NNNN)
@@ -21,7 +22,8 @@ public:
 	CSampleStore();
 	~CSampleStore();
 
-	int Add(const CStringA &region, const std::vector<unsigned char> &png, const CStringA &guess);
+	int Add(const CStringA &region, const std::vector<unsigned char> &png,
+		const std::vector<unsigned char> &png_transformed, const CStringA &guess);
 	CStringA ListJson();                                   // [{id,region,guess,saved}]
 	bool GetImage(int id, std::vector<unsigned char> *out);
 	bool Save(int id, const CStringA &text);               // write png + .gt.txt
@@ -36,7 +38,9 @@ private:
 	std::vector<STrainerSample> _samples;
 	int _next_id;
 
-	// Writes <base>.png + <base>.gt.txt; returns base name or empty on failure.
+	// Writes <base>.png + <base>.gt.txt (regular) and, when a transformed image
+	// is present, <base>-transformed.png + <base>-transformed.gt.txt (same label).
+	// Returns base name or empty on failure.
 	CStringA WriteSampleFiles(const STrainerSample &sample, const CStringA &text);
 };
 

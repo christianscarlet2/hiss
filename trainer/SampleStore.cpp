@@ -44,13 +44,15 @@ CSampleStore::~CSampleStore()
 	DeleteCriticalSection(&_cs);
 }
 
-int CSampleStore::Add(const CStringA &region, const std::vector<unsigned char> &png, const CStringA &guess)
+int CSampleStore::Add(const CStringA &region, const std::vector<unsigned char> &png,
+	const std::vector<unsigned char> &png_transformed, const CStringA &guess)
 {
 	EnterCriticalSection(&_cs);
 	STrainerSample sample;
 	sample.id = _next_id++;
 	sample.region = region;
 	sample.png = png;
+	sample.png_transformed = png_transformed;
 	sample.guess = guess;
 	sample.saved = false;
 	_samples.push_back(sample);
@@ -121,26 +123,38 @@ bool CSampleStore::GetImage(int id, std::vector<unsigned char> *out)
 	return found;
 }
 
+// Writes one <png_path> (raw PNG bytes) + <txt_path> (ground-truth label).
+static bool WriteOnePair(const CString &png_path, const CString &txt_path,
+	const std::vector<unsigned char> &png, const CStringA &label)
+{
+	FILE *fp = NULL;
+	if (fopen_s(&fp, png_path.GetString(), "wb") != 0 || fp == NULL) {
+		return false;
+	}
+	if (!png.empty()) {
+		fwrite(&png[0], 1, png.size(), fp);
+	}
+	fclose(fp);
+
+	fp = NULL;
+	if (fopen_s(&fp, txt_path.GetString(), "w") != 0 || fp == NULL) {
+		return false;
+	}
+	fputs(label.GetString(), fp);
+	fputs("\n", fp);
+	fclose(fp);
+	return true;
+}
+
 CStringA CSampleStore::WriteSampleFiles(const STrainerSample &sample, const CStringA &text)
 {
 	CString dir = TrainingDirectory();
 	CString base = NextTrainingBaseName(dir);
-	CString png_path = dir + base + ".png";
-	CString txt_path = dir + base + ".gt.txt";
-
-	// PNG (raw bytes already encoded).
-	FILE *fp = NULL;
-	if (fopen_s(&fp, png_path.GetString(), "wb") != 0 || fp == NULL) {
-		return "";
-	}
-	if (!sample.png.empty()) {
-		fwrite(&sample.png[0], 1, sample.png.size(), fp);
-	}
-	fclose(fp);
 
 	// Ground-truth text. These are balance fields shown in big blinds, so the
-	// label written to the .gt.txt always carries the " BB" unit even though the
-	// user only types the numeric value in the React view (which shows "+ BB").
+	// label always carries the " BB" unit even though the user only types the
+	// numeric value once in the React view (which shows "+ BB"). The SAME label
+	// is written for both the regular and the transformed image.
 	CStringA label = text;
 	label.Trim();
 	CStringA lower = label; lower.MakeLower();
@@ -148,13 +162,17 @@ CStringA CSampleStore::WriteSampleFiles(const STrainerSample &sample, const CStr
 		label += " BB";
 	}
 
-	fp = NULL;
-	if (fopen_s(&fp, txt_path.GetString(), "w") != 0 || fp == NULL) {
+	// Regular (raw) crop -> sample_NNNN.png + sample_NNNN.gt.txt
+	if (!WriteOnePair(dir + base + ".png", dir + base + ".gt.txt", sample.png, label)) {
 		return "";
 	}
-	fputs(label.GetString(), fp);
-	fputs("\n", fp);
-	fclose(fp);
+
+	// Transformed (OCR-preprocessed) image, when present ->
+	// sample_NNNN-transformed.png + sample_NNNN-transformed.gt.txt
+	if (!sample.png_transformed.empty()) {
+		WriteOnePair(dir + base + "-transformed.png", dir + base + "-transformed.gt.txt",
+			sample.png_transformed, label);
+	}
 
 	return CStringA(base);
 }

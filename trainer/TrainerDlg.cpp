@@ -577,15 +577,20 @@ void CTrainerDlg::CaptureTick()
 			if (ignore_bad && conf < kMinOcrConfidence) {
 				continue;
 			}
-			std::vector<unsigned char> png;
+			std::vector<unsigned char> png, png_transformed;
 			std::vector<int> params;
 			params.push_back(IMWRITE_PNG_COMPRESSION);
 			params.push_back(3);
+			// Regular (raw) crop.
 			if (!imencode(".png", bgr, png, params) || png.empty()) {
 				continue;
 			}
+			// Transformed image the OCR actually recognized on (best effort).
+			if (!preview.empty()) {
+				imencode(".png", preview, png_transformed, params);
+			}
 			if (p_sample_store != NULL) {
-				p_sample_store->Add(CStringA(_regions[i].name), png, CStringA(text));
+				p_sample_store->Add(CStringA(_regions[i].name), png, png_transformed, CStringA(text));
 			}
 		}
 	}
