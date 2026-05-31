@@ -29,7 +29,17 @@ public:
 	bool GetImage(int gid, std::vector<unsigned char> *out);          // mask PNG
 	bool GetRegularImage(int gid, std::vector<unsigned char> *out);   // glyph actual-pixels PNG
 	bool GetFullImage(int gid, std::vector<unsigned char> *out);      // entire region scrape PNG
-	bool SetChar(int gid, const CStringA &ch);            // assign / clear a character
+
+	// Set which font group this glyph saves to (also becomes the sticky default
+	// for subsequent captures).
+	bool SetGroupFor(int gid, int group);
+
+	// Assign a character to a glyph. A non-empty single character creates the font
+	// immediately in the glyph's group (in memory + persisted to the .tm), then
+	// drops every pending glyph whose font now exists (the new one + duplicates).
+	// Returns the number of pending glyphs removed.
+	int AssignChar(int gid, const CStringA &ch);
+
 	bool Delete(int gid);
 	void Clear();
 

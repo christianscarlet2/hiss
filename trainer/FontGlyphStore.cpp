@@ -114,21 +114,52 @@ bool CFontGlyphStore::GetFullImage(int gid, std::vector<unsigned char> *out)
 	return found;
 }
 
-bool CFontGlyphStore::SetChar(int gid, const CStringA &ch)
+bool CFontGlyphStore::SetGroupFor(int gid, int group)
 {
+	if (group < 0 || group >= TFE_NUM_FONT_GROUPS) return false;
 	bool found = false;
 	EnterCriticalSection(&_cs);
 	for (size_t i = 0; i < _entries.size(); ++i) {
+		if (_entries[i].gid == gid) { _entries[i].group = group; found = true; break; }
+	}
+	_edit_group = group;   // sticky default for the next capture
+	LeaveCriticalSection(&_cs);
+	return found;
+}
+
+int CFontGlyphStore::AssignChar(int gid, const CStringA &ch)
+{
+	int removed = 0;
+	EnterCriticalSection(&_cs);
+
+	CStringA v = ch;
+	if (v.GetLength() > 1) v = v.Left(1);   // a glyph maps to a single character
+
+	int create_group = -1;
+	TGlyph create_glyph;
+	for (size_t i = 0; i < _entries.size(); ++i) {
 		if (_entries[i].gid == gid) {
-			CStringA v = ch;
-			if (v.GetLength() > 1) v = v.Left(1);   // a glyph maps to a single character
 			_entries[i].assigned = v;
-			found = true;
+			if (!v.IsEmpty()) { create_group = _entries[i].group; create_glyph = _entries[i].glyph; }
 			break;
 		}
 	}
+
+	// Create the font now (in memory for instant recognition + persisted), then
+	// drop every pending glyph whose font now exists (this one + any duplicates).
+	if (!v.IsEmpty() && create_group >= 0 && p_trainer_fonts != NULL) {
+		p_trainer_fonts->SetGlyph(create_group, create_glyph, v[0]);
+		p_trainer_fonts->SaveToTablemap();
+		for (size_t i = _entries.size(); i-- > 0; ) {
+			if (p_trainer_fonts->HasHexmash(_entries[i].group, _entries[i].glyph.hexmash)) {
+				_entries.erase(_entries.begin() + i);
+				++removed;
+			}
+		}
+	}
+
 	LeaveCriticalSection(&_cs);
-	return found;
+	return removed;
 }
 
 bool CFontGlyphStore::Delete(int gid)

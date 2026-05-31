@@ -271,14 +271,13 @@ void CTrainerServer::HandleClient(SOCKET client)
 		send(client, response.GetString(), response.GetLength(), 0);
 		return;
 	}
-	// Capture+segment the live scrapes into the glyph store (UI thread).
+	// Capture+segment the live scrapes into the glyph store (UI thread). Uses the
+	// sticky edit-group unless an explicit group is provided.
 	if (path.CompareNoCase("/api/fonts/capture") == 0) {
-		int group = atoi(QueryValue(query, "group"));
-		if (p_font_glyph_store != NULL) p_font_glyph_store->SetEditGroup(group);
+		CStringA g = QueryValue(query, "group");
+		if (!g.IsEmpty() && p_font_glyph_store != NULL) p_font_glyph_store->SetEditGroup(atoi(g));
 		if (g_trainer_main_hwnd != NULL) ::SendMessage(g_trainer_main_hwnd, WM_TRAINER_CAPTURE_FONTS, 0, 0);
-		int n = (p_font_glyph_store != NULL) ? 0 : 0;   // count returned via list refresh
-		CStringA body; body.Format("{\"ok\":true,\"group\":%d,\"n\":%d}", group, n);
-		CStringA response = Response(body, "application/json; charset=utf-8");
+		CStringA response = Response("{\"ok\":true}", "application/json; charset=utf-8");
 		send(client, response.GetString(), response.GetLength(), 0);
 		return;
 	}
@@ -325,11 +324,22 @@ void CTrainerServer::HandleClient(SOCKET client)
 		}
 		return;
 	}
-	// Assign / clear the character for one glyph.
+	// Assign / clear the character for one glyph. A non-empty char creates the font
+	// now and purges pending glyphs whose font now exists; returns how many removed.
 	if (path.CompareNoCase("/api/fonts/setchar") == 0) {
 		int gid = atoi(QueryValue(query, "gid"));
 		CStringA ch = UrlDecode(QueryValue(query, "ch"));
-		bool ok = (p_font_glyph_store != NULL && gid > 0 && p_font_glyph_store->SetChar(gid, ch));
+		int removed = (p_font_glyph_store != NULL && gid > 0) ? p_font_glyph_store->AssignChar(gid, ch) : 0;
+		CStringA body; body.Format("{\"ok\":true,\"removed\":%d}", removed);
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+	// Set which font group a glyph saves to (also the sticky default for captures).
+	if (path.CompareNoCase("/api/fonts/setgroup") == 0) {
+		int gid = atoi(QueryValue(query, "gid"));
+		int group = atoi(QueryValue(query, "group"));
+		bool ok = (p_font_glyph_store != NULL && gid > 0 && p_font_glyph_store->SetGroupFor(gid, group));
 		CStringA body; body.Format("{\"ok\":%s}", ok ? "true" : "false");
 		CStringA response = Response(body, "application/json; charset=utf-8");
 		send(client, response.GetString(), response.GetLength(), 0);

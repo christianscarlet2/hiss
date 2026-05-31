@@ -67,6 +67,7 @@ public:
 	void RemoveHexmash(int group, const CStringA &hexmash);
 
 	int      group_count(int g);     // number of records currently in group g
+	bool     HasHexmash(int g, const CStringA &hexmash);   // is this glyph already in group g?
 	CStringA scan_mode(int g);       // "plain" / "fuzzy" / numeric tolerance ("plain" default)
 
 private:

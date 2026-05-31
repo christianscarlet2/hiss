@@ -525,6 +525,15 @@ int CTrainerFonts::group_count(int g)
 	return n;
 }
 
+bool CTrainerFonts::HasHexmash(int g, const CStringA &hexmash)
+{
+	if (g < 0 || g >= TFE_NUM_FONT_GROUPS) return false;
+	EnterCriticalSection(&_cs);
+	bool has = (_groups[g].find(hexmash) != _groups[g].end());
+	LeaveCriticalSection(&_cs);
+	return has;
+}
+
 CStringA CTrainerFonts::scan_mode(int g)
 {
 	if (g < 0 || g >= TFE_NUM_FONT_GROUPS) return "plain";

@@ -1,14 +1,13 @@
 (function () {
   var tbody = document.getElementById('tbody');
   var statusEl = document.getElementById('status');
-  var groupSel = document.getElementById('group');
   var captureBtn = document.getElementById('capture');
   var saveAllBtn = document.getElementById('saveAll');
   var clearAllBtn = document.getElementById('clearAll');
   var emptyHint = document.getElementById('empty');
 
   var rendered = {};      // gid -> { tr, input }
-  var currentGroup = 0;
+  var defaultGroup = 0;   // sticky group new rows default to
 
   function api(method, url, cb) {
     var xhr = new XMLHttpRequest();
@@ -22,14 +21,6 @@
     };
     xhr.send();
   }
-
-  for (var g = 0; g < 10; g++) {
-    var opt = document.createElement('option');
-    opt.value = String(g);
-    opt.textContent = 'Text' + g;
-    groupSel.appendChild(opt);
-  }
-  groupSel.value = '0';
 
   function retab() {
     var rows = tbody.querySelectorAll('tr');
@@ -81,15 +72,37 @@
     input.value = gl.assigned || '';
     if (input.value) input.classList.add('done');
     function commit() {
+      // Assigning a char creates the font (and purges duplicates) server-side;
+      // the periodic refresh removes the now-covered rows shortly after.
       api('POST', '/api/fonts/setchar?gid=' + gl.gid + '&ch=' + encodeURIComponent(input.value), function () {});
       if (input.value) input.classList.add('done'); else input.classList.remove('done');
     }
-    input.addEventListener('input', commit);
+    input.addEventListener('input', function () {
+      commit();
+      if (input.value) focusNext(input);   // auto-advance for fast labeling
+    });
     input.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { e.preventDefault(); commit(); focusNext(input); }
     });
     tdC.appendChild(input);
     tr.appendChild(tdC);
+
+    var tdGrp = document.createElement('td');
+    tdGrp.className = 'grp';
+    var grpSel = document.createElement('select');
+    grpSel.tabIndex = -1;
+    for (var gi = 0; gi < 10; gi++) {
+      var o = document.createElement('option');
+      o.value = String(gi); o.textContent = 'Text' + gi;
+      grpSel.appendChild(o);
+    }
+    grpSel.value = String(typeof gl.group === 'number' ? gl.group : defaultGroup);
+    grpSel.addEventListener('change', function () {
+      defaultGroup = parseInt(grpSel.value, 10);
+      api('POST', '/api/fonts/setgroup?gid=' + gl.gid + '&group=' + defaultGroup, function () {});
+    });
+    tdGrp.appendChild(grpSel);
+    tr.appendChild(tdGrp);
 
     var tdR = document.createElement('td');
     tdR.className = 'r';
@@ -139,14 +152,9 @@
     });
   }
 
-  groupSel.addEventListener('change', function () {
-    currentGroup = parseInt(groupSel.value, 10);
-    api('POST', '/api/fonts/group?group=' + currentGroup, function () {});
-  });
-
   captureBtn.addEventListener('click', function () {
     statusEl.textContent = 'Capturing…';
-    api('POST', '/api/fonts/capture?group=' + currentGroup, function () { refresh(); });
+    api('POST', '/api/fonts/capture', function () { refresh(); });
   });
 
   saveAllBtn.addEventListener('click', function () {
@@ -161,8 +169,6 @@
     api('POST', '/api/fonts/clear', function () { refresh(); });
   });
 
-  // Tell the server our initial working group.
-  api('POST', '/api/fonts/group?group=0', function () {});
   refresh();
   setInterval(refresh, 1500);
 })();
