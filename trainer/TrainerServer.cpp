@@ -326,10 +326,15 @@ void CTrainerServer::HandleClient(SOCKET client)
 	}
 	// Assign / clear the character for one glyph. A non-empty char creates the font
 	// now and purges pending glyphs whose font now exists; returns how many removed.
+	// After creating a font we rescan every live region against the updated groups
+	// (same as Capture/Undo) so all glyphs — not just the edited one — are re-evaluated.
 	if (path.CompareNoCase("/api/fonts/setchar") == 0) {
 		int gid = atoi(QueryValue(query, "gid"));
 		CStringA ch = UrlDecode(QueryValue(query, "ch"));
 		int removed = (p_font_glyph_store != NULL && gid > 0) ? p_font_glyph_store->AssignChar(gid, ch) : 0;
+		if (!ch.IsEmpty() && g_trainer_main_hwnd != NULL) {
+			::SendMessage(g_trainer_main_hwnd, WM_TRAINER_CAPTURE_FONTS, 0, 0);
+		}
 		CStringA body; body.Format("{\"ok\":true,\"removed\":%d}", removed);
 		CStringA response = Response(body, "application/json; charset=utf-8");
 		send(client, response.GetString(), response.GetLength(), 0);

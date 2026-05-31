@@ -31,11 +31,18 @@
     }
   }
 
-  function focusNext(input) {
+  // After a rescan rebuilds the table, jump to the first still-unlabeled glyph so
+  // the user can keep labeling top-to-bottom without reaching for the mouse.
+  function focusFirstEmpty() {
     var inputs = tbody.querySelectorAll('input.ch');
     for (var i = 0; i < inputs.length; i++) {
-      if (inputs[i] === input && i + 1 < inputs.length) { inputs[i + 1].focus(); inputs[i + 1].select(); return; }
+      if (!inputs[i].value) { inputs[i].focus(); inputs[i].select(); return; }
     }
+  }
+
+  // Toggle the table-wide "scanning" state that reveals the per-row spinners.
+  function setScanning(on) {
+    if (on) tbody.classList.add('scanning'); else tbody.classList.remove('scanning');
   }
 
   function buildRow(gl) {
@@ -72,19 +79,30 @@
     input.value = gl.assigned || '';
     if (input.value) input.classList.add('done');
     function commit() {
-      // Assigning a char creates the font (and purges duplicates) server-side;
-      // the periodic refresh removes the now-covered rows shortly after.
-      api('POST', '/api/fonts/setchar?gid=' + gl.gid + '&ch=' + encodeURIComponent(input.value), function () {});
-      if (input.value) input.classList.add('done'); else input.classList.remove('done');
+      var val = input.value;
+      if (val) {
+        // Assigning a char creates the font AND rescans every glyph server-side, so
+        // any other now-recognized glyphs drop out too. Show the per-row spinners
+        // while that runs, then advance to the next unlabeled glyph when it finishes.
+        input.classList.add('done');
+        setScanning(true);
+        api('POST', '/api/fonts/setchar?gid=' + gl.gid + '&ch=' + encodeURIComponent(val), function () {
+          refresh(function () { setScanning(false); focusFirstEmpty(); });
+        });
+      } else {
+        // Clearing a char creates no font and triggers no rescan.
+        input.classList.remove('done');
+        api('POST', '/api/fonts/setchar?gid=' + gl.gid + '&ch=', function () {});
+      }
     }
-    input.addEventListener('input', function () {
-      commit();
-      if (input.value) focusNext(input);   // auto-advance for fast labeling
-    });
+    input.addEventListener('input', commit);
     input.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); commit(); focusNext(input); }
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
     });
     tdC.appendChild(input);
+    var spin = document.createElement('span');
+    spin.className = 'spin';   // visible only while tbody has the .scanning class
+    tdC.appendChild(spin);
     tr.appendChild(tdC);
 
     var tdGrp = document.createElement('td');

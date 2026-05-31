@@ -92,6 +92,21 @@ td.c input {
   border-radius: 3px;
 }
 td.c input.done { background: #e7f6e7; border-color: #74c074; }
+/* per-row rescan spinner: hidden until the table is in the scanning state */
+td.c { white-space: nowrap; }
+.spin {
+  display: none;
+  width: 12px;
+  height: 12px;
+  margin-left: 6px;
+  vertical-align: middle;
+  border: 2px solid #c7ccd3;
+  border-top-color: #3d82f6;
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+}
+tbody.scanning .spin { display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
 td.r { color: #6b7280; font-size: 11px; white-space: nowrap; }
 td.a { width: 1%; white-space: nowrap; }
 td.a button { padding: 1px 7px; background: #8a929c; }
