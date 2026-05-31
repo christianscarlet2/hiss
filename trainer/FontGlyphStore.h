@@ -43,6 +43,11 @@ public:
 	bool Delete(int gid);
 	void Clear();
 
+	// Undo the last removal: restores the row(s) that were deleted, or — for a row
+	// that was labeled (font created) — removes that font from the tablemap, re-saves,
+	// and restores the row. Returns the number of rows restored (0 = nothing to undo).
+	int Undo();
+
 	// Save every labeled glyph into its font group, then persist the tablemap.
 	// Returns the number of glyph records written.
 	int SaveAll();
@@ -52,8 +57,18 @@ public:
 	int  EditGroup();
 
 private:
+	// One reversible removal. type 0 = plain delete; type 1 = label/create (the
+	// font in `group`/`hexmash` was written to the tablemap and must be removed on undo).
+	struct SUndoAction {
+		int type;
+		int group;
+		CStringA hexmash;
+		std::vector<SFontGlyphEntry> entries;   // row(s) to restore
+	};
+
 	CRITICAL_SECTION _cs;
 	std::vector<SFontGlyphEntry> _entries;
+	std::vector<SUndoAction> _undo;
 	int _next_gid;
 	int _edit_group;
 };

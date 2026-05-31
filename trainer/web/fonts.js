@@ -3,6 +3,7 @@
   var statusEl = document.getElementById('status');
   var captureBtn = document.getElementById('capture');
   var clearAllBtn = document.getElementById('clearAll');
+  var undoBtn = document.getElementById('undo');
   var emptyHint = document.getElementById('empty');
 
   var rendered = {};      // gid -> { tr, input }
@@ -172,9 +173,9 @@
     return tr;
   }
 
-  function refresh() {
+  function refresh(onDone) {
     api('GET', '/api/fonts/list', function (status, rows) {
-      if (status !== 200 || !rows) { statusEl.textContent = 'Disconnected'; return; }
+      if (status !== 200 || !rows) { statusEl.textContent = 'Disconnected'; if (onDone) onDone(); return; }
       var live = {};
       for (var i = 0; i < rows.length; i++) live[rows[i].gid] = true;
       for (var id in rendered) {
@@ -193,6 +194,7 @@
       retab();
       emptyHint.style.display = rows.length ? 'none' : '';
       statusEl.textContent = rows.length + ' glyph(s), ' + labeled + ' labeled';
+      if (onDone) onDone();
     });
   }
 
@@ -204,6 +206,46 @@
   clearAllBtn.addEventListener('click', function () {
     if (!confirm('Discard ALL pending glyphs? (Saved fonts are kept.)')) return;
     api('POST', '/api/fonts/clear', function () { refresh(); });
+  });
+
+  // Undo the last delete or label/create (Ctrl+Z). A labeled row's font is removed
+  // from the tablemap and the row is restored for re-labeling.
+  function doUndo() {
+    // Remember which rows exist now; the restored row(s) come back with fresh gids,
+    // so anything new after the refresh is what undo brought back.
+    var before = {};
+    for (var pid in rendered) if (rendered.hasOwnProperty(pid)) before[pid] = true;
+    api('POST', '/api/fonts/undo', function (status, data) {
+      if (data && typeof data.restored === 'number') {
+        statusEl.textContent = data.restored ? ('Restored ' + data.restored + ' row(s)') : 'Nothing to undo';
+      }
+      // Full rebuild so the restored row(s) definitely re-render.
+      for (var id in rendered) {
+        if (rendered.hasOwnProperty(id) && rendered[id].tr.parentNode) {
+          rendered[id].tr.parentNode.removeChild(rendered[id].tr);
+        }
+      }
+      rendered = {};
+      refresh(function () {
+        // Focus the first restored row's char input so labeling can continue.
+        var rows = tbody.querySelectorAll('tr');
+        for (var i = 0; i < rows.length; i++) {
+          var gid = rows[i].getAttribute('data-gid');
+          if (gid && !before[gid]) {
+            var inp = rows[i].querySelector('input.ch');
+            if (inp) { inp.focus(); inp.select(); }
+            return;
+          }
+        }
+      });
+    });
+  }
+  undoBtn.addEventListener('click', doUndo);
+  document.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+      e.preventDefault();
+      doUndo();
+    }
   });
 
   refresh();

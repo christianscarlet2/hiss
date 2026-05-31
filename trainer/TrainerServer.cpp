@@ -354,6 +354,18 @@ void CTrainerServer::HandleClient(SOCKET client)
 		send(client, response.GetString(), response.GetLength(), 0);
 		return;
 	}
+	// Undo the last delete or label/create. Undo() removes the created font from the
+	// tablemap first (so the glyph is no longer detected) and restores the stored
+	// row(s); we then rescan the live glyphs so the now-unknown glyph re-surfaces
+	// naturally (deduped against what was just restored).
+	if (path.CompareNoCase("/api/fonts/undo") == 0) {
+		int restored = (p_font_glyph_store != NULL) ? p_font_glyph_store->Undo() : 0;
+		if (g_trainer_main_hwnd != NULL) ::SendMessage(g_trainer_main_hwnd, WM_TRAINER_CAPTURE_FONTS, 0, 0);
+		CStringA body; body.Format("{\"ok\":true,\"restored\":%d}", restored);
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
 	// Clear all pending glyphs.
 	if (path.CompareNoCase("/api/fonts/clear") == 0) {
 		if (p_font_glyph_store != NULL) p_font_glyph_store->Clear();

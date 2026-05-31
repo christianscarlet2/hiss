@@ -150,12 +150,19 @@ int CFontGlyphStore::AssignChar(int gid, const CStringA &ch)
 	if (!v.IsEmpty() && create_group >= 0 && p_trainer_fonts != NULL) {
 		p_trainer_fonts->SetGlyph(create_group, create_glyph, v[0]);
 		p_trainer_fonts->SaveToTablemap();
+		SUndoAction act;
+		act.type = 1;
+		act.group = create_group;
+		act.hexmash = create_glyph.hexmash;
 		for (size_t i = _entries.size(); i-- > 0; ) {
 			if (p_trainer_fonts->HasHexmash(_entries[i].group, _entries[i].glyph.hexmash)) {
+				act.entries.push_back(_entries[i]);
 				_entries.erase(_entries.begin() + i);
 				++removed;
 			}
 		}
+		_undo.push_back(act);
+		if (_undo.size() > 100) _undo.erase(_undo.begin());
 	}
 
 	LeaveCriticalSection(&_cs);
@@ -167,7 +174,18 @@ bool CFontGlyphStore::Delete(int gid)
 	bool found = false;
 	EnterCriticalSection(&_cs);
 	for (size_t i = 0; i < _entries.size(); ++i) {
-		if (_entries[i].gid == gid) { _entries.erase(_entries.begin() + i); found = true; break; }
+		if (_entries[i].gid == gid) {
+			SUndoAction act;
+			act.type = 0;
+			act.group = _entries[i].group;
+			act.hexmash = _entries[i].glyph.hexmash;
+			act.entries.push_back(_entries[i]);
+			_undo.push_back(act);
+			if (_undo.size() > 100) _undo.erase(_undo.begin());
+			_entries.erase(_entries.begin() + i);
+			found = true;
+			break;
+		}
 	}
 	LeaveCriticalSection(&_cs);
 	return found;
@@ -177,7 +195,33 @@ void CFontGlyphStore::Clear()
 {
 	EnterCriticalSection(&_cs);
 	_entries.clear();
+	_undo.clear();
 	LeaveCriticalSection(&_cs);
+}
+
+int CFontGlyphStore::Undo()
+{
+	int restored = 0;
+	EnterCriticalSection(&_cs);
+	if (!_undo.empty()) {
+		SUndoAction act = _undo.back();
+		_undo.pop_back();
+		// A labeled/created row: remove its font from the tablemap and re-save.
+		if (act.type == 1 && p_trainer_fonts != NULL) {
+			p_trainer_fonts->RemoveHexmash(act.group, act.hexmash);
+			p_trainer_fonts->SaveToTablemap();
+		}
+		// Restore the row(s) as fresh, unlabeled glyphs.
+		for (size_t i = 0; i < act.entries.size(); ++i) {
+			SFontGlyphEntry e = act.entries[i];
+			e.gid = _next_gid++;
+			e.assigned = "";
+			_entries.push_back(e);
+			++restored;
+		}
+	}
+	LeaveCriticalSection(&_cs);
+	return restored;
 }
 
 int CFontGlyphStore::SaveAll()
