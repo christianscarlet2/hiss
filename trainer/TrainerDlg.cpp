@@ -230,6 +230,13 @@ bool CTrainerDlg::DoLoadTablemap(const CString &path)
 	if (p_trainer_fonts != NULL) {
 		p_trainer_fonts->LoadFromTablemap(path);
 	}
+	// Seed the thread-safe region colour cache (source of truth for colour/radius,
+	// shared with the HTTP server thread and written back to r$ on colour re-pick).
+	RegionColors_Reset();
+	RegionColors_SetTmPath(path);
+	for (size_t i = 0; i < _regions.size(); ++i) {
+		RegionColors_Add(_regions[i].name, _regions[i].color, _regions[i].radius, _regions[i].transform);
+	}
 	_last.assign(_regions.size(), std::vector<BYTE>());
 	_committed.assign(_regions.size(), std::vector<BYTE>());
 	_have_baseline.assign(_regions.size(), false);
@@ -626,10 +633,14 @@ void CTrainerDlg::CaptureFontsForEditor()
 		std::vector<BYTE> cur;
 		int w = 0, h = 0;
 		if (!CropRegionBgra(bmp, bw, bh, _regions[i].rect, &cur, &w, &h)) continue;
+		// Use the latest colour/radius from the cache (may have been re-picked).
+		COLORREF color = _regions[i].color; int radius = _regions[i].radius;
+		RegionColors_GetByName(_regions[i].name, &color, &radius);
 		std::vector<TGlyph> glyphs;
-		p_trainer_fonts->SegmentBgra(&cur[0], w, h, _regions[i].color, _regions[i].radius, group, &glyphs);
+		p_trainer_fonts->SegmentBgra(&cur[0], w, h, color, radius, group, &glyphs);
 		for (size_t g = 0; g < glyphs.size(); ++g) {
-			if (p_font_glyph_store->Add(CStringA(_regions[i].name), group, glyphs[g]) >= 0) ++added;
+			if (p_font_glyph_store->Add(CStringA(_regions[i].name), group, glyphs[g],
+				color, radius, cur, w, h) >= 0) ++added;
 		}
 	}
 	DeleteObject(bmp);

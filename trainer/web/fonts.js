@@ -45,6 +45,63 @@
     if (on) tbody.classList.add('scanning'); else tbody.classList.remove('scanning');
   }
 
+  function clamp255(n) { n = parseInt(n, 10); if (isNaN(n)) n = 0; return n < 0 ? 0 : (n > 255 ? 255 : n); }
+
+  // Cache-buster so a regenerated glyph's <img> elements reload instead of showing
+  // the stale cached PNG.
+  var imgVer = 0;
+
+  // ---- Eyedropper magnifier (vision.exe style: zoomed pixel grid + crosshair) ----
+  var mag = document.createElement('canvas');
+  mag.id = 'magnifier';
+  mag.width = 144; mag.height = 144;
+  mag.style.display = 'none';
+  document.body.appendChild(mag);
+  var magCtx = mag.getContext('2d');
+
+  function showMag(imgEl, ev) {
+    if (!imgEl.naturalWidth) return;
+    var rect = imgEl.getBoundingClientRect();
+    var nx = Math.floor((ev.clientX - rect.left) / rect.width * imgEl.naturalWidth);
+    var ny = Math.floor((ev.clientY - rect.top) / rect.height * imgEl.naturalHeight);
+    var srcWin = 48;                 // natural PNG pixels shown across the magnifier
+    magCtx.imageSmoothingEnabled = false;
+    magCtx.fillStyle = '#202020';
+    magCtx.fillRect(0, 0, mag.width, mag.height);
+    magCtx.drawImage(imgEl, nx - srcWin / 2, ny - srcWin / 2, srcWin, srcWin,
+      0, 0, mag.width, mag.height);
+    // Centered crosshair: black shadow then white, with a small gap in the middle.
+    var cx = mag.width / 2, cy = mag.height / 2;
+    function cross(color, w) {
+      magCtx.strokeStyle = color; magCtx.lineWidth = w; magCtx.beginPath();
+      magCtx.moveTo(cx - 9, cy); magCtx.lineTo(cx - 3, cy);
+      magCtx.moveTo(cx + 3, cy); magCtx.lineTo(cx + 9, cy);
+      magCtx.moveTo(cx, cy - 9); magCtx.lineTo(cx, cy - 3);
+      magCtx.moveTo(cx, cy + 3); magCtx.lineTo(cx, cy + 9);
+      magCtx.stroke();
+    }
+    cross('#000', 3); cross('#fff', 1);
+    magCtx.strokeStyle = '#fff'; magCtx.lineWidth = 1;
+    magCtx.strokeRect(0.5, 0.5, mag.width - 1, mag.height - 1);
+    // Keep it on-screen, offset from the cursor.
+    var mx = ev.clientX + 18, my = ev.clientY + 18;
+    if (mx + mag.width > window.innerWidth) mx = ev.clientX - mag.width - 18;
+    if (my + mag.height > window.innerHeight) my = ev.clientY - mag.height - 18;
+    mag.style.left = mx + 'px';
+    mag.style.top = my + 'px';
+    mag.style.display = 'block';
+  }
+  function hideMag() { mag.style.display = 'none'; }
+
+  // Map a click/hover on a pixelated image to its natural pixel coordinate.
+  function naturalXY(imgEl, ev) {
+    var rect = imgEl.getBoundingClientRect();
+    return {
+      x: Math.floor((ev.clientX - rect.left) / rect.width * imgEl.naturalWidth),
+      y: Math.floor((ev.clientY - rect.top) / rect.height * imgEl.naturalHeight)
+    };
+  }
+
   function buildRow(gl) {
     var tr = document.createElement('tr');
     tr.setAttribute('data-gid', gl.gid);
@@ -105,6 +162,10 @@
     tdC.appendChild(spin);
     tr.appendChild(tdC);
 
+    // Per-row colour state, seeded from the list payload (region r$ defaults).
+    var st = { a: clamp255(gl.a), r: clamp255(gl.r), g: clamp255(gl.g), b: clamp255(gl.b),
+               radius: parseInt(gl.radius, 10) || 0 };
+
     var tdGrp = document.createElement('td');
     tdGrp.className = 'grp';
     var grpSel = document.createElement('select');
@@ -117,32 +178,30 @@
     grpSel.value = String(typeof gl.group === 'number' ? gl.group : defaultGroup);
     grpSel.addEventListener('change', function () {
       defaultGroup = parseInt(grpSel.value, 10);
-      api('POST', '/api/fonts/setgroup?gid=' + gl.gid + '&group=' + defaultGroup, function () {});
+      // Setting the transform re-pulls the colour/radius default from a region using
+      // it, regenerates the glyph, and returns the applied colour for the fields.
+      api('POST', '/api/fonts/glyph/group?gid=' + gl.gid + '&group=' + defaultGroup, function (status, data) {
+        if (data && data.ok) {
+          st.a = clamp255(data.a); st.r = clamp255(data.r); st.g = clamp255(data.g);
+          st.b = clamp255(data.b); st.radius = parseInt(data.radius, 10) || 0;
+          syncFields(); reloadImages();
+        }
+      });
     });
     tdGrp.appendChild(grpSel);
     tr.appendChild(tdGrp);
 
-    // Apply this row's group to every row below it.
+    // Apply this row's group + colour + radius to every row below it (regenerates each).
     var tdAg = document.createElement('td');
     tdAg.className = 'ag';
     var applyBtn = document.createElement('button');
     applyBtn.textContent = 'Apply Group Below';
     applyBtn.tabIndex = -1;
     applyBtn.addEventListener('click', function () {
-      var val = grpSel.value;
-      defaultGroup = parseInt(val, 10);
-      var rows = tbody.querySelectorAll('tr');
-      var below = false;
-      for (var i = 0; i < rows.length; i++) {
-        if (rows[i] === tr) { below = true; continue; }
-        if (!below) continue;
-        var sel = rows[i].querySelector('td.grp select');
-        var rgid = rows[i].getAttribute('data-gid');
-        if (sel && rgid) {
-          sel.value = val;
-          api('POST', '/api/fonts/setgroup?gid=' + rgid + '&group=' + val, function () {});
-        }
-      }
+      defaultGroup = parseInt(grpSel.value, 10);
+      var q = '/api/fonts/applybelow?gid=' + gl.gid + '&group=' + defaultGroup
+        + '&a=' + st.a + '&r=' + st.r + '&g=' + st.g + '&b=' + st.b + '&radius=' + st.radius;
+      api('POST', q, function () { rebuildAll(); });
     });
     tdAg.appendChild(applyBtn);
     tr.appendChild(tdAg);
@@ -152,6 +211,103 @@
     tdR.textContent = gl.region + ' · Text' + gl.group;
     tdR.title = gl.hexmash || '';
     tr.appendChild(tdR);
+
+    // ---- Colour editor (a details row toggled open under this row) ----
+    var editTr = document.createElement('tr');
+    editTr.className = 'coloredit';
+    editTr.style.display = 'none';
+    var editTd = document.createElement('td');
+    editTd.colSpan = 8;
+    editTr.appendChild(editTd);
+    var panel = document.createElement('div');
+    panel.className = 'cedit';
+    editTd.appendChild(panel);
+
+    // Two enlarged, pixelated pick targets: the glyph reference and the whole scrape.
+    var pickWrap = document.createElement('div');
+    pickWrap.className = 'pickimgs';
+    function makePick(label, which) {
+      var box = document.createElement('div');
+      box.className = 'pickbox';
+      var lb = document.createElement('div'); lb.className = 'lbl'; lb.textContent = label;
+      var im = document.createElement('img');
+      im.className = 'pick';
+      im.src = '/api/fonts/glyph/' + which + '?gid=' + gl.gid;
+      im.addEventListener('mousemove', function (e) { showMag(im, e); });
+      im.addEventListener('mouseleave', hideMag);
+      im.addEventListener('click', function (e) {
+        var p = naturalXY(im, e);
+        api('GET', '/api/fonts/glyph/pixel?gid=' + gl.gid + '&img=' + which + '&px=' + p.x + '&py=' + p.y,
+          function (status, data) {
+            if (data && data.ok) {
+              st.a = clamp255(data.a); st.r = clamp255(data.r); st.g = clamp255(data.g); st.b = clamp255(data.b);
+              syncFields(); doRegen();
+            }
+          });
+      });
+      box.appendChild(lb); box.appendChild(im);
+      return { box: box, img: im };
+    }
+    var pkReg = makePick('Reference — click to pick', 'regular');
+    var pkFull = makePick('Scrape — click to pick', 'full');
+    pickWrap.appendChild(pkReg.box);
+    pickWrap.appendChild(pkFull.box);
+    panel.appendChild(pickWrap);
+
+    // A/R/G/B + radius fields and a live swatch.
+    var fields = document.createElement('div');
+    fields.className = 'fields';
+    var swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    fields.appendChild(swatch);
+    var inputs = {};
+    function makeField(key, label, min, max) {
+      var l = document.createElement('label');
+      l.textContent = label;
+      var inp = document.createElement('input');
+      inp.type = 'number'; inp.className = 'cfield';
+      if (min !== null) inp.min = min;
+      if (max !== null) inp.max = max;
+      inp.tabIndex = -1;
+      function commitField() {
+        st.a = clamp255(inputs.a.value); st.r = clamp255(inputs.r.value);
+        st.g = clamp255(inputs.g.value); st.b = clamp255(inputs.b.value);
+        st.radius = parseInt(inputs.radius.value, 10) || 0;
+        doRegen();
+      }
+      inp.addEventListener('change', commitField);
+      inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); commitField(); } });
+      l.appendChild(inp);
+      inputs[key] = inp;
+      fields.appendChild(l);
+    }
+    makeField('a', 'A', 0, 255);
+    makeField('r', 'R', 0, 255);
+    makeField('g', 'G', 0, 255);
+    makeField('b', 'B', 0, 255);
+    makeField('radius', 'Radius', null, null);
+    panel.appendChild(fields);
+
+    function syncFields() {
+      inputs.a.value = st.a; inputs.r.value = st.r; inputs.g.value = st.g; inputs.b.value = st.b;
+      inputs.radius.value = st.radius;
+      swatch.style.backgroundColor = 'rgb(' + st.r + ',' + st.g + ',' + st.b + ')';
+    }
+    function reloadImages() {
+      imgVer++;
+      var bust = '&v=' + imgVer;
+      img.src = '/api/fonts/glyph/image?gid=' + gl.gid + bust;       // mask thumbnail
+      imgR.src = '/api/fonts/glyph/regular?gid=' + gl.gid + bust;    // reference thumbnail
+      pkReg.img.src = '/api/fonts/glyph/regular?gid=' + gl.gid + bust;
+      pkFull.img.src = '/api/fonts/glyph/full?gid=' + gl.gid + bust;
+      syncFields();
+    }
+    function doRegen() {
+      var q = '/api/fonts/glyph/regen?gid=' + gl.gid
+        + '&a=' + st.a + '&r=' + st.r + '&g=' + st.g + '&b=' + st.b + '&radius=' + st.radius;
+      api('POST', q, function () { reloadImages(); });
+    }
+    syncFields();
 
     function removeRow(refocus) {
       // Capture the previous input before removal so we can return focus to it.
@@ -164,6 +320,7 @@
       }
       api('POST', '/api/fonts/delete?gid=' + gl.gid, function () {
         if (tr.parentNode) tr.parentNode.removeChild(tr);
+        if (editTr.parentNode) editTr.parentNode.removeChild(editTr);
         delete rendered[gl.gid];
         retab();
         if (refocus) {
@@ -175,6 +332,17 @@
 
     var tdA = document.createElement('td');
     tdA.className = 'a';
+    // Toggle the colour editor open/closed for this row.
+    var colorBtn = document.createElement('button');
+    colorBtn.textContent = '🎨'; colorBtn.tabIndex = -1; colorBtn.title = 'Pick colour / radius';
+    colorBtn.className = 'colorbtn';
+    colorBtn.addEventListener('click', function () {
+      var open = editTr.style.display === 'none';
+      editTr.style.display = open ? '' : 'none';
+      colorBtn.classList.toggle('on', open);
+      if (open) syncFields();
+    });
+    tdA.appendChild(colorBtn);
     var del = document.createElement('button');
     del.textContent = '✕'; del.tabIndex = -1;
     del.addEventListener('click', function () { removeRow(false); });
@@ -187,7 +355,7 @@
       if (e.key === 'Delete') { e.preventDefault(); removeRow(true); }
     });
 
-    rendered[gl.gid] = { tr: tr, input: input };
+    rendered[gl.gid] = { tr: tr, editTr: editTr, input: input };
     return tr;
   }
 
@@ -200,13 +368,18 @@
         if (rendered.hasOwnProperty(id) && !live[id]) {
           var rec = rendered[id];
           if (rec.tr.parentNode) rec.tr.parentNode.removeChild(rec.tr);
+          if (rec.editTr && rec.editTr.parentNode) rec.editTr.parentNode.removeChild(rec.editTr);
           delete rendered[id];
         }
       }
       var labeled = 0;
       for (var j = 0; j < rows.length; j++) {
         var gl = rows[j];
-        if (!rendered[gl.gid]) tbody.appendChild(buildRow(gl));
+        if (!rendered[gl.gid]) {
+          var newTr = buildRow(gl);
+          tbody.appendChild(newTr);
+          tbody.appendChild(rendered[gl.gid].editTr);   // details row follows its glyph row
+        }
         if (rows[j].assigned) labeled++;
       }
       retab();
@@ -214,6 +387,20 @@
       statusEl.textContent = rows.length + ' glyph(s), ' + labeled + ' labeled';
       if (onDone) onDone();
     });
+  }
+
+  // Tear down every rendered row (glyph + its details row) and rebuild from the
+  // server, so regenerated images reload fresh. Used after Apply-Below.
+  function rebuildAll() {
+    for (var id in rendered) {
+      if (rendered.hasOwnProperty(id)) {
+        var rec = rendered[id];
+        if (rec.tr.parentNode) rec.tr.parentNode.removeChild(rec.tr);
+        if (rec.editTr && rec.editTr.parentNode) rec.editTr.parentNode.removeChild(rec.editTr);
+      }
+    }
+    rendered = {};
+    refresh();
   }
 
   captureBtn.addEventListener('click', function () {
@@ -239,8 +426,10 @@
       }
       // Full rebuild so the restored row(s) definitely re-render.
       for (var id in rendered) {
-        if (rendered.hasOwnProperty(id) && rendered[id].tr.parentNode) {
-          rendered[id].tr.parentNode.removeChild(rendered[id].tr);
+        if (rendered.hasOwnProperty(id)) {
+          var rec = rendered[id];
+          if (rec.tr.parentNode) rec.tr.parentNode.removeChild(rec.tr);
+          if (rec.editTr && rec.editTr.parentNode) rec.editTr.parentNode.removeChild(rec.editTr);
         }
       }
       rendered = {};

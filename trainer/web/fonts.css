@@ -114,3 +114,48 @@ td.a button:hover { background: #767e88; }
 td.ag { width: 1%; white-space: nowrap; }
 td.ag button { padding: 1px 8px; font-size: 11px; background: #5a6675; }
 td.ag button:hover { background: #4a5563; }
+
+/* colour-editor toggle button */
+td.a button.colorbtn { background: #6b7280; }
+td.a button.colorbtn.on { background: #3d82f6; }
+
+/* colour-editor details row */
+tr.coloredit > td { background: #eef1f5; border-top: 1px solid #d7dbe0; padding: 8px 10px; }
+.cedit { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+.pickimgs { display: flex; gap: 14px; }
+.pickbox .lbl { font-size: 11px; color: #6b7280; margin-bottom: 3px; }
+img.pick {
+  image-rendering: pixelated;
+  background: #fff;
+  border: 1px solid #b9c0c9;
+  height: 80px;
+  width: auto;
+  display: block;
+  cursor: crosshair;
+}
+.fields { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fields label { font-size: 11px; color: #4b5563; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+input.cfield {
+  width: 52px;
+  text-align: center;
+  font-size: 13px;
+  padding: 2px;
+  border: 1px solid #b9c0c9;
+  border-radius: 3px;
+}
+.swatch {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #8a929c;
+  border-radius: 4px;
+  background: #fff;
+}
+
+/* floating eyedropper magnifier */
+#magnifier {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  background: #202020;
+  box-shadow: 0 2px 8px rgba(0,0,0,.4);
+}

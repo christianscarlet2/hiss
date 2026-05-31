@@ -474,6 +474,33 @@ void CTrainerFonts::SegmentBgra(const unsigned char *bgra, int w, int h,
 	}
 }
 
+bool CTrainerFonts::RegenGlyphAt(const unsigned char *bgra, int w, int h,
+	COLORREF color, int radius, int group, int center_x, TGlyph *out)
+{
+	if (out == NULL) return false;
+	*out = TGlyph();
+	out->x_count = 0;
+	out->existing_ch = 0;
+	// Always provide the full region image so the editor still shows the scrape
+	// even when the new colour cube produces no foreground at this position.
+	TFE_FullRegionPng(bgra, w, h, &out->full_png);
+
+	std::vector<TGlyph> glyphs;
+	SegmentBgra(bgra, w, h, color, radius, group, &glyphs);
+	if (glyphs.empty()) return false;
+
+	int best = -1, best_dist = 0x7fffffff;
+	for (size_t i = 0; i < glyphs.size(); ++i) {
+		if (center_x >= glyphs[i].xb && center_x <= glyphs[i].xe) { best = (int)i; break; }
+		int gc = (glyphs[i].xb + glyphs[i].xe) / 2;
+		int d = gc > center_x ? gc - center_x : center_x - gc;
+		if (d < best_dist) { best_dist = d; best = (int)i; }
+	}
+	if (best < 0) return false;
+	*out = glyphs[best];
+	return true;
+}
+
 void CTrainerFonts::MaskPng(const unsigned char *bgra, int w, int h, COLORREF color, int radius,
 	std::vector<unsigned char> *png)
 {

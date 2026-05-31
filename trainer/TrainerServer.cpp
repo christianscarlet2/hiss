@@ -340,6 +340,69 @@ void CTrainerServer::HandleClient(SOCKET client)
 		send(client, response.GetString(), response.GetLength(), 0);
 		return;
 	}
+	// Read the source ARGB under a pixel of a glyph's "regular" or "full" image
+	// (used by the colour eyedropper). px/py are natural-PNG pixel coordinates.
+	if (path.CompareNoCase("/api/fonts/glyph/pixel") == 0) {
+		int gid = atoi(QueryValue(query, "gid"));
+		CStringA img = QueryValue(query, "img");
+		int px = atoi(QueryValue(query, "px"));
+		int py = atoi(QueryValue(query, "py"));
+		int a = 0, r = 0, g = 0, b = 0;
+		bool ok = (p_font_glyph_store != NULL && gid > 0
+			&& p_font_glyph_store->GetPixel(gid, img, px, py, &a, &r, &g, &b));
+		CStringA body;
+		if (ok) body.Format("{\"ok\":true,\"a\":%d,\"r\":%d,\"g\":%d,\"b\":%d}", a, r, g, b);
+		else    body = "{\"ok\":false}";
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+	// Re-segment a glyph with a new colour/radius and persist colour/radius to r$.
+	if (path.CompareNoCase("/api/fonts/glyph/regen") == 0) {
+		int gid = atoi(QueryValue(query, "gid"));
+		int a = atoi(QueryValue(query, "a"));
+		int r = atoi(QueryValue(query, "r"));
+		int g = atoi(QueryValue(query, "g"));
+		int b = atoi(QueryValue(query, "b"));
+		int radius = atoi(QueryValue(query, "radius"));
+		bool ok = (p_font_glyph_store != NULL && gid > 0
+			&& p_font_glyph_store->Regen(gid, a, r, g, b, radius));
+		CStringA body; body.Format("{\"ok\":%s}", ok ? "true" : "false");
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+	// Set a glyph's save group AND pull the colour/radius default from a region whose
+	// transform is "Text<group>", regenerate, and return the applied colour/radius.
+	if (path.CompareNoCase("/api/fonts/glyph/group") == 0) {
+		int gid = atoi(QueryValue(query, "gid"));
+		int group = atoi(QueryValue(query, "group"));
+		int a = 0, r = 0, g = 0, b = 0, radius = 0;
+		bool ok = (p_font_glyph_store != NULL && gid > 0
+			&& p_font_glyph_store->SetGroupDefaults(gid, group, &a, &r, &g, &b, &radius));
+		CStringA body;
+		if (ok) body.Format("{\"ok\":true,\"a\":%d,\"r\":%d,\"g\":%d,\"b\":%d,\"radius\":%d}", a, r, g, b, radius);
+		else    body = "{\"ok\":false}";
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+	// Apply group + colour + radius to every row strictly below this one, regenerating each.
+	if (path.CompareNoCase("/api/fonts/applybelow") == 0) {
+		int gid = atoi(QueryValue(query, "gid"));
+		int group = atoi(QueryValue(query, "group"));
+		int a = atoi(QueryValue(query, "a"));
+		int r = atoi(QueryValue(query, "r"));
+		int g = atoi(QueryValue(query, "g"));
+		int b = atoi(QueryValue(query, "b"));
+		int radius = atoi(QueryValue(query, "radius"));
+		int count = (p_font_glyph_store != NULL && gid > 0)
+			? p_font_glyph_store->ApplyBelow(gid, group, a, r, g, b, radius) : 0;
+		CStringA body; body.Format("{\"ok\":true,\"count\":%d}", count);
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
 	// Set which font group a glyph saves to (also the sticky default for captures).
 	if (path.CompareNoCase("/api/fonts/setgroup") == 0) {
 		int gid = atoi(QueryValue(query, "gid"));

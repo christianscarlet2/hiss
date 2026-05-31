@@ -11,6 +11,10 @@ struct SFontGlyphEntry {
 	int       group;        // Text0..Text9 group it will be saved into
 	TGlyph    glyph;        // hexmash / x[] / x_count / display png
 	CStringA  assigned;     // character the user typed (empty until labeled)
+	COLORREF  color;        // colour cube centre used to segment this glyph (editable)
+	int       radius;       // colour cube radius (editable)
+	std::vector<unsigned char> src_bgra;   // the source region crop (top-down 32bpp BGRA)
+	int       src_w, src_h;                // its dimensions, for re-segmentation
 };
 
 // Thread-safe store shared by the capture (UI) thread and the HTTP server thread.
@@ -23,12 +27,33 @@ public:
 
 	// Add a freshly-segmented glyph (skips ones already pending for the same group,
 	// or already present in the font group). Returns the new gid, or -1 if skipped.
-	int Add(const CStringA &region, int group, const TGlyph &glyph);
+	// `color`/`radius` are the colour cube it was segmented with; `src_bgra`/w/h is
+	// the source region crop kept for later re-segmentation (colour re-pick).
+	int Add(const CStringA &region, int group, const TGlyph &glyph,
+		COLORREF color, int radius,
+		const std::vector<unsigned char> &src_bgra, int src_w, int src_h);
 
-	CStringA ListJson();                                  // [{gid,region,group,hexmash,assigned,known}]
+	CStringA ListJson();                                  // [{gid,region,group,hexmash,assigned,a,r,g,b,radius}]
 	bool GetImage(int gid, std::vector<unsigned char> *out);          // mask PNG
 	bool GetRegularImage(int gid, std::vector<unsigned char> *out);   // glyph actual-pixels PNG
 	bool GetFullImage(int gid, std::vector<unsigned char> *out);      // entire region scrape PNG
+
+	// Read the source ARGB at a natural PNG pixel of the glyph's "regular" (glyph
+	// sub-crop, 6x) or "full" (whole region, 3x) image. Returns false if out of range.
+	bool GetPixel(int gid, const CStringA &img, int px, int py,
+		int *a, int *r, int *g, int *b);
+
+	// Re-segment this glyph with a new colour/radius (keeps the row, matched by the
+	// glyph's original x-centre) and persist the colour/radius to the region's r$.
+	bool Regen(int gid, int a, int r, int g, int b, int radius);
+
+	// Set the save group, pull the colour/radius default from a region whose transform
+	// is "Text<group>", regenerate, and persist. Outputs the applied colour/radius.
+	bool SetGroupDefaults(int gid, int group, int *a, int *r, int *g, int *b, int *radius);
+
+	// Apply group + colour + radius to every row strictly below `gid`, regenerating
+	// each from its own source crop and persisting r$. Returns the number affected.
+	int ApplyBelow(int gid, int group, int a, int r, int g, int b, int radius);
 
 	// Set which font group this glyph saves to (also becomes the sticky default
 	// for subsequent captures).

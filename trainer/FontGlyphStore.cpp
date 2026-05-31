@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "FontGlyphStore.h"
+#include "TablemapRegions.h"
 
 CFontGlyphStore *p_font_glyph_store = NULL;
 
@@ -15,7 +16,9 @@ CFontGlyphStore::~CFontGlyphStore()
 	DeleteCriticalSection(&_cs);
 }
 
-int CFontGlyphStore::Add(const CStringA &region, int group, const TGlyph &glyph)
+int CFontGlyphStore::Add(const CStringA &region, int group, const TGlyph &glyph,
+	COLORREF color, int radius,
+	const std::vector<unsigned char> &src_bgra, int src_w, int src_h)
 {
 	if (group < 0 || group >= TFE_NUM_FONT_GROUPS || glyph.x_count <= 0) return -1;
 	EnterCriticalSection(&_cs);
@@ -34,6 +37,11 @@ int CFontGlyphStore::Add(const CStringA &region, int group, const TGlyph &glyph)
 	e.group = group;
 	e.glyph = glyph;
 	e.assigned = "";
+	e.color = color;
+	e.radius = radius;
+	e.src_bgra = src_bgra;
+	e.src_w = src_w;
+	e.src_h = src_h;
 	_entries.push_back(e);
 	int gid = e.gid;
 	LeaveCriticalSection(&_cs);
@@ -68,12 +76,18 @@ CStringA CFontGlyphStore::ListJson()
 		const SFontGlyphEntry &e = _entries[i];
 		if (i > 0) json += ",";
 		CStringA entry;
-		entry.Format("{\"gid\":%d,\"region\":\"%s\",\"group\":%d,\"hexmash\":\"%s\",\"assigned\":\"%s\"}",
+		entry.Format("{\"gid\":%d,\"region\":\"%s\",\"group\":%d,\"hexmash\":\"%s\",\"assigned\":\"%s\","
+			"\"a\":%d,\"r\":%d,\"g\":%d,\"b\":%d,\"radius\":%d}",
 			e.gid,
 			JsonEscapeA(e.region).GetString(),
 			e.group,
 			JsonEscapeA(e.glyph.hexmash).GetString(),
-			JsonEscapeA(e.assigned).GetString());
+			JsonEscapeA(e.assigned).GetString(),
+			(int)((e.color >> 24) & 0xff),
+			(int)GetRValue(e.color),
+			(int)GetGValue(e.color),
+			(int)GetBValue(e.color),
+			e.radius);
 		json += entry;
 	}
 	LeaveCriticalSection(&_cs);
@@ -112,6 +126,146 @@ bool CFontGlyphStore::GetFullImage(int gid, std::vector<unsigned char> *out)
 	}
 	LeaveCriticalSection(&_cs);
 	return found;
+}
+
+// Assemble a COLORREF from A/R/G/B the way the colour cube reads it back
+// (low byte = R via GetRValue, alpha in the high byte).
+static COLORREF ArgbToColorref(int a, int r, int g, int b)
+{
+	return RGB(r & 0xff, g & 0xff, b & 0xff) | ((COLORREF)(a & 0xff) << 24);
+}
+
+bool CFontGlyphStore::GetPixel(int gid, const CStringA &img, int px, int py,
+	int *a, int *r, int *g, int *b)
+{
+	bool ok = false;
+	EnterCriticalSection(&_cs);
+	for (size_t i = 0; i < _entries.size(); ++i) {
+		if (_entries[i].gid != gid) continue;
+		const SFontGlyphEntry &e = _entries[i];
+		// Map the natural PNG pixel back to a source-region pixel.
+		// "regular" = glyph sub-crop [xb..xe,yb..ye] scaled 6x; "full" = whole region scaled 3x.
+		int rx, ry;
+		if (img == "regular") { rx = e.glyph.xb + px / 6; ry = e.glyph.yb + py / 6; }
+		else                  { rx = px / 3;              ry = py / 3; }
+		if (rx >= 0 && ry >= 0 && rx < e.src_w && ry < e.src_h
+			&& (size_t)((ry * e.src_w + rx) * 4 + 3) < e.src_bgra.size()) {
+			int base = (ry * e.src_w + rx) * 4;
+			if (b) *b = e.src_bgra[base + 0];
+			if (g) *g = e.src_bgra[base + 1];
+			if (r) *r = e.src_bgra[base + 2];
+			if (a) *a = e.src_bgra[base + 3];
+			ok = true;
+		}
+		break;
+	}
+	LeaveCriticalSection(&_cs);
+	return ok;
+}
+
+bool CFontGlyphStore::Regen(int gid, int a, int r, int g, int b, int radius)
+{
+	bool ok = false;
+	CStringA region; COLORREF color = 0;
+	EnterCriticalSection(&_cs);
+	for (size_t i = 0; i < _entries.size(); ++i) {
+		if (_entries[i].gid != gid) continue;
+		SFontGlyphEntry &e = _entries[i];
+		color = ArgbToColorref(a, r, g, b);
+		e.color = color;
+		e.radius = radius;
+		if (p_trainer_fonts != NULL && !e.src_bgra.empty()) {
+			int center_x = (e.glyph.xb + e.glyph.xe) / 2;
+			TGlyph ng;
+			p_trainer_fonts->RegenGlyphAt(&e.src_bgra[0], e.src_w, e.src_h,
+				color, radius, e.group, center_x, &ng);
+			e.glyph = ng;   // replace mask/hexmash/bounds (kept even if empty)
+		}
+		region = e.region;
+		ok = true;
+		break;
+	}
+	LeaveCriticalSection(&_cs);
+	// Persist the colour/radius to this region's r$ record (file IO outside the lock).
+	if (ok && !region.IsEmpty()) RegionColors_UpdateByName(CString(region), color, radius);
+	return ok;
+}
+
+bool CFontGlyphStore::SetGroupDefaults(int gid, int group, int *a, int *r, int *g, int *b, int *radius)
+{
+	if (group < 0 || group >= TFE_NUM_FONT_GROUPS) return false;
+	// Look up the colour/radius default for this transform (Text<group>) outside the lock.
+	CString transform; transform.Format("Text%d", group);
+	COLORREF defc = 0; int defr = 0;
+	bool have_default = RegionColors_GetByTransform(transform, &defc, &defr);
+
+	bool ok = false;
+	CStringA region; COLORREF color = 0; int rad = 0;
+	EnterCriticalSection(&_cs);
+	for (size_t i = 0; i < _entries.size(); ++i) {
+		if (_entries[i].gid != gid) continue;
+		SFontGlyphEntry &e = _entries[i];
+		e.group = group;
+		if (have_default) { e.color = defc; e.radius = defr; }
+		color = e.color; rad = e.radius;
+		if (p_trainer_fonts != NULL && !e.src_bgra.empty()) {
+			int center_x = (e.glyph.xb + e.glyph.xe) / 2;
+			TGlyph ng;
+			p_trainer_fonts->RegenGlyphAt(&e.src_bgra[0], e.src_w, e.src_h,
+				color, rad, e.group, center_x, &ng);
+			e.glyph = ng;
+		}
+		region = e.region;
+		ok = true;
+		break;
+	}
+	_edit_group = group;
+	LeaveCriticalSection(&_cs);
+	if (ok) {
+		if (a) *a = (int)((color >> 24) & 0xff);
+		if (r) *r = (int)GetRValue(color);
+		if (g) *g = (int)GetGValue(color);
+		if (b) *b = (int)GetBValue(color);
+		if (radius) *radius = rad;
+		if (!region.IsEmpty()) RegionColors_UpdateByName(CString(region), color, rad);
+	}
+	return ok;
+}
+
+int CFontGlyphStore::ApplyBelow(int gid, int group, int a, int r, int g, int b, int radius)
+{
+	if (group < 0 || group >= TFE_NUM_FONT_GROUPS) return 0;
+	COLORREF color = ArgbToColorref(a, r, g, b);
+	std::vector<CStringA> touched;   // regions to persist (outside the lock)
+	int count = 0;
+	EnterCriticalSection(&_cs);
+	// Find the anchor row, then apply to every entry strictly after it.
+	int anchor = -1;
+	for (size_t i = 0; i < _entries.size(); ++i) {
+		if (_entries[i].gid == gid) { anchor = (int)i; break; }
+	}
+	if (anchor >= 0) {
+		for (size_t i = anchor + 1; i < _entries.size(); ++i) {
+			SFontGlyphEntry &e = _entries[i];
+			e.group = group;
+			e.color = color;
+			e.radius = radius;
+			if (p_trainer_fonts != NULL && !e.src_bgra.empty()) {
+				int center_x = (e.glyph.xb + e.glyph.xe) / 2;
+				TGlyph ng;
+				p_trainer_fonts->RegenGlyphAt(&e.src_bgra[0], e.src_w, e.src_h,
+					color, radius, e.group, center_x, &ng);
+				e.glyph = ng;
+			}
+			touched.push_back(e.region);
+			++count;
+		}
+	}
+	LeaveCriticalSection(&_cs);
+	for (size_t i = 0; i < touched.size(); ++i) {
+		if (!touched[i].IsEmpty()) RegionColors_UpdateByName(CString(touched[i]), color, radius);
+	}
+	return count;
 }
 
 bool CFontGlyphStore::SetGroupFor(int gid, int group)
