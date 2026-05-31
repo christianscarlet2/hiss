@@ -192,6 +192,13 @@
 
   hideSaved.addEventListener('change', applyHideSaved);
 
+  var createFontsBtn = document.getElementById('createFonts');
+  if (createFontsBtn) {
+    createFontsBtn.addEventListener('click', function () {
+      api('POST', '/api/fonts/open', function () {});
+    });
+  }
+
   // ---- Text0..Text9 font transform dropdown ----------------------------------
   function buildGroupOptions(counts) {
     textGroup.innerHTML = '';

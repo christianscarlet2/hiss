@@ -6,6 +6,8 @@
 #include "ScreenshotView.h"
 #include "SampleStore.h"
 #include "TrainerFonts.h"
+#include "FontGlyphStore.h"
+#include "TrainerMessages.h"
 #include "WindowCapture.h"
 
 using namespace cv;
@@ -103,6 +105,7 @@ CTrainerDlg::CTrainerDlg(CWnd *pParent)
 	_selected = -1;
 	_server = NULL;
 	_web = NULL;
+	_fonts_web = NULL;
 	_screenshot = NULL;
 	_icon = NULL;
 }
@@ -135,7 +138,11 @@ BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_WM_DESTROY()
 	ON_MESSAGE(WM_TRAINER_ATTACH, &CTrainerDlg::OnAttachWindow)
 	ON_MESSAGE(WM_TRAINER_REGION_SELECTED, &CTrainerDlg::OnRegionSelected)
+	ON_MESSAGE(WM_TRAINER_OPEN_FONTS, &CTrainerDlg::OnOpenFonts)
+	ON_MESSAGE(WM_TRAINER_CAPTURE_FONTS, &CTrainerDlg::OnCaptureFonts)
 END_MESSAGE_MAP()
+
+HWND g_trainer_main_hwnd = NULL;
 
 void CTrainerDlg::PopulateModeCombos()
 {
@@ -163,6 +170,10 @@ BOOL CTrainerDlg::OnInitDialog()
 	if (p_trainer_fonts == NULL) {
 		p_trainer_fonts = new CTrainerFonts();
 	}
+	if (p_font_glyph_store == NULL) {
+		p_font_glyph_store = new CFontGlyphStore();
+	}
+	g_trainer_main_hwnd = GetSafeHwnd();
 	_server = new CTrainerServer();
 	if (_server->Start()) {
 		p_trainer_server = _server;
@@ -530,6 +541,70 @@ static bool CropRegionBgra(HBITMAP bmp, int bmpW, int bmpH, RECT r,
 	return true;
 }
 
+LRESULT CTrainerDlg::OnOpenFonts(WPARAM, LPARAM)
+{
+	OpenFontsWindow();
+	return 0;
+}
+
+LRESULT CTrainerDlg::OnCaptureFonts(WPARAM, LPARAM)
+{
+	CaptureFontsForEditor();
+	return 0;
+}
+
+void CTrainerDlg::OpenFontsWindow()
+{
+	if (_server == NULL || _server->port() == 0) {
+		SetStatus("HTTP server is not running.");
+		return;
+	}
+	if (_fonts_web == NULL) {
+		_fonts_web = new CTrainerWebWindow();
+		_fonts_web->Create(this, _server->port(), "/trainer/fonts.html", "Trainer \xe2\x80\x94 Create Fonts");
+	} else {
+		_fonts_web->ShowWindow(SW_SHOWNORMAL);
+		_fonts_web->SetForegroundWindow();
+		_fonts_web->NavigateToTrainer(_server->port());
+	}
+}
+
+void CTrainerDlg::CaptureFontsForEditor()
+{
+	if (_attached == NULL || !::IsWindow(_attached)) {
+		SetStatus("Connect to a window before capturing fonts.");
+		return;
+	}
+	if (p_font_glyph_store == NULL || p_trainer_fonts == NULL || _regions.empty()) {
+		return;
+	}
+	// Grab a fresh live frame so the editor doesn't depend on the capture timer.
+	int bw = 0, bh = 0;
+	HBITMAP bmp = CaptureCompositedClientBitmap(_attached, &bw, &bh);
+	if (bmp == NULL || bw <= 0 || bh <= 0) {
+		if (bmp != NULL) DeleteObject(bmp);
+		return;
+	}
+
+	int group = p_font_glyph_store->EditGroup();
+	int added = 0;
+	for (size_t i = 0; i < _regions.size(); ++i) {
+		std::vector<BYTE> cur;
+		int w = 0, h = 0;
+		if (!CropRegionBgra(bmp, bw, bh, _regions[i].rect, &cur, &w, &h)) continue;
+		std::vector<TGlyph> glyphs;
+		p_trainer_fonts->SegmentBgra(&cur[0], w, h, _regions[i].color, _regions[i].radius, group, &glyphs);
+		for (size_t g = 0; g < glyphs.size(); ++g) {
+			if (p_font_glyph_store->Add(CStringA(_regions[i].name), group, glyphs[g]) >= 0) ++added;
+		}
+	}
+	DeleteObject(bmp);
+
+	CString s;
+	s.Format("Font capture: %d new glyph(s) added (group Text%d).", added, group);
+	SetStatus(s);
+}
+
 void CTrainerDlg::CaptureTick()
 {
 	if (_attached == NULL || !::IsWindow(_attached)) {
@@ -703,6 +778,11 @@ void CTrainerDlg::OnDestroy()
 		delete _web;
 		_web = NULL;
 	}
+	if (_fonts_web != NULL) {
+		_fonts_web->DestroyWindow();
+		delete _fonts_web;
+		_fonts_web = NULL;
+	}
 	if (_server != NULL) {
 		_server->Stop();
 		p_trainer_server = NULL;
@@ -721,6 +801,11 @@ void CTrainerDlg::OnDestroy()
 		delete p_trainer_fonts;
 		p_trainer_fonts = NULL;
 	}
+	if (p_font_glyph_store != NULL) {
+		delete p_font_glyph_store;
+		p_font_glyph_store = NULL;
+	}
+	g_trainer_main_hwnd = NULL;
 	s_instance = NULL;
 	CDialog::OnDestroy();
 }

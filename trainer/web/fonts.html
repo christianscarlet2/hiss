@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trainer — Create Fonts</title>
+  <link rel="stylesheet" href="/trainer/fonts.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="title">Create Fonts</div>
+    <label class="muted">Group <select id="group" tabindex="-1"></select></label>
+    <button id="capture">Capture scrapes</button>
+    <span class="spacer"></span>
+    <span id="status" class="muted">Loading…</span>
+    <button id="clearAll" class="danger" tabindex="-1">Clear All</button>
+    <button id="saveAll">Save All Edited</button>
+  </header>
+  <main>
+    <table id="glyphs">
+      <thead>
+        <tr><th class="g">Glyph</th><th class="c">Char</th><th class="r">From</th><th class="a"></th></tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <p id="empty" class="muted hint">
+      Connect to a table in the main trainer window, then click <b>Capture scrapes</b> to pull the
+      live balance regions, segment them into glyphs, and list any glyphs not yet in this font group.
+      Type the character each glyph represents, then <b>Save All Edited</b> to write them into the tablemap.
+    </p>
+  </main>
+  <script src="/trainer/fonts.js"></script>
+</body>
+</html>

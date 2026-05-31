@@ -12,7 +12,9 @@ public:
 	CTrainerWebWindow();
 	virtual ~CTrainerWebWindow();
 
-	BOOL Create(CWnd *owner, unsigned short port);
+	// path: server-relative page, e.g. "/trainer/" or "/trainer/fonts.html".
+	BOOL Create(CWnd *owner, unsigned short port, const CString &path = "/trainer/",
+		const CString &title = "Tesseract Trainer");
 	void NavigateToTrainer(unsigned short port);
 
 protected:
@@ -26,4 +28,5 @@ private:
 	ICoreWebView2Controller *_controller;
 	ICoreWebView2 *_webview;
 	unsigned short _port;
+	CString _path;
 };

@@ -26,6 +26,8 @@ protected:
 	afx_msg void OnTimer(UINT_PTR nIDEvent);
 	afx_msg LRESULT OnAttachWindow(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnRegionSelected(WPARAM wParam, LPARAM lParam);
+	afx_msg LRESULT OnOpenFonts(WPARAM wParam, LPARAM lParam);
+	afx_msg LRESULT OnCaptureFonts(WPARAM wParam, LPARAM lParam);
 	afx_msg void OnDestroy();
 	DECLARE_MESSAGE_MAP()
 
@@ -62,8 +64,12 @@ private:
 	int _frame_w, _frame_h;
 	int _selected;         // selected region index, -1 = none
 
+	void OpenFontsWindow();
+	void CaptureFontsForEditor();
+
 	CTrainerServer *_server;
 	CTrainerWebWindow *_web;
+	CTrainerWebWindow *_fonts_web;
 	CScreenshotView *_screenshot;
 	CTrainerOcr _ocr;
 	HICON _icon;

@@ -140,6 +140,7 @@
     <ClCompile Include="TrainerWebWindow.cpp" />
     <ClCompile Include="TrainerOcr.cpp" />
     <ClCompile Include="TrainerFonts.cpp" />
+    <ClCompile Include="FontGlyphStore.cpp" />
     <ClCompile Include="ScreenshotView.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -153,6 +154,7 @@
     <ClInclude Include="TrainerWebWindow.h" />
     <ClInclude Include="TrainerOcr.h" />
     <ClInclude Include="TrainerFonts.h" />
+    <ClInclude Include="FontGlyphStore.h" />
     <ClInclude Include="ScreenshotView.h" />
   </ItemGroup>
   <ItemGroup>

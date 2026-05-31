@@ -21,6 +21,7 @@ CTrainerWebWindow::CTrainerWebWindow()
 	_controller = NULL;
 	_webview = NULL;
 	_port = 0;
+	_path = "/trainer/";
 }
 
 CTrainerWebWindow::~CTrainerWebWindow()
@@ -35,10 +36,11 @@ CTrainerWebWindow::~CTrainerWebWindow()
 	}
 }
 
-BOOL CTrainerWebWindow::Create(CWnd *owner, unsigned short port)
+BOOL CTrainerWebWindow::Create(CWnd *owner, unsigned short port, const CString &path, const CString &title)
 {
 	_owner = owner;
 	_port = port;
+	_path = path;
 	CString class_name = AfxRegisterWndClass(
 		CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW,
 		AfxGetApp()->LoadStandardCursor(IDC_ARROW),
@@ -48,7 +50,7 @@ BOOL CTrainerWebWindow::Create(CWnd *owner, unsigned short port)
 	return CWnd::CreateEx(
 		0,
 		class_name,
-		"Tesseract Trainer — Samples",
+		title,
 		WS_OVERLAPPEDWINDOW | WS_VISIBLE,
 		CW_USEDEFAULT,
 		CW_USEDEFAULT,
@@ -119,6 +121,6 @@ void CTrainerWebWindow::NavigateToTrainer(unsigned short port)
 		return;
 	}
 	CString url;
-	url.Format("http://127.0.0.1:%u/trainer/", port);
+	url.Format("http://127.0.0.1:%u%s", port, _path.GetString());
 	_webview->Navigate(CStringW(url));
 }

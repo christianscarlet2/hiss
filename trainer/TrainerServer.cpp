@@ -2,6 +2,8 @@
 #include "TrainerServer.h"
 #include "SampleStore.h"
 #include "TrainerFonts.h"
+#include "FontGlyphStore.h"
+#include "TrainerMessages.h"
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -238,6 +240,87 @@ void CTrainerServer::HandleClient(SOCKET client)
 		counts += "]";
 		CStringA body;
 		body.Format("{\"current\":%d,\"counts\":%s}", cur, counts.GetString());
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	// ---- Font-creation editor -------------------------------------------------
+	// Open the font-creation window (handled on the UI thread).
+	if (path.CompareNoCase("/api/fonts/open") == 0) {
+		if (g_trainer_main_hwnd != NULL) ::PostMessage(g_trainer_main_hwnd, WM_TRAINER_OPEN_FONTS, 0, 0);
+		CStringA response = Response("{\"ok\":true}", "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+	// Set the editor's working font group.
+	if (path.CompareNoCase("/api/fonts/group") == 0) {
+		int group = atoi(QueryValue(query, "group"));
+		if (p_font_glyph_store != NULL) p_font_glyph_store->SetEditGroup(group);
+		CStringA response = Response("{\"ok\":true}", "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+	// Capture+segment the live scrapes into the glyph store (UI thread).
+	if (path.CompareNoCase("/api/fonts/capture") == 0) {
+		int group = atoi(QueryValue(query, "group"));
+		if (p_font_glyph_store != NULL) p_font_glyph_store->SetEditGroup(group);
+		if (g_trainer_main_hwnd != NULL) ::SendMessage(g_trainer_main_hwnd, WM_TRAINER_CAPTURE_FONTS, 0, 0);
+		int n = (p_font_glyph_store != NULL) ? 0 : 0;   // count returned via list refresh
+		CStringA body; body.Format("{\"ok\":true,\"group\":%d,\"n\":%d}", group, n);
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+	// List pending glyphs.
+	if (path.CompareNoCase("/api/fonts/list") == 0) {
+		CStringA body = (p_font_glyph_store != NULL) ? p_font_glyph_store->ListJson() : CStringA("[]");
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+	// PNG image for one pending glyph.
+	if (path.CompareNoCase("/api/fonts/glyph/image") == 0) {
+		int gid = atoi(QueryValue(query, "gid"));
+		std::vector<unsigned char> png;
+		if (p_font_glyph_store != NULL && gid > 0 && p_font_glyph_store->GetImage(gid, &png) && !png.empty()) {
+			SendBinary(client, &png[0], (int)png.size(), "image/png");
+		} else {
+			CStringA response = Response("not found\r\n", "text/plain; charset=utf-8", "404 Not Found");
+			send(client, response.GetString(), response.GetLength(), 0);
+		}
+		return;
+	}
+	// Assign / clear the character for one glyph.
+	if (path.CompareNoCase("/api/fonts/setchar") == 0) {
+		int gid = atoi(QueryValue(query, "gid"));
+		CStringA ch = UrlDecode(QueryValue(query, "ch"));
+		bool ok = (p_font_glyph_store != NULL && gid > 0 && p_font_glyph_store->SetChar(gid, ch));
+		CStringA body; body.Format("{\"ok\":%s}", ok ? "true" : "false");
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+	// Delete one pending glyph.
+	if (path.CompareNoCase("/api/fonts/delete") == 0) {
+		int gid = atoi(QueryValue(query, "gid"));
+		bool ok = (p_font_glyph_store != NULL && gid > 0 && p_font_glyph_store->Delete(gid));
+		CStringA body; body.Format("{\"ok\":%s}", ok ? "true" : "false");
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+	// Clear all pending glyphs.
+	if (path.CompareNoCase("/api/fonts/clear") == 0) {
+		if (p_font_glyph_store != NULL) p_font_glyph_store->Clear();
+		CStringA response = Response("{\"ok\":true}", "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+	// Save all labeled glyphs into the tablemap's t$ groups, then persist the .tm.
+	if (path.CompareNoCase("/api/fonts/save") == 0) {
+		int written = (p_font_glyph_store != NULL) ? p_font_glyph_store->SaveAll() : 0;
+		CStringA body; body.Format("{\"saved\":%d}", written);
 		CStringA response = Response(body, "application/json; charset=utf-8");
 		send(client, response.GetString(), response.GetLength(), 0);
 		return;
