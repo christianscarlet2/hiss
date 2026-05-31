@@ -17,7 +17,8 @@
       "Bash(Select-Object Name)",
       "Bash(xargs grep -l \"p_chat_terminal_server\\\\|ChatTerminalServer\")",
       "Bash(curl -s -m 6 -o /dev/null -w \"%{http_code} %{size_download} bytes\\\\n\" \"http://127.0.0.1:28700/trainer/help.html\")",
-      "Bash(curl -s -m 6 \"http://127.0.0.1:28700/trainer/help.html\")"
+      "Bash(curl -s -m 6 \"http://127.0.0.1:28700/trainer/help.html\")",
+      "PowerShell(try { $v = gh --version 2>$null; if \\($v\\) { \"gh: \" + \\($v | Select-Object -First 1\\) } else { \"gh: not found\" } } catch { \"gh: not found\" }; \"--- git credential manager ---\"; git config --get credential.helper)"
     ]
   }
 }
