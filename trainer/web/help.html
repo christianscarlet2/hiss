@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bot Web Interfaces — Reference</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      font-family: Segoe UI, Tahoma, sans-serif;
+      font-size: 14px; line-height: 1.5; color: #1c1c1c; background: #f4f5f7;
+    }
+    header.top {
+      background: #2b2f36; color: #fff; padding: 14px 22px;
+      position: sticky; top: 0; z-index: 5;
+    }
+    header.top h1 { margin: 0; font-size: 19px; }
+    header.top .sub { color: #c7ccd3; font-size: 13px; margin-top: 2px; }
+    main { max-width: 980px; margin: 0 auto; padding: 18px 22px 60px; }
+
+    .card {
+      background: #fff; border: 1px solid #d7dbe0; border-radius: 10px;
+      padding: 16px 20px; margin: 16px 0; box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+    .card h2 { margin: 0 0 2px; font-size: 17px; }
+    .card .meta { color: #6b7280; font-size: 12.5px; margin-bottom: 10px; }
+    .card h3 { margin: 14px 0 4px; font-size: 14.5px; }
+    .pill {
+      display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .03em;
+      padding: 2px 8px; border-radius: 999px; margin-left: 8px; vertical-align: middle;
+    }
+    .pill.web { background: #e1efff; color: #1d5fc4; }
+    .pill.api { background: #fde7d6; color: #a85b13; }
+    .pill.ipc { background: #e8e8ea; color: #555; }
+
+    .links { margin: 8px 0 4px; }
+    a.btn {
+      display: inline-block; text-decoration: none; font-weight: 600;
+      background: #3d82f6; color: #fff; padding: 7px 14px; border-radius: 6px;
+      margin: 4px 8px 4px 0;
+    }
+    a.btn:hover { background: #2f6fe0; }
+    a.btn.alt { background: #5a6675; }
+    a.btn.alt:hover { background: #4a5563; }
+
+    ul { margin: 6px 0 6px; padding-left: 20px; }
+    li { margin: 3px 0; }
+    code {
+      background: #eef1f5; padding: 1px 5px; border-radius: 3px;
+      font-family: Consolas, monospace; font-size: 12.5px;
+    }
+    .note { color: #6b7280; font-size: 12.5px; margin-top: 8px; }
+    .legend { font-size: 12.5px; color: #6b7280; margin: 4px 0 0; }
+    footer { color: #9aa1ab; font-size: 12px; text-align: center; padding: 20px; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>Bot Web Interfaces</h1>
+    <div class="sub">Every browser-usable page (and network API) across the OpenHoldem / Hiss projects. Links open the live interface — they only work while that program is running.</div>
+  </header>
+
+  <main>
+    <p class="legend">
+      <span class="pill web">WEB</span> opens in a browser &nbsp;·&nbsp;
+      <span class="pill api">API</span> programmatic only &nbsp;·&nbsp;
+      <span class="pill ipc">IPC</span> internal, not networked
+    </p>
+
+    <!-- ============ HISS ============ -->
+    <div class="card">
+      <h2>Hiss — the bot's Table Display server <span class="pill web">WEB</span></h2>
+      <div class="meta">
+        <code>http://127.0.0.1:27654</code> (localhost only; falls back to 27655–27663 if busy).
+        Starts automatically with Hiss — watch the chat terminal for
+        <em>"Terminal API server listening on http://127.0.0.1:27654"</em>.
+        Served by <code>Hiss/ChatTerminalServer.cpp</code>; front-end in <code>laravel-react-table-display/public/</code>.
+      </div>
+
+      <div class="links">
+        <a class="btn" href="http://127.0.0.1:27654/table-display/" target="_blank">Open Table Display</a>
+        <a class="btn alt" href="http://127.0.0.1:27654/mappings/" target="_blank">Open Name Mappings</a>
+      </div>
+
+      <h3>Table Display <code>/table-display/</code></h3>
+      <ul>
+        <li>Live table view, refreshes ~2×/sec: seats (2–10) with name + matched PT4 name, hole cards (back/?? when unknown), active dot, balance, bet, dealer button.</li>
+        <li>Community cards, hand number, small/big blind, ante, pot, game type, Omaha flag.</li>
+        <li>PokerTracker 4 HUD stats per player (shown once the name is verified).</li>
+      </ul>
+
+      <h3>OCR Name Mappings <code>/mappings/</code></h3>
+      <ul>
+        <li>Table of OCR-detected → real PT4 names: OCR, Actual, Site, Verified, Confidence, Updated.</li>
+        <li>Live filters (by OCR text / by actual name), "show unverified only".</li>
+        <li>Per row: <b>Verify</b> / <b>Unverify</b> / <b>Delete</b>; <b>Refresh</b> to reload.</li>
+      </ul>
+
+      <h3>Endpoints (data / terminal)</h3>
+      <ul>
+        <li><code>/api/table-state</code> — full game-state JSON (what the Table Display renders).</li>
+        <li><code>/api/mappings</code>, <code>/api/mappings/verify|unverify|delete?id=</code>.</li>
+        <li><code>/append</code> · <code>/stream</code> · <code>/clear</code> — write/clear the bot terminal sections (context / state / decisions / chat) via <code>?text=&amp;section=</code>.</li>
+      </ul>
+    </div>
+
+    <!-- ============ TRAINER ============ -->
+    <div class="card">
+      <h2>Trainer — Tesseract &amp; Font trainer <span class="pill web">WEB</span></h2>
+      <div class="meta">
+        <code>http://127.0.0.1:28700</code>. Served by <code>trainer/TrainerServer.cpp</code>; pages in <code>trainer/web/</code>.
+        (You are reading this page from that server.)
+      </div>
+
+      <div class="links">
+        <a class="btn" href="/trainer/" target="_blank">Open Training Samples</a>
+        <a class="btn alt" href="/trainer/fonts.html" target="_blank">Open Create Fonts</a>
+      </div>
+
+      <h3>Training Samples <code>/trainer/</code></h3>
+      <ul>
+        <li>Build Tesseract OCR samples (<code>sample_NNNN.png</code> + <code>.gt.txt</code>).</li>
+        <li>Transform dropdown (AutoOcr0/1 or Text0–Text9; re-recognizes all rows, shows font counts), "Hide saved".</li>
+        <li>Per row: image, editable text, save one, delete one, clear-underneath. Toolbar: Delete Duplicates, Clear All, Save All, "Create Fonts…".</li>
+      </ul>
+
+      <h3>Create Fonts <code>/trainer/fonts.html</code></h3>
+      <ul>
+        <li>Capture scrapes → segment live balance regions into glyphs; label each to build bitmap fonts (<code>t$</code> records).</li>
+        <li>Per row: glyph / reference / scrape images, char input (creates font + rescans), group dropdown, Apply Group Below, per-row 🎨 colour editor (eyedropper + magnifier + A/R/G/B/radius), delete.</li>
+        <li>Global colour toolbar: ⊙ Eyedropper (pick from any Reference/Scrape), A/R/G/B/Radius + swatch, Apply to group, Apply to all regions, Help.</li>
+        <li>Undo (Ctrl+Z), Clear All, Delete All from .tm (writes <code>.tm.bak</code> first), Save All.</li>
+      </ul>
+    </div>
+
+    <!-- ============ MANUALMODE-XMLRPC ============ -->
+    <div class="card">
+      <h2>ManualMode-XMLRPC — game-control API <span class="pill api">API</span></h2>
+      <div class="meta">
+        XML-RPC over HTTP on port <code>9092</code> (<code>ManualMode-XMLRPC/xmlrpc.cpp</code>).
+        Call it from a script/client — <b>not</b> a browser page. Drives a simulated table and reads the bot's decision.
+      </div>
+      <ul>
+        <li><b>Set state:</b> <code>SetSeated/SetActive/SetDealer/SetBalance/SetBet</code>, <code>SetSBlind/SetBBlind/SetAnte/SetPot/SetGType/SetHandNumber/SetNetwork/SetTournament</code>, <code>SetCards/SetFlopCards/SetTurnCard/SetRiverCard</code>, <code>SetName</code>, <code>PostSB/PostBB</code>.</li>
+        <li><b>Drive actions:</b> <code>DoFold/DoCall/DoRaise/DoAllin</code>, <code>SetButton</code>, <code>Refresh</code>.</li>
+        <li><b>Read decision:</b> <code>GetAction</code> → <code>{button:F/C/K/R/A, betsize}</code>, <code>CancelGetAction</code>, <code>Quit</code>.</li>
+      </ul>
+    </div>
+
+    <!-- ============ HOPPER IPC ============ -->
+    <div class="card">
+      <h2>Hopper IPC — launcher control <span class="pill ipc">IPC</span></h2>
+      <div class="meta">
+        Win32 window messages (<code>Hiss/COpenHoldemHopperCommunication.cpp</code>). Internal launcher↔bot only; no browser/network.
+      </div>
+      <ul>
+        <li>Connect / disconnect a table, get connected HWND, set/reset user flags (0–19), query readiness.</li>
+        <li>Read a symbol value via <code>WM_COPYDATA</code> (magic 424242).</li>
+      </ul>
+    </div>
+
+    <p class="note">Ports: Hiss Table Display <b>27654</b> · Trainer <b>28700</b> · ManualMode-XMLRPC <b>9092</b>. All HTTP servers bind localhost only.</p>
+  </main>
+
+  <footer>OpenHoldem / Hiss — web interface reference</footer>
+</body>
+</html>

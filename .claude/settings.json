@@ -13,7 +13,11 @@
       "PowerShell($tp = \\(Get-Process trainer -ErrorAction SilentlyContinue\\).Id; \"trainer PID\\(s\\) = $tp\"; Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.OwningProcess -in @\\($tp\\) } | Select-Object LocalAddress, LocalPort, OwningProcess | Format-Table -AutoSize)",
       "Bash(curl -s -m 6 \"http://127.0.0.1:28700/api/fonts/list\")",
       "Bash(curl -s -m 8 -X POST \"http://127.0.0.1:28700/api/fonts/capture\")",
-      "PowerShell($t = Get-Process trainer -ErrorAction SilentlyContinue; if \\($t\\) { \"ALIVE PID \" + $t.Id + \" uptime\\(s\\)=\" + [math]::Round\\(\\(\\(Get-Date\\)-$t.StartTime\\).TotalSeconds,0\\) } else { \"NOT running\" })"
+      "PowerShell($t = Get-Process trainer -ErrorAction SilentlyContinue; if \\($t\\) { \"ALIVE PID \" + $t.Id + \" uptime\\(s\\)=\" + [math]::Round\\(\\(\\(Get-Date\\)-$t.StartTime\\).TotalSeconds,0\\) } else { \"NOT running\" })",
+      "Bash(Select-Object Name)",
+      "Bash(xargs grep -l \"p_chat_terminal_server\\\\|ChatTerminalServer\")",
+      "Bash(curl -s -m 6 -o /dev/null -w \"%{http_code} %{size_download} bytes\\\\n\" \"http://127.0.0.1:28700/trainer/help.html\")",
+      "Bash(curl -s -m 6 \"http://127.0.0.1:28700/trainer/help.html\")"
     ]
   }
 }
