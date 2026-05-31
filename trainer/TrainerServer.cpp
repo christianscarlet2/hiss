@@ -289,11 +289,35 @@ void CTrainerServer::HandleClient(SOCKET client)
 		send(client, response.GetString(), response.GetLength(), 0);
 		return;
 	}
-	// PNG image for one pending glyph.
+	// PNG mask image for one pending glyph.
 	if (path.CompareNoCase("/api/fonts/glyph/image") == 0) {
 		int gid = atoi(QueryValue(query, "gid"));
 		std::vector<unsigned char> png;
 		if (p_font_glyph_store != NULL && gid > 0 && p_font_glyph_store->GetImage(gid, &png) && !png.empty()) {
+			SendBinary(client, &png[0], (int)png.size(), "image/png");
+		} else {
+			CStringA response = Response("not found\r\n", "text/plain; charset=utf-8", "404 Not Found");
+			send(client, response.GetString(), response.GetLength(), 0);
+		}
+		return;
+	}
+	// PNG of the glyph's actual (regular) pixels, for reference.
+	if (path.CompareNoCase("/api/fonts/glyph/regular") == 0) {
+		int gid = atoi(QueryValue(query, "gid"));
+		std::vector<unsigned char> png;
+		if (p_font_glyph_store != NULL && gid > 0 && p_font_glyph_store->GetRegularImage(gid, &png) && !png.empty()) {
+			SendBinary(client, &png[0], (int)png.size(), "image/png");
+		} else {
+			CStringA response = Response("not found\r\n", "text/plain; charset=utf-8", "404 Not Found");
+			send(client, response.GetString(), response.GetLength(), 0);
+		}
+		return;
+	}
+	// PNG of the entire original region scrape this glyph came from.
+	if (path.CompareNoCase("/api/fonts/glyph/full") == 0) {
+		int gid = atoi(QueryValue(query, "gid"));
+		std::vector<unsigned char> png;
+		if (p_font_glyph_store != NULL && gid > 0 && p_font_glyph_store->GetFullImage(gid, &png) && !png.empty()) {
 			SendBinary(client, &png[0], (int)png.size(), "image/png");
 		} else {
 			CStringA response = Response("not found\r\n", "text/plain; charset=utf-8", "404 Not Found");

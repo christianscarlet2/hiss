@@ -58,6 +58,20 @@
     tdG.appendChild(img);
     tr.appendChild(tdG);
 
+    var tdGR = document.createElement('td');
+    tdGR.className = 'gr';
+    var imgR = document.createElement('img');
+    imgR.src = '/api/fonts/glyph/regular?gid=' + gl.gid;
+    tdGR.appendChild(imgR);
+    tr.appendChild(tdGR);
+
+    var tdGF = document.createElement('td');
+    tdGF.className = 'gf';
+    var imgF = document.createElement('img');
+    imgF.src = '/api/fonts/glyph/full?gid=' + gl.gid;
+    tdGF.appendChild(imgF);
+    tr.appendChild(tdGF);
+
     var tdC = document.createElement('td');
     tdC.className = 'c';
     var input = document.createElement('input');

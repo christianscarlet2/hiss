@@ -30,7 +30,9 @@ struct TGlyph {
 	int             x_count;
 	unsigned int    x[TFE_MAX_SINGLE_CHAR_WIDTH];
 	char            existing_ch;                      // matched char already in the group, else 0
-	std::vector<unsigned char> png;                   // small PNG of the glyph mask, for display
+	std::vector<unsigned char> png;                   // PNG of the glyph mask (binarized), for display
+	std::vector<unsigned char> regular_png;           // PNG of the glyph's actual (regular) pixels
+	std::vector<unsigned char> full_png;              // PNG of the entire region scrape it came from
 };
 
 class CTrainerFonts {

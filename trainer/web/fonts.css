@@ -57,11 +57,32 @@ tbody tr { border-bottom: 1px solid #e6e8ec; }
 tbody td { padding: 1px 6px; vertical-align: middle; }
 td.g img {
   image-rendering: pixelated;
-  background: #111;
+  background: #fff;
+  border: 1px solid #d7dbe0;
+  max-height: 30px;
+  display: block;
+  filter: invert(1);          /* show the mask as black-on-white for readability */
+}
+/* glyph reference (actual pixels) with 2px white padding */
+td.gr img {
+  image-rendering: pixelated;
+  background: #fff;
+  padding: 2px;
   border: 1px solid #d7dbe0;
   max-height: 30px;
   display: block;
 }
+/* the entire original region scrape, for context */
+td.gf img {
+  image-rendering: pixelated;
+  background: #fff;
+  padding: 2px;
+  border: 1px solid #d7dbe0;
+  height: 30px;
+  width: auto;
+  display: block;
+}
+td.gf { width: 1%; }
 td.c input {
   width: 34px;
   text-align: center;

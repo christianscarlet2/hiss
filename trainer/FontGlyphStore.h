@@ -26,7 +26,9 @@ public:
 	int Add(const CStringA &region, int group, const TGlyph &glyph);
 
 	CStringA ListJson();                                  // [{gid,region,group,hexmash,assigned,known}]
-	bool GetImage(int gid, std::vector<unsigned char> *out);
+	bool GetImage(int gid, std::vector<unsigned char> *out);          // mask PNG
+	bool GetRegularImage(int gid, std::vector<unsigned char> *out);   // glyph actual-pixels PNG
+	bool GetFullImage(int gid, std::vector<unsigned char> *out);      // entire region scrape PNG
 	bool SetChar(int gid, const CStringA &ch);            // assign / clear a character
 	bool Delete(int gid);
 	void Clear();

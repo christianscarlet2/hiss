@@ -92,6 +92,28 @@ bool CFontGlyphStore::GetImage(int gid, std::vector<unsigned char> *out)
 	return found;
 }
 
+bool CFontGlyphStore::GetRegularImage(int gid, std::vector<unsigned char> *out)
+{
+	bool found = false;
+	EnterCriticalSection(&_cs);
+	for (size_t i = 0; i < _entries.size(); ++i) {
+		if (_entries[i].gid == gid) { *out = _entries[i].glyph.regular_png; found = true; break; }
+	}
+	LeaveCriticalSection(&_cs);
+	return found;
+}
+
+bool CFontGlyphStore::GetFullImage(int gid, std::vector<unsigned char> *out)
+{
+	bool found = false;
+	EnterCriticalSection(&_cs);
+	for (size_t i = 0; i < _entries.size(); ++i) {
+		if (_entries[i].gid == gid) { *out = _entries[i].glyph.full_png; found = true; break; }
+	}
+	LeaveCriticalSection(&_cs);
+	return found;
+}
+
 bool CFontGlyphStore::SetChar(int gid, const CStringA &ch)
 {
 	bool found = false;

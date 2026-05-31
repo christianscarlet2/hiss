@@ -270,6 +270,53 @@ static void TFE_GlyphToPng(const TGlyph &g, std::vector<unsigned char> *png)
 	cv::imencode(".png", bgr, *png, params);
 }
 
+// Crop the glyph's actual (regular) pixels from the BGRA buffer and encode a
+// scaled-up PNG for side-by-side reference next to the binarized mask.
+static void TFE_RegularGlyphPng(const unsigned char *bgra, int w, int h,
+	int xb, int xe, int yb, int ye, std::vector<unsigned char> *png)
+{
+	png->clear();
+	if (xb < 0) xb = 0; if (yb < 0) yb = 0;
+	if (xe >= w) xe = w - 1; if (ye >= h) ye = h - 1;
+	int gw = xe - xb + 1, gh = ye - yb + 1;
+	if (gw < 1 || gh < 1) return;
+	cv::Mat crop(gh, gw, CV_8UC3);
+	for (int y = 0; y < gh; y++) {
+		for (int x = 0; x < gw; x++) {
+			int base = ((yb + y) * w + (xb + x)) * 4;
+			crop.at<cv::Vec3b>(y, x) = cv::Vec3b(bgra[base + 0], bgra[base + 1], bgra[base + 2]);
+		}
+	}
+	int scale = 6;
+	cv::Mat big;
+	cv::resize(crop, big, cv::Size(gw * scale, gh * scale), 0, 0, cv::INTER_NEAREST);
+	std::vector<int> params;
+	params.push_back(cv::IMWRITE_PNG_COMPRESSION);
+	params.push_back(3);
+	cv::imencode(".png", big, *png, params);
+}
+
+// Encode the entire region crop (regular pixels) to a PNG, scaled up for display.
+static void TFE_FullRegionPng(const unsigned char *bgra, int w, int h, std::vector<unsigned char> *png)
+{
+	png->clear();
+	if (w < 1 || h < 1) return;
+	cv::Mat crop(h, w, CV_8UC3);
+	for (int y = 0; y < h; y++) {
+		for (int x = 0; x < w; x++) {
+			int base = (y * w + x) * 4;
+			crop.at<cv::Vec3b>(y, x) = cv::Vec3b(bgra[base + 0], bgra[base + 1], bgra[base + 2]);
+		}
+	}
+	int scale = 3;
+	cv::Mat big;
+	cv::resize(crop, big, cv::Size(w * scale, h * scale), 0, 0, cv::INTER_NEAREST);
+	std::vector<int> params;
+	params.push_back(cv::IMWRITE_PNG_COMPRESSION);
+	params.push_back(3);
+	cv::imencode(".png", big, *png, params);
+}
+
 // ===========================================================================
 // CTrainerFonts
 // ===========================================================================
@@ -383,6 +430,10 @@ void CTrainerFonts::SegmentBgra(const unsigned char *bgra, int w, int h,
 	int stride = 0;
 	TFE_BuildCharArray(bgra, w, h, color, radius, &ch, &bg, &stride);
 
+	// The entire region scrape (regular pixels), shared by every glyph from it.
+	std::vector<unsigned char> full_png;
+	TFE_FullRegionPng(bgra, w, h, &full_png);
+
 	int scan_pos = 0;
 	while (scan_pos < w && bg[scan_pos]) scan_pos++;
 	while (scan_pos < w) {
@@ -413,6 +464,8 @@ void CTrainerFonts::SegmentBgra(const unsigned char *bgra, int w, int h,
 
 		if (glyph.x_count > 0) {
 			TFE_GlyphToPng(glyph, &glyph.png);
+			TFE_RegularGlyphPng(bgra, w, h, xb, xe, yb, ye, &glyph.regular_png);
+			glyph.full_png = full_png;
 			out->push_back(glyph);
 		}
 
