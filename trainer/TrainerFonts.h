@@ -30,6 +30,7 @@ struct TGlyph {
 	int             x_count;
 	unsigned int    x[TFE_MAX_SINGLE_CHAR_WIDTH];
 	char            existing_ch;                      // matched char already in the group, else 0
+	int             xb, xe, yb, ye;                   // glyph bounds in region pixel coords (for re-pick)
 	std::vector<unsigned char> png;                   // PNG of the glyph mask (binarized), for display
 	std::vector<unsigned char> regular_png;           // PNG of the glyph's actual (regular) pixels
 	std::vector<unsigned char> full_png;              // PNG of the entire region scrape it came from
@@ -55,6 +56,12 @@ public:
 	// gets its hexmash/x[]/x_count, any already-known character, and a display PNG.
 	void SegmentBgra(const unsigned char *bgra, int w, int h,
 		COLORREF color, int radius, int group, std::vector<TGlyph> *out);
+
+	// Re-segment a region crop with a new colour/radius and return the single glyph
+	// whose band contains (or is nearest to) center_x. `out` always gets the full
+	// region PNG; returns false (and an empty glyph) if no foreground band exists.
+	bool RegenGlyphAt(const unsigned char *bgra, int w, int h,
+		COLORREF color, int radius, int group, int center_x, TGlyph *out);
 
 	// Render the foreground colour-cube mask of a BGRA crop to a PNG (the
 	// "transformed" view for font-hash recognition). Scaled up for visibility.

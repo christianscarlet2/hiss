@@ -463,6 +463,7 @@ void CTrainerFonts::SegmentBgra(const unsigned char *bgra, int w, int h,
 		LeaveCriticalSection(&_cs);
 
 		if (glyph.x_count > 0) {
+			glyph.xb = xb; glyph.xe = xe; glyph.yb = yb; glyph.ye = ye;
 			TFE_GlyphToPng(glyph, &glyph.png);
 			TFE_RegularGlyphPng(bgra, w, h, xb, xe, yb, ye, &glyph.regular_png);
 			glyph.full_png = full_png;
