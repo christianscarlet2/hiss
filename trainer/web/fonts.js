@@ -455,6 +455,65 @@
     }
   });
 
+  // ---- Global per-group colour picker (toolbar) ----
+  var gcA = document.getElementById('gcA');
+  var gcR = document.getElementById('gcR');
+  var gcG = document.getElementById('gcG');
+  var gcB = document.getElementById('gcB');
+  var gcRad = document.getElementById('gcRad');
+  var gcGroup = document.getElementById('gcGroup');
+  var gcApply = document.getElementById('gcApply');
+  var gcSwatch = document.getElementById('gcSwatch');
+  var gcHelp = document.getElementById('gcHelp');
+  var helpOverlay = document.getElementById('helpOverlay');
+  var helpClose = document.getElementById('helpClose');
+
+  for (var ggi = 0; ggi < 10; ggi++) {
+    var go = document.createElement('option');
+    go.value = String(ggi); go.textContent = 'Text' + ggi;
+    gcGroup.appendChild(go);
+  }
+
+  function gcSync() {
+    gcSwatch.style.backgroundColor =
+      'rgb(' + clamp255(gcR.value) + ',' + clamp255(gcG.value) + ',' + clamp255(gcB.value) + ')';
+  }
+  [gcA, gcR, gcG, gcB].forEach(function (inp) { inp.addEventListener('input', gcSync); });
+  gcSync();
+
+  // Selecting a group pre-fills the fields from a region using that transform.
+  gcGroup.addEventListener('change', function () {
+    api('GET', '/api/fonts/groupdefaults?group=' + gcGroup.value, function (status, data) {
+      if (data && data.ok) {
+        gcA.value = clamp255(data.a); gcR.value = clamp255(data.r);
+        gcG.value = clamp255(data.g); gcB.value = clamp255(data.b);
+        gcRad.value = parseInt(data.radius, 10) || 0;
+        gcSync();
+      }
+    });
+  });
+
+  gcApply.addEventListener('click', function () {
+    var group = parseInt(gcGroup.value, 10);
+    var q = '/api/fonts/applygroup?group=' + group
+      + '&a=' + clamp255(gcA.value) + '&r=' + clamp255(gcR.value)
+      + '&g=' + clamp255(gcG.value) + '&b=' + clamp255(gcB.value)
+      + '&radius=' + (parseInt(gcRad.value, 10) || 0);
+    api('POST', q, function (status, data) {
+      var n = (data && typeof data.count === 'number') ? data.count : 0;
+      statusEl.textContent = 'Applied colour to ' + n + ' Text' + group + ' row(s)';
+      rebuildAll();
+    });
+  });
+
+  function showHelp(on) { helpOverlay.style.display = on ? '' : 'none'; }
+  gcHelp.addEventListener('click', function () { showHelp(true); });
+  helpClose.addEventListener('click', function () { showHelp(false); });
+  helpOverlay.addEventListener('click', function (e) { if (e.target === helpOverlay) showHelp(false); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && helpOverlay.style.display !== 'none') showHelp(false);
+  });
+
   refresh();
   setInterval(refresh, 1500);
 })();

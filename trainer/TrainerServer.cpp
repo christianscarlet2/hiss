@@ -4,6 +4,7 @@
 #include "TrainerFonts.h"
 #include "FontGlyphStore.h"
 #include "TrainerMessages.h"
+#include "TablemapRegions.h"
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -383,6 +384,36 @@ void CTrainerServer::HandleClient(SOCKET client)
 		CStringA body;
 		if (ok) body.Format("{\"ok\":true,\"a\":%d,\"r\":%d,\"g\":%d,\"b\":%d,\"radius\":%d}", a, r, g, b, radius);
 		else    body = "{\"ok\":false}";
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+	// Colour/radius default for a transform (Text<group>), used to pre-fill the
+	// global per-group picker when its dropdown changes.
+	if (path.CompareNoCase("/api/fonts/groupdefaults") == 0) {
+		int group = atoi(QueryValue(query, "group"));
+		CString transform; transform.Format("Text%d", group);
+		COLORREF color = 0; int radius = 0;
+		bool ok = RegionColors_GetByTransform(transform, &color, &radius);
+		CStringA body;
+		if (ok) body.Format("{\"ok\":true,\"a\":%d,\"r\":%d,\"g\":%d,\"b\":%d,\"radius\":%d}",
+			(int)((color >> 24) & 0xff), (int)GetRValue(color), (int)GetGValue(color), (int)GetBValue(color), radius);
+		else    body = "{\"ok\":false}";
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+	// Global per-group picker: apply colour + radius to every glyph in a group.
+	if (path.CompareNoCase("/api/fonts/applygroup") == 0) {
+		int group = atoi(QueryValue(query, "group"));
+		int a = atoi(QueryValue(query, "a"));
+		int r = atoi(QueryValue(query, "r"));
+		int g = atoi(QueryValue(query, "g"));
+		int b = atoi(QueryValue(query, "b"));
+		int radius = atoi(QueryValue(query, "radius"));
+		int count = (p_font_glyph_store != NULL)
+			? p_font_glyph_store->ApplyToGroup(group, a, r, g, b, radius) : 0;
+		CStringA body; body.Format("{\"ok\":true,\"count\":%d}", count);
 		CStringA response = Response(body, "application/json; charset=utf-8");
 		send(client, response.GetString(), response.GetLength(), 0);
 		return;

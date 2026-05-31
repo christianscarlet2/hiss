@@ -268,6 +268,38 @@ int CFontGlyphStore::ApplyBelow(int gid, int group, int a, int r, int g, int b, 
 	return count;
 }
 
+int CFontGlyphStore::ApplyToGroup(int group, int a, int r, int g, int b, int radius)
+{
+	if (group < 0 || group >= TFE_NUM_FONT_GROUPS) return 0;
+	COLORREF color = ArgbToColorref(a, r, g, b);
+	std::vector<CStringA> touched;   // distinct regions to persist (outside the lock)
+	int count = 0;
+	EnterCriticalSection(&_cs);
+	for (size_t i = 0; i < _entries.size(); ++i) {
+		SFontGlyphEntry &e = _entries[i];
+		if (e.group != group) continue;
+		e.color = color;
+		e.radius = radius;
+		if (p_trainer_fonts != NULL && !e.src_bgra.empty()) {
+			int center_x = (e.glyph.xb + e.glyph.xe) / 2;
+			TGlyph ng;
+			p_trainer_fonts->RegenGlyphAt(&e.src_bgra[0], e.src_w, e.src_h,
+				color, radius, e.group, center_x, &ng);
+			e.glyph = ng;
+		}
+		// Persist each distinct region only once.
+		bool seen = false;
+		for (size_t k = 0; k < touched.size(); ++k) if (touched[k] == e.region) { seen = true; break; }
+		if (!seen) touched.push_back(e.region);
+		++count;
+	}
+	LeaveCriticalSection(&_cs);
+	for (size_t i = 0; i < touched.size(); ++i) {
+		if (!touched[i].IsEmpty()) RegionColors_UpdateByName(CString(touched[i]), color, radius);
+	}
+	return count;
+}
+
 bool CFontGlyphStore::SetGroupFor(int gid, int group)
 {
 	if (group < 0 || group >= TFE_NUM_FONT_GROUPS) return false;

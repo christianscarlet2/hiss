@@ -55,6 +55,10 @@ public:
 	// each from its own source crop and persisting r$. Returns the number affected.
 	int ApplyBelow(int gid, int group, int a, int r, int g, int b, int radius);
 
+	// Apply colour + radius to every pending glyph currently assigned to `group`
+	// (the global per-group picker), regenerating each and persisting r$. Returns count.
+	int ApplyToGroup(int group, int a, int r, int g, int b, int radius);
+
 	// Set which font group this glyph saves to (also becomes the sticky default
 	// for subsequent captures).
 	bool SetGroupFor(int gid, int group);

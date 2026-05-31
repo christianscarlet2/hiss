@@ -15,6 +15,18 @@
     <button id="undo" tabindex="-1">Undo (Ctrl+Z)</button>
     <button id="clearAll" class="danger" tabindex="-1">Clear All</button>
   </header>
+  <div class="toolbar2">
+    <span class="gclabel">Global colour</span>
+    <span id="gcSwatch" class="swatch sm"></span>
+    <label class="gcfield">A<input id="gcA" type="number" min="0" max="255" value="255" tabindex="-1"></label>
+    <label class="gcfield">R<input id="gcR" type="number" min="0" max="255" value="0" tabindex="-1"></label>
+    <label class="gcfield">G<input id="gcG" type="number" min="0" max="255" value="0" tabindex="-1"></label>
+    <label class="gcfield">B<input id="gcB" type="number" min="0" max="255" value="0" tabindex="-1"></label>
+    <label class="gcfield">Radius<input id="gcRad" type="number" value="0" tabindex="-1"></label>
+    <select id="gcGroup" tabindex="-1"></select>
+    <button id="gcApply" tabindex="-1">Apply to group</button>
+    <button id="gcHelp" class="help" tabindex="-1" title="How does this work?">?</button>
+  </div>
   <main>
     <table id="glyphs">
       <thead>
@@ -28,6 +40,29 @@
       Type the character each glyph represents, then <b>Save All Edited</b> to write them into the tablemap.
     </p>
   </main>
+
+  <!-- Help dialog for the global per-group colour picker -->
+  <div id="helpOverlay" class="overlay" style="display:none">
+    <div class="dialog">
+      <h2>Global colour picker</h2>
+      <p>Sets one colour cube (the A/R/G/B centre + radius) for <b>every pending glyph in a font group</b> at once,
+         then re-segments those glyphs with it.</p>
+      <ol>
+        <li>Enter the colour as <b>A, R, G, B</b> (0–255) and a <b>Radius</b> (the colour-cube tolerance; a pixel
+            is foreground when its Euclidean distance from the centre colour is ≤ radius — same rule as Vision.
+            A negative radius inverts the test).</li>
+        <li>Pick the <b>font group</b> (Text0–Text9). Selecting a group pre-fills the fields from a tablemap
+            region that uses that transform, so you usually only need to tweak.</li>
+        <li>Click <b>Apply to group</b>. Every row whose Group is that Text&lt;n&gt; is re-binarised with this
+            colour, and the colour/radius are written back to each glyph's region <code>r$</code> record so live
+            recognition uses the same colour.</li>
+      </ol>
+      <p class="muted">Tip: to grab an exact colour from a real scrape, open a row's <b>🎨</b> editor and click a
+         pixel on the Reference or Scrape image — then copy those A/R/G/B values up here to apply group-wide.</p>
+      <div class="dialog-actions"><button id="helpClose">Got it</button></div>
+    </div>
+  </div>
+
   <script src="/trainer/fonts.js"></script>
 </body>
 </html>
