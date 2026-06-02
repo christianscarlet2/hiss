@@ -216,25 +216,31 @@
       var val = input.value;
       if (!val) return;   // colour chosen as a preview only; nothing to save yet
       var rec = rendered[gl.gid];
+      // The actual save: create the font under this colour and refresh.
+      function doSave() {
+        input.classList.add('done');
+        setScanning(true);
+        api('POST', '/api/fonts/setchar?gid=' + gl.gid + '&ch=' + encodeURIComponent(val), function () {
+          markColour(rowGroup, which, val);   // C1 -> colour-1 row, C2 -> colour-2 row
+          refresh(function () { setScanning(false); focusFirstEmpty(); });
+        });
+      }
       // Warn before (re)creating a font that would duplicate something already there:
       // the same character already saved under this colour in this group takes
       // precedence (the case the coverage footer tracks); otherwise the glyph shape
-      // itself may already have a font (accounted). Show at most one confirm.
+      // itself may already have a font (accounted). A custom dialog offers Yes (save
+      // anyway), No (abort), or Delete row.
       var cov = ensureCov(rowGroup);
-      var warn = null;
-      if (cov[which] && cov[which][val]) {
-        warn = 'Colour ' + which + ' already has a font for "' + val + '" in Text' + rowGroup
-             + '.\nContinue and (re)create it?';
-      } else if (rec && rec.accounted) {
-        warn = 'This glyph has already been accounted for.\nContinue and (re)create the font?';
+      var dupChar = !!(cov[which] && cov[which][val]);
+      if (dupChar || (rec && rec.accounted)) {
+        var why = dupChar
+          ? 'Colour ' + which + ' already has a font for "' + val + '" in Text' + rowGroup + '.'
+          : 'This glyph has already been accounted for.';
+        confirmSaveDialog(why + ' Continue and (re)create the font?',
+          doSave, function () { removeRow(false); });
+        return;
       }
-      if (warn && !confirm(warn)) return;
-      input.classList.add('done');
-      setScanning(true);
-      api('POST', '/api/fonts/setchar?gid=' + gl.gid + '&ch=' + encodeURIComponent(val), function () {
-        markColour(rowGroup, which, val);   // C1 -> colour-1 row, C2 -> colour-2 row
-        refresh(function () { setScanning(false); focusFirstEmpty(); });
-      });
+      doSave();
     }
     tdC.appendChild(input);
     var spin = document.createElement('span');
@@ -364,7 +370,24 @@
     return 'rgb(' + c.r + ',' + c.g + ',' + c.b + ')';
   }
 
+  // colourCov values are GLYPH COUNTS per character (how many glyphs were saved for
+  // that char under that colour), not just booleans — a count >= 2 surfaces an "xN"
+  // badge on the footer chip. Any count >= 1 still reads as "accounted".
   function ensureCov(g) { g = String(g); if (!colourCov[g]) colourCov[g] = { 1: {}, 2: {} }; return colourCov[g]; }
+  // Merge a persisted block into dst, accepting both the new count-map format
+  // ({char: count}) and the legacy joined-string format ("abc" = one each).
+  function ingestCounts(dst, src) {
+    if (!src) return;
+    if (typeof src === 'string') {
+      for (var i = 0; i < src.length; i++) { var ch = src.charAt(i); dst[ch] = (dst[ch] || 0) + 1; }
+    } else if (typeof src === 'object') {
+      for (var k in src) {
+        if (!src.hasOwnProperty(k)) continue;
+        var v = parseInt(src[k], 10);
+        dst[k] = (dst[k] || 0) + (isNaN(v) ? 1 : v);
+      }
+    }
+  }
   function loadCovState() {
     try {
       var n = parseInt(localStorage.getItem('fcc_num'), 10);
@@ -375,9 +398,8 @@
         for (var g in obj) {
           if (!obj.hasOwnProperty(g)) continue;
           var c = ensureCov(g);
-          var s1 = (obj[g] && obj[g]['1']) || '', s2 = (obj[g] && obj[g]['2']) || '';
-          for (var i = 0; i < s1.length; i++) c[1][s1.charAt(i)] = true;
-          for (var j = 0; j < s2.length; j++) c[2][s2.charAt(j)] = true;
+          ingestCounts(c[1], obj[g] && obj[g]['1']);
+          ingestCounts(c[2], obj[g] && obj[g]['2']);
         }
       }
     } catch (e) {}
@@ -387,16 +409,17 @@
       var obj = {};
       for (var g in colourCov) {
         if (!colourCov.hasOwnProperty(g)) continue;
-        obj[g] = { '1': Object.keys(colourCov[g][1]).join(''), '2': Object.keys(colourCov[g][2]).join('') };
+        obj[g] = { '1': colourCov[g][1], '2': colourCov[g][2] };   // store the count maps
       }
       localStorage.setItem('fcc', JSON.stringify(obj));
       localStorage.setItem('fcc_num', String(numColours));
     } catch (e) {}
   }
-  // Record that character `ch` was saved under colour `colour` (1/2) in `group`.
+  // Record that another glyph for character `ch` was saved under colour `colour`
+  // (1/2) in `group` — increments the per-char glyph count.
   function markColour(group, colour, ch) {
     var c = ensureCov(group);
-    c[colour][ch] = true;
+    c[colour][ch] = (c[colour][ch] || 0) + 1;
     saveCovState();
     updateCoverageFooter();
   }
@@ -419,6 +442,15 @@
           missing++;
         }
         rowEl.appendChild(s);
+        // When more than one glyph was saved for this char under this colour, show a
+        // red "xN" count badge right next to the chip.
+        var cnt = coveredObj[ch];
+        if (acc && typeof cnt === 'number' && cnt >= 2) {
+          var badge = document.createElement('span');
+          badge.className = 'covcount';
+          badge.textContent = 'x' + cnt;
+          rowEl.appendChild(badge);
+        }
       }
     }
     fill(rowEl1, CHARSET_ROW1);
@@ -433,7 +465,7 @@
       if (covBlock2) covBlock2.style.display = '';
       // First time (nothing tracked yet): seed Colour 1 from existing DB fonts.
       if (dbChars && Object.keys(c[1]).length === 0 && Object.keys(c[2]).length === 0) {
-        for (var i = 0; i < dbChars.length; i++) c[1][dbChars.charAt(i)] = true;
+        for (var i = 0; i < dbChars.length; i++) c[1][dbChars.charAt(i)] = 1;   // count of 1 each
         saveCovState();
       }
       fillCharsetRows(covRow1, covRow2, c[1], glyphbarSummary, 'Colour 1 — unaccounted (Text' + defaultGroup + ')', colourRgb(1));
@@ -785,6 +817,49 @@
       rebuildAll();
     });
   });
+
+  // ---- Three-way confirm modal (Yes / No / Delete row) ----
+  // Used before (re)creating a font for a glyph that is already accounted for under
+  // the chosen colour. Built once and reused. onYes / onDelete are optional callbacks.
+  var confirmOverlay = null;
+  function confirmSaveDialog(message, onYes, onDelete) {
+    if (!confirmOverlay) {
+      confirmOverlay = document.createElement('div');
+      confirmOverlay.className = 'overlay';
+      confirmOverlay.innerHTML =
+        '<div class="dialog">' +
+          '<h2>Already accounted for</h2>' +
+          '<p class="cmsg"></p>' +
+          '<div class="dialog-actions">' +
+            '<button class="cdelete danger" tabindex="-1">Delete row</button>' +
+            '<button class="cno" tabindex="-1">No</button>' +
+            '<button class="cyes">Yes, continue</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(confirmOverlay);
+    }
+    var dlg = confirmOverlay;
+    dlg.querySelector('.cmsg').textContent = message;
+    var yesBtn = dlg.querySelector('.cyes');
+    var noBtn = dlg.querySelector('.cno');
+    var delBtn = dlg.querySelector('.cdelete');
+    function onKey(e) {
+      if (e.key === 'Escape') { e.preventDefault(); close(); }
+      else if (e.key === 'Enter') { e.preventDefault(); yesBtn.click(); }
+    }
+    function close() {
+      dlg.style.display = 'none';
+      yesBtn.onclick = noBtn.onclick = delBtn.onclick = dlg.onclick = null;
+      document.removeEventListener('keydown', onKey, true);
+    }
+    yesBtn.onclick = function () { close(); if (onYes) onYes(); };
+    noBtn.onclick = function () { close(); };
+    delBtn.onclick = function () { close(); if (onDelete) onDelete(); };
+    dlg.onclick = function (e) { if (e.target === dlg) close(); };   // click backdrop = No
+    document.addEventListener('keydown', onKey, true);
+    dlg.style.display = '';
+    yesBtn.focus();
+  }
 
   function showHelp(on) { helpOverlay.style.display = on ? '' : 'none'; }
   gcHelp.addEventListener('click', function () { showHelp(true); });

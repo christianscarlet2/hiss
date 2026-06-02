@@ -65,6 +65,8 @@ main { flex: 1; overflow: auto; padding: 8px 12px; }
   background: #2f8f4f; color: #cfe9d4;                 /* accounted: green, dim text */
 }
 .statusbar .covchip.unaccounted { background: #d98e2b; color: #fff; }   /* still needs a font */
+/* red "xN" count badge: shown next to a chip when >1 glyph is saved for that char+colour */
+.statusbar .covcount { color: #ff4d4d; font-weight: 700; font-size: 11px; align-self: center; margin: 0 2px 0 -1px; }
 
 /* Mark table rows whose glyph already has a font. */
 tbody tr.accounted td.r::after { content: " · already accounted"; color: #2f8f4f; }
@@ -277,3 +279,9 @@ button.help:hover { background: #4b5563; }
 .dialog-actions { text-align: right; margin-top: 14px; }
 .dialog-actions button { background: #3d82f6; padding: 6px 16px; }
 .dialog-actions button:hover { background: #2f6fe0; }
+.dialog-actions button + button { margin-left: 8px; }
+/* keep the destructive "Delete row" button red despite the generic rule above */
+.dialog-actions button.danger { background: #d0473b; }
+.dialog-actions button.danger:hover { background: #b93b30; }
+/* push Delete row to the far left, Yes/No stay grouped on the right */
+.dialog-actions .cdelete { float: left; margin-left: 0; }
