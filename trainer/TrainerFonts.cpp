@@ -671,23 +671,39 @@ void CTrainerFonts::RemoveHexmash(int group, const CStringA &hexmash)
 	LeaveCriticalSection(&_cs);
 }
 
-int CTrainerFonts::RemoveCharFromGroup(int group, char ch)
+int CTrainerFonts::RemoveCharFromGroup(int group, char ch, std::vector<TFontRec> *removed_out)
 {
 	if (group < 0 || group >= TFE_NUM_FONT_GROUPS || ch == 0) return 0;
 	EnterCriticalSection(&_cs);
 	// A character can have several font records (different glyph shapes), each keyed
-	// by hexmash. Collect all whose record maps to this char, then erase them.
+	// by hexmash. Collect all whose record maps to this char (keeping a copy for undo),
+	// then erase them.
 	std::vector<CStringA> keys;
 	for (TFontGroup::const_iterator it = _groups[group].begin(); it != _groups[group].end(); ++it) {
-		if (it->second.ch == ch) keys.push_back(it->first);
+		if (it->second.ch == ch) {
+			keys.push_back(it->first);
+			if (removed_out) removed_out->push_back(it->second);
+		}
 	}
 	for (size_t i = 0; i < keys.size(); i++) _groups[group].erase(keys[i]);
 	int count = (int)keys.size();
 	LeaveCriticalSection(&_cs);
 	// Persist the deletion to the hiss database (full font-set sync, same path as a
 	// save). Report failure so the UI doesn't claim success on a DB error.
-	if (count > 0 && !SaveToDB()) return -1;
+	if (count > 0 && !SaveToDB()) {
+		if (removed_out) removed_out->clear();
+		return -1;
+	}
 	return count;
+}
+
+bool CTrainerFonts::RestoreFonts(int group, const std::vector<TFontRec> &recs)
+{
+	if (group < 0 || group >= TFE_NUM_FONT_GROUPS) return false;
+	EnterCriticalSection(&_cs);
+	for (size_t i = 0; i < recs.size(); i++) _groups[group][recs[i].hexmash] = recs[i];
+	LeaveCriticalSection(&_cs);
+	return SaveToDB();
 }
 
 int CTrainerFonts::group_count(int g)

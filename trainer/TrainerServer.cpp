@@ -559,9 +559,23 @@ void CTrainerServer::HandleClient(SOCKET client)
 	// row(s); we then rescan the live glyphs so the now-unknown glyph re-surfaces
 	// naturally (deduped against what was just restored).
 	if (path.CompareNoCase("/api/fonts/undo") == 0) {
-		int restored = (p_font_glyph_store != NULL) ? p_font_glyph_store->Undo() : 0;
+		int type = -1, ugroup = 0; CStringA uch;
+		int restored = (p_font_glyph_store != NULL) ? p_font_glyph_store->Undo(&type, &ugroup, &uch) : 0;
 		if (g_trainer_main_hwnd != NULL) ::SendMessage(g_trainer_main_hwnd, WM_TRAINER_CAPTURE_FONTS, 0, 0);
-		CStringA body; body.Format("{\"ok\":true,\"restored\":%d}", restored);
+		CStringA body;
+		if (type == 2) {
+			// A footer chip delete was undone: tell the client which char/group came
+			// back so it can restore that chip's coverage. Escape the char for JSON.
+			CStringA esc;
+			for (int i = 0; i < uch.GetLength(); ++i) {
+				char c = uch[i];
+				if (c == '"' || c == '\\') { esc += '\\'; esc += c; } else esc += c;
+			}
+			body.Format("{\"ok\":true,\"restored\":%d,\"fontsRestored\":true,\"group\":%d,\"ch\":\"%s\"}",
+				restored, ugroup, esc.GetString());
+		} else {
+			body.Format("{\"ok\":true,\"restored\":%d}", restored);
+		}
 		CStringA response = Response(body, "application/json; charset=utf-8");
 		send(client, response.GetString(), response.GetLength(), 0);
 		return;
@@ -590,8 +604,9 @@ void CTrainerServer::HandleClient(SOCKET client)
 	if (path.CompareNoCase("/api/fonts/deletechar") == 0) {
 		int group = atoi(QueryValue(query, "group"));
 		CStringA ch = UrlDecode(QueryValue(query, "ch"));
-		int removed = (p_trainer_fonts != NULL && !ch.IsEmpty())
-			? p_trainer_fonts->RemoveCharFromGroup(group, ch[0]) : 0;
+		// Route through the glyph store so an undo action is recorded.
+		int removed = (p_font_glyph_store != NULL && !ch.IsEmpty())
+			? p_font_glyph_store->DeleteCharFonts(group, ch[0]) : 0;
 		CStringA body;
 		if (removed < 0) body = "{\"ok\":false,\"error\":\"Database write failed.\"}";
 		else            body.Format("{\"ok\":true,\"removed\":%d}", removed);

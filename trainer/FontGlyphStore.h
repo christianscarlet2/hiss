@@ -88,10 +88,17 @@ public:
 	bool Delete(int gid);
 	void Clear();
 
-	// Undo the last removal: restores the row(s) that were deleted, or — for a row
-	// that was labeled (font created) — removes that font from the tablemap, re-saves,
-	// and restores the row. Returns the number of rows restored (0 = nothing to undo).
-	int Undo();
+	// Delete every font record for character `ch` in `group` from the database AND
+	// push an undo action holding the removed records (footer chip click). Returns the
+	// number of records removed, or -1 on a database write failure.
+	int DeleteCharFonts(int group, char ch);
+
+	// Undo the last removal. Restores the row(s) that were deleted, or — for a row that
+	// was labeled (font created) — removes that font and restores the row, or — for a
+	// footer chip delete (type 2) — re-inserts the deleted font records. Returns the
+	// number of items restored (0 = nothing to undo). Outputs the action type, and for
+	// a type-2 undo the affected group and character (so the UI can refresh coverage).
+	int Undo(int *type_out, int *group_out, CStringA *ch_out);
 
 	// Save every labeled glyph into its font group, then persist the tablemap.
 	// Returns the number of glyph records written.
@@ -102,13 +109,16 @@ public:
 	int  EditGroup();
 
 private:
-	// One reversible removal. type 0 = plain delete; type 1 = label/create (the
-	// font in `group`/`hexmash` was written to the tablemap and must be removed on undo).
+	// One reversible removal. type 0 = plain delete; type 1 = label/create (the font in
+	// `group`/`hexmash` was written to the tablemap and must be removed on undo);
+	// type 2 = footer chip delete (the `fonts` records were removed from `group` and
+	// must be re-inserted on undo).
 	struct SUndoAction {
 		int type;
 		int group;
 		CStringA hexmash;
-		std::vector<SFontGlyphEntry> entries;   // row(s) to restore
+		std::vector<SFontGlyphEntry> entries;   // row(s) to restore (type 0/1)
+		std::vector<TFontRec> fonts;            // font records to re-insert (type 2)
 	};
 
 	CRITICAL_SECTION _cs;

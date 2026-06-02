@@ -467,19 +467,48 @@ void CFontGlyphStore::Clear()
 	LeaveCriticalSection(&_cs);
 }
 
-int CFontGlyphStore::Undo()
+int CFontGlyphStore::DeleteCharFonts(int group, char ch)
+{
+	if (p_trainer_fonts == NULL || ch == 0) return 0;
+	std::vector<TFontRec> removed;
+	int count = p_trainer_fonts->RemoveCharFromGroup(group, ch, &removed);
+	if (count > 0) {
+		EnterCriticalSection(&_cs);
+		SUndoAction act;
+		act.type = 2;
+		act.group = group;
+		act.fonts = removed;
+		_undo.push_back(act);
+		if (_undo.size() > 100) _undo.erase(_undo.begin());
+		LeaveCriticalSection(&_cs);
+	}
+	return count;
+}
+
+int CFontGlyphStore::Undo(int *type_out, int *group_out, CStringA *ch_out)
 {
 	int restored = 0;
+	if (type_out) *type_out = -1;
+	if (group_out) *group_out = 0;
+	if (ch_out) *ch_out = "";
 	EnterCriticalSection(&_cs);
 	if (!_undo.empty()) {
 		SUndoAction act = _undo.back();
 		_undo.pop_back();
+		if (type_out) *type_out = act.type;
+		if (group_out) *group_out = act.group;
+		// A footer chip delete: re-insert the removed font record(s) into the group.
+		if (act.type == 2 && p_trainer_fonts != NULL) {
+			if (ch_out && !act.fonts.empty()) { CStringA s; s += act.fonts[0].ch; *ch_out = s; }
+			p_trainer_fonts->RestoreFonts(act.group, act.fonts);
+			restored = (int)act.fonts.size();
+		}
 		// A labeled/created row: remove its font from the tablemap and re-save.
 		if (act.type == 1 && p_trainer_fonts != NULL) {
 			p_trainer_fonts->RemoveHexmash(act.group, act.hexmash);
 			p_trainer_fonts->SaveToDB();
 		}
-		// Restore the row(s) as fresh, unlabeled glyphs.
+		// Restore the row(s) as fresh, unlabeled glyphs (type 0/1).
 		for (size_t i = 0; i < act.entries.size(); ++i) {
 			SFontGlyphEntry e = act.entries[i];
 			e.gid = _next_gid++;

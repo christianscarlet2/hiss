@@ -82,8 +82,12 @@ public:
 	void RemoveHexmash(int group, const CStringA &hexmash);
 	// Remove EVERY font record mapping to character `ch` from group `group`, then
 	// persist to the database. Returns the number of records removed, or -1 if the
-	// database write failed (used by the footer's click-to-delete).
-	int RemoveCharFromGroup(int group, char ch);
+	// database write failed (used by the footer's click-to-delete). When `removed_out`
+	// is non-NULL it receives the removed records (so they can be restored by undo).
+	int RemoveCharFromGroup(int group, char ch, std::vector<TFontRec> *removed_out = NULL);
+	// Re-insert previously-removed font records into `group` and persist (undo of the
+	// footer chip delete). Returns true on a successful database write.
+	bool RestoreFonts(int group, const std::vector<TFontRec> &recs);
 
 	int      group_count(int g);     // number of records currently in group g
 	CStringA GroupChars(int g);      // distinct characters that have a font in group g

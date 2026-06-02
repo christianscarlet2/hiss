@@ -22,7 +22,8 @@
   var covBlock2 = document.getElementById('covBlock2');
   var numColoursSel = document.getElementById('numColours');
   var numColours = 2;     // "Do you have multiple colors?" default = 2
-  var colourCov = {};     // group -> {1:{char:true}, 2:{char:true}} (persisted in localStorage)
+  var colourCov = {};     // group -> {1:{char:count}, 2:{char:count}} (persisted in localStorage)
+  var covDeleteSnaps = []; // LIFO of {g,ch,c1,c2} so undo can restore a deleted chip's coverage
 
   function api(method, url, cb) {
     var xhr = new XMLHttpRequest();
@@ -495,11 +496,14 @@
     api('POST', '/api/fonts/deletechar?group=' + g + '&ch=' + encodeURIComponent(ch), function (status, data) {
       if (data && data.ok) {
         // The fonts are gone server-side; clear this char from both colours' coverage
-        // so its chip stops showing as accounted, then re-pull.
+        // so its chip stops showing as accounted, then re-pull. Snapshot the prior
+        // counts (only when something was actually deleted, i.e. a server undo exists)
+        // so Undo/Ctrl+Z can restore the chip.
         var c = ensureCov(g);
+        if (data.removed > 0) covDeleteSnaps.push({ g: g, ch: ch, c1: c[1][ch] || 0, c2: c[2][ch] || 0 });
         delete c[1][ch]; delete c[2][ch];
         saveCovState();
-        statusEl.textContent = 'Deleted ' + (data.removed || 0) + ' font record(s) for "' + ch + '" (Text' + g + ')';
+        statusEl.textContent = 'Deleted ' + (data.removed || 0) + ' font record(s) for "' + ch + '" (Text' + g + ') — Ctrl+Z to undo';
         refresh();
       } else {
         statusEl.textContent = (data && data.error) ? data.error : 'Delete failed';
@@ -631,7 +635,20 @@
     var before = {};
     for (var pid in rendered) if (rendered.hasOwnProperty(pid)) before[pid] = true;
     api('POST', '/api/fonts/undo', function (status, data) {
-      if (data && typeof data.restored === 'number') {
+      if (data && data.fontsRestored) {
+        // A footer chip delete was undone: the font(s) are back server-side. Restore
+        // the chip's coverage from the matching snapshot (LIFO), else fall back to a
+        // single count so the chip at least reappears as accounted.
+        var ch = data.ch, g = (typeof data.group === 'number') ? data.group : defaultGroup;
+        var c = ensureCov(g), snap = null;
+        for (var si = covDeleteSnaps.length - 1; si >= 0; si--) {
+          if (covDeleteSnaps[si].g === g && covDeleteSnaps[si].ch === ch) { snap = covDeleteSnaps.splice(si, 1)[0]; break; }
+        }
+        if (snap) { if (snap.c1) c[1][ch] = snap.c1; if (snap.c2) c[2][ch] = snap.c2; }
+        else c[1][ch] = 1;
+        saveCovState();
+        statusEl.textContent = 'Restored ' + (data.restored || 0) + ' font record(s) for "' + ch + '" (Text' + g + ')';
+      } else if (data && typeof data.restored === 'number') {
         statusEl.textContent = data.restored ? ('Restored ' + data.restored + ' row(s)') : 'Nothing to undo';
       }
       // Full rebuild so the restored row(s) definitely re-render.
