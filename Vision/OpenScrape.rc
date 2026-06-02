@@ -393,7 +393,8 @@ BEGIN
     COMBOBOX        IDC_SET_MODE,226,51,139,120,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
     CONTROL         "Don't use preprocessing",IDC_CHK_NO_PREPROCESS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,95,70,140,10
     CONTROL         "Don't use whitelist",IDC_CHK_NO_WHITELIST,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,240,70,120,10
-    CONTROL         "Enable live poll (OCR the selected region)",IDC_CHK_LIVE_POLL,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,95,84,200,10
+    CONTROL         "Enable live poll",IDC_CHK_LIVE_POLL,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,95,84,95,10
+    CONTROL         "Disable character spacing",IDC_CHK_NO_CHARSPACING,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,196,84,165,10
     LTEXT           "Select a region in the tablemap view to preview these settings.",IDC_SET_LIVE_HINT,95,98,270,8
     LTEXT           "Original (4x):",IDC_SET_ORIG_LBL,95,112,80,8
     CONTROL         "",IDC_SET_ORIG_VIEW,"Static",SS_BLACKFRAME,95,122,125,52

@@ -31,7 +31,8 @@ struct SAutoOcrSettings {
 	int page_seg_mode;
 	int sharpen;	// Unsharp-mask amount in percent (100 = 1.0x); <0 = default
 	CString whitelist;	// Tesseract char whitelist; empty = no restriction
-	bool no_preprocess;	// skip sharpen/binarize/char-spacing; feed the resized grayscale crop
+	bool no_preprocess;	// skip the resize/char-spacing enhancement (threshold+mode still apply)
+	bool no_char_spacing;	// skip only the character-spacing step (ignored when no_preprocess)
 };
 
 class CAutoOcr : public CSpaceOptimizedGlobalObject {
@@ -87,6 +88,7 @@ private:
 	int         _mode_a0, _mode_a1;     // tesseract page-seg mode (always applied)
 	bool        _nopre_a0, _nopre_a1;   // skip resize/char-spacing enhancement
 	bool        _nowl_a0, _nowl_a1;     // disable the char whitelist
+	bool        _nocs_a0, _nocs_a1;     // disable only the character-spacing step
 
 	vector<pair<Rect, CString>> ResultBoxes, ResultBoxes2;
 	CString ResultString, ResultString2;

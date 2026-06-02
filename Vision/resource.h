@@ -196,6 +196,7 @@
 #define IDC_SET_RESULT_LEFT             1231
 #define IDC_SET_RESULT_RIGHT            1232
 #define IDC_SET_RESULT_LR_LBL           1233
+#define IDC_CHK_NO_CHARSPACING          1234
 #define IDC_LABEL                       65535
 
 // Next default values for new objects
@@ -204,7 +205,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        154
 #define _APS_NEXT_COMMAND_VALUE         32800
-#define _APS_NEXT_CONTROL_VALUE         1234
+#define _APS_NEXT_CONTROL_VALUE         1235
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

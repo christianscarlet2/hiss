@@ -146,6 +146,7 @@ BEGIN_MESSAGE_MAP(CDlgSettings, CDialog)
 	ON_LBN_SELCHANGE(IDC_SETTINGS_GROUPS, &CDlgSettings::OnSelchangeGroups)
 	ON_BN_CLICKED(IDC_BTN_A0_BROWSE, &CDlgSettings::OnBrowseModel)
 	ON_BN_CLICKED(IDC_CHK_LIVE_POLL, &CDlgSettings::OnLivePollToggled)
+	ON_BN_CLICKED(IDC_CHK_NO_PREPROCESS, &CDlgSettings::OnNoPreprocessToggled)
 	ON_WM_TIMER()
 END_MESSAGE_MAP()
 
@@ -203,6 +204,7 @@ void CDlgSettings::LoadGroup(int group)
 	CString mode  = p_tablemap_db->GetSettingString(key, "mode");
 	bool nopre = (p_tablemap_db->GetSettingString(key, "no_preprocess") == "1");
 	bool nowl  = (p_tablemap_db->GetSettingString(key, "no_whitelist") == "1");
+	bool nocs  = (p_tablemap_db->GetSettingString(key, "no_char_spacing") == "1");
 
 	m_model.SetWindowText(model.IsEmpty() ? CString(kDefaultModelPath) : model);
 	m_threshold.SetWindowText(thr.IsEmpty() ? CString("150") : thr);
@@ -211,6 +213,8 @@ void CDlgSettings::LoadGroup(int group)
 		if ((int)m_mode.GetItemData(i) == modeval) { m_mode.SetCurSel(i); break; }
 	CheckDlgButton(IDC_CHK_NO_PREPROCESS, nopre ? BST_CHECKED : BST_UNCHECKED);
 	CheckDlgButton(IDC_CHK_NO_WHITELIST, nowl ? BST_CHECKED : BST_UNCHECKED);
+	CheckDlgButton(IDC_CHK_NO_CHARSPACING, nocs ? BST_CHECKED : BST_UNCHECKED);
+	UpdateCharSpacingEnable();
 }
 
 void CDlgSettings::SaveGroup(int group)
@@ -230,6 +234,22 @@ void CDlgSettings::SaveGroup(int group)
 		IsDlgButtonChecked(IDC_CHK_NO_PREPROCESS) == BST_CHECKED ? "1" : "0");
 	p_tablemap_db->SetSettingString(key, "no_whitelist",
 		IsDlgButtonChecked(IDC_CHK_NO_WHITELIST) == BST_CHECKED ? "1" : "0");
+	p_tablemap_db->SetSettingString(key, "no_char_spacing",
+		IsDlgButtonChecked(IDC_CHK_NO_CHARSPACING) == BST_CHECKED ? "1" : "0");
+}
+
+// Character spacing is moot when preprocessing is off (the upscale/spacing step
+// is skipped entirely), so disable and ignore the checkbox in that case.
+void CDlgSettings::UpdateCharSpacingEnable()
+{
+	bool pre_off = (IsDlgButtonChecked(IDC_CHK_NO_PREPROCESS) == BST_CHECKED);
+	CWnd *w = GetDlgItem(IDC_CHK_NO_CHARSPACING);
+	if (w) w->EnableWindow(!pre_off);
+}
+
+void CDlgSettings::OnNoPreprocessToggled()
+{
+	UpdateCharSpacingEnable();
 }
 
 void CDlgSettings::SaveDecimalFields()
@@ -248,10 +268,10 @@ void CDlgSettings::ShowPage(int index)
 	int autoocr[]  = { IDC_SET_MODEL_LBL, IDC_EDIT_A0_MODEL, IDC_BTN_A0_BROWSE,
 		IDC_SET_THRESHOLD_LBL, IDC_SET_THRESHOLD, IDC_SET_THRESHOLD_SPIN,
 		IDC_SET_MODE_LBL, IDC_SET_MODE, IDC_CHK_NO_PREPROCESS, IDC_CHK_NO_WHITELIST,
-		IDC_CHK_LIVE_POLL, IDC_SET_LIVE_HINT, IDC_SET_ORIG_LBL, IDC_SET_ORIG_VIEW,
-		IDC_SET_OCR_LBL, IDC_SET_OCR_VIEW, IDC_SET_SPLIT_LBL, IDC_SET_ORIG_LEFT,
-		IDC_SET_ORIG_RIGHT, IDC_SET_RESULT_LBL, IDC_SET_RESULT, IDC_SET_RESULT_LR_LBL,
-		IDC_SET_RESULT_LEFT, IDC_SET_RESULT_RIGHT };
+		IDC_CHK_NO_CHARSPACING, IDC_CHK_LIVE_POLL, IDC_SET_LIVE_HINT, IDC_SET_ORIG_LBL,
+		IDC_SET_ORIG_VIEW, IDC_SET_OCR_LBL, IDC_SET_OCR_VIEW, IDC_SET_SPLIT_LBL,
+		IDC_SET_ORIG_LEFT, IDC_SET_ORIG_RIGHT, IDC_SET_RESULT_LBL, IDC_SET_RESULT,
+		IDC_SET_RESULT_LR_LBL, IDC_SET_RESULT_LEFT, IDC_SET_RESULT_RIGHT };
 	int advanced[] = { IDC_SET_ADVANCED_TEXT };
 
 	const int *show = general; int show_n = sizeof(general) / sizeof(int);
@@ -265,10 +285,10 @@ void CDlgSettings::ShowPage(int index)
 		IDC_SET_MODEL_LBL, IDC_EDIT_A0_MODEL, IDC_BTN_A0_BROWSE,
 		IDC_SET_THRESHOLD_LBL, IDC_SET_THRESHOLD, IDC_SET_THRESHOLD_SPIN,
 		IDC_SET_MODE_LBL, IDC_SET_MODE, IDC_CHK_NO_PREPROCESS, IDC_CHK_NO_WHITELIST,
-		IDC_CHK_LIVE_POLL, IDC_SET_LIVE_HINT, IDC_SET_ORIG_LBL, IDC_SET_ORIG_VIEW,
-		IDC_SET_OCR_LBL, IDC_SET_OCR_VIEW, IDC_SET_SPLIT_LBL, IDC_SET_ORIG_LEFT,
-		IDC_SET_ORIG_RIGHT, IDC_SET_RESULT_LBL, IDC_SET_RESULT, IDC_SET_RESULT_LR_LBL,
-		IDC_SET_RESULT_LEFT, IDC_SET_RESULT_RIGHT, IDC_SET_ADVANCED_TEXT };
+		IDC_CHK_NO_CHARSPACING, IDC_CHK_LIVE_POLL, IDC_SET_LIVE_HINT, IDC_SET_ORIG_LBL,
+		IDC_SET_ORIG_VIEW, IDC_SET_OCR_LBL, IDC_SET_OCR_VIEW, IDC_SET_SPLIT_LBL,
+		IDC_SET_ORIG_LEFT, IDC_SET_ORIG_RIGHT, IDC_SET_RESULT_LBL, IDC_SET_RESULT,
+		IDC_SET_RESULT_LR_LBL, IDC_SET_RESULT_LEFT, IDC_SET_RESULT_RIGHT, IDC_SET_ADVANCED_TEXT };
 	for (int i = 0; i < (int)(sizeof(all) / sizeof(int)); ++i) {
 		CWnd *w = GetDlgItem(all[i]); if (w) w->ShowWindow(SW_HIDE);
 	}
@@ -383,6 +403,9 @@ void CDlgSettings::RunPreview()
 	s.page_seg_mode = (sel >= 0) ? (int)m_mode.GetItemData(sel) : (int)PSM_SINGLE_COLUMN;
 	s.no_preprocess = (IsDlgButtonChecked(IDC_CHK_NO_PREPROCESS) == BST_CHECKED);
 	s.no_whitelist = (IsDlgButtonChecked(IDC_CHK_NO_WHITELIST) == BST_CHECKED);
+	// "Disable character spacing" -> 0px gap (ignored anyway when preprocessing off).
+	if (IsDlgButtonChecked(IDC_CHK_NO_CHARSPACING) == BST_CHECKED)
+		s.char_spacing = 0;
 	s.transform = (m_current_group == 3) ? "AutoOcr1" : "AutoOcr0";
 	bool decimal = RegionUsesDecimalSplit(name);
 	s.use_decimal_split = decimal;

@@ -2319,22 +2319,28 @@ CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast,
 		pal[i].rgbRed = pal[i].rgbGreen = pal[i].rgbBlue = i;
 		pal[i].rgbReserved = 0;
 	}
-	if (result_list.empty() || result_list.back() == ocr_result) {
-		BITMAPINFOHEADER bih = { sizeof(bih), img_resized.cols, -img_resized.rows, 1, 24, BI_RGB };
+	// SetDIBitsToDevice requires every scanline to be padded to a 4-byte
+	// boundary. A cv::Mat's rows are packed (step == cols*3), so for widths whose
+	// cols*3 is not a multiple of 4 the image would shear diagonally ("skew").
+	// Copy into a DWORD-aligned buffer before handing it to GDI.
+	auto blit_aligned = [&](Mat m) {
+		if (m.empty()) return;
+		Mat bgr;
+		if (m.channels() == 1) cvtColor(m, bgr, COLOR_GRAY2BGR);
+		else if (m.channels() == 4) cvtColor(m, bgr, COLOR_BGRA2BGR);
+		else bgr = m;
+		int stride = ((bgr.cols * 3 + 3) & ~3);
+		std::vector<BYTE> buf((size_t)stride * bgr.rows);
+		for (int y = 0; y < bgr.rows; ++y)
+			memcpy(&buf[(size_t)y * stride], bgr.ptr(y), (size_t)bgr.cols * 3);
+		BITMAPINFOHEADER bih = { sizeof(bih), bgr.cols, -bgr.rows, 1, 24, BI_RGB };
 		BITMAPINFO bi = { bih, pal[1] };
-		m_MatFrame.SetWindowPos(NULL, 0, 0, img_resized.cols, img_resized.rows, SWP_NOMOVE | SWP_NOZORDER | SWP_NOCOPYBITS);
-		SetDIBitsToDevice(hdcControl, 0, 0, img_resized.cols, img_resized.rows,
-			0, 0, 0, img_resized.rows, img_resized.data, &bi,
-			DIB_RGB_COLORS);
-	}
-	else {
-		BITMAPINFOHEADER bih = { sizeof(bih), img_resized2.cols, -img_resized2.rows, 1, 24, BI_RGB };
-		BITMAPINFO bi = { bih, pal[1] };
-		m_MatFrame.SetWindowPos(NULL, 0, 0, img_resized2.cols, img_resized2.rows, SWP_NOMOVE | SWP_NOZORDER | SWP_NOCOPYBITS);
-		SetDIBitsToDevice(hdcControl, 0, 0, img_resized2.cols, img_resized2.rows,
-			0, 0, 0, img_resized2.rows, img_resized2.data, &bi,
-			DIB_RGB_COLORS);
-	}
+		m_MatFrame.SetWindowPos(NULL, 0, 0, bgr.cols, bgr.rows, SWP_NOMOVE | SWP_NOZORDER | SWP_NOCOPYBITS);
+		SetDIBitsToDevice(hdcControl, 0, 0, bgr.cols, bgr.rows,
+			0, 0, 0, bgr.rows, &buf[0], &bi, DIB_RGB_COLORS);
+	};
+	if (result_list.empty() || result_list.back() == ocr_result) blit_aligned(img_resized);
+	else blit_aligned(img_resized2);
 	// Clean up
 	m_MatFrame.ReleaseDC(pDC);
 

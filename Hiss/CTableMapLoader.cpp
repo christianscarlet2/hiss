@@ -131,12 +131,15 @@ void CTableMapLoader::CheckForDuplicatedTablemaps() {
 			{
 				write_log(Preferences()->debug_tablemap_loader(), "[CTablemapLoader] tablemap_connection_dataDuplicated [%s, %s]  [true]\n", 
 					tablemap_connection_data[i].SiteName, tablemap_connection_data[i].TitleText);
-				error_message.Format("It seems you have multiple versions of the same map in your scraper folder.\n\n"\
+				error_message.Format("It seems you have multiple tablemaps with the same SiteName and TitleText in the 'hiss' database.\n\n"\
 					"SiteName = %s\n"\
 					"TitleText = %s\n\n"\
+					"Conflicting tablemaps: %s  and  %s\n\n"\
 					"This will cause problems as the autoconnector won't be able to decide which one to use.\n"\
-					"Please remove the superfluous maps from the scraper folder.\n", 
-					tablemap_connection_data[i].SiteName, tablemap_connection_data[i].TitleText);
+					"Delete one of these tablemaps in Vision (File > Open from Database), or give them different "\
+					"SiteName/TitleText values.\n",
+					tablemap_connection_data[i].SiteName, tablemap_connection_data[i].TitleText,
+					tablemap_connection_data[i].FilePath, tablemap_connection_data[j].FilePath);
 				MessageBox_Error_Warning((LPCTSTR) error_message, 
 					"Warning! Duplicate SiteName and TitleText");
 			}

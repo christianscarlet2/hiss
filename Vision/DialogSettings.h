@@ -37,6 +37,7 @@ protected:
 	afx_msg void OnSelchangeGroups();
 	afx_msg void OnBrowseModel();
 	afx_msg void OnLivePollToggled();
+	afx_msg void OnNoPreprocessToggled();
 	afx_msg void OnTimer(UINT_PTR nIDEvent);
 	DECLARE_MESSAGE_MAP()
 
@@ -57,6 +58,7 @@ private:
 	void LoadGroup(int group);            // DB -> controls
 	void SaveGroup(int group);            // controls -> DB
 	void SaveDecimalFields();
+	void UpdateCharSpacingEnable();
 	void RunPreview();
 	bool RegionUsesDecimalSplit(const CString &name);
 };

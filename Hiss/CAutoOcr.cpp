@@ -159,7 +159,8 @@ CAutoOcr::CAutoOcr() :
 	_thr_a0(kDefaultAutoOcrThreshold), _thr_a1(kDefaultAutoOcrThreshold),
 	_mode_a0((int)tesseract::PSM_SINGLE_COLUMN), _mode_a1((int)tesseract::PSM_SINGLE_COLUMN),
 	_nopre_a0(false), _nopre_a1(false),
-	_nowl_a0(false), _nowl_a1(false) {
+	_nowl_a0(false), _nowl_a1(false),
+	_nocs_a0(false), _nocs_a1(false) {
 }
 
 // Read the per-transform OCR settings (model/threshold/mode/no_preprocess/
@@ -171,6 +172,7 @@ void CAutoOcr::LoadModelSettings() {
 	_mode_a0 = _mode_a1 = (int)tesseract::PSM_SINGLE_COLUMN;
 	_nopre_a0 = _nopre_a1 = false;
 	_nowl_a0 = _nowl_a1 = false;
+	_nocs_a0 = _nocs_a1 = false;
 	if (p_tablemap_db != NULL) {
 		const char *keys[2] = { "autoocr0", "autoocr1" };
 		for (int g = 0; g < 2; ++g) {
@@ -179,15 +181,17 @@ void CAutoOcr::LoadModelSettings() {
 			CString mode  = p_tablemap_db->GetSettingString(keys[g], "mode");
 			bool nopre = (p_tablemap_db->GetSettingString(keys[g], "no_preprocess") == "1");
 			bool nowl  = (p_tablemap_db->GetSettingString(keys[g], "no_whitelist") == "1");
+			bool nocs  = (p_tablemap_db->GetSettingString(keys[g], "no_char_spacing") == "1");
 			CString &m = (g == 0) ? _model_a0 : _model_a1;
 			int &t = (g == 0) ? _thr_a0 : _thr_a1;
 			int &md = (g == 0) ? _mode_a0 : _mode_a1;
 			bool &np = (g == 0) ? _nopre_a0 : _nopre_a1;
 			bool &nw = (g == 0) ? _nowl_a0 : _nowl_a1;
+			bool &nc = (g == 0) ? _nocs_a0 : _nocs_a1;
 			if (!model.IsEmpty()) m = model;
 			if (!thr.IsEmpty()) t = atoi(thr.GetString());
 			if (!mode.IsEmpty()) md = atoi(mode.GetString());
-			np = nopre; nw = nowl;
+			np = nopre; nw = nowl; nc = nocs;
 		}
 	}
 	_models_loaded = true;
@@ -567,7 +571,7 @@ Mat CAutoOcr::prepareImage(Mat img_orig, const SAutoOcrSettings &settings, bool 
 	// Character spacing is enhancement and is skipped under "no preprocessing".
 	if (binarize) {
 		img_resized = binarize_array_opencv(img_resized, threshold);
-		if (!settings.no_preprocess) {
+		if (!settings.no_preprocess && !settings.no_char_spacing) {
 			img_resized = AddCharacterSpacing(img_resized, kOcrCharSpacingPx);
 		}
 	}
@@ -787,6 +791,7 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
 	settings.page_seg_mode = isA1 ? _mode_a1 : _mode_a0;
 	settings.sharpen = 0;            // sharpen removed from the pipeline
 	settings.no_preprocess = isA1 ? _nopre_a1 : _nopre_a0;
+	settings.no_char_spacing = isA1 ? _nocs_a1 : _nocs_a0;
 	// Balance fields are pure numbers; restrict OCR to digits and a dot. Other
 	// regions use the general character set.
 	if (CString(region->first).MakeLower().Find("balance") != -1)
