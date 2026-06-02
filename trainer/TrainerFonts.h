@@ -45,6 +45,10 @@ public:
 	bool LoadFromTablemap(const CString &tm_path);
 	// Rewrite the t$ section of the loaded .tm with the current in-memory groups.
 	bool SaveToTablemap();
+	// Database equivalents (the "hiss" PostgreSQL database is the live source).
+	// tm_name is the tablemap's DB key.
+	bool LoadFromDB(const CString &tm_name);
+	bool SaveToDB();
 	CString tm_path() const { return _tm_path; }
 
 	// Delete every font record from all groups (in memory) and persist, removing the

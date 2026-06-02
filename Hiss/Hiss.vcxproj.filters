@@ -196,6 +196,7 @@
     <ClCompile Include="TokenizerConstants.cpp" />
     <ClCompile Include="..\CTablemap\CTablemap.cpp" />
     <ClCompile Include="..\CTablemap\CTablemapAccess.cpp" />
+    <ClCompile Include="..\CTablemap\CTablemapDB.cpp" />
     <ClCompile Include="CTablemapCompletenessChecker.cpp" />
     <ClCompile Include="CAutoplayerTrace.cpp" />
     <ClCompile Include="CDebugTab.cpp" />
@@ -418,6 +419,7 @@
     <ClInclude Include="Bitmaps.h" />
     <ClInclude Include="CScraper.h" />
     <ClInclude Include="..\CTablemap\CTablemap.h" />
+    <ClInclude Include="..\CTablemap\CTablemapDB.h" />
     <ClInclude Include="..\CTablemap\CTableMapAccess.h" />
     <ClInclude Include="CTablemapCompletenessChecker.h" />
     <ClInclude Include="CardFunctions.h" />

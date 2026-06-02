@@ -33,6 +33,17 @@ public:
 	virtual BOOL OnSaveDocument(LPCTSTR lpszPathName);
 	virtual void Serialize(CArchive& ar);
 	virtual ~COpenScrapeDoc();
+	// Tablemaps live in the PostgreSQL "hiss" database. These command handlers
+	// replace the file-based File>Open/Save/Save As and add .tm import.
+	CString m_tm_name;   // name (DB key) of the currently loaded tablemap
+	afx_msg void OnFileOpenDb();
+	afx_msg void OnFileSaveDb();
+	afx_msg void OnFileSaveAsDb();
+	afx_msg void OnDbImportFile();
+	afx_msg void OnDbImportFolder();
+	afx_msg void OnToolsSettings();
+	void RefreshUiAfterLoad();
+	bool SaveCurrentToDb(const CString name);
 	// Blink state
 	bool		blink_on;
 	// Window that we are attached to

@@ -61,7 +61,7 @@
     </Midl>
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>..\packages\Microsoft.Web.WebView2\build\native\include;..\Shared;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\packages\Microsoft.Web.WebView2\build\native\include;..\Shared;..\postgres;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;_WINDOWS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MinimalRebuild>false</MinimalRebuild>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
@@ -77,7 +77,7 @@
       <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
-      <AdditionalDependencies>..\packages\Microsoft.Web.WebView2\build\native\x86\WebView2LoaderStatic.lib;opencv_world480d.lib;tesseract55d.lib;leptonica-1.83.1d.lib;ws2_32.lib;psapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>..\packages\Microsoft.Web.WebView2\build\native\x86\WebView2LoaderStatic.lib;opencv_world480d.lib;tesseract55d.lib;leptonica-1.83.1d.lib;libpq.lib;secur32.lib;ws2_32.lib;psapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)trainer.exe</OutputFile>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
@@ -99,7 +99,7 @@
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <AdditionalIncludeDirectories>..\packages\Microsoft.Web.WebView2\build\native\include;..\Shared;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\packages\Microsoft.Web.WebView2\build\native\include;..\Shared;..\postgres;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;_WINDOWS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MinimalRebuild>false</MinimalRebuild>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
@@ -114,7 +114,7 @@
       <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
-      <AdditionalDependencies>..\packages\Microsoft.Web.WebView2\build\native\x86\WebView2LoaderStatic.lib;opencv_world480.lib;tesseract55.lib;leptonica-1.83.1.lib;ws2_32.lib;psapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>..\packages\Microsoft.Web.WebView2\build\native\x86\WebView2LoaderStatic.lib;opencv_world480.lib;tesseract55.lib;leptonica-1.83.1.lib;libpq.lib;secur32.lib;ws2_32.lib;psapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)trainer.exe</OutputFile>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
@@ -135,6 +135,7 @@
     <ClCompile Include="trainer.cpp" />
     <ClCompile Include="TrainerDlg.cpp" />
     <ClCompile Include="TablemapRegions.cpp" />
+    <ClCompile Include="TrainerDB.cpp" />
     <ClCompile Include="SampleStore.cpp" />
     <ClCompile Include="TrainerServer.cpp" />
     <ClCompile Include="TrainerWebWindow.cpp" />
@@ -149,6 +150,7 @@
     <ClInclude Include="trainer.h" />
     <ClInclude Include="TrainerDlg.h" />
     <ClInclude Include="TablemapRegions.h" />
+    <ClInclude Include="TrainerDB.h" />
     <ClInclude Include="SampleStore.h" />
     <ClInclude Include="TrainerServer.h" />
     <ClInclude Include="TrainerWebWindow.h" />

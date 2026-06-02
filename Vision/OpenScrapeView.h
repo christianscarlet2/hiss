@@ -137,7 +137,18 @@ public:
 	bool ShowPreview() const { return show_preview; }
 	void SetTrainingMode(bool on);
 	bool training_mode() const { return _training_mode; }
+	// Decimal-split overlay: a red line where the decimal separator sits, for
+	// regions whose field type is configured for decimal splitting (settings).
+	void ReloadDecimalFields() { _decimal_fields_loaded = false; }
+private:
+	std::vector<CString> _decimal_fields;          // field-type substrings from settings
+	bool                 _decimal_fields_loaded;
+	HBITMAP              _decimal_cached_bmp;       // frame the cache was computed for
+	std::vector<std::pair<CString, int> > _decimal_lines;  // region name -> x offset
+	bool RegionUsesDecimalSplit(const CString &name);
+	void DrawDecimalSplitLines(CDC *pDC);
 
+public:
 	bool		drawing_rect, drawing_started;
 	bool		color_point_mode;
 	bool		color_dropper_mode;

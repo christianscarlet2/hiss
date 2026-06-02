@@ -127,6 +127,10 @@ try {
     else {
         Write-AutoCommitLog "On branch '$currentBranch' (not main); skipping push."
     }
+
+    # A failed push is only a warning above; make sure its native exit code does
+    # not become the script's process exit code after a successful commit.
+    exit 0
 }
 catch {
     Write-AutoCommitLog "ERROR: $($_.Exception.Message)"

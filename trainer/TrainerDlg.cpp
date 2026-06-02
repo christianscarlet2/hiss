@@ -6,6 +6,8 @@
 #include "ScreenshotView.h"
 #include "SampleStore.h"
 #include "TrainerFonts.h"
+#include "TablemapRegions.h"
+#include "TrainerDB.h"
 #include "FontGlyphStore.h"
 #include "TrainerMessages.h"
 #include "WindowCapture.h"
@@ -219,10 +221,6 @@ void CTrainerDlg::DoDataExchange(CDataExchange *pDX)
 	DDX_Control(pDX, IDC_MATCH_MODE, m_matchMode);
 	DDX_Control(pDX, IDC_THRESHOLD, m_threshold);
 	DDX_Control(pDX, IDC_THRESHOLD_SPIN, m_thresholdSpin);
-	DDX_Control(pDX, IDC_CROP_SIZE, m_cropSize);
-	DDX_Control(pDX, IDC_CROP_SPIN, m_cropSpin);
-	DDX_Control(pDX, IDC_SHARPEN, m_sharpen);
-	DDX_Control(pDX, IDC_SHARPEN_SPIN, m_sharpenSpin);
 	DDX_Control(pDX, IDC_CHAR_SPACING, m_charSpacing);
 	DDX_Control(pDX, IDC_CHAR_SPACING_SPIN, m_charSpacingSpin);
 	DDX_Control(pDX, IDC_OCR_RESULT, m_ocrResult);
@@ -299,21 +297,11 @@ BOOL CTrainerDlg::OnInitDialog()
 
 	PopulateModeCombos();
 
-	// Defaults: Use Default OFF, threshold 65.
-	CheckDlgButton(IDC_USE_DEFAULT, BST_UNCHECKED);
+	// Defaults: threshold 65.
 	m_threshold.SetWindowText("65");
 	m_thresholdSpin.SetRange(0, 300);
 	m_thresholdSpin.SetPos(65);
 	m_thresholdSpin.SetBuddy(&m_threshold);
-	CheckDlgButton(IDC_USE_CROP, BST_UNCHECKED);
-	m_cropSize.SetWindowText("30");
-	m_cropSpin.SetRange(1, 100);
-	m_cropSpin.SetPos(30);
-	m_cropSpin.SetBuddy(&m_cropSize);
-	m_sharpen.SetWindowText("100");
-	m_sharpenSpin.SetRange(0, 500);
-	m_sharpenSpin.SetPos(100);
-	m_sharpenSpin.SetBuddy(&m_sharpen);
 	m_charSpacing.SetWindowText("6");
 	m_charSpacingSpin.SetRange(0, 50);
 	m_charSpacingSpin.SetPos(6);
@@ -342,21 +330,22 @@ void CTrainerDlg::SetStatus(const CString &text)
 	SetDlgItemText(IDC_STATUS, text);
 }
 
-bool CTrainerDlg::DoLoadTablemap(const CString &path)
+bool CTrainerDlg::DoLoadTablemap(const CString &name)
 {
+	// Tablemaps now live in the PostgreSQL "hiss" database; `name` is the DB key.
 	_regions.clear();
-	if (!LoadBalanceRegions(path, &_regions)) {
-		SetStatus("Failed to read the tablemap file.");
+	if (!LoadBalanceRegionsFromDB(name, &_regions)) {
+		SetStatus("Failed to read the tablemap from the hiss database.");
 		return false;
 	}
 	// Load the t$ font groups + s$tXtype scan modes for Text0..Text9 recognition.
 	if (p_trainer_fonts != NULL) {
-		p_trainer_fonts->LoadFromTablemap(path);
+		p_trainer_fonts->LoadFromDB(name);
 	}
 	// Seed the thread-safe region colour cache (source of truth for colour/radius,
-	// shared with the HTTP server thread and written back to r$ on colour re-pick).
+	// shared with the HTTP server thread and written back to tm_regions on colour re-pick).
 	RegionColors_Reset();
-	RegionColors_SetTmPath(path);
+	RegionColors_SetTmPath(name);
 	for (size_t i = 0; i < _regions.size(); ++i) {
 		RegionColors_Add(_regions[i].name, _regions[i].color, _regions[i].radius, _regions[i].transform);
 	}
@@ -365,22 +354,47 @@ bool CTrainerDlg::DoLoadTablemap(const CString &path)
 	_have_baseline.assign(_regions.size(), false);
 	_selected = _regions.empty() ? -1 : 0;
 
-	RegWriteString("last_tablemap", path);
+	RegWriteString("last_tablemap", name);
 
 	CString status;
-	status.Format("Loaded %d balance region(s) from %s", (int)_regions.size(), path.GetString());
+	status.Format("Loaded %d balance region(s) from tablemap '%s'", (int)_regions.size(), name.GetString());
 	SetStatus(status);
 	return true;
 }
 
 void CTrainerDlg::OnBnClickedLoadTm()
 {
-	CFileDialog dlg(TRUE, "tm", NULL, OFN_FILEMUSTEXIST | OFN_HIDEREADONLY,
-		"Tablemaps (*.tm)|*.tm|All files (*.*)|*.*||", this);
-	if (dlg.DoModal() != IDOK) {
+	// Tablemaps live in the "hiss" database. Offer the available names in a
+	// popup menu (no extra dialog resource needed) and load the chosen one.
+	std::vector<CString> names;
+	if (!TrainerDB_ListTablemaps(&names)) {
+		AfxMessageBox("Could not read tablemaps from the hiss database.\n"
+			"Is PostgreSQL running and the 'hiss' database populated?");
 		return;
 	}
-	DoLoadTablemap(dlg.GetPathName());
+	if (names.empty()) {
+		AfxMessageBox("The hiss database has no tablemaps yet.\n"
+			"Import some with Vision (OpenScrape) first.");
+		return;
+	}
+	CMenu menu;
+	menu.CreatePopupMenu();
+	const UINT kBaseId = 1;
+	for (size_t i = 0; i < names.size(); ++i) {
+		menu.AppendMenu(MF_STRING, kBaseId + (UINT)i, names[i].GetString());
+	}
+	CPoint pt;
+	GetCursorPos(&pt);
+	int chosen = (int)menu.TrackPopupMenu(
+		TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY,
+		pt.x, pt.y, this);
+	if (chosen <= 0) {
+		return;
+	}
+	size_t idx = (size_t)(chosen - kBaseId);
+	if (idx < names.size()) {
+		DoLoadTablemap(names[idx]);
+	}
 }
 
 void CTrainerDlg::OnBnClickedSelectModel()
@@ -426,8 +440,9 @@ void CTrainerDlg::UpdateDecimalSplitControls()
 	if (le != NULL) le->EnableWindow(on);
 	if (re != NULL) re->EnableWindow(on);
 	if (!on) {
-		SetDlgItemText(IDC_SPLIT_LEFT, "");
-		SetDlgItemText(IDC_SPLIT_RIGHT, "");
+		// Disabled: grey the boxes and show "disabled" rather than a stale value.
+		SetDlgItemText(IDC_SPLIT_LEFT, "disabled");
+		SetDlgItemText(IDC_SPLIT_RIGHT, "disabled");
 	}
 }
 
@@ -523,8 +538,10 @@ void CTrainerDlg::AttachToWindow(HWND target)
 
 void CTrainerDlg::RestoreLastSession()
 {
+	// last_tablemap is now a DB tablemap name. DoLoadTablemap fails gracefully
+	// if it no longer exists in the database.
 	CString last_tm = RegReadString("last_tablemap");
-	if (!last_tm.IsEmpty() && GetFileAttributes(last_tm) != INVALID_FILE_ATTRIBUTES) {
+	if (!last_tm.IsEmpty()) {
 		DoLoadTablemap(last_tm);
 	}
 	CString last_title = RegReadString("last_window_title");
@@ -543,15 +560,11 @@ void CTrainerDlg::SaveOcrSettings()
 	CString tr;
 	if (ti >= 0) m_transform.GetLBText(ti, tr);
 	RegWriteString("ocr_transform", tr);
-	RegWriteString("ocr_use_default", (IsDlgButtonChecked(IDC_USE_DEFAULT) == BST_CHECKED) ? "1" : "0");
 	m_threshold.GetWindowText(t); RegWriteString("ocr_threshold", t);
 	int sel = m_matchMode.GetCurSel();
 	CString mode;
 	if (sel >= 0) mode.Format("%d", (int)m_matchMode.GetItemData(sel));
 	RegWriteString("ocr_mode", mode);
-	RegWriteString("ocr_use_crop", (IsDlgButtonChecked(IDC_USE_CROP) == BST_CHECKED) ? "1" : "0");
-	m_cropSize.GetWindowText(t); RegWriteString("ocr_crop", t);
-	m_sharpen.GetWindowText(t); RegWriteString("ocr_sharpen", t);
 	m_charSpacing.GetWindowText(t); RegWriteString("ocr_char_spacing", t);
 	RegWriteString("ocr_no_preprocess", (IsDlgButtonChecked(IDC_NO_PREPROCESS) == BST_CHECKED) ? "1" : "0");
 	RegWriteString("ocr_no_whitelist", (IsDlgButtonChecked(IDC_NO_WHITELIST) == BST_CHECKED) ? "1" : "0");
@@ -566,8 +579,6 @@ void CTrainerDlg::LoadOcrSettings()
 		int i = m_transform.FindStringExact(-1, v);
 		if (i >= 0) m_transform.SetCurSel(i);
 	}
-	v = RegReadString("ocr_use_default");
-	if (!v.IsEmpty()) CheckDlgButton(IDC_USE_DEFAULT, v == "1" ? BST_CHECKED : BST_UNCHECKED);
 	v = RegReadString("ocr_threshold");
 	if (!v.IsEmpty()) { m_threshold.SetWindowText(v); m_thresholdSpin.SetPos(atoi(v)); }
 	v = RegReadString("ocr_mode");
@@ -577,12 +588,6 @@ void CTrainerDlg::LoadOcrSettings()
 			if ((int)m_matchMode.GetItemData(i) == val) { m_matchMode.SetCurSel(i); break; }
 		}
 	}
-	v = RegReadString("ocr_use_crop");
-	if (!v.IsEmpty()) CheckDlgButton(IDC_USE_CROP, v == "1" ? BST_CHECKED : BST_UNCHECKED);
-	v = RegReadString("ocr_crop");
-	if (!v.IsEmpty()) { m_cropSize.SetWindowText(v); m_cropSpin.SetPos(atoi(v)); }
-	v = RegReadString("ocr_sharpen");
-	if (!v.IsEmpty()) { m_sharpen.SetWindowText(v); m_sharpenSpin.SetPos(atoi(v)); }
 	v = RegReadString("ocr_char_spacing");
 	if (!v.IsEmpty()) { m_charSpacing.SetWindowText(v); m_charSpacingSpin.SetPos(atoi(v)); }
 	v = RegReadString("ocr_no_preprocess");
@@ -674,14 +679,15 @@ void CTrainerDlg::OnBnClickedClearTraining()
 STrainerOcrSettings CTrainerDlg::ReadSettings()
 {
 	STrainerOcrSettings s = DefaultOcrSettings();
-	s.use_default = (IsDlgButtonChecked(IDC_USE_DEFAULT) == BST_CHECKED);
+	// Cropping/sharpen/use-default were removed from the pipeline.
+	s.use_default = false;
+	s.use_cropping = false;
+	s.crop_size = 0;
+	s.sharpen = 0;
 	CString t;
 	m_threshold.GetWindowText(t); s.threshold = atoi(t);
 	int sel = m_matchMode.GetCurSel();
 	s.page_seg_mode = (sel >= 0) ? (int)m_matchMode.GetItemData(sel) : (int)PSM_SINGLE_COLUMN;
-	s.use_cropping = (IsDlgButtonChecked(IDC_USE_CROP) == BST_CHECKED);
-	m_cropSize.GetWindowText(t); s.crop_size = atoi(t);
-	m_sharpen.GetWindowText(t); s.sharpen = atoi(t);
 	m_charSpacing.GetWindowText(t); s.char_spacing = atoi(t);
 	int ti = m_transform.GetCurSel();
 	CString tr;

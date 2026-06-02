@@ -360,7 +360,7 @@ int CFontGlyphStore::AssignChar(int gid, const CStringA &ch)
 	// drop every pending glyph whose font now exists (this one + any duplicates).
 	if (!v.IsEmpty() && create_group >= 0 && p_trainer_fonts != NULL) {
 		p_trainer_fonts->SetGlyph(create_group, create_glyph, v[0]);
-		p_trainer_fonts->SaveToTablemap();
+		p_trainer_fonts->SaveToDB();
 		SUndoAction act;
 		act.type = 1;
 		act.group = create_group;
@@ -420,7 +420,7 @@ int CFontGlyphStore::Undo()
 		// A labeled/created row: remove its font from the tablemap and re-save.
 		if (act.type == 1 && p_trainer_fonts != NULL) {
 			p_trainer_fonts->RemoveHexmash(act.group, act.hexmash);
-			p_trainer_fonts->SaveToTablemap();
+			p_trainer_fonts->SaveToDB();
 		}
 		// Restore the row(s) as fresh, unlabeled glyphs.
 		for (size_t i = 0; i < act.entries.size(); ++i) {
@@ -447,7 +447,7 @@ int CFontGlyphStore::SaveAll()
 			++written;
 		}
 		if (written > 0) {
-			p_trainer_fonts->SaveToTablemap();
+			p_trainer_fonts->SaveToDB();
 			// Drop the entries we just persisted so they don't reappear.
 			for (size_t i = _entries.size(); i-- > 0; )
 				if (!_entries[i].assigned.IsEmpty())

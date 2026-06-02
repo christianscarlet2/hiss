@@ -139,6 +139,7 @@ typedef IMap::const_iterator IMapCI;
 
 class CTablemap {
 	friend class CTablemapAccess;
+	friend class CTablemapDB;
 public:
 	// public functions
 	CTablemap();

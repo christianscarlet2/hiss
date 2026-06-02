@@ -19,6 +19,8 @@
 #include "OpenScrapeView.h"
 #include "MainFrm.h"
 #include "DialogEdit.h"
+#include "DecimalSplit.h"
+#include "../CTablemap/CTablemapDB.h"
 #include <ctype.h>
 
 #ifdef _DEBUG
@@ -128,6 +130,9 @@ COpenScrapeView::COpenScrapeView()
 	gray_brush.CreateSolidBrush(COLOR_GRAY);
 	red_brush.CreateSolidBrush(COLOR_RED);
 	yellow_brush.CreateSolidBrush(COLOR_YELLOW);
+
+	_decimal_fields_loaded = false;
+	_decimal_cached_bmp = NULL;
 
 	dragging = false;
 	dragged_region = "";
@@ -962,6 +967,98 @@ void COpenScrapeView::SetSelectedGroupColor(int color_index)
 	Invalidate(false);
 }
 
+// A region uses decimal splitting if its name contains one of the configured
+// field-type substrings (e.g. region "p0balance" matches field type "balance").
+bool COpenScrapeView::RegionUsesDecimalSplit(const CString &name)
+{
+	CString lower = name;
+	lower.MakeLower();
+	for (size_t i = 0; i < _decimal_fields.size(); ++i) {
+		CString f = _decimal_fields[i];
+		f.MakeLower();
+		if (!f.IsEmpty() && lower.Find(f) != -1) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Draw a red vertical line at the decimal separator for every decimal-split
+// region, mirroring the red split-marker shown in trainer.exe. Results are
+// cached per frame (keyed on the attached bitmap handle) so OnDraw stays cheap.
+void COpenScrapeView::DrawDecimalSplitLines(CDC *pDC)
+{
+	COpenScrapeDoc *pDoc = GetDocument();
+	if (pDoc == NULL || pDoc->attached_bitmap == NULL || p_tablemap == NULL) {
+		return;
+	}
+
+	// Refresh the configured field-type list (cheap; once per dialog change).
+	if (!_decimal_fields_loaded) {
+		_decimal_fields.clear();
+		if (p_tablemap_db != NULL) {
+			p_tablemap_db->GetSettingArray("decimal_split_fields", "fields", &_decimal_fields);
+		}
+		_decimal_fields_loaded = true;
+		_decimal_cached_bmp = NULL;   // force recompute
+	}
+	if (_decimal_fields.empty()) {
+		return;
+	}
+
+	// Recompute split offsets only when the frame (bitmap) changes.
+	if (pDoc->attached_bitmap != _decimal_cached_bmp) {
+		_decimal_cached_bmp = pDoc->attached_bitmap;
+		_decimal_lines.clear();
+
+		int fw = pDoc->attached_rect.right - pDoc->attached_rect.left;
+		int fh = pDoc->attached_rect.bottom - pDoc->attached_rect.top;
+		if (fw > 0 && fh > 0) {
+			int stride = ((fw * 3 + 3) & ~3);
+			std::vector<BYTE> buf((size_t)stride * fh);
+			BITMAPINFO bi;
+			ZeroMemory(&bi, sizeof(bi));
+			bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+			bi.bmiHeader.biWidth = fw;
+			bi.bmiHeader.biHeight = -fh;   // top-down
+			bi.bmiHeader.biPlanes = 1;
+			bi.bmiHeader.biBitCount = 24;
+			bi.bmiHeader.biCompression = BI_RGB;
+			HDC hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL);
+			int got = GetDIBits(hdcScreen, pDoc->attached_bitmap, 0, fh, &buf[0], &bi, DIB_RGB_COLORS);
+			DeleteDC(hdcScreen);
+			if (got == fh) {
+				for (RMapCI r = p_tablemap->r$()->begin(); r != p_tablemap->r$()->end(); ++r) {
+					if (!RegionUsesDecimalSplit(r->second.name)) continue;
+					int rl = (int)r->second.left, rt = (int)r->second.top;
+					int rr = (int)r->second.right, rb = (int)r->second.bottom;
+					int rw = rr - rl + 1, rh = rb - rt + 1;
+					if (rl < 0 || rt < 0 || rr >= fw || rb >= fh || rw < 3 || rh < 3) continue;
+					const BYTE *p = &buf[(size_t)rt * stride + (size_t)rl * 3];
+					int sx = FindDecimalSplitX(p, rw, rh, stride);
+					if (sx >= 0) {
+						_decimal_lines.push_back(std::make_pair(r->second.name, sx));
+					}
+				}
+			}
+		}
+	}
+
+	// Draw the cached lines at each region's current position (so a dragged
+	// region's marker follows it without recomputing).
+	CPen split_pen;
+	split_pen.CreatePen(PS_SOLID, 1, COLOR_RED);
+	CPen *old = pDC->SelectObject(&split_pen);
+	for (size_t i = 0; i < _decimal_lines.size(); ++i) {
+		RMapCI r = p_tablemap->r$()->find(_decimal_lines[i].first.GetString());
+		if (r == p_tablemap->r$()->end()) continue;
+		int x = (int)r->second.left + _decimal_lines[i].second;
+		pDC->MoveTo(x, (int)r->second.top);
+		pDC->LineTo(x, (int)r->second.bottom + 1);
+	}
+	pDC->SelectObject(old);
+}
+
 void COpenScrapeView::DrawRegionGroups(CDC *pDC)
 {
 	RebuildGroupBounds();
@@ -1231,6 +1328,9 @@ void COpenScrapeView::OnDraw(CDC* pDC)
 	}
 
 	DrawRegionGroups(pDC);
+
+	// Red decimal-split markers for configured fields.
+	DrawDecimalSplitLines(pDC);
 
 	if (group_box_mode && group_box_started) {
 		pTempPen = (CPen*)pDC->SelectObject(yellow_dot_pen);

@@ -74,8 +74,8 @@ private:
 	// OCR settings controls
 	CComboBox m_transform;
 	CComboBox m_matchMode;
-	CEdit m_threshold, m_cropSize, m_sharpen, m_charSpacing, m_ocrResult;
-	CSpinButtonCtrl m_thresholdSpin, m_cropSpin, m_sharpenSpin, m_charSpacingSpin;
+	CEdit m_threshold, m_charSpacing, m_ocrResult;
+	CSpinButtonCtrl m_thresholdSpin, m_charSpacingSpin;
 
 	std::vector<STrainerRegion> _regions;
 	std::vector<std::vector<BYTE> > _last;

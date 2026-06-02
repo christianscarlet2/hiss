@@ -158,15 +158,53 @@
 #define ID_VIEW_SHOW_PREVIEW            32793
 #define ID_OPERATIONS_CREATE_HASHES_IMAGES_0 32794
 #define ID_TOOLS_SHIFTREGIONS           32795
+#define ID_DB_IMPORT_FILE               32797
+#define ID_DB_IMPORT_FOLDER             32798
+#define ID_TOOLS_SETTINGS               32799
+#define IDD_SETTINGS                    153
+#define IDC_SETTINGS_GROUPS             1200
+#define IDC_EDIT_A0_MODEL               1201
+#define IDC_EDIT_A1_MODEL               1202
+#define IDC_LST_DECIMAL_FIELDS          1203
+#define IDC_SET_GENERAL_TEXT            1204
+#define IDC_SET_FIELDS_A0LBL            1205
+#define IDC_SET_FIELDS_A1LBL            1206
+#define IDC_SET_FIELDS_DECLBL           1207
+#define IDC_SET_ADVANCED_TEXT           1208
+#define IDC_SET_PAGE_TITLE              1209
+#define IDC_BTN_A0_BROWSE               1210
+#define IDC_BTN_A1_BROWSE               1211
+#define IDC_CHK_NO_PREPROCESS           1212
+#define IDC_CHK_NO_WHITELIST            1213
+#define IDC_SET_MODEL_LBL               1214
+#define IDC_SET_THRESHOLD               1215
+#define IDC_SET_THRESHOLD_SPIN          1216
+#define IDC_SET_THRESHOLD_LBL           1217
+#define IDC_SET_MODE                    1218
+#define IDC_SET_MODE_LBL                1219
+#define IDC_CHK_LIVE_POLL               1220
+#define IDC_SET_LIVE_HINT               1221
+#define IDC_SET_ORIG_VIEW               1222
+#define IDC_SET_ORIG_LBL                1223
+#define IDC_SET_OCR_VIEW                1224
+#define IDC_SET_OCR_LBL                 1225
+#define IDC_SET_ORIG_LEFT               1226
+#define IDC_SET_ORIG_RIGHT              1227
+#define IDC_SET_SPLIT_LBL               1228
+#define IDC_SET_RESULT                  1229
+#define IDC_SET_RESULT_LBL              1230
+#define IDC_SET_RESULT_LEFT             1231
+#define IDC_SET_RESULT_RIGHT            1232
+#define IDC_SET_RESULT_LR_LBL           1233
 #define IDC_LABEL                       65535
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        153
-#define _APS_NEXT_COMMAND_VALUE         32797
-#define _APS_NEXT_CONTROL_VALUE         1141
+#define _APS_NEXT_RESOURCE_VALUE        154
+#define _APS_NEXT_COMMAND_VALUE         32800
+#define _APS_NEXT_CONTROL_VALUE         1234
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

@@ -166,11 +166,6 @@ Mat CTrainerOcr::ScaleOcrViewImage(Mat img_bounded)
 
 Mat CTrainerOcr::buildOcrImage(Mat img_orig, bool binarize, int threshold)
 {
-	// Raw passthrough when preprocessing is disabled.
-	if (_s.no_preprocess) {
-		return img_orig.clone();
-	}
-
 	Mat img_resized;
 	int basewidth, hsize;
 	float wpercent;
@@ -184,90 +179,29 @@ Mat CTrainerOcr::buildOcrImage(Mat img_orig, bool binarize, int threshold)
 		basewidth = (int)((float)img_orig.cols * wpercent);
 	}
 	cvtColor(img_orig, img_resized, COLOR_BGR2GRAY);
-	resize(img_resized, img_resized, Size(basewidth, hsize), INTER_LANCZOS4);
-
-	double sharpen_amount = _s.sharpen / 100.0;
-	if (sharpen_amount > 0.0) {
-		Mat blurred;
-		GaussianBlur(img_resized, blurred, Size(0, 0), kOcrSharpenSigma);
-		addWeighted(img_resized, 1.0 + sharpen_amount, blurred, -sharpen_amount, 0, img_resized);
+	// The upscale + character-spacing are enhancement: skipped under "no
+	// preprocessing". Threshold binarization ALWAYS applies (and the page-seg
+	// mode is always set in process_ocr), so threshold and mode work whether
+	// preprocessing is on or off. (Sharpen and cropping were removed.)
+	if (!_s.no_preprocess) {
+		resize(img_resized, img_resized, Size(basewidth, hsize), INTER_LANCZOS4);
 	}
-
 	if (binarize) {
 		img_resized = binarize_array_opencv(img_resized, threshold);
-		img_resized = AddCharacterSpacing(img_resized, _s.char_spacing);
+		if (!_s.no_preprocess) {
+			img_resized = AddCharacterSpacing(img_resized, _s.char_spacing);
+		}
 	}
 	return img_resized;
 }
 
 Mat CTrainerOcr::prepareImage(Mat img_orig, bool binarize, int threshold, bool second_pass)
 {
-	// "No preprocessing": hand the untouched crop to Tesseract (no grayscale,
-	// resize, sharpen, binarize, character-spacing or word-box cropping). The
-	// preview shows the raw crop so the user sees exactly what Tesseract got.
-	// Run() already forces use_cropping off in this mode.
-	if (_s.no_preprocess) {
-		process_ocr(img_orig, second_pass);
-		return img_orig.clone();
-	}
-
 	Mat img_resized = buildOcrImage(img_orig, binarize, threshold);
 
 	Mat img_bounded = img_resized.clone();
 	img_bounded.convertTo(img_bounded, CV_8UC3);
 	cvtColor(img_bounded, img_bounded, COLOR_GRAY2BGR);
-	const Scalar previewColor(255, 255, 255);
-
-	if (_s.use_cropping) {
-		double cropSize = (double)_s.crop_size / 100.0;
-		if (cropSize < 0.01) return ScaleOcrViewImage(img_bounded);
-
-		process_ocr(img_resized, second_pass);
-		std::vector<std::pair<Rect, CString> > resBoxes = second_pass ? _boxes2 : _boxes;
-		if (resBoxes.empty()) return ScaleOcrViewImage(img_bounded);
-
-		std::vector<Rect> boundRect, boundRect2;
-		for (size_t idx = 0; idx < resBoxes.size(); idx++) {
-			Rect rect = resBoxes[idx].first;
-			if (rect.area() > 50) boundRect.push_back(rect);
-		}
-		if (boundRect.empty()) return ScaleOcrViewImage(img_bounded);
-
-		std::vector<double> boxArea, boxDist;
-		double wCenter = img_bounded.cols / 2;
-		double hCenter = img_bounded.rows / 2;
-		Point pCenter((int)wCenter, (int)hCenter);
-		Rect best_rect = Rect();
-		if (second_pass) _bestRect2 = Rect(); else _bestRect = Rect();
-		for (size_t i = 0; i < boundRect.size(); i++)
-			boxArea.push_back(boundRect[i].width * boundRect[i].height);
-		std::vector<double>::iterator ita = max_element(boxArea.begin(), boxArea.end());
-		int maxArea = (int)*ita;
-		std::vector<int> maxIndex;
-		for (size_t i = 0; i < boxArea.size(); i++)
-			if (boxArea[i] > maxArea * (1 - cropSize)) maxIndex.push_back((int)i);
-		for (size_t i = 0; i < maxIndex.size(); i++) {
-			int j = maxIndex[i];
-			best_rect = boundRect[j];
-			rectangle(img_bounded, best_rect, previewColor, 1);
-			boundRect2.push_back(best_rect);
-		}
-		if (boundRect2.size() > 1) {
-			for (size_t i = 0; i < boundRect2.size(); i++) {
-				double wc = boundRect2[i].x + boundRect2[i].width / 2;
-				double hc = boundRect2[i].y + boundRect2[i].height / 2;
-				Point pc((int)wc, (int)hc);
-				boxDist.push_back(abs(norm(pCenter - pc)));
-			}
-			std::vector<double>::iterator itd = min_element(boxDist.begin(), boxDist.end());
-			int minDist = (int)*itd;
-			for (size_t i = 0; i < boxDist.size(); i++)
-				if (boxDist[i] == minDist) { best_rect = boundRect2[i]; break; }
-		}
-		if (second_pass) _bestRect2 = best_rect; else _bestRect = best_rect;
-		rectangle(img_bounded, best_rect, previewColor, 2);
-		return ScaleOcrViewImage(img_bounded);
-	}
 
 	process_ocr(img_resized, second_pass);
 	return ScaleOcrViewImage(img_bounded);
@@ -276,7 +210,7 @@ Mat CTrainerOcr::prepareImage(Mat img_orig, bool binarize, int threshold, bool s
 void CTrainerOcr::process_ocr(Mat img_orig, bool second_pass)
 {
 	if (!_ready) return;
-	PageSegMode page_seg_mode = (PageSegMode)(_s.use_default ? (int)PSM_SINGLE_COLUMN : _s.page_seg_mode);
+	PageSegMode page_seg_mode = (PageSegMode)_s.page_seg_mode;   // always applied
 	// Disabling the whitelist clears it entirely (""), so Tesseract may emit any
 	// character. Otherwise restrict to the per-region set chosen in Run().
 	const char *wl = _s.no_whitelist ? "" : (_whitelist.IsEmpty() ? kGeneralWhitelist : _whitelist.GetString());
@@ -287,39 +221,11 @@ void CTrainerOcr::process_ocr(Mat img_orig, bool second_pass)
 	_api->SetImage(img_orig.data, img_orig.cols, img_orig.rows, img_orig.channels(), (int)img_orig.step);
 	_api->Recognize(0);
 
-	if (_s.use_cropping) {
-		ResultIterator *ri = _api->GetIterator();
-		PageIteratorLevel level = RIL_WORD;
-		if (ri != 0) {
-			do {
-				int x1, y1, x2, y2;
-				ri->BoundingBox(level, &x1, &y1, &x2, &y2);
-				Mat img_cropped;
-				try {
-					img_cropped = img_orig(Rect(x1, y1, x2 - x1, y2 - y1));
-				} catch (std::exception &) {
-					continue;
-				}
-				_api2->SetPageSegMode(page_seg_mode);
-				_api2->SetVariable("user_defined_dpi", "300");
-				_api2->SetVariable("tessedit_char_whitelist", wl);
-				_api2->SetImage(img_cropped.data, img_cropped.cols, img_cropped.rows, img_cropped.channels(), (int)img_cropped.step);
-				_api2->Recognize(0);
-				char *t2 = _api2->GetUTF8Text();
-				CString word = StripAllWhitespace(t2).c_str();
-				if (t2) delete[] t2;
-				std::pair<Rect, CString> matchPair(Rect(x1, y1, x2 - x1, y2 - y1), word);
-				if (second_pass) _boxes2.push_back(matchPair); else _boxes.push_back(matchPair);
-			} while (ri->Next(level));
-		}
-		_last_conf = 100;   // per-word; treat crop mode as confident
-	} else {
-		char *t = _api->GetUTF8Text();
-		CString s = StripAllWhitespace(t).c_str();
-		if (t) delete[] t;
-		if (second_pass) _result2 = s; else _result = s;
-		_last_conf = _api->MeanTextConf();
-	}
+	char *t = _api->GetUTF8Text();
+	CString s = StripAllWhitespace(t).c_str();
+	if (t) delete[] t;
+	if (second_pass) _result2 = s; else _result = s;
+	_last_conf = _api->MeanTextConf();
 	_api->Clear();
 	_api2->Clear();
 }
@@ -491,7 +397,7 @@ void CTrainerOcr::Run(const Mat &crop_bgr, const STrainerOcrSettings &settings,
 
 	if (!_ready || crop_bgr.empty()) return;
 
-	int threshold = _s.use_default ? kDefaultAutoOcrThreshold : _s.threshold;
+	int threshold = (_s.threshold > 0) ? _s.threshold : kDefaultAutoOcrThreshold;
 
 	// Balance regions: digits + dot only. Others: general set.
 	bool is_balance = (CString(region_name).MakeLower().Find("balance") != -1);
@@ -510,16 +416,8 @@ void CTrainerOcr::Run(const Mat &crop_bgr, const STrainerOcrSettings &settings,
 	Mat img_resized = prepareImage(crop_bgr, true, threshold, false);
 	Mat img_resized2 = prepareImage(crop_bgr, true, threshold, true);
 
-	CString ocr_result, ocr_result2;
-	if (_s.use_cropping) {
-		for (size_t i = 0; i < _boxes.size(); i++)
-			if (_boxes[i].first == _bestRect) { ocr_result = _boxes[i].second; break; }
-		for (size_t i = 0; i < _boxes2.size(); i++)
-			if (_boxes2[i].first == _bestRect2) { ocr_result2 = _boxes2[i].second; break; }
-	} else {
-		ocr_result = _result;
-		ocr_result2 = _result2;
-	}
+	CString ocr_result = _result;
+	CString ocr_result2 = _result2;
 
 	// Clean noise but never strip valid OCR characters.
 	const char *blacklist = "!%&*+;=?@^/\"`#<{([])}>|";

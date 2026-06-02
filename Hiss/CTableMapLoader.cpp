@@ -20,6 +20,7 @@
 #include "CTablemapCompletenessChecker.h"
 #include "CTablePointChecker.h"
 #include "..\CTablemap\CTablemapAccess.h"
+#include "..\CTablemap\CTablemapDB.h"
 #include "..\DLLs\Files_DLL\Files.h"
 #include "..\DLLs\WindowFunctions_DLL\window_functions.h"
 #include "..\Shared\WindowCapture.h"
@@ -80,10 +81,31 @@ void CTableMapLoader::ParseAllTableMapsToLoadConnectionData(CString scraper_dire
 }
 
 void CTableMapLoader::ParseAllTableMapsToLoadConnectionData() {
-	write_log(Preferences()->debug_tablemap_loader(), "[CTablemapLoader] ParseAllTableMapsToLoadConnectionData\n");
+	write_log(Preferences()->debug_tablemap_loader(), "[CTablemapLoader] ParseAllTableMapsToLoadConnectionData (from hiss database)\n");
   tablemap_connection_data.clear();
   _number_of_tablemaps_loaded = 0;
-	ParseAllTableMapsToLoadConnectionData(ScraperDirectory());
+  // Tablemaps now live in the PostgreSQL "hiss" database, not in *.tm files.
+  // Enumerate every tablemap, load each into p_tablemap and extract its
+  // connection data exactly as before (the matching logic is unchanged).
+  std::vector<STablemapDBInfo> tablemaps;
+  if (!p_tablemap_db->ListTablemaps(&tablemaps)) {
+    write_log(Preferences()->debug_tablemap_loader(),
+      "[CTablemapLoader] Could not list tablemaps from the database: %s\n",
+      p_tablemap_db->LastError().GetString());
+  } else {
+    for (size_t i = 0; i < tablemaps.size(); ++i) {
+      write_log(Preferences()->debug_tablemap_loader(),
+        "[CTablemapLoader] Loading tablemap [%s] from database\n", tablemaps[i].name.GetString());
+      int ret = p_tablemap_db->LoadTablemapFromDB(tablemaps[i].name, p_tablemap);
+      if (ret == SUCCESS) {
+        ExtractConnectionDataFromCurrentTablemap(p_tablemap);
+        CTablemapCompletenessChecker tablemap_completeness_checker;
+        tablemap_completeness_checker.VerifyMap();
+        write_log(Preferences()->debug_tablemap_loader(),
+          "[CTablemapLoader] Number of TMs loaded: %d\n", _number_of_tablemaps_loaded);
+      }
+    }
+  }
 	tablemaps_in_scraper_folder_already_parsed = true;
 }
 

@@ -45,6 +45,7 @@
 #include "CStringMatch.h"
 #include "CSymbolEngineTableLimits.h"
 #include "CTableMaploader.h"
+#include "..\CTablemap\CTablemapDB.h"
 #include "CTablePositioner.h"
 #include "CTableState.h"
 #include "CTableTitle.h"
@@ -109,6 +110,9 @@ void InstantiateAllSingletons() {
   write_log(Preferences()->debug_singletons(), "[Singletons] Going to create CTablemapAccess\n");
   assert(!p_tablemap_access);
   p_tablemap_access = new CTablemapAccess;
+  write_log(Preferences()->debug_singletons(), "[Singletons] Going to create CTablemapDB\n");
+  assert(!p_tablemap_db);
+  p_tablemap_db = new CTablemapDB;
   write_log(Preferences()->debug_singletons(), "[Singletons] Going to create CParserSymbolTable\n");
   assert(!p_parser_symbol_table);
   p_parser_symbol_table = new CParserSymbolTable;
@@ -238,6 +242,7 @@ void DeleteAllSingletons() {
   DELETE_AND_CLEAR(p_version_info)
   write_log(Preferences()->debug_singletons(), "[Singletons] Deleting tablemap loader\n");
   DELETE_AND_CLEAR(p_tablemap_loader)
+  DELETE_AND_CLEAR(p_tablemap_db)
   write_log(Preferences()->debug_singletons(), "[Singletons] Deleting 01\n");
   DELETE_AND_CLEAR(p_filesystem_monitor)
   write_log(Preferences()->debug_singletons(), "[Singletons] Deleting 02\n");

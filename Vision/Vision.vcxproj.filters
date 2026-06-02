@@ -66,6 +66,15 @@
     <ClCompile Include="DialogSelectTable.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DialogSettings.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DecimalSplit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\trainer\TrainerOcr.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="DialogTableMap.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -123,6 +132,9 @@
     <ClCompile Include="..\CTablemap\CTablemapAccess.cpp">
       <Filter>Source Files\CTablemap</Filter>
     </ClCompile>
+    <ClCompile Include="..\CTablemap\CTablemapDB.cpp">
+      <Filter>Source Files\CTablemap</Filter>
+    </ClCompile>
     <ClCompile Include="..\Hiss\WebSafeColours.cpp">
       <Filter>Source Files\CTransform</Filter>
     </ClCompile>
@@ -171,6 +183,15 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DialogSelectTable.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DialogSettings.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DecimalSplit.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\trainer\TrainerOcr.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="global.h">
@@ -228,6 +249,9 @@
       <Filter>Header Files\CTransform</Filter>
     </ClInclude>
     <ClInclude Include="..\CTablemap\CTablemap.h">
+      <Filter>Header Files\CTablemap</Filter>
+    </ClInclude>
+    <ClInclude Include="..\CTablemap\CTablemapDB.h">
       <Filter>Header Files\CTablemap</Filter>
     </ClInclude>
     <ClInclude Include="..\CTablemap\CTableMapAccess.h">

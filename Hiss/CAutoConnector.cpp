@@ -18,6 +18,7 @@
 #include <afxwin.h>
 #include "..\CTablemap\CTablemap.h"
 #include "..\CTablemap\CTablemapAccess.h"
+#include "..\CTablemap\CTablemapDB.h"
 #include "..\CTransform\CTransform.h"
 #include "CAutoplayer.h"
 #include "CCasinoInterface.h"
@@ -292,7 +293,7 @@ bool CAutoConnector::Connect(HWND targetHWnd) {
 			assert(p_tablemap != NULL);
       CString tablemap_to_load = p_tablemap_loader->GetTablemapPathToLoad(g_tlist[SelectedItem].tablemap_index);
 			write_log(Preferences()->debug_autoconnector(), "[CAutoConnector] Selected tablemap: %s\n", tablemap_to_load);
-			p_tablemap->LoadTablemap(tablemap_to_load);
+			p_tablemap_db->LoadTablemapFromDB(tablemap_to_load, p_tablemap);
 			write_log(Preferences()->debug_autoconnector(), "[CAutoConnector] Tablemap successfully loaded\n");
   		// Create bitmaps
 			p_scraper->CreateBitmaps();

@@ -18,6 +18,10 @@ struct STrainerRegion {
 // CTablemap class (which is not standalone).
 bool LoadBalanceRegions(const CString &tm_path, std::vector<STrainerRegion> *out);
 
+// Same as LoadBalanceRegions but reads from the PostgreSQL "hiss" database.
+// tm_name is the tablemap's name (DB key, e.g. the former .tm filename stem).
+bool LoadBalanceRegionsFromDB(const CString &tm_name, std::vector<STrainerRegion> *out);
+
 // Rewrite the matching "r$<name> ..." line in place, replacing its colour (token 6,
 // 8-hex) and radius (token 7, decimal) and keeping every other field. Returns true
 // if the region line was found and the file was rewritten.

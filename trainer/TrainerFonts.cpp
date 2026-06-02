@@ -1,5 +1,7 @@
 #include "stdafx.h"
 #include "TrainerFonts.h"
+#include "TrainerDB.h"
+#include "libpq-fe.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -394,6 +396,131 @@ bool CTrainerFonts::LoadFromTablemap(const CString &tm_path)
 	return true;
 }
 
+// SQL single-quote escaping.
+static CStringA FontsSqlEsc(const CStringA &s)
+{
+	CStringA out;
+	for (int i = 0; i < s.GetLength(); ++i) {
+		char c = s[i];
+		if (c == '\'') out += "''"; else out += c;
+	}
+	return out;
+}
+
+// Load the t$ font groups + s$tXtype scan modes for a tablemap from the
+// PostgreSQL "hiss" database. tm_name is the tablemap's DB key.
+bool CTrainerFonts::LoadFromDB(const CString &tm_name)
+{
+	EnterCriticalSection(&_cs);
+	_tm_path = tm_name;   // member now holds the DB tablemap name
+	for (int i = 0; i < TFE_NUM_FONT_GROUPS; i++) { _groups[i].clear(); _scanmode[i] = "plain"; }
+
+	PGconn *conn = TrainerDB_Connect();
+	if (conn == NULL) { LeaveCriticalSection(&_cs); return false; }
+	long id = TrainerDB_TablemapId(conn, tm_name);
+	if (id < 0) { PQfinish(conn); LeaveCriticalSection(&_cs); return false; }
+
+	// Fonts.
+	CString sql;
+	sql.Format("SELECT font_group, ch, x_values FROM tm_fonts WHERE tablemap_id=%ld", id);
+	PGresult *res = PQexec(conn, sql.GetString());
+	if (PQresultStatus(res) == PGRES_TUPLES_OK) {
+		int rows = PQntuples(res);
+		for (int i = 0; i < rows; ++i) {
+			int group = atoi(PQgetvalue(res, i, 0));
+			if (group < 0 || group >= TFE_NUM_FONT_GROUPS) continue;
+			CStringA ch = PQgetvalue(res, i, 1);
+			CStringA xvals = PQgetvalue(res, i, 2);
+			TFontRec rec;
+			rec.ch = ch.IsEmpty() ? ' ' : ch[0];
+			rec.x_count = 0;
+			rec.hexmash = "";
+			int pos = 0;
+			while (pos != -1 && rec.x_count < TFE_MAX_SINGLE_CHAR_WIDTH) {
+				CStringA tok = xvals.Tokenize(" \t", pos);
+				if (tok.IsEmpty()) break;
+				rec.x[rec.x_count++] = strtoul(tok.GetString(), NULL, 16);
+				rec.hexmash += tok;
+			}
+			if (rec.x_count > 0)
+				_groups[group][rec.hexmash] = rec;
+		}
+	}
+	if (res) PQclear(res);
+
+	// Scan modes: s$t<digit>type symbols.
+	sql.Format("SELECT name, text FROM tm_symbols WHERE tablemap_id=%ld AND name LIKE 't%%type'", id);
+	res = PQexec(conn, sql.GetString());
+	if (PQresultStatus(res) == PGRES_TUPLES_OK) {
+		int rows = PQntuples(res);
+		for (int i = 0; i < rows; ++i) {
+			CString name = PQgetvalue(res, i, 0);   // e.g. "t3type"
+			CStringA val = PQgetvalue(res, i, 1);
+			if (name.GetLength() == 6 && name[0] == 't' && name[1] >= '0' && name[1] <= '9'
+					&& name.Mid(2).CompareNoCase("type") == 0 && !val.IsEmpty()) {
+				_scanmode[name[1] - '0'] = val;
+			}
+		}
+	}
+	if (res) PQclear(res);
+
+	PQfinish(conn);
+	LeaveCriticalSection(&_cs);
+	return true;
+}
+
+// Replace the loaded tablemap's t$ records in the database with the current
+// in-memory font groups (transactional delete + re-insert).
+bool CTrainerFonts::SaveToDB()
+{
+	EnterCriticalSection(&_cs);
+	CString name = _tm_path;
+	if (name.IsEmpty()) { LeaveCriticalSection(&_cs); return false; }
+
+	PGconn *conn = TrainerDB_Connect();
+	if (conn == NULL) { LeaveCriticalSection(&_cs); return false; }
+	long id = TrainerDB_TablemapId(conn, name);
+	if (id < 0) { PQfinish(conn); LeaveCriticalSection(&_cs); return false; }
+
+	bool ok = true;
+	PGresult *res = PQexec(conn, "BEGIN");
+	ok = ok && (PQresultStatus(res) == PGRES_COMMAND_OK);
+	if (res) PQclear(res);
+
+	if (ok) {
+		CString sql;
+		sql.Format("DELETE FROM tm_fonts WHERE tablemap_id=%ld", id);
+		res = PQexec(conn, sql.GetString());
+		ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
+		if (res) PQclear(res);
+	}
+
+	for (int g = 0; ok && g < TFE_NUM_FONT_GROUPS; g++) {
+		for (TFontGroup::const_iterator it = _groups[g].begin(); ok && it != _groups[g].end(); ++it) {
+			CStringA xvals;
+			for (int j = 0; j < it->second.x_count; j++) {
+				CStringA hx; hx.Format(j == 0 ? "%x" : " %x", it->second.x[j]);
+				xvals += hx;
+			}
+			CStringA ch; ch += it->second.ch;
+			CString sql;
+			sql.Format("INSERT INTO tm_fonts (tablemap_id,font_group,ch,hexmash,x_values) "
+				"VALUES (%ld,%d,'%s','%s','%s')",
+				id, g, FontsSqlEsc(ch).GetString(),
+				FontsSqlEsc(it->second.hexmash).GetString(), FontsSqlEsc(xvals).GetString());
+			res = PQexec(conn, sql.GetString());
+			ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
+			if (res) PQclear(res);
+		}
+	}
+
+	res = PQexec(conn, ok ? "COMMIT" : "ROLLBACK");
+	if (res) PQclear(res);
+	PQfinish(conn);
+	LeaveCriticalSection(&_cs);
+	return ok;
+}
+
 CString CTrainerFonts::RecognizeBgra(const unsigned char *bgra, int w, int h,
 	COLORREF color, int radius, int group)
 {
@@ -574,18 +701,13 @@ CStringA CTrainerFonts::scan_mode(int g)
 int CTrainerFonts::DeleteAllFonts()
 {
 	EnterCriticalSection(&_cs);
-	CString path = _tm_path;
 	int count = 0;
 	for (int g = 0; g < TFE_NUM_FONT_GROUPS; g++) {
 		count += (int)_groups[g].size();
 		_groups[g].clear();
 	}
 	LeaveCriticalSection(&_cs);
-	// Back up the on-disk tablemap (fonts still intact) before we overwrite it.
-	if (!path.IsEmpty()) {
-		CopyFile(path, path + ".bak", FALSE);   // FALSE = overwrite any previous backup
-	}
-	SaveToTablemap();   // rewrites the .tm with an empty t$ section
+	SaveToDB();   // persists the now-empty t$ set to the hiss database
 	return count;
 }
 

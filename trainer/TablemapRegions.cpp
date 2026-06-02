@@ -1,5 +1,7 @@
 #include "stdafx.h"
 #include "TablemapRegions.h"
+#include "TrainerDB.h"
+#include "libpq-fe.h"
 #include <map>
 
 // True for region names p0balance .. p8balance (exactly that shape).
@@ -72,73 +74,85 @@ bool LoadBalanceRegions(const CString &tm_path, std::vector<STrainerRegion> *out
 	return true;
 }
 
-bool SaveRegionColorRadius(const CString &tm_path, const CString &name, COLORREF color, int radius)
+// Escape single quotes for a SQL string literal.
+static CString SqlEsc(const CString &s)
 {
-	if (tm_path.IsEmpty() || name.IsEmpty()) {
+	CString out;
+	for (int i = 0; i < s.GetLength(); ++i) {
+		TCHAR c = s[i];
+		if (c == '\'') out += "''"; else out += c;
+	}
+	return out;
+}
+
+bool LoadBalanceRegionsFromDB(const CString &tm_name, std::vector<STrainerRegion> *out)
+{
+	if (out == NULL) {
 		return false;
 	}
-	// Read every line (text mode strips EOLs).
-	std::vector<CStringA> lines;
-	{
-		CStdioFile file;
-		if (!file.Open(tm_path, CFile::modeRead | CFile::typeText)) {
-			return false;
-		}
-		CString line;
-		while (file.ReadString(line)) {
-			lines.push_back(CStringA(line));
-		}
-		file.Close();
-	}
-
-	bool found = false;
-	for (size_t i = 0; i < lines.size(); ++i) {
-		CString line(lines[i]);
-		if (line.Left(2) != "r$") {
-			continue;
-		}
-		// r$<name> <left> <top> <right> <bottom> <color> <radius> <transform> ...
-		CString body = line.Mid(2);
-		int pos = 0;
-		CString rname = body.Tokenize(" \t", pos);
-		if (rname.CompareNoCase(name) != 0) {
-			continue;
-		}
-		CString sleft = body.Tokenize(" \t", pos);
-		CString stop = body.Tokenize(" \t", pos);
-		CString sright = body.Tokenize(" \t", pos);
-		CString sbottom = body.Tokenize(" \t", pos);
-		// Skip the old colour + radius tokens (positions 6 and 7) if present.
-		if (pos >= 0) body.Tokenize(" \t", pos);   // old colour
-		if (pos >= 0) body.Tokenize(" \t", pos);   // old radius
-		// Everything still unconsumed (transform + any trailing fields) is preserved.
-		CString rest = (pos >= 0) ? body.Mid(pos) : CString("");
-		rest.TrimLeft();
-
-		CString rebuilt;
-		rebuilt.Format("r$%s %s %s %s %s %08x %d", rname.GetString(),
-			sleft.GetString(), stop.GetString(), sright.GetString(), sbottom.GetString(),
-			(unsigned int)color, radius);
-		if (!rest.IsEmpty()) { rebuilt += " "; rebuilt += rest; }
-		lines[i] = CStringA(rebuilt);
-		found = true;
-		break;
-	}
-	if (!found) {
+	out->clear();
+	PGconn *conn = TrainerDB_Connect();
+	if (conn == NULL) {
 		return false;
 	}
-
-	// Write back with CRLF (mirrors CTrainerFonts::SaveToTablemap).
-	FILE *fp = NULL;
-	if (fopen_s(&fp, CStringA(tm_path).GetString(), "wb") != 0 || fp == NULL) {
+	long id = TrainerDB_TablemapId(conn, tm_name);
+	if (id < 0) {
+		PQfinish(conn);
 		return false;
 	}
-	for (size_t i = 0; i < lines.size(); ++i) {
-		fwrite(lines[i].GetString(), 1, lines[i].GetLength(), fp);
-		fwrite("\r\n", 1, 2, fp);
+	CString sql;
+	sql.Format("SELECT name, rgn_left, rgn_top, rgn_right, rgn_bottom, color, radius,"
+		" COALESCE(transform,'') FROM tm_regions WHERE tablemap_id=%ld", id);
+	PGresult *res = PQexec(conn, sql.GetString());
+	bool ok = (PQresultStatus(res) == PGRES_TUPLES_OK);
+	if (ok) {
+		int rows = PQntuples(res);
+		for (int i = 0; i < rows; ++i) {
+			CString name = PQgetvalue(res, i, 0);
+			if (!IsBalanceRegionName(name)) {
+				continue;
+			}
+			STrainerRegion region;
+			region.name = name;
+			region.rect.left = atol(PQgetvalue(res, i, 1));
+			region.rect.top = atol(PQgetvalue(res, i, 2));
+			region.rect.right = atol(PQgetvalue(res, i, 3));
+			region.rect.bottom = atol(PQgetvalue(res, i, 4));
+			region.color = (COLORREF)strtoul(PQgetvalue(res, i, 5), NULL, 10);
+			region.radius = atol(PQgetvalue(res, i, 6));
+			region.transform = PQgetvalue(res, i, 7);
+			out->push_back(region);
+		}
 	}
-	fclose(fp);
-	return true;
+	if (res) PQclear(res);
+	PQfinish(conn);
+	return ok;
+}
+
+// Persists a region's colour/radius back to the database. The first argument is
+// the tablemap NAME (DB key), not a file path.
+bool SaveRegionColorRadius(const CString &tm_name, const CString &name, COLORREF color, int radius)
+{
+	if (tm_name.IsEmpty() || name.IsEmpty()) {
+		return false;
+	}
+	PGconn *conn = TrainerDB_Connect();
+	if (conn == NULL) {
+		return false;
+	}
+	long id = TrainerDB_TablemapId(conn, tm_name);
+	if (id < 0) {
+		PQfinish(conn);
+		return false;
+	}
+	CString sql;
+	sql.Format("UPDATE tm_regions SET color=%lu, radius=%d WHERE tablemap_id=%ld AND name='%s'",
+		(unsigned long)color, radius, id, SqlEsc(name).GetString());
+	PGresult *res = PQexec(conn, sql.GetString());
+	bool ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
+	if (res) PQclear(res);
+	PQfinish(conn);
+	return ok;
 }
 
 // ---------------------------------------------------------------------------

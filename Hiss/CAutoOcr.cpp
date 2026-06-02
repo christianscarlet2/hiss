@@ -13,6 +13,7 @@
 
 #include "StdAfx.h"
 #include "CAutoOcr.h"
+#include "..\CTablemap\CTablemapDB.h"
 
 #include "CAutoconnector.h"
 #include "..\Shared\WindowCapture.h"
@@ -67,12 +68,33 @@ static TessBaseAPI *SafeCreateTessBaseAPI()
 	return new TessBaseAPI;
 }
 
-static int SafeTessInit(TessBaseAPI *tess)
+// Split a model spec into a Tesseract (datapath, language) pair.
+// Accepts a bare language stem ("my_model" -> tessdata/my_model.traineddata) or
+// a full path ("C:\x\tessdata\eng.traineddata" -> datapath "C:\x\tessdata", lang "eng").
+static void SplitModelSpec(const CString &spec, CString *dir, CString *lang)
+{
+	CString s = spec; s.Trim();
+	if (s.IsEmpty()) { *dir = "tessdata"; *lang = "my_model"; return; }
+	int bslash = s.ReverseFind('\\');
+	int fslash = s.ReverseFind('/');
+	int cut = (bslash > fslash) ? bslash : fslash;
+	CString file = (cut >= 0) ? s.Mid(cut + 1) : s;
+	CString d = (cut >= 0) ? s.Left(cut) : CString("tessdata");
+	int dot = file.ReverseFind('.');
+	CString l = (dot > 0) ? file.Left(dot) : file;
+	if (d.IsEmpty()) d = "tessdata";
+	if (l.IsEmpty()) l = "my_model";
+	*dir = d; *lang = l;
+}
+
+static int SafeTessInit(TessBaseAPI *tess, const char *model_spec)
 {
 	if (tess == NULL) {
 		return -1;
 	}
-	return tess->Init("tessdata", "my_model");
+	CString dir, lang;
+	SplitModelSpec(CString(model_spec), &dir, &lang);
+	return tess->Init(CStringA(dir).GetString(), CStringA(lang).GetString());
 }
 
 static void SafeTessEnd(TessBaseAPI *tess)
@@ -132,7 +154,61 @@ static bool SafeResultIteratorNext(ResultIterator *ri, PageIteratorLevel level)
 CAutoOcr::CAutoOcr() :
 	_api_initialized(false),
 	_api2_initialized(false),
-	_api_init_failed(false) {
+	_api_init_failed(false),
+	_models_loaded(false),
+	_thr_a0(kDefaultAutoOcrThreshold), _thr_a1(kDefaultAutoOcrThreshold),
+	_mode_a0((int)tesseract::PSM_SINGLE_COLUMN), _mode_a1((int)tesseract::PSM_SINGLE_COLUMN),
+	_nopre_a0(false), _nopre_a1(false),
+	_nowl_a0(false), _nowl_a1(false) {
+}
+
+// Read the per-transform OCR settings (model/threshold/mode/no_preprocess/
+// no_whitelist) for A0 (autoocr0) and A1 (autoocr1) from the settings table.
+void CAutoOcr::LoadModelSettings() {
+	_model_a0 = "my_model";
+	_model_a1 = "my_model";
+	_thr_a0 = _thr_a1 = kDefaultAutoOcrThreshold;
+	_mode_a0 = _mode_a1 = (int)tesseract::PSM_SINGLE_COLUMN;
+	_nopre_a0 = _nopre_a1 = false;
+	_nowl_a0 = _nowl_a1 = false;
+	if (p_tablemap_db != NULL) {
+		const char *keys[2] = { "autoocr0", "autoocr1" };
+		for (int g = 0; g < 2; ++g) {
+			CString model = p_tablemap_db->GetSettingString(keys[g], "model");
+			CString thr   = p_tablemap_db->GetSettingString(keys[g], "threshold");
+			CString mode  = p_tablemap_db->GetSettingString(keys[g], "mode");
+			bool nopre = (p_tablemap_db->GetSettingString(keys[g], "no_preprocess") == "1");
+			bool nowl  = (p_tablemap_db->GetSettingString(keys[g], "no_whitelist") == "1");
+			CString &m = (g == 0) ? _model_a0 : _model_a1;
+			int &t = (g == 0) ? _thr_a0 : _thr_a1;
+			int &md = (g == 0) ? _mode_a0 : _mode_a1;
+			bool &np = (g == 0) ? _nopre_a0 : _nopre_a1;
+			bool &nw = (g == 0) ? _nowl_a0 : _nowl_a1;
+			if (!model.IsEmpty()) m = model;
+			if (!thr.IsEmpty()) t = atoi(thr.GetString());
+			if (!mode.IsEmpty()) md = atoi(mode.GetString());
+			np = nopre; nw = nowl;
+		}
+	}
+	_models_loaded = true;
+}
+
+// Switch api/api2 to `model` if not already loaded. Tesseract supports
+// re-Init to change the model/language.
+bool CAutoOcr::EnsureModelLoaded(const CString &model) {
+	if (!EnsureTesseractInitialized()) {
+		return false;
+	}
+	CString m = model.IsEmpty() ? CString("my_model") : model;
+	if (m == _current_model) {
+		return true;
+	}
+	if (SafeTessInit(api, m.GetString()) == -1 || SafeTessInit(api2, m.GetString()) == -1) {
+		_api_init_failed = true;
+		return false;
+	}
+	_current_model = m;
+	return true;
 }
 
 CAutoOcr::~CAutoOcr() {
@@ -154,6 +230,9 @@ CAutoOcr::~CAutoOcr() {
 }
 
 bool CAutoOcr::EnsureTesseractInitialized() {
+	if (!_models_loaded) {
+		LoadModelSettings();
+	}
 	if (_api_initialized && _api2_initialized) {
 		return true;
 	}
@@ -192,12 +271,13 @@ bool CAutoOcr::EnsureTesseractInitialized() {
 				return false;
 			}
 		}
-		if (SafeTessInit(api) == -1) {		// OEM_LSTM_ONLY
+		if (SafeTessInit(api, _model_a0.GetString()) == -1) {		// OEM_LSTM_ONLY
 			_api_init_failed = true;
 			MessageBox(NULL, "Failed to load tessdata files.\nMake sure tessdata folder is present and/or datas are not corrupted.", "AutoOcr error", MB_OK);
 			return false;
 		}
 		_api_initialized = true;
+		_current_model = _model_a0;
 	}
 
 	if (!_api2_initialized) {
@@ -209,12 +289,13 @@ bool CAutoOcr::EnsureTesseractInitialized() {
 				return false;
 			}
 		}
-		if (SafeTessInit(api2) == -1) {		// OEM_LSTM_ONLY
+		if (SafeTessInit(api2, _model_a0.GetString()) == -1) {		// OEM_LSTM_ONLY
 			_api_init_failed = true;
 			MessageBox(NULL, "Failed to load tessdata files.\nMake sure tessdata folder is present and/or datas are not corrupted.", "AutoOcr error", MB_OK);
 			return false;
 		}
 		_api2_initialized = true;
+		_current_model = _model_a0;
 	}
 
 	return true;
@@ -476,25 +557,19 @@ Mat CAutoOcr::prepareImage(Mat img_orig, const SAutoOcrSettings &settings, bool 
 		basewidth = static_cast<int>(static_cast<float>(img_orig.cols) * wpercent);
 	}
 	cvtColor(img_orig, img_resized, COLOR_BGR2GRAY);
-	resize(img_resized, img_resized, Size(basewidth, hsize), INTER_LANCZOS4);
-
-	// Sharpen (unsharp mask) before binarization so thin strokes stay crisp and
-	// digits like 7 don't get rounded into 1. Amount comes from the region's
-	// Sharpen % setting (100 = 1.0x); 0 disables it.
-	{
-		const double sharpen_amount = settings.sharpen / 100.0;
-		const double sharpen_sigma = 1.0;
-		if (sharpen_amount > 0.0) {
-			Mat blurred;
-			GaussianBlur(img_resized, blurred, Size(0, 0), sharpen_sigma);
-			addWeighted(img_resized, 1.0 + sharpen_amount, blurred, -sharpen_amount, 0, img_resized);
-		}
+	// The upscale is enhancement: skip it when "no preprocessing" is set.
+	// (Sharpen and cropping were removed from the pipeline.)
+	if (!settings.no_preprocess) {
+		resize(img_resized, img_resized, Size(basewidth, hsize), INTER_LANCZOS4);
 	}
 
+	// Threshold binarization ALWAYS applies (independent of "no preprocessing").
+	// Character spacing is enhancement and is skipped under "no preprocessing".
 	if (binarize) {
 		img_resized = binarize_array_opencv(img_resized, threshold);
-		// Separate characters that sit too close so OCR can tell them apart.
-		img_resized = AddCharacterSpacing(img_resized, kOcrCharSpacingPx);
+		if (!settings.no_preprocess) {
+			img_resized = AddCharacterSpacing(img_resized, kOcrCharSpacingPx);
+		}
 	}
 	Mat img_bounded = img_resized.clone();
 
@@ -699,60 +774,54 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
 	ResultString = "";
 	ResultString2 = "";
 
-	int tablemap_threshold = region->second.threshold;
-	if (region->second.use_default || tablemap_threshold < 0) {
-		tablemap_threshold = kDefaultAutoOcrThreshold;
-	}
+	// OCR parameters come from the per-transform settings groups (autoocr0 for
+	// "A0", autoocr1 for "A1"), not from the region. Threshold and page-seg mode
+	// always apply, regardless of "no preprocessing".
+	bool isA1 = (region->second.transform == "A1");
+	int tablemap_threshold = isA1 ? _thr_a1 : _thr_a0;
+	if (tablemap_threshold <= 0) tablemap_threshold = kDefaultAutoOcrThreshold;
 	SAutoOcrSettings settings;
 	settings.threshold = tablemap_threshold;
-	settings.use_cropping = region->second.use_cropping;
-	settings.crop_size = region->second.crop_size > 0 ? region->second.crop_size : 40;
-	// Match Vision/trainer: default to Single column (PSM 4); honor a per-region
-	// Tesseract page-seg mode if one was chosen in the tablemap.
-	settings.page_seg_mode = (region->second.match_mode >= 0)
-		? region->second.match_mode
-		: (int)tesseract::PSM_SINGLE_COLUMN;
-	settings.sharpen = region->second.sharpen >= 0 ? region->second.sharpen : 100;
+	settings.use_cropping = false;   // cropping removed from the pipeline
+	settings.crop_size = 0;
+	settings.page_seg_mode = isA1 ? _mode_a1 : _mode_a0;
+	settings.sharpen = 0;            // sharpen removed from the pipeline
+	settings.no_preprocess = isA1 ? _nopre_a1 : _nopre_a0;
 	// Balance fields are pure numbers; restrict OCR to digits and a dot. Other
-	// regions use the general character set (matches Vision/trainer).
+	// regions use the general character set.
 	if (CString(region->first).MakeLower().Find("balance") != -1)
 		settings.whitelist = "0123456789.";
 	else
 		settings.whitelist = kGeneralWhitelist;
+	if (isA1 ? _nowl_a1 : _nowl_a0) {
+		settings.whitelist = "";
+	}
 	TryColorPresetSettings(img_orig, region, &settings);
+	settings.use_cropping = false;   // never crop, even if a colour preset set it
 	tablemap_threshold = settings.threshold;
 
 	if (region->second.transform == "A0") {
+		EnsureModelLoaded(_model_a0);
 		img_resized = prepareImage(img_orig, settings, true, tablemap_threshold);
 		img_resized2 = prepareImage(img_orig, settings, true, tablemap_threshold, true);
 	}
 	if (region->second.transform == "A1") {
+		EnsureModelLoaded(_model_a1);
 		img_resized = prepareImage(img_orig, settings, true, tablemap_threshold);
 		img_resized2 = prepareImage(img_orig, settings, true, tablemap_threshold, true);
 	}
 
 	vector<CString> lst;
 	CString ocr_result, ocr_result2;
-	if (settings.use_cropping == true) {
-		for (auto & element : ResultBoxes) {
-			if (element.first == bestRect) {
-				ocr_result = element.second;
-				break;
-			}
+	{
+		if (!img_resized.empty()) {
+			img_resized.convertTo(img_resized, CV_8UC3);
+			cvtColor(img_resized, img_resized, COLOR_GRAY2BGR);
 		}
-		for (auto & element : ResultBoxes2) {
-			if (element.first == bestRect2) {
-				ocr_result2 = element.second;
-				break;
-			}
+		if (!img_resized2.empty()) {
+			img_resized2.convertTo(img_resized2, CV_8UC3);
+			cvtColor(img_resized2, img_resized2, COLOR_GRAY2BGR);
 		}
-	}
-	else {
-		img_resized.convertTo(img_resized, CV_8UC3);
-		cvtColor(img_resized, img_resized, COLOR_GRAY2BGR);
-		img_resized2.convertTo(img_resized2, CV_8UC3);
-		cvtColor(img_resized2, img_resized2, COLOR_GRAY2BGR);
-
 		ocr_result = ResultString;
 		ocr_result2 = ResultString2;
 	}

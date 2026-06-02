@@ -110,11 +110,14 @@ BEGIN
     POPUP "&File"
     BEGIN
         MENUITEM "&New\tCtrl+N",                ID_FILE_NEW
-        MENUITEM "&Open...\tCtrl+O",            ID_FILE_OPEN
-        MENUITEM "&Save\tCtrl+S",               ID_FILE_SAVE
-        MENUITEM "Save &As...",                 ID_FILE_SAVE_AS
+        MENUITEM "&Open from Database...\tCtrl+O", ID_FILE_OPEN
+        MENUITEM "&Save to Database\tCtrl+S",   ID_FILE_SAVE
+        MENUITEM "Save &As to Database...",     ID_FILE_SAVE_AS
         MENUITEM SEPARATOR
-        MENUITEM "Recent File",                 ID_FILE_MRU_FILE1, GRAYED
+        MENUITEM "Import .&tm File into Database...", ID_DB_IMPORT_FILE
+        MENUITEM "Import &Folder of .tm into Database...", ID_DB_IMPORT_FOLDER
+        MENUITEM SEPARATOR
+        MENUITEM "Se&ttings...",                ID_TOOLS_SETTINGS
         MENUITEM SEPARATOR
         MENUITEM "E&xit",                       ID_APP_EXIT
     END
@@ -372,6 +375,45 @@ BEGIN
     PUSHBUTTON      "Parse preprocessed titlebar text with 'string'",IDC_PARSEBUTTON,5,78,154,14
     DEFPUSHBUTTON   "OK",IDOK,213,211,50,14
     PUSHBUTTON      "Cancel",IDCANCEL,267,211,50,14
+END
+
+IDD_SETTINGS DIALOGEX 0, 0, 372, 372
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Settings"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LISTBOX         IDC_SETTINGS_GROUPS,7,7,80,335,LBS_NOINTEGRALHEIGHT | LBS_NOTIFY | WS_VSCROLL | WS_TABSTOP | WS_BORDER
+    LTEXT           "",IDC_SET_PAGE_TITLE,95,7,270,12
+    LTEXT           "Tablemaps and application settings are stored in the PostgreSQL 'hiss' database on the local server.",IDC_SET_GENERAL_TEXT,95,25,275,170
+    LTEXT           "Symbols using decimal splitting:",IDC_SET_FIELDS_DECLBL,95,25,200,9
+    LISTBOX         IDC_LST_DECIMAL_FIELDS,95,36,270,160,LBS_MULTIPLESEL | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP | WS_BORDER
+    LTEXT           "No advanced settings yet.",IDC_SET_ADVANCED_TEXT,95,25,275,170
+    LTEXT           "Model:",IDC_SET_MODEL_LBL,95,24,40,9
+    EDITTEXT        IDC_EDIT_A0_MODEL,95,34,210,12,ES_AUTOHSCROLL | ES_READONLY
+    PUSHBUTTON      "Browse...",IDC_BTN_A0_BROWSE,310,33,55,14
+    LTEXT           "Threshold:",IDC_SET_THRESHOLD_LBL,95,53,40,8
+    EDITTEXT        IDC_SET_THRESHOLD,138,51,32,12,ES_AUTOHSCROLL | ES_NUMBER
+    CONTROL         "",IDC_SET_THRESHOLD_SPIN,"msctls_updown32",UDS_SETBUDDYINT | UDS_ARROWKEYS | UDS_NOTHOUSANDS,170,51,11,12
+    LTEXT           "Mode:",IDC_SET_MODE_LBL,200,53,24,8
+    COMBOBOX        IDC_SET_MODE,226,51,139,120,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    CONTROL         "Don't use preprocessing",IDC_CHK_NO_PREPROCESS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,95,70,140,10
+    CONTROL         "Don't use whitelist",IDC_CHK_NO_WHITELIST,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,240,70,120,10
+    CONTROL         "Enable live poll (OCR the selected region)",IDC_CHK_LIVE_POLL,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,95,84,200,10
+    LTEXT           "Select a region in the tablemap view to preview these settings.",IDC_SET_LIVE_HINT,95,98,270,8
+    LTEXT           "Original (4x):",IDC_SET_ORIG_LBL,95,112,80,8
+    CONTROL         "",IDC_SET_ORIG_VIEW,"Static",SS_BLACKFRAME,95,122,125,52
+    LTEXT           "Auto OCR view:",IDC_SET_OCR_LBL,228,112,80,8
+    CONTROL         "",IDC_SET_OCR_VIEW,"Static",SS_BLACKFRAME,228,122,137,52
+    LTEXT           "Decimal split \x96 original left / right:",IDC_SET_SPLIT_LBL,95,180,200,8
+    CONTROL         "",IDC_SET_ORIG_LEFT,"Static",SS_BLACKFRAME,95,190,130,40
+    CONTROL         "",IDC_SET_ORIG_RIGHT,"Static",SS_BLACKFRAME,235,190,130,40
+    LTEXT           "Result:",IDC_SET_RESULT_LBL,95,238,40,8
+    EDITTEXT        IDC_SET_RESULT,138,236,227,12,ES_AUTOHSCROLL | ES_READONLY
+    LTEXT           "Result left / right:",IDC_SET_RESULT_LR_LBL,95,254,80,8
+    EDITTEXT        IDC_SET_RESULT_LEFT,95,264,130,12,ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_SET_RESULT_RIGHT,235,264,130,12,ES_AUTOHSCROLL | ES_READONLY
+    DEFPUSHBUTTON   "OK",IDOK,258,352,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,315,352,50,14
 END
 
 IDD_EDIT_REGION DIALOGEX 0, 0, 130, 63

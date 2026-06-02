@@ -31,6 +31,7 @@ struct SAutoOcrSettings {
 	int page_seg_mode;
 	int sharpen;	// Unsharp-mask amount in percent (100 = 1.0x); <0 = default
 	CString whitelist;	// Tesseract char whitelist; empty = no restriction
+	bool no_preprocess;	// skip sharpen/binarize/char-spacing; feed the resized grayscale crop
 };
 
 class CAutoOcr : public CSpaceOptimizedGlobalObject {
@@ -53,6 +54,11 @@ private:
 	bool ReadColorPresetSamplePoint(int index, RMapCI region, int *rel_x, int *rel_y);
 	bool TryColorPresetSettings(Mat img_orig, RMapCI region, SAutoOcrSettings *settings);
 	bool EnsureTesseractInitialized();
+	// Per-transform Tesseract model selection (A0 -> a0 model, A1 -> a1 model),
+	// read from the `settings` table (key 'ocr_models'). Models are switched
+	// lazily; a re-Init only happens when the required model actually changes.
+	void LoadModelSettings();
+	bool EnsureModelLoaded(const CString &model);
 
 	string trim(string str) {
 		return regex_replace(str, regex("\\s"), "");
@@ -72,6 +78,15 @@ private:
 	bool        _api_initialized;
 	bool        _api2_initialized;
 	bool        _api_init_failed;
+	bool        _models_loaded;
+	CString     _model_a0;
+	CString     _model_a1;
+	CString     _current_model;   // model currently loaded into api/api2
+	// Per-transform OCR settings (settings table keys autoocr0 / autoocr1).
+	int         _thr_a0, _thr_a1;       // binarize threshold
+	int         _mode_a0, _mode_a1;     // tesseract page-seg mode (always applied)
+	bool        _nopre_a0, _nopre_a1;   // skip resize/char-spacing enhancement
+	bool        _nowl_a0, _nowl_a1;     // disable the char whitelist
 
 	vector<pair<Rect, CString>> ResultBoxes, ResultBoxes2;
 	CString ResultString, ResultString2;

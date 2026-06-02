@@ -22,6 +22,7 @@
 #include "MainFrm.h"
 #include "OpenScrapeDoc.h"
 #include "OpenScrapeView.h"
+#include "../CTablemap/CTablemapDB.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -132,6 +133,8 @@ BOOL COpenScrapeApp::InitInstance()
 
 	// Classes
 	if (!p_tablemap)  p_tablemap = new CTablemap;
+	// Tablemaps are persisted in the PostgreSQL "hiss" database.
+	if (!p_tablemap_db)  p_tablemap_db = new CTablemapDB;
 
 	// Figure out our session number - get name of current process
 	curprocid = GetCurrentProcessId();
@@ -290,10 +293,15 @@ void COpenScrapeApp::OnAppAbout()
 int COpenScrapeApp::ExitInstance()
 {
 	// classes
-	if (p_tablemap)  
-	{ 
-		delete p_tablemap; 
-		p_tablemap = NULL; 
+	if (p_tablemap)
+	{
+		delete p_tablemap;
+		p_tablemap = NULL;
+	}
+	if (p_tablemap_db)
+	{
+		delete p_tablemap_db;
+		p_tablemap_db = NULL;
 	}
 	if (m_TableMapDlg) 
 	{ 

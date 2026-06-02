@@ -92,7 +92,7 @@
       <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
-      <AdditionalDependencies>psapi.lib;$(OutDir)String_Functions.lib;$(OutDir)window_Functions.lib;archive.lib;bz2d.lib;gif.lib;jpeg.lib;libcurl-d.lib;libcrypto.lib;libpng16.lib;libsharpyuv.lib;libwebp.lib;libwebpmux.lib;lz4.lib;lzma.lib;openjp2.lib;tiffd.lib;zlibd.lib;zstd.lib;leptonica-1.83.1d.lib;tesseract55d.lib;opencv_world480d.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>psapi.lib;libpq.lib;secur32.lib;$(OutDir)String_Functions.lib;$(OutDir)window_Functions.lib;archive.lib;bz2d.lib;gif.lib;jpeg.lib;libcurl-d.lib;libcrypto.lib;libpng16.lib;libsharpyuv.lib;libwebp.lib;libwebpmux.lib;lz4.lib;lzma.lib;openjp2.lib;tiffd.lib;zlibd.lib;zstd.lib;leptonica-1.83.1d.lib;tesseract55d.lib;opencv_world480d.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)Vision.exe</OutputFile>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
@@ -119,7 +119,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
-      <AdditionalIncludeDirectories>..\spirit-1.8.5-miniboost;..\pokereval\include;..\hscroll-list-box;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\spirit-1.8.5-miniboost;..\pokereval\include;..\postgres;..\hscroll-list-box;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;_WINDOWS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MinimalRebuild>false</MinimalRebuild>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -135,7 +135,7 @@
       <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
-      <AdditionalDependencies>psapi.lib;$(OutDir)String_Functions.lib;$(OutDir)window_Functions.lib;archive.lib;bz2d.lib;gif.lib;jpeg.lib;libcurl-d.lib;libcrypto.lib;libpng16.lib;libsharpyuv.lib;libwebp.lib;libwebpmux.lib;lz4.lib;lzma.lib;openjp2.lib;tiffd.lib;zlibd.lib;zstd.lib;leptonica-1.83.1d.lib;tesseract55.lib;opencv_world480.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>psapi.lib;libpq.lib;secur32.lib;$(OutDir)String_Functions.lib;$(OutDir)window_Functions.lib;archive.lib;bz2d.lib;gif.lib;jpeg.lib;libcurl-d.lib;libcrypto.lib;libpng16.lib;libsharpyuv.lib;libwebp.lib;libwebpmux.lib;lz4.lib;lzma.lib;openjp2.lib;tiffd.lib;zlibd.lib;zstd.lib;leptonica-1.83.1d.lib;tesseract55.lib;opencv_world480.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)Vision.exe</OutputFile>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
@@ -173,6 +173,9 @@
     <ClCompile Include="DialogEditSizes.cpp" />
     <ClCompile Include="DialogEditSymbols.cpp" />
     <ClCompile Include="DialogSelectTable.cpp" />
+    <ClCompile Include="DialogSettings.cpp" />
+    <ClCompile Include="DecimalSplit.cpp" />
+    <ClCompile Include="..\trainer\TrainerOcr.cpp" />
     <ClCompile Include="DialogTableMap.cpp">
       <UseUnicodeForAssemblerListing Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'"></UseUnicodeForAssemblerListing>
       <UseUnicodeForAssemblerListing Condition="'$(Configuration)|$(Platform)'=='Release|Win32'"></UseUnicodeForAssemblerListing>
@@ -203,6 +206,7 @@
     <ClCompile Include="..\CTransform\pdiff\RGBAImage.cpp" />
     <ClCompile Include="..\CTablemap\CTablemap.cpp" />
     <ClCompile Include="..\CTablemap\CTablemapAccess.cpp" />
+    <ClCompile Include="..\CTablemap\CTablemapDB.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Hiss\CTableTitle.h" />
@@ -218,6 +222,9 @@
     <ClInclude Include="DialogEditSizes.h" />
     <ClInclude Include="DialogEditSymbols.h" />
     <ClInclude Include="DialogSelectTable.h" />
+    <ClInclude Include="DialogSettings.h" />
+    <ClInclude Include="DecimalSplit.h" />
+    <ClInclude Include="..\trainer\TrainerOcr.h" />
     <ClInclude Include="DialogTableMap.h" />
     <ClInclude Include="global.h" />
     <ClInclude Include="HScrollListBox.h" />
@@ -241,6 +248,7 @@
     <ClInclude Include="..\CTransform\hash\stdint.h" />
     <ClInclude Include="..\CTablemap\CTablemap.h" />
     <ClInclude Include="..\CTablemap\CTableMapAccess.h" />
+    <ClInclude Include="..\CTablemap\CTablemapDB.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\Hiss\WebSafeColours.h" />
