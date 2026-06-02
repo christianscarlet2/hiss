@@ -11,8 +11,8 @@ static const int kOcrScaleUpFactor = 3;
 static const int kOcrViewScaleFactor = 1;
 static const double kOcrSharpenSigma = 1.0;
 static const int kOcrCharSpacingPx = 6;
-static const int kDefaultAutoOcrThreshold = 65;
-static const int kDefaultCropSize = 30;
+static const int kTOcrDefaultThreshold = 65;
+static const int kTOcrDefaultCropSize = 30;
 static const char *kGeneralWhitelist =
 	"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._";
 
@@ -20,10 +20,10 @@ STrainerOcrSettings DefaultOcrSettings()
 {
 	STrainerOcrSettings s;
 	s.use_default = true;
-	s.threshold = kDefaultAutoOcrThreshold;
+	s.threshold = kTOcrDefaultThreshold;
 	s.page_seg_mode = (int)PSM_SINGLE_COLUMN;
 	s.use_cropping = false;
-	s.crop_size = kDefaultCropSize;
+	s.crop_size = kTOcrDefaultCropSize;
 	s.sharpen = 100;
 	s.char_spacing = kOcrCharSpacingPx;
 	s.transform = "AutoOcr0";
@@ -397,7 +397,7 @@ void CTrainerOcr::Run(const Mat &crop_bgr, const STrainerOcrSettings &settings,
 
 	if (!_ready || crop_bgr.empty()) return;
 
-	int threshold = (_s.threshold > 0) ? _s.threshold : kDefaultAutoOcrThreshold;
+	int threshold = (_s.threshold > 0) ? _s.threshold : kTOcrDefaultThreshold;
 
 	// Balance regions: digits + dot only. Others: general set.
 	bool is_balance = (CString(region_name).MakeLower().Find("balance") != -1);

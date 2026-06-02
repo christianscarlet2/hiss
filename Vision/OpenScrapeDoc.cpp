@@ -340,15 +340,18 @@ void COpenScrapeDoc::OnDbImportFile()
 // File > Settings...
 void COpenScrapeDoc::OnToolsSettings()
 {
-	CDlgSettings dlg;
-	dlg.DoModal();
-	// Settings may have changed which fields use decimal splitting; refresh the
-	// scrape view's overlay.
-	POSITION pos = GetFirstViewPosition();
-	CView *view = GetNextView(pos);
-	if (view != NULL) {
-		((COpenScrapeView *)view)->ReloadDecimalFields();
-		view->Invalidate();
+	// Modeless so the user can click regions in the scrape view while the
+	// AutoOcr live preview updates. Single instance.
+	if (theApp.m_SettingsDlg != NULL && ::IsWindow(theApp.m_SettingsDlg->GetSafeHwnd())) {
+		theApp.m_SettingsDlg->SetForegroundWindow();
+		return;
+	}
+	CDlgSettings *dlg = new CDlgSettings(theApp.m_pMainWnd);
+	if (dlg->Create(CDlgSettings::IDD, theApp.m_pMainWnd)) {
+		theApp.m_SettingsDlg = dlg;
+		dlg->ShowWindow(SW_SHOW);
+	} else {
+		delete dlg;
 	}
 }
 

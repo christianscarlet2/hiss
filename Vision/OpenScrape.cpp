@@ -45,6 +45,8 @@ COpenScrapeApp::COpenScrapeApp()
 {
     // Save startup directory
     ::GetCurrentDirectory(MAX_PATH - 1, _startup_path);
+    m_TableMapDlg = NULL;
+    m_SettingsDlg = NULL;
 }
 
 // The one and only COpenScrapeApp object

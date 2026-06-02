@@ -137,6 +137,10 @@ public:
 	bool ShowPreview() const { return show_preview; }
 	void SetTrainingMode(bool on);
 	bool training_mode() const { return _training_mode; }
+	// Most-recently selected region name (for the settings live preview), "" if none.
+	CString PreviewRegionName() const {
+		return selected_regions.empty() ? CString("") : selected_regions.back();
+	}
 	// Decimal-split overlay: a red line where the decimal separator sits, for
 	// regions whose field type is configured for decimal splitting (settings).
 	void ReloadDecimalFields() { _decimal_fields_loaded = false; }

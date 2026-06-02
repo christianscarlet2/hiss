@@ -47,6 +47,7 @@ public:
 public:
 	int				sessionnum;
 	CDlgTableMap	*m_TableMapDlg;
+	class CDlgSettings *m_SettingsDlg;   // modeless settings dialog (NULL when closed)
 
 	virtual int ExitInstance();
 };
