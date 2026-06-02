@@ -720,21 +720,50 @@ LRESULT CTrainerDlg::OnOcrGlyph(WPARAM wParam, LPARAM lParam)
 		return 0;
 	}
 
+	// Build a BGR view of the reference crop and find its darkest colour.
+	Mat refb((int)h, (int)w, CV_8UC4, &bgra[0]);
+	Mat refbgr; cvtColor(refb, refbgr, COLOR_BGRA2BGR);
+	Vec3b darkest(0, 0, 0);
+	double min_lum = 1e30;
+	for (int y = 0; y < refbgr.rows; ++y) {
+		const Vec3b *row = refbgr.ptr<Vec3b>(y);
+		for (int x = 0; x < refbgr.cols; ++x) {
+			const Vec3b &p = row[x];   // BGR
+			double lum = 0.114 * p[0] + 0.587 * p[1] + 0.299 * p[2];
+			if (lum < min_lum) { min_lum = lum; darkest = p; }
+		}
+	}
+	// Pad a 3px border of that darkest colour around the whole reference image; this
+	// bordered image is both OCR'd and shown in the view (regenerated reference PNG).
+	const int kBorder = 3;
+	Mat bordered;
+	copyMakeBorder(refbgr, bordered, kBorder, kBorder, kBorder, kBorder,
+		BORDER_CONSTANT, Scalar(darkest[0], darkest[1], darkest[2]));
+
+	// Regenerate the reference display PNG from the bordered image (6x, pixelated to
+	// match TFE_RegularGlyphPng) so the editor shows the bordered glyph.
+	Mat big;
+	resize(bordered, big, Size(bordered.cols * 6, bordered.rows * 6), 0, 0, INTER_NEAREST);
+	std::vector<unsigned char> png;
+	std::vector<int> pngp; pngp.push_back(IMWRITE_PNG_COMPRESSION); pngp.push_back(3);
+	if (imencode(".png", big, png, pngp)) {
+		p_font_glyph_store->SetRegularPng(gid, png);
+	}
+
 	CString text;
 	if (mode == TRAINER_MODE_TEXT) {
-		// Font-hash recognition against that group's existing fonts.
+		// Font-hash recognition uses the clean (unbordered) crop -- a border would
+		// corrupt the colour-cube segmentation the hash relies on.
 		if (p_trainer_fonts != NULL)
 			text = p_trainer_fonts->RecognizeBgra(&bgra[0], w, h, color, radius, index);
 	} else {
-		// Tesseract on the original-colour glyph crop, forced to single-character mode.
-		Mat m((int)h, (int)w, CV_8UC4, &bgra[0]);
-		Mat bgr; cvtColor(m, bgr, COLOR_BGRA2BGR);
+		// Tesseract on the bordered reference, forced to single-character mode.
 		STrainerOcrSettings s = ReadSettings();
 		s.use_decimal_split = false;
 		s.no_preprocess = false;
 		s.page_seg_mode = (int)PSM_SINGLE_CHAR;
 		Mat preview; int conf = 0;
-		_ocr.Run(bgr, s, CString(region), &preview, &text, &conf);
+		_ocr.Run(bordered, s, CString(region), &preview, &text, &conf);
 	}
 	text.Trim();
 	if (text.IsEmpty()) return 0;

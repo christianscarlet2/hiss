@@ -174,6 +174,17 @@ bool CFontGlyphStore::GetReferenceBgra(int gid, std::vector<unsigned char> *out,
 	return ok;
 }
 
+bool CFontGlyphStore::SetRegularPng(int gid, const std::vector<unsigned char> &png)
+{
+	bool ok = false;
+	EnterCriticalSection(&_cs);
+	for (size_t i = 0; i < _entries.size(); ++i) {
+		if (_entries[i].gid == gid) { _entries[i].glyph.regular_png = png; ok = true; break; }
+	}
+	LeaveCriticalSection(&_cs);
+	return ok;
+}
+
 // Assemble a COLORREF from A/R/G/B the way the colour cube reads it back
 // (low byte = R via GetRValue, alpha in the high byte).
 static COLORREF ArgbToColorref(int a, int r, int g, int b)

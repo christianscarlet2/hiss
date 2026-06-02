@@ -555,17 +555,15 @@ void CTrainerServer::HandleClient(SOCKET client)
 		send(client, response.GetString(), response.GetLength(), 0);
 		return;
 	}
-	// Delete every font record (t$) from the tablemap file (a .tm.bak is written first).
+	// Delete every font record (t$) for the loaded tablemap from the hiss database.
 	if (path.CompareNoCase("/api/fonts/deletealltm") == 0) {
-		int removed = 0;
-		CStringA bak;
-		if (p_trainer_fonts != NULL) {
-			removed = p_trainer_fonts->DeleteAllFonts();
-			bak = CStringA(p_trainer_fonts->tm_path() + ".bak");
-			bak.Replace("\\", "\\\\");   // JSON-escape the path
-			bak.Replace("\"", "\\\"");
+		int removed = (p_trainer_fonts != NULL) ? p_trainer_fonts->DeleteAllFonts() : -1;
+		CStringA body;
+		if (removed < 0) {
+			body = "{\"ok\":false,\"error\":\"No tablemap loaded, or the database write failed.\"}";
+		} else {
+			body.Format("{\"ok\":true,\"removed\":%d}", removed);
 		}
-		CStringA body; body.Format("{\"ok\":true,\"removed\":%d,\"backup\":\"%s\"}", removed, bak.GetString());
 		CStringA response = Response(body, "application/json; charset=utf-8");
 		send(client, response.GetString(), response.GetLength(), 0);
 		return;

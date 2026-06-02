@@ -53,13 +53,15 @@ main { flex: 1; overflow: auto; padding: 8px 12px; }
   max-height: 86px; overflow: auto;
 }
 .statusbar .gbsummary { font-weight: 600; white-space: nowrap; }
-.statusbar .gbchips { display: flex; flex-wrap: wrap; gap: 4px; }
-.statusbar .chip {
-  font-size: 11px; padding: 1px 7px; border-radius: 10px;
-  background: #8a929c; color: #fff; white-space: nowrap;
+.statusbar .gbcov { display: flex; flex-direction: column; gap: 3px; }
+.statusbar .covrow { display: flex; flex-wrap: wrap; gap: 3px; }
+.statusbar .covchip {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 4px;
+  font-size: 12px; font-weight: 600; border-radius: 3px;
+  background: #2f8f4f; color: #cfe9d4;                 /* accounted: green, dim text */
 }
-.statusbar .chip.unaccounted { background: #d98e2b; }   /* still needs a character */
-.statusbar .chip.accounted   { background: #2f8f4f; }   /* already has a font */
+.statusbar .covchip.unaccounted { background: #d98e2b; color: #fff; }   /* still needs a font */
 
 /* Mark table rows whose glyph already has a font. */
 tbody tr.accounted td.r::after { content: " · already accounted"; color: #2f8f4f; }
@@ -218,6 +220,15 @@ input.cfield {
 .toolbar2 #gcEyedrop:hover { background: #565d68; }
 .toolbar2 #gcEyedrop.on { background: #3d82f6; box-shadow: 0 0 0 2px rgba(61,130,246,.4); }
 .swatch.sm { width: 22px; height: 22px; }
+.toolbar2 .gcsep { width: 1px; height: 22px; background: #c2c8d0; margin: 0 4px; }
+.toolbar2 #gc2Eyedrop { background: #6b7280; }
+.toolbar2 #gc2Eyedrop:hover { background: #565d68; }
+.toolbar2 #gc2Eyedrop.on { background: #3d82f6; box-shadow: 0 0 0 2px rgba(61,130,246,.4); }
+
+/* per-row Colour 1 / Colour 2 chooser buttons */
+td.a button.colsel { padding: 1px 6px; font-size: 11px; background: #6b7280; }
+td.a button.colsel:hover { background: #565d68; }
+td.a button.colsel.on { background: #3d82f6; }
 
 /* while the global eyedropper is armed, the Reference/Scrape thumbnails are pickable */
 body.eyedropping td.gr img,

@@ -722,7 +722,12 @@ int CTrainerFonts::DeleteAllFonts()
 		_groups[g].clear();
 	}
 	LeaveCriticalSection(&_cs);
-	SaveToDB();   // persists the now-empty t$ set to the hiss database
+	// Persist the now-empty font set to the hiss database (deletes every tm_fonts
+	// row for this tablemap). Report failure (-1) so the UI doesn't claim success
+	// when no tablemap is loaded or the DB write failed.
+	if (!SaveToDB()) {
+		return -1;
+	}
 	return count;
 }
 

@@ -44,6 +44,10 @@ public:
 	bool GetReferenceBgra(int gid, std::vector<unsigned char> *out, int *w, int *h,
 		COLORREF *color, int *radius, int *group, CStringA *region);
 
+	// Replace a glyph's reference (regular) display PNG -- used after the OCR step
+	// regenerates it with a darkest-colour border so the view shows that image.
+	bool SetRegularPng(int gid, const std::vector<unsigned char> &png);
+
 	// Read the source ARGB at a natural PNG pixel of the glyph's "regular" (glyph
 	// sub-crop, 6x) or "full" (whole region, 3x) image. Returns false if out of range.
 	bool GetPixel(int gid, const CStringA &img, int px, int py,

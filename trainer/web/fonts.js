@@ -14,7 +14,8 @@
   var autoCapture = document.getElementById('autoCapture');
   var autoRemoveAccounted = document.getElementById('autoRemoveAccounted');
   var glyphbarSummary = document.getElementById('glyphbarSummary');
-  var glyphbarChips = document.getElementById('glyphbarChips');
+  var covRow1 = document.getElementById('covRow1');
+  var covRow2 = document.getElementById('covRow2');
 
   function api(method, url, cb) {
     var xhr = new XMLHttpRequest();
@@ -29,13 +30,32 @@
     xhr.send();
   }
 
+  // Reload a row's reference (regular) images after the server regenerates them
+  // (the OCR step rebuilds the reference with a darkest-colour border).
+  function reloadRefImage(gid) {
+    var rec = rendered[gid];
+    if (!rec) return;
+    imgVer++;
+    var bust = '&v=' + imgVer;
+    var grImg = rec.tr.querySelector('td.gr img');
+    if (grImg) grImg.src = '/api/fonts/glyph/regular?gid=' + gid + bust;
+    if (rec.editTr) {
+      var picks = rec.editTr.querySelectorAll('img.pick');
+      if (picks.length) picks[0].src = '/api/fonts/glyph/regular?gid=' + gid + bust;   // reference pick
+    }
+  }
+
   // Ask the server to OCR this glyph's REFERENCE image (the glyph sub-crop, not the
   // whole scrape) with the current transform and pre-fill the CHAR input. Only fills
-  // an empty field, so it never clobbers a value the user already typed.
+  // an empty field, so it never clobbers a value the user already typed. The server
+  // also regenerates the reference with a 3px darkest-colour border, so reload it.
   function ocrFill(gid, input) {
     api('GET', '/api/fonts/glyph/ocr?gid=' + gid + '&t=' + encodeURIComponent(currentTransform),
       function (status, data) {
-        if (data && data.ok && data.ch && !input.value) input.value = data.ch;
+        if (data && data.ok) {
+          if (data.ch && !input.value) input.value = data.ch;
+          reloadRefImage(gid);
+        }
       });
   }
 
@@ -375,6 +395,24 @@
 
     var tdA = document.createElement('td');
     tdA.className = 'a';
+    // Colour 1 / Colour 2 chooser: copy the chosen global colour into this row and
+    // regenerate. "Apply Group Below" then propagates whatever colour the row holds.
+    var col1Btn = document.createElement('button');
+    col1Btn.textContent = 'C1'; col1Btn.tabIndex = -1; col1Btn.className = 'colsel'; col1Btn.title = 'Use Colour 1';
+    var col2Btn = document.createElement('button');
+    col2Btn.textContent = 'C2'; col2Btn.tabIndex = -1; col2Btn.className = 'colsel'; col2Btn.title = 'Use Colour 2';
+    function chooseColour(which) {
+      var c = colourVals(which);
+      st.a = c.a; st.r = c.r; st.g = c.g; st.b = c.b; st.radius = c.radius;
+      col1Btn.classList.toggle('on', which === 1);
+      col2Btn.classList.toggle('on', which === 2);
+      syncFields();
+      doRegen();
+    }
+    col1Btn.addEventListener('click', function () { chooseColour(1); });
+    col2Btn.addEventListener('click', function () { chooseColour(2); });
+    tdA.appendChild(col1Btn);
+    tdA.appendChild(col2Btn);
     // Toggle the colour editor open/closed for this row.
     var colorBtn = document.createElement('button');
     colorBtn.textContent = '🎨'; colorBtn.tabIndex = -1; colorBtn.title = 'Pick colour / radius';
@@ -404,24 +442,38 @@
     return tr;
   }
 
-  // Fixed bottom bar: a chip per pending glyph, coloured by whether a font already
-  // exists for it (accounted) or it still needs a character (unaccounted).
-  function renderGlyphBar(rows) {
-    if (!glyphbarSummary || !glyphbarChips) return;
-    var unacc = [], acc = [];
-    for (var i = 0; i < rows.length; i++) (rows[i].accounted ? acc : unacc).push(rows[i]);
-    glyphbarSummary.textContent = rows.length
-      ? (rows.length + ' glyph(s): ' + unacc.length + ' to account for, ' + acc.length + ' already accounted')
-      : 'No glyphs.';
-    glyphbarChips.innerHTML = '';
-    function addChip(gl, cls) {
-      var c = document.createElement('span');
-      c.className = 'chip ' + cls;
-      c.textContent = (gl.assigned ? gl.assigned + ' ' : '') + gl.region + '#' + gl.gid;
-      glyphbarChips.appendChild(c);
+  // Fixed bottom bar: the full target charset over two rows (digits/symbols, then
+  // letters), highlighting the glyphs not yet accounted for (no font in the current
+  // group). Coverage is fetched per the sticky working group (defaultGroup).
+  var CHARSET_ROW1 = '0123456789._-';
+  var CHARSET_ROW2 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+  function renderCoverage(coveredStr) {
+    if (!covRow1 || !covRow2) return;
+    var covered = {}, i;
+    for (i = 0; i < coveredStr.length; i++) covered[coveredStr.charAt(i)] = true;
+    var missing = 0;
+    function fill(rowEl, chars) {
+      rowEl.innerHTML = '';
+      for (var k = 0; k < chars.length; k++) {
+        var ch = chars.charAt(k);
+        var acc = !!covered[ch];
+        var s = document.createElement('span');
+        s.className = 'covchip' + (acc ? '' : ' unaccounted');
+        s.textContent = ch;
+        rowEl.appendChild(s);
+        if (!acc) missing++;
+      }
     }
-    for (var u = 0; u < unacc.length; u++) addChip(unacc[u], 'unaccounted');
-    for (var a = 0; a < acc.length; a++) addChip(acc[a], 'accounted');
+    fill(covRow1, CHARSET_ROW1);
+    fill(covRow2, CHARSET_ROW2);
+    if (glyphbarSummary) {
+      glyphbarSummary.textContent = 'Unaccounted for glyphs (Text' + defaultGroup + '): ' + missing + ' remaining';
+    }
+  }
+  function updateCoverageFooter() {
+    api('GET', '/api/fonts/coverage?group=' + defaultGroup, function (status, data) {
+      renderCoverage((data && data.ok && data.chars) ? data.chars : '');
+    });
   }
 
   // Delete every pending glyph that already has a font (used after Capture when
@@ -480,7 +532,7 @@
       retab();
       emptyHint.style.display = rows.length ? 'none' : '';
       statusEl.textContent = rows.length + ' glyph(s), ' + labeled + ' labeled';
-      renderGlyphBar(rows);
+      updateCoverageFooter();
       if (onDone) onDone();
     });
   }
@@ -506,15 +558,18 @@
     api('POST', '/api/fonts/clear', function () { refresh(); });
   });
 
-  // Delete every saved t$ font record from the tablemap file (does not touch the
-  // pending glyph list). Destructive and not undoable here, so confirm first.
+  // Delete every saved t$ font record for this tablemap from the hiss database
+  // (does not touch the pending glyph list). Destructive, so confirm first.
   var deleteTmBtn = document.getElementById('deleteTm');
   deleteTmBtn.addEventListener('click', function () {
-    if (!confirm('Delete ALL font records (t$) from the tablemap file?\nA .tm.bak backup is written first.')) return;
+    if (!confirm('Delete ALL font records (t$) for this tablemap from the hiss database?')) return;
     api('POST', '/api/fonts/deletealltm', function (status, data) {
-      var n = (data && typeof data.removed === 'number') ? data.removed : 0;
-      var bak = (data && data.backup) ? (' — backup: ' + data.backup) : '';
-      statusEl.textContent = 'Deleted ' + n + ' font record(s) from the .tm' + bak;
+      if (data && data.ok) {
+        statusEl.textContent = 'Deleted ' + (data.removed || 0) + ' font record(s) from the database';
+        refresh();   // fonts changed -> refresh coverage + accounted markers
+      } else {
+        statusEl.textContent = (data && data.error) ? data.error : 'Delete failed';
+      }
     });
   });
 
@@ -574,6 +629,13 @@
   var gcHelp = document.getElementById('gcHelp');
   var helpOverlay = document.getElementById('helpOverlay');
   var helpClose = document.getElementById('helpClose');
+  var gc2A = document.getElementById('gc2A');
+  var gc2R = document.getElementById('gc2R');
+  var gc2G = document.getElementById('gc2G');
+  var gc2B = document.getElementById('gc2B');
+  var gc2Rad = document.getElementById('gc2Rad');
+  var gc2Swatch = document.getElementById('gc2Swatch');
+  var gc2Eyedrop = document.getElementById('gc2Eyedrop');
 
   for (var ggi = 0; ggi < 10; ggi++) {
     var go = document.createElement('option');
@@ -585,24 +647,49 @@
     gcSwatch.style.backgroundColor =
       'rgb(' + clamp255(gcR.value) + ',' + clamp255(gcG.value) + ',' + clamp255(gcB.value) + ')';
   }
-  [gcA, gcR, gcG, gcB].forEach(function (inp) { inp.addEventListener('input', gcSync); });
-  gcSync();
-
-  // Eyedropper: arm/disarm. While armed, clicking any Reference/Scrape thumbnail
-  // grabs that pixel's colour into the toolbar fields (see armPick in buildRow).
-  function setArmed(on) {
-    gcArmed = on;
-    gcEyedrop.classList.toggle('on', on);
-    document.body.classList.toggle('eyedropping', on);
-    if (!on) hideMag();
+  function gc2Sync() {
+    gc2Swatch.style.backgroundColor =
+      'rgb(' + clamp255(gc2R.value) + ',' + clamp255(gc2G.value) + ',' + clamp255(gc2B.value) + ')';
   }
-  gcEyedrop.addEventListener('click', function () { setArmed(!gcArmed); });
-  // Called by a thumbnail pick — fills the fields and disarms.
+  [gcA, gcR, gcG, gcB].forEach(function (inp) { inp.addEventListener('input', gcSync); });
+  [gc2A, gc2R, gc2G, gc2B].forEach(function (inp) { inp.addEventListener('input', gc2Sync); });
+  gcSync(); gc2Sync();
+
+  // Read one of the two global colour blocks (which = 1 or 2).
+  function colourVals(which) {
+    if (which === 2) {
+      return { a: clamp255(gc2A.value), r: clamp255(gc2R.value), g: clamp255(gc2G.value),
+               b: clamp255(gc2B.value), radius: parseInt(gc2Rad.value, 10) || 0 };
+    }
+    return { a: clamp255(gcA.value), r: clamp255(gcR.value), g: clamp255(gcG.value),
+             b: clamp255(gcB.value), radius: parseInt(gcRad.value, 10) || 0 };
+  }
+
+  // Eyedropper: gcArmTarget is 0 (off), 1 (Colour 1) or 2 (Colour 2). While armed,
+  // clicking any Reference/Scrape thumbnail fills that block (see armPick in buildRow).
+  var gcArmTarget = 0;
+  function setArmed(target) {
+    gcArmTarget = target;
+    gcArmed = (target !== 0);
+    gcEyedrop.classList.toggle('on', target === 1);
+    gc2Eyedrop.classList.toggle('on', target === 2);
+    document.body.classList.toggle('eyedropping', gcArmed);
+    if (!gcArmed) hideMag();
+  }
+  gcEyedrop.addEventListener('click', function () { setArmed(gcArmTarget === 1 ? 0 : 1); });
+  gc2Eyedrop.addEventListener('click', function () { setArmed(gcArmTarget === 2 ? 0 : 2); });
+  // Called by a thumbnail pick — fills the armed colour block and disarms.
   function gcSetPicked(a, r, g, b) {
-    gcA.value = clamp255(a); gcR.value = clamp255(r); gcG.value = clamp255(g); gcB.value = clamp255(b);
-    gcSync();
-    setArmed(false);
-    statusEl.textContent = 'Picked colour rgb(' + clamp255(r) + ',' + clamp255(g) + ',' + clamp255(b) + ') — set radius, then Apply';
+    if (gcArmTarget === 2) {
+      gc2A.value = clamp255(a); gc2R.value = clamp255(r); gc2G.value = clamp255(g); gc2B.value = clamp255(b);
+      gc2Sync();
+    } else {
+      gcA.value = clamp255(a); gcR.value = clamp255(r); gcG.value = clamp255(g); gcB.value = clamp255(b);
+      gcSync();
+    }
+    var n = gcArmTarget || 1;
+    setArmed(0);
+    statusEl.textContent = 'Picked Colour ' + n + ' rgb(' + clamp255(r) + ',' + clamp255(g) + ',' + clamp255(b) + ') — set radius';
   }
 
   // Selecting a group pre-fills the fields from a region using that transform.
