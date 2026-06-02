@@ -14,8 +14,15 @@
   var autoCapture = document.getElementById('autoCapture');
   var autoRemoveAccounted = document.getElementById('autoRemoveAccounted');
   var glyphbarSummary = document.getElementById('glyphbarSummary');
+  var glyphbarSummary2 = document.getElementById('glyphbarSummary2');
   var covRow1 = document.getElementById('covRow1');
   var covRow2 = document.getElementById('covRow2');
+  var cov2Row1 = document.getElementById('cov2Row1');
+  var cov2Row2 = document.getElementById('cov2Row2');
+  var covBlock2 = document.getElementById('covBlock2');
+  var numColoursSel = document.getElementById('numColours');
+  var numColours = 2;     // "Do you have multiple colors?" default = 2
+  var colourCov = {};     // group -> {1:{char:true}, 2:{char:true}} (persisted in localStorage)
 
   function api(method, url, cb) {
     var xhr = new XMLHttpRequest();
@@ -180,6 +187,25 @@
     armPick(imgR, 'regular');
     armPick(imgF, 'full');
 
+    // Per-row colour state (seeded from region r$), the chosen colour (1/2), and the
+    // font group this glyph belongs to (used for the colour-coverage footer).
+    var st = { a: clamp255(gl.a), r: clamp255(gl.r), g: clamp255(gl.g), b: clamp255(gl.b),
+               radius: parseInt(gl.radius, 10) || 0 };
+    var rowColour = 1;
+    var rowGroup = (typeof gl.group === 'number') ? gl.group : defaultGroup;
+
+    function reloadImages() {
+      imgVer++;
+      var bust = '&v=' + imgVer;
+      img.src = '/api/fonts/glyph/image?gid=' + gl.gid + bust;     // mask thumbnail
+      imgR.src = '/api/fonts/glyph/regular?gid=' + gl.gid + bust;  // reference thumbnail
+    }
+    function doRegen() {
+      var q = '/api/fonts/glyph/regen?gid=' + gl.gid
+        + '&a=' + st.a + '&r=' + st.r + '&g=' + st.g + '&b=' + st.b + '&radius=' + st.radius;
+      api('POST', q, function () { reloadImages(); });
+    }
+
     var tdC = document.createElement('td');
     tdC.className = 'c';
     var input = document.createElement('input');
@@ -201,12 +227,10 @@
           input.classList.remove('done');
           return;
         }
-        // Assigning a char creates the font AND rescans every glyph server-side, so
-        // any other now-recognized glyphs drop out too. Show the per-row spinners
-        // while that runs, then advance to the next unlabeled glyph when it finishes.
         input.classList.add('done');
         setScanning(true);
         api('POST', '/api/fonts/setchar?gid=' + gl.gid + '&ch=' + encodeURIComponent(val), function () {
+          markColour(rowGroup, rowColour, val);   // colour-coverage footer (C1 -> row 1, C2 -> row 2)
           refresh(function () { setScanning(false); focusFirstEmpty(); });
         });
       } else {
@@ -225,152 +249,11 @@
     tdC.appendChild(spin);
     tr.appendChild(tdC);
 
-    // Per-row colour state, seeded from the list payload (region r$ defaults).
-    var st = { a: clamp255(gl.a), r: clamp255(gl.r), g: clamp255(gl.g), b: clamp255(gl.b),
-               radius: parseInt(gl.radius, 10) || 0 };
-
-    var tdGrp = document.createElement('td');
-    tdGrp.className = 'grp';
-    var grpSel = document.createElement('select');
-    grpSel.tabIndex = -1;
-    for (var gi = 0; gi < 10; gi++) {
-      var o = document.createElement('option');
-      o.value = String(gi); o.textContent = 'Text' + gi;
-      grpSel.appendChild(o);
-    }
-    grpSel.value = String(typeof gl.group === 'number' ? gl.group : defaultGroup);
-    grpSel.addEventListener('change', function () {
-      defaultGroup = parseInt(grpSel.value, 10);
-      // Setting the transform re-pulls the colour/radius default from a region using
-      // it, regenerates the glyph, and returns the applied colour for the fields.
-      api('POST', '/api/fonts/glyph/group?gid=' + gl.gid + '&group=' + defaultGroup, function (status, data) {
-        if (data && data.ok) {
-          st.a = clamp255(data.a); st.r = clamp255(data.r); st.g = clamp255(data.g);
-          st.b = clamp255(data.b); st.radius = parseInt(data.radius, 10) || 0;
-          syncFields(); reloadImages();
-        }
-      });
-    });
-    tdGrp.appendChild(grpSel);
-    tr.appendChild(tdGrp);
-
-    // Apply this row's group + colour + radius to every row below it (regenerates each).
-    var tdAg = document.createElement('td');
-    tdAg.className = 'ag';
-    var applyBtn = document.createElement('button');
-    applyBtn.textContent = 'Apply Group Below';
-    applyBtn.tabIndex = -1;
-    applyBtn.addEventListener('click', function () {
-      defaultGroup = parseInt(grpSel.value, 10);
-      var q = '/api/fonts/applybelow?gid=' + gl.gid + '&group=' + defaultGroup
-        + '&a=' + st.a + '&r=' + st.r + '&g=' + st.g + '&b=' + st.b + '&radius=' + st.radius;
-      api('POST', q, function () { rebuildAll(); });
-    });
-    tdAg.appendChild(applyBtn);
-    tr.appendChild(tdAg);
-
     var tdR = document.createElement('td');
     tdR.className = 'r';
     tdR.textContent = gl.region + ' · Text' + gl.group;
     tdR.title = gl.hexmash || '';
     tr.appendChild(tdR);
-
-    // ---- Colour editor (a details row toggled open under this row) ----
-    var editTr = document.createElement('tr');
-    editTr.className = 'coloredit';
-    editTr.style.display = 'none';
-    var editTd = document.createElement('td');
-    editTd.colSpan = 8;
-    editTr.appendChild(editTd);
-    var panel = document.createElement('div');
-    panel.className = 'cedit';
-    editTd.appendChild(panel);
-
-    // Two enlarged, pixelated pick targets: the glyph reference and the whole scrape.
-    var pickWrap = document.createElement('div');
-    pickWrap.className = 'pickimgs';
-    function makePick(label, which) {
-      var box = document.createElement('div');
-      box.className = 'pickbox';
-      var lb = document.createElement('div'); lb.className = 'lbl'; lb.textContent = label;
-      var im = document.createElement('img');
-      im.className = 'pick';
-      im.src = '/api/fonts/glyph/' + which + '?gid=' + gl.gid;
-      im.addEventListener('mousemove', function (e) { showMag(im, e); });
-      im.addEventListener('mouseleave', hideMag);
-      im.addEventListener('click', function (e) {
-        var p = naturalXY(im, e);
-        api('GET', '/api/fonts/glyph/pixel?gid=' + gl.gid + '&img=' + which + '&px=' + p.x + '&py=' + p.y,
-          function (status, data) {
-            if (data && data.ok) {
-              st.a = clamp255(data.a); st.r = clamp255(data.r); st.g = clamp255(data.g); st.b = clamp255(data.b);
-              syncFields(); doRegen();
-            }
-          });
-      });
-      box.appendChild(lb); box.appendChild(im);
-      return { box: box, img: im };
-    }
-    var pkReg = makePick('Reference — click to pick', 'regular');
-    var pkFull = makePick('Scrape — click to pick', 'full');
-    pickWrap.appendChild(pkReg.box);
-    pickWrap.appendChild(pkFull.box);
-    panel.appendChild(pickWrap);
-
-    // A/R/G/B + radius fields and a live swatch.
-    var fields = document.createElement('div');
-    fields.className = 'fields';
-    var swatch = document.createElement('span');
-    swatch.className = 'swatch';
-    fields.appendChild(swatch);
-    var inputs = {};
-    function makeField(key, label, min, max) {
-      var l = document.createElement('label');
-      l.textContent = label;
-      var inp = document.createElement('input');
-      inp.type = 'number'; inp.className = 'cfield';
-      if (min !== null) inp.min = min;
-      if (max !== null) inp.max = max;
-      inp.tabIndex = -1;
-      function commitField() {
-        st.a = clamp255(inputs.a.value); st.r = clamp255(inputs.r.value);
-        st.g = clamp255(inputs.g.value); st.b = clamp255(inputs.b.value);
-        st.radius = parseInt(inputs.radius.value, 10) || 0;
-        doRegen();
-      }
-      inp.addEventListener('change', commitField);
-      inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); commitField(); } });
-      l.appendChild(inp);
-      inputs[key] = inp;
-      fields.appendChild(l);
-    }
-    makeField('a', 'A', 0, 255);
-    makeField('r', 'R', 0, 255);
-    makeField('g', 'G', 0, 255);
-    makeField('b', 'B', 0, 255);
-    makeField('radius', 'Radius', null, null);
-    panel.appendChild(fields);
-
-    function syncFields() {
-      inputs.a.value = st.a; inputs.r.value = st.r; inputs.g.value = st.g; inputs.b.value = st.b;
-      inputs.radius.value = st.radius;
-      swatch.style.backgroundColor = 'rgb(' + st.r + ',' + st.g + ',' + st.b + ')';
-    }
-    function reloadImages() {
-      imgVer++;
-      var bust = '&v=' + imgVer;
-      img.src = '/api/fonts/glyph/image?gid=' + gl.gid + bust;       // mask thumbnail
-      imgR.src = '/api/fonts/glyph/regular?gid=' + gl.gid + bust;    // reference thumbnail
-      pkReg.img.src = '/api/fonts/glyph/regular?gid=' + gl.gid + bust;
-      pkFull.img.src = '/api/fonts/glyph/full?gid=' + gl.gid + bust;
-      syncFields();
-    }
-    function doRegen() {
-      var q = '/api/fonts/glyph/regen?gid=' + gl.gid
-        + '&a=' + st.a + '&r=' + st.r + '&g=' + st.g + '&b=' + st.b + '&radius=' + st.radius;
-      api('POST', q, function () { reloadImages(); });
-    }
-    syncFields();
 
     function removeRow(refocus) {
       // Capture the previous input before removal so we can return focus to it.
@@ -383,7 +266,6 @@
       }
       api('POST', '/api/fonts/delete?gid=' + gl.gid, function () {
         if (tr.parentNode) tr.parentNode.removeChild(tr);
-        if (editTr.parentNode) editTr.parentNode.removeChild(editTr);
         delete rendered[gl.gid];
         retab();
         if (refocus) {
@@ -396,67 +278,95 @@
     var tdA = document.createElement('td');
     tdA.className = 'a';
     // Colour 1 / Colour 2 chooser: copy the chosen global colour into this row and
-    // regenerate. "Apply Group Below" then propagates whatever colour the row holds.
+    // regenerate. The chosen colour decides which footer coverage row this glyph
+    // counts toward when saved. F1/F2 trigger these (see the row keydown below).
     var col1Btn = document.createElement('button');
-    col1Btn.textContent = 'C1'; col1Btn.tabIndex = -1; col1Btn.className = 'colsel'; col1Btn.title = 'Use Colour 1';
+    col1Btn.textContent = 'C1'; col1Btn.tabIndex = -1; col1Btn.className = 'colsel'; col1Btn.title = 'Use Colour 1 (F1)';
     var col2Btn = document.createElement('button');
-    col2Btn.textContent = 'C2'; col2Btn.tabIndex = -1; col2Btn.className = 'colsel'; col2Btn.title = 'Use Colour 2';
+    col2Btn.textContent = 'C2'; col2Btn.tabIndex = -1; col2Btn.className = 'colsel'; col2Btn.title = 'Use Colour 2 (F2)';
     function chooseColour(which) {
+      rowColour = which;
       var c = colourVals(which);
       st.a = c.a; st.r = c.r; st.g = c.g; st.b = c.b; st.radius = c.radius;
       col1Btn.classList.toggle('on', which === 1);
       col2Btn.classList.toggle('on', which === 2);
-      syncFields();
       doRegen();
     }
     col1Btn.addEventListener('click', function () { chooseColour(1); });
     col2Btn.addEventListener('click', function () { chooseColour(2); });
     tdA.appendChild(col1Btn);
     tdA.appendChild(col2Btn);
-    // Toggle the colour editor open/closed for this row.
-    var colorBtn = document.createElement('button');
-    colorBtn.textContent = '🎨'; colorBtn.tabIndex = -1; colorBtn.title = 'Pick colour / radius';
-    colorBtn.className = 'colorbtn';
-    colorBtn.addEventListener('click', function () {
-      var open = editTr.style.display === 'none';
-      editTr.style.display = open ? '' : 'none';
-      colorBtn.classList.toggle('on', open);
-      if (open) syncFields();
-    });
-    tdA.appendChild(colorBtn);
     var del = document.createElement('button');
     del.textContent = '✕'; del.tabIndex = -1;
     del.addEventListener('click', function () { removeRow(false); });
     tdA.appendChild(del);
     tr.appendChild(tdA);
 
-    // Delete key anywhere in the row removes the whole row, then returns focus
-    // to the previous input field so labeling can continue without the mouse.
+    // Row keys: Delete removes the row; F1/F2 act as the C1/C2 buttons.
     tr.addEventListener('keydown', function (e) {
       if (e.key === 'Delete') { e.preventDefault(); removeRow(true); }
+      else if (e.key === 'F1') { e.preventDefault(); chooseColour(1); }
+      else if (e.key === 'F2') { e.preventDefault(); chooseColour(2); }
     });
 
     if (gl.accounted) tr.classList.add('accounted');
-    rendered[gl.gid] = { tr: tr, editTr: editTr, input: input,
+    rendered[gl.gid] = { tr: tr, input: input,
                          accounted: !!gl.accounted, region: gl.region, assigned: gl.assigned || '' };
     return tr;
   }
 
-  // Fixed bottom bar: the full target charset over two rows (digits/symbols, then
-  // letters), highlighting the glyphs not yet accounted for (no font in the current
-  // group). Coverage is fetched per the sticky working group (defaultGroup).
+  // ---- Footer coverage: which target characters still need a glyph ----
+  // With "2 colours", coverage is tracked PER COLOUR from the C1/C2 button used when
+  // each glyph is saved (persisted in localStorage, keyed by font group). With "1
+  // colour" it shows the database coverage (any font for the char) in a single block.
   var CHARSET_ROW1 = '0123456789._-';
   var CHARSET_ROW2 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-  function renderCoverage(coveredStr) {
-    if (!covRow1 || !covRow2) return;
-    var covered = {}, i;
-    for (i = 0; i < coveredStr.length; i++) covered[coveredStr.charAt(i)] = true;
+
+  function ensureCov(g) { g = String(g); if (!colourCov[g]) colourCov[g] = { 1: {}, 2: {} }; return colourCov[g]; }
+  function loadCovState() {
+    try {
+      var n = parseInt(localStorage.getItem('fcc_num'), 10);
+      if (n === 1 || n === 2) numColours = n;
+      var raw = localStorage.getItem('fcc');
+      if (raw) {
+        var obj = JSON.parse(raw);
+        for (var g in obj) {
+          if (!obj.hasOwnProperty(g)) continue;
+          var c = ensureCov(g);
+          var s1 = (obj[g] && obj[g]['1']) || '', s2 = (obj[g] && obj[g]['2']) || '';
+          for (var i = 0; i < s1.length; i++) c[1][s1.charAt(i)] = true;
+          for (var j = 0; j < s2.length; j++) c[2][s2.charAt(j)] = true;
+        }
+      }
+    } catch (e) {}
+  }
+  function saveCovState() {
+    try {
+      var obj = {};
+      for (var g in colourCov) {
+        if (!colourCov.hasOwnProperty(g)) continue;
+        obj[g] = { '1': Object.keys(colourCov[g][1]).join(''), '2': Object.keys(colourCov[g][2]).join('') };
+      }
+      localStorage.setItem('fcc', JSON.stringify(obj));
+      localStorage.setItem('fcc_num', String(numColours));
+    } catch (e) {}
+  }
+  // Record that character `ch` was saved under colour `colour` (1/2) in `group`.
+  function markColour(group, colour, ch) {
+    var c = ensureCov(group);
+    c[colour][ch] = true;
+    saveCovState();
+    updateCoverageFooter();
+  }
+
+  function fillCharsetRows(rowEl1, rowEl2, coveredObj, summaryEl, labelPrefix) {
     var missing = 0;
     function fill(rowEl, chars) {
+      if (!rowEl) return;
       rowEl.innerHTML = '';
       for (var k = 0; k < chars.length; k++) {
         var ch = chars.charAt(k);
-        var acc = !!covered[ch];
+        var acc = !!coveredObj[ch];
         var s = document.createElement('span');
         s.className = 'covchip' + (acc ? '' : ' unaccounted');
         s.textContent = ch;
@@ -464,15 +374,43 @@
         if (!acc) missing++;
       }
     }
-    fill(covRow1, CHARSET_ROW1);
-    fill(covRow2, CHARSET_ROW2);
-    if (glyphbarSummary) {
-      glyphbarSummary.textContent = 'Unaccounted for glyphs (Text' + defaultGroup + '): ' + missing + ' remaining';
+    fill(rowEl1, CHARSET_ROW1);
+    fill(rowEl2, CHARSET_ROW2);
+    if (summaryEl) summaryEl.textContent = labelPrefix + ': ' + missing + ' remaining';
+  }
+
+  function renderFooter(dbChars) {
+    var g = String(defaultGroup);
+    var c = ensureCov(g);
+    if (numColours === 2) {
+      if (covBlock2) covBlock2.style.display = '';
+      // First time (nothing tracked yet): seed Colour 1 from existing DB fonts.
+      if (dbChars && Object.keys(c[1]).length === 0 && Object.keys(c[2]).length === 0) {
+        for (var i = 0; i < dbChars.length; i++) c[1][dbChars.charAt(i)] = true;
+        saveCovState();
+      }
+      fillCharsetRows(covRow1, covRow2, c[1], glyphbarSummary, 'Colour 1 — unaccounted (Text' + defaultGroup + ')');
+      fillCharsetRows(cov2Row1, cov2Row2, c[2], glyphbarSummary2, 'Colour 2 — unaccounted (Text' + defaultGroup + ')');
+    } else {
+      if (covBlock2) covBlock2.style.display = 'none';
+      var covered = {};
+      if (dbChars) for (var j = 0; j < dbChars.length; j++) covered[dbChars.charAt(j)] = true;
+      fillCharsetRows(covRow1, covRow2, covered, glyphbarSummary, 'Unaccounted for glyphs (Text' + defaultGroup + ')');
     }
   }
   function updateCoverageFooter() {
     api('GET', '/api/fonts/coverage?group=' + defaultGroup, function (status, data) {
-      renderCoverage((data && data.ok && data.chars) ? data.chars : '');
+      renderFooter((data && data.ok && data.chars) ? data.chars : '');
+    });
+  }
+
+  loadCovState();
+  if (numColoursSel) {
+    numColoursSel.value = String(numColours);
+    numColoursSel.addEventListener('change', function () {
+      numColours = (parseInt(numColoursSel.value, 10) === 1) ? 1 : 2;
+      saveCovState();
+      updateCoverageFooter();
     });
   }
 
@@ -518,7 +456,6 @@
         if (!rendered[gl.gid]) {
           var newTr = buildRow(gl);
           tbody.appendChild(newTr);
-          tbody.appendChild(rendered[gl.gid].editTr);   // details row follows its glyph row
         } else {
           // Keep an existing row's accounted state + marker in sync with the server.
           var rec = rendered[gl.gid];
@@ -529,6 +466,8 @@
         }
         if (rows[j].assigned) labeled++;
       }
+      // The footer tracks coverage for the group the pending glyphs belong to.
+      if (rows.length && typeof rows[0].group === 'number') defaultGroup = rows[0].group;
       retab();
       emptyHint.style.display = rows.length ? 'none' : '';
       statusEl.textContent = rows.length + ' glyph(s), ' + labeled + ' labeled';

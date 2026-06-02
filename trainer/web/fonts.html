@@ -48,7 +48,7 @@
   <main>
     <table id="glyphs">
       <thead>
-        <tr><th class="g">Glyph</th><th class="gr">Reference</th><th class="gf">Scrape</th><th class="c">Char</th><th class="grp">Group</th><th class="ag"></th><th class="r">From</th><th class="a"></th></tr>
+        <tr><th class="g">Glyph</th><th class="gr">Reference</th><th class="gf">Scrape</th><th class="c">Char</th><th class="r">From</th><th class="a"></th></tr>
       </thead>
       <tbody id="tbody"></tbody>
     </table>
@@ -62,10 +62,25 @@
   <!-- Fixed bottom bar: full target charset, highlighting glyphs not yet accounted
        for (no font in the current group). Two rows: digits/symbols, then letters. -->
   <div id="glyphbar" class="statusbar">
-    <span id="glyphbarSummary" class="gbsummary">Unaccounted for glyphs</span>
-    <div class="gbcov">
-      <div id="covRow1" class="covrow"></div>
-      <div id="covRow2" class="covrow"></div>
+    <div class="gbmulti">Do you have multiple colors?
+      <select id="numColours" tabindex="-1">
+        <option value="1">1</option>
+        <option value="2" selected>2</option>
+      </select>
+    </div>
+    <div class="gbblock" id="covBlock1">
+      <span id="glyphbarSummary" class="gbsummary">Colour 1 — unaccounted</span>
+      <div class="gbcov">
+        <div id="covRow1" class="covrow"></div>
+        <div id="covRow2" class="covrow"></div>
+      </div>
+    </div>
+    <div class="gbblock" id="covBlock2">
+      <span id="glyphbarSummary2" class="gbsummary">Colour 2 — unaccounted</span>
+      <div class="gbcov">
+        <div id="cov2Row1" class="covrow"></div>
+        <div id="cov2Row2" class="covrow"></div>
+      </div>
     </div>
   </div>
 

@@ -46,13 +46,16 @@ main { flex: 1; overflow: auto; padding: 8px 12px; }
    last child after the scrollable <main>. */
 .statusbar {
   flex: 0 0 auto;
-  display: flex; align-items: center; gap: 12px;
+  display: flex; flex-direction: column; gap: 4px;
   padding: 6px 12px;
   background: #2b2f36; color: #fff;
   border-top: 1px solid #1c1f24;
-  max-height: 86px; overflow: auto;
+  max-height: 200px; overflow: auto;
 }
-.statusbar .gbsummary { font-weight: 600; white-space: nowrap; }
+.statusbar .gbmulti { font-weight: 600; }
+.statusbar .gbmulti select { font-size: 13px; padding: 1px 4px; margin-left: 4px; }
+.statusbar .gbblock { display: flex; align-items: flex-start; gap: 10px; }
+.statusbar .gbsummary { font-weight: 600; white-space: nowrap; min-width: 240px; }
 .statusbar .gbcov { display: flex; flex-direction: column; gap: 3px; }
 .statusbar .covrow { display: flex; flex-wrap: wrap; gap: 3px; }
 .statusbar .covchip {
