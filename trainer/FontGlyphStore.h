@@ -38,6 +38,12 @@ public:
 	bool GetRegularImage(int gid, std::vector<unsigned char> *out);   // glyph actual-pixels PNG
 	bool GetFullImage(int gid, std::vector<unsigned char> *out);      // entire region scrape PNG
 
+	// Copy the glyph's REFERENCE sub-crop ([xb..xe,yb..ye] of the source region, in
+	// original colours) as a top-down 32bpp BGRA buffer, plus its colour/radius/group
+	// and source region name. Used to OCR a single glyph for the CHAR autopopulate.
+	bool GetReferenceBgra(int gid, std::vector<unsigned char> *out, int *w, int *h,
+		COLORREF *color, int *radius, int *group, CStringA *region);
+
 	// Read the source ARGB at a natural PNG pixel of the glyph's "regular" (glyph
 	// sub-crop, 6x) or "full" (whole region, 3x) image. Returns false if out of range.
 	bool GetPixel(int gid, const CStringA &img, int px, int py,

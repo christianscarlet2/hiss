@@ -41,6 +41,29 @@ button.danger:hover { background: #b93b30; }
 main { flex: 1; overflow: auto; padding: 8px 12px; }
 .hint { max-width: 760px; line-height: 1.4; color: #6b7280; }
 
+/* Fixed bottom bar: glyph accounting (which still need a character, which already
+   have a font). Pinned to the bottom because body is a flex column and this is the
+   last child after the scrollable <main>. */
+.statusbar {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 12px;
+  padding: 6px 12px;
+  background: #2b2f36; color: #fff;
+  border-top: 1px solid #1c1f24;
+  max-height: 86px; overflow: auto;
+}
+.statusbar .gbsummary { font-weight: 600; white-space: nowrap; }
+.statusbar .gbchips { display: flex; flex-wrap: wrap; gap: 4px; }
+.statusbar .chip {
+  font-size: 11px; padding: 1px 7px; border-radius: 10px;
+  background: #8a929c; color: #fff; white-space: nowrap;
+}
+.statusbar .chip.unaccounted { background: #d98e2b; }   /* still needs a character */
+.statusbar .chip.accounted   { background: #2f8f4f; }   /* already has a font */
+
+/* Mark table rows whose glyph already has a font. */
+tbody tr.accounted td.r::after { content: " · already accounted"; color: #2f8f4f; }
+
 table { border-collapse: collapse; width: 100%; }
 thead th {
   text-align: left;

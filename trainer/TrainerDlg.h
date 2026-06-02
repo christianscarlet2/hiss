@@ -45,7 +45,9 @@ protected:
 	afx_msg void OnBnClickedDecimalSplit();
 	afx_msg void OnBnClickedConnect();
 	afx_msg LRESULT OnSetCapture(WPARAM wParam, LPARAM lParam);
+	afx_msg LRESULT OnOcrGlyph(WPARAM wParam, LPARAM lParam);
 	afx_msg void OnBnClickedOpenTable();
+	afx_msg void OnBnClickedCreateFonts();
 	afx_msg void OnBnClickedClearTraining();
 	afx_msg void OnTimer(UINT_PTR nIDEvent);
 	afx_msg void OnMouseMove(UINT nFlags, CPoint point);

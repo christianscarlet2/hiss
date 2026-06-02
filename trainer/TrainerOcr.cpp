@@ -411,6 +411,10 @@ bool CTrainerOcr::RunDecimalSplit(const Mat &crop_bgr, int threshold, bool is_ba
 	l.Remove('.'); r.Remove('.'); l.Trim(); r.Trim();
 	// A balance field's trailing "BB" unit lands on the right half; strip it.
 	if (is_balance) r = StripBalanceUnitSuffix(r);
+	// If either half came back empty the split is incomplete -- never emit a
+	// one-sided "X." (which drops the digits after the decimal). Fall back to
+	// whole-image OCR instead so the saved text keeps both sides of the decimal.
+	if (l.IsEmpty() || r.IsEmpty()) return false;
 	// The decimal is always the joint between the two halves' OCR results.
 	CString combined = l + "." + r;
 	_did_split = true; _split_left = l; _split_right = r;

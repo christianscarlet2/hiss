@@ -5,6 +5,7 @@
   var saveAllBtn = document.getElementById('saveAll');
   var clearAllBtn = document.getElementById('clearAll');
   var dedupBtn = document.getElementById('dedup');
+  var autoDedup = document.getElementById('autoDedup');
   var textGroup = document.getElementById('textGroup');
 
   // id -> { tr, input, saved, order }  (order = capture order, for tab index)
@@ -167,18 +168,41 @@
     });
   }
 
+  // Remove every saved row from the working list (the .png/.gt.txt files are kept;
+  // this just drops them from the store so the table only shows unsaved work).
+  function clearSavedRows() {
+    var ids = Object.keys(rendered);
+    var pending = 0;
+    for (var i = 0; i < ids.length; i++) {
+      if (!rendered[ids[i]].saved) continue;
+      pending++;
+      (function (id) {
+        api('POST', '/api/sample/delete?id=' + id, function () {
+          pending--;
+          if (pending === 0) refresh();
+        });
+      })(ids[i]);
+    }
+    if (pending === 0) refresh();
+  }
+
   saveAllBtn.addEventListener('click', function () {
     var ids = Object.keys(rendered);
+    var pending = 0;
+    function maybeClear() { if (pending === 0) clearSavedRows(); }   // clear once all saves resolve
     for (var i = 0; i < ids.length; i++) {
       var rec = rendered[ids[i]];
       if (rec.saved) continue;
+      pending++;
       (function (rec, id) {
         saveRow(id, rec.input.value, function (ok) {
           if (ok) { rec.saved = true; rec.tr.classList.add('saved'); }
-          applyHideSaved();
+          pending--;
+          maybeClear();
         });
       })(rec, ids[i]);
     }
+    maybeClear();   // nothing was unsaved -> still clear already-saved rows
   });
 
   clearAllBtn.addEventListener('click', function () {
@@ -196,13 +220,6 @@
   });
 
   hideSaved.addEventListener('change', applyHideSaved);
-
-  var createFontsBtn = document.getElementById('createFonts');
-  if (createFontsBtn) {
-    createFontsBtn.addEventListener('click', function () {
-      api('POST', '/api/fonts/open', function () {});
-    });
-  }
 
   // ---- Transform dropdown: AutoOcr0/1 (Tesseract) + Text0..Text9 (fonts) -----
   function buildGroupOptions(counts) {
@@ -295,5 +312,13 @@
   loadFontInfo();
   pollCapture();
   refresh();
-  setInterval(function () { refresh(); pollCapture(); }, 1000);
+  // Each poll: optionally auto-remove duplicate samples first, then re-sync.
+  setInterval(function () {
+    if (autoDedup && autoDedup.checked) {
+      api('POST', '/api/samples/dedup', function () { refresh(); pollCapture(); });
+    } else {
+      refresh();
+      pollCapture();
+    }
+  }, 1000);
 })();

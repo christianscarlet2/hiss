@@ -236,7 +236,9 @@ BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_BN_CLICKED(IDC_USE_DECIMAL_SPLIT, &CTrainerDlg::OnBnClickedDecimalSplit)
 	ON_BN_CLICKED(IDC_CONNECT, &CTrainerDlg::OnBnClickedConnect)
 	ON_MESSAGE(WM_TRAINER_SET_CAPTURE, &CTrainerDlg::OnSetCapture)
+	ON_MESSAGE(WM_TRAINER_OCR_GLYPH, &CTrainerDlg::OnOcrGlyph)
 	ON_BN_CLICKED(IDC_OPEN_TABLE, &CTrainerDlg::OnBnClickedOpenTable)
+	ON_BN_CLICKED(IDC_CREATE_FONTS, &CTrainerDlg::OnBnClickedCreateFonts)
 	ON_BN_CLICKED(IDC_CLEAR_TRAINING, &CTrainerDlg::OnBnClickedClearTraining)
 	ON_WM_TIMER()
 	ON_WM_MOUSEMOVE()
@@ -700,6 +702,45 @@ LRESULT CTrainerDlg::OnSetCapture(WPARAM wParam, LPARAM)
 	return (LRESULT)SetCapture((int)wParam);
 }
 
+// OCR a single font glyph's REFERENCE sub-crop (not the whole scrape) with the
+// transform the fonts editor selected, to autopopulate its CHAR field. Runs on
+// the UI thread (Tesseract isn't thread-safe). wParam=gid, lParam=(mode<<8)|index.
+// Returns the recognized character code, or 0 if nothing was recognized.
+LRESULT CTrainerDlg::OnOcrGlyph(WPARAM wParam, LPARAM lParam)
+{
+	if (p_font_glyph_store == NULL) return 0;
+	int gid = (int)wParam;
+	int mode = ((int)lParam >> 8) & 0xFF;
+	int index = (int)lParam & 0xFF;
+
+	std::vector<BYTE> bgra; int w = 0, h = 0; COLORREF color = 0; int radius = 0, group = 0;
+	CStringA region;
+	if (!p_font_glyph_store->GetReferenceBgra(gid, &bgra, &w, &h, &color, &radius, &group, &region)
+		|| w <= 0 || h <= 0) {
+		return 0;
+	}
+
+	CString text;
+	if (mode == TRAINER_MODE_TEXT) {
+		// Font-hash recognition against that group's existing fonts.
+		if (p_trainer_fonts != NULL)
+			text = p_trainer_fonts->RecognizeBgra(&bgra[0], w, h, color, radius, index);
+	} else {
+		// Tesseract on the original-colour glyph crop, forced to single-character mode.
+		Mat m((int)h, (int)w, CV_8UC4, &bgra[0]);
+		Mat bgr; cvtColor(m, bgr, COLOR_BGRA2BGR);
+		STrainerOcrSettings s = ReadSettings();
+		s.use_decimal_split = false;
+		s.no_preprocess = false;
+		s.page_seg_mode = (int)PSM_SINGLE_CHAR;
+		Mat preview; int conf = 0;
+		_ocr.Run(bgr, s, CString(region), &preview, &text, &conf);
+	}
+	text.Trim();
+	if (text.IsEmpty()) return 0;
+	return (LRESULT)(unsigned char)text[0];
+}
+
 void CTrainerDlg::OnBnClickedOpenTable()
 {
 	if (_server == NULL || _server->port() == 0) {
@@ -708,12 +749,18 @@ void CTrainerDlg::OnBnClickedOpenTable()
 	}
 	if (_web == NULL) {
 		_web = new CTrainerWebWindow();
-		_web->Create(this, _server->port());
+		_web->Create(this, _server->port(), "/trainer/", "Sample Gen Tool");
 	} else {
 		_web->ShowWindow(SW_SHOWNORMAL);
 		_web->SetForegroundWindow();
 		_web->NavigateToTrainer(_server->port());
 	}
+}
+
+// Open the Create Fonts editor (moved here from the Sample Gen web window).
+void CTrainerDlg::OnBnClickedCreateFonts()
+{
+	OpenFontsWindow();
 }
 
 void CTrainerDlg::OnBnClickedClearTraining()
@@ -907,7 +954,7 @@ void CTrainerDlg::OpenFontsWindow()
 	}
 	if (_fonts_web == NULL) {
 		_fonts_web = new CTrainerWebWindow();
-		_fonts_web->Create(this, _server->port(), "/trainer/fonts.html", "Trainer \xe2\x80\x94 Create Fonts");
+		_fonts_web->Create(this, _server->port(), "/trainer/fonts.html", "Font Creation Tool");
 	} else {
 		_fonts_web->ShowWindow(SW_SHOWNORMAL);
 		_fonts_web->SetForegroundWindow();

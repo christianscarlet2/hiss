@@ -3,13 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Trainer — Create Fonts</title>
+  <title>Font Creation Tool</title>
   <link rel="stylesheet" href="/trainer/fonts.css">
 </head>
 <body>
   <header class="topbar">
-    <div class="title">Create Fonts</div>
+    <div class="title">Font Creation Tool</div>
     <button id="capture">Capture scrapes</button>
+    <label class="muted"><input type="checkbox" id="autoCapture"> Auto capture</label>
+    <label class="muted"><input type="checkbox" id="autoRemoveAccounted"> Auto-remove accounted</label>
+    <label class="muted">Transform <select id="fontTransform" tabindex="-1"></select></label>
     <span class="spacer"></span>
     <span id="status" class="muted">Loading…</span>
     <button id="undo" tabindex="-1">Undo (Ctrl+Z)</button>
@@ -43,6 +46,12 @@
       Type the character each glyph represents, then <b>Save All Edited</b> to write them into the tablemap.
     </p>
   </main>
+
+  <!-- Fixed bottom bar: which glyphs still need a character vs. already accounted for -->
+  <div id="glyphbar" class="statusbar">
+    <span id="glyphbarSummary" class="gbsummary">No glyphs.</span>
+    <div id="glyphbarChips" class="gbchips"></div>
+  </div>
 
   <!-- Help dialog for the global per-group colour picker -->
   <div id="helpOverlay" class="overlay" style="display:none">

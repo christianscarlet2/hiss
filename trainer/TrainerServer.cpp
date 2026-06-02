@@ -358,6 +358,30 @@ void CTrainerServer::HandleClient(SOCKET client)
 		send(client, response.GetString(), response.GetLength(), 0);
 		return;
 	}
+	// OCR a glyph's REFERENCE image with the chosen transform (AutoOcrN / TextN) to
+	// suggest its character. The UI thread does the recognition (Tesseract).
+	if (path.CompareNoCase("/api/fonts/glyph/ocr") == 0) {
+		int gid = atoi(QueryValue(query, "gid"));
+		CStringA t = UrlDecode(QueryValue(query, "t"));
+		int mode = TRAINER_MODE_AUTOOCR, index = 0;
+		if (t.Left(4).CompareNoCase("Text") == 0) { mode = TRAINER_MODE_TEXT; index = atoi(t.Mid(4)); }
+		else if (t.Left(7).CompareNoCase("AutoOcr") == 0) { mode = TRAINER_MODE_AUTOOCR; index = atoi(t.Mid(7)); }
+		LRESULT code = (g_trainer_main_hwnd != NULL && gid > 0)
+			? ::SendMessage(g_trainer_main_hwnd, WM_TRAINER_OCR_GLYPH, (WPARAM)gid,
+				(LPARAM)((mode << 8) | (index & 0xFF))) : 0;
+		// The char comes from the OCR whitelist (alphanumeric / . / _); escape the two
+		// JSON-special bytes just in case.
+		CStringA ch;
+		if (code > 0) {
+			char c = (char)code;
+			if (c == '"' || c == '\\') ch.Format("\\%c", c);
+			else ch.Format("%c", c);
+		}
+		CStringA body; body.Format("{\"ok\":true,\"ch\":\"%s\"}", ch.GetString());
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
 	// Read the source ARGB under a pixel of a glyph's "regular" or "full" image
 	// (used by the colour eyedropper). px/py are natural-PNG pixel coordinates.
 	if (path.CompareNoCase("/api/fonts/glyph/pixel") == 0) {

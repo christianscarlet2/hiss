@@ -9,6 +9,12 @@
   var rendered = {};      // gid -> { tr, input }
   var defaultGroup = 0;   // sticky group new rows default to
   var gcArmed = false;    // global eyedropper armed? (pick from any thumbnail)
+  var fontTransform = document.getElementById('fontTransform');
+  var currentTransform = 'AutoOcr0';   // transform used to auto-suggest the CHAR
+  var autoCapture = document.getElementById('autoCapture');
+  var autoRemoveAccounted = document.getElementById('autoRemoveAccounted');
+  var glyphbarSummary = document.getElementById('glyphbarSummary');
+  var glyphbarChips = document.getElementById('glyphbarChips');
 
   function api(method, url, cb) {
     var xhr = new XMLHttpRequest();
@@ -21,6 +27,16 @@
       }
     };
     xhr.send();
+  }
+
+  // Ask the server to OCR this glyph's REFERENCE image (the glyph sub-crop, not the
+  // whole scrape) with the current transform and pre-fill the CHAR input. Only fills
+  // an empty field, so it never clobbers a value the user already typed.
+  function ocrFill(gid, input) {
+    api('GET', '/api/fonts/glyph/ocr?gid=' + gid + '&t=' + encodeURIComponent(currentTransform),
+      function (status, data) {
+        if (data && data.ok && data.ch && !input.value) input.value = data.ch;
+      });
   }
 
   function retab() {
@@ -152,9 +168,19 @@
     input.maxLength = 1;
     input.value = gl.assigned || '';
     if (input.value) input.classList.add('done');
+    else ocrFill(gl.gid, input);   // suggest the character via the chosen transform
     function commit() {
       var val = input.value;
       if (val) {
+        // If this glyph already has a font, confirm before (re)creating it. On "No",
+        // clear the typed character WITHOUT saving or removing the row.
+        var rec = rendered[gl.gid];
+        if (rec && rec.accounted &&
+            !confirm('This glyph has already been accounted for.\nContinue and (re)create the font?')) {
+          input.value = '';
+          input.classList.remove('done');
+          return;
+        }
         // Assigning a char creates the font AND rescans every glyph server-side, so
         // any other now-recognized glyphs drop out too. Show the per-row spinners
         // while that runs, then advance to the next unlabeled glyph when it finishes.
@@ -372,7 +398,9 @@
       if (e.key === 'Delete') { e.preventDefault(); removeRow(true); }
     });
 
-    rendered[gl.gid] = { tr: tr, editTr: editTr, input: input };
+    if (gl.accounted) tr.classList.add('accounted');
+    rendered[gl.gid] = { tr: tr, editTr: editTr, input: input,
+                         accounted: !!gl.accounted, region: gl.region, assigned: gl.assigned || '' };
     return tr;
   }
 
@@ -576,6 +604,28 @@
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && helpOverlay.style.display !== 'none') showHelp(false);
   });
+
+  // ---- Transform dropdown: drives the CHAR auto-suggest (AutoOcr0/1 + Text0..9) --
+  if (fontTransform) {
+    var addOpt = function (v) {
+      var o = document.createElement('option'); o.value = v; o.textContent = v; fontTransform.appendChild(o);
+    };
+    addOpt('AutoOcr0'); addOpt('AutoOcr1');
+    for (var ti = 0; ti < 10; ti++) addOpt('Text' + ti);
+    fontTransform.value = currentTransform;
+    fontTransform.addEventListener('change', function () {
+      currentTransform = fontTransform.value;
+      // Re-suggest the character for every still-unlabeled row using the new transform.
+      for (var id in rendered) {
+        if (!rendered.hasOwnProperty(id)) continue;
+        var rec = rendered[id];
+        if (rec.input && !rec.input.classList.contains('done')) {
+          rec.input.value = '';
+          ocrFill(parseInt(id, 10), rec.input);
+        }
+      }
+    });
+  }
 
   refresh();
   setInterval(refresh, 1500);

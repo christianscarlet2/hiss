@@ -3,18 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tesseract Trainer — Samples</title>
+  <title>Sample Gen Tool</title>
   <link rel="stylesheet" href="/trainer/trainer.css">
 </head>
 <body>
   <header class="topbar">
-    <div class="title">Training Samples</div>
+    <div class="title">Sample Gen Tool</div>
     <button id="startStop" tabindex="-1">Start</button>
     <label class="muted">Transform <select id="textGroup" tabindex="-1"></select></label>
     <label class="muted"><input type="checkbox" id="hideSaved"> Hide saved</label>
+    <label class="muted"><input type="checkbox" id="autoDedup"> Auto delete dupes</label>
     <span class="spacer"></span>
     <span id="status" class="muted">Loading…</span>
-    <button id="createFonts" tabindex="-1">Create Fonts…</button>
     <button id="dedup" class="warn" tabindex="-1">Delete Duplicates</button>
     <button id="clearAll" class="danger" tabindex="-1">Clear All</button>
     <button id="saveAll" tabindex="-1">Save All</button>

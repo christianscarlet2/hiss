@@ -75,9 +75,12 @@ CStringA CFontGlyphStore::ListJson()
 	for (size_t i = 0; i < _entries.size(); ++i) {
 		const SFontGlyphEntry &e = _entries[i];
 		if (i > 0) json += ",";
+		// "accounted" = a font for this glyph shape already exists in its group.
+		bool accounted = (p_trainer_fonts != NULL
+			&& p_trainer_fonts->HasHexmash(e.group, e.glyph.hexmash));
 		CStringA entry;
 		entry.Format("{\"gid\":%d,\"region\":\"%s\",\"group\":%d,\"hexmash\":\"%s\",\"assigned\":\"%s\","
-			"\"a\":%d,\"r\":%d,\"g\":%d,\"b\":%d,\"radius\":%d}",
+			"\"a\":%d,\"r\":%d,\"g\":%d,\"b\":%d,\"radius\":%d,\"accounted\":%s}",
 			e.gid,
 			JsonEscapeA(e.region).GetString(),
 			e.group,
@@ -87,7 +90,8 @@ CStringA CFontGlyphStore::ListJson()
 			(int)GetRValue(e.color),
 			(int)GetGValue(e.color),
 			(int)GetBValue(e.color),
-			e.radius);
+			e.radius,
+			accounted ? "true" : "false");
 		json += entry;
 	}
 	LeaveCriticalSection(&_cs);
@@ -126,6 +130,48 @@ bool CFontGlyphStore::GetFullImage(int gid, std::vector<unsigned char> *out)
 	}
 	LeaveCriticalSection(&_cs);
 	return found;
+}
+
+bool CFontGlyphStore::GetReferenceBgra(int gid, std::vector<unsigned char> *out,
+	int *w, int *h, COLORREF *color, int *radius, int *group, CStringA *region)
+{
+	bool ok = false;
+	EnterCriticalSection(&_cs);
+	for (size_t i = 0; i < _entries.size(); ++i) {
+		if (_entries[i].gid != gid) continue;
+		const SFontGlyphEntry &e = _entries[i];
+		int xb = e.glyph.xb, yb = e.glyph.yb, xe = e.glyph.xe, ye = e.glyph.ye;
+		if (xb < 0) xb = 0;
+		if (yb < 0) yb = 0;
+		if (xe >= e.src_w) xe = e.src_w - 1;
+		if (ye >= e.src_h) ye = e.src_h - 1;
+		if (xe >= xb && ye >= yb && !e.src_bgra.empty()) {
+			int cw = xe - xb + 1, ch = ye - yb + 1;
+			out->assign((size_t)cw * ch * 4, 0);
+			for (int y = 0; y < ch; ++y) {
+				for (int x = 0; x < cw; ++x) {
+					size_t s = (size_t)((yb + y) * e.src_w + (xb + x)) * 4;
+					size_t d = (size_t)(y * cw + x) * 4;
+					if (s + 3 < e.src_bgra.size()) {
+						(*out)[d + 0] = e.src_bgra[s + 0];
+						(*out)[d + 1] = e.src_bgra[s + 1];
+						(*out)[d + 2] = e.src_bgra[s + 2];
+						(*out)[d + 3] = e.src_bgra[s + 3];
+					}
+				}
+			}
+			if (w) *w = cw;
+			if (h) *h = ch;
+			if (color) *color = e.color;
+			if (radius) *radius = e.radius;
+			if (group) *group = e.group;
+			if (region) *region = e.region;
+			ok = true;
+		}
+		break;
+	}
+	LeaveCriticalSection(&_cs);
+	return ok;
 }
 
 // Assemble a COLORREF from A/R/G/B the way the colour cube reads it back
