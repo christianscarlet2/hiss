@@ -229,6 +229,7 @@ void CTrainerDlg::DoDataExchange(CDataExchange *pDX)
 BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_BN_CLICKED(IDC_LOAD_TM, &CTrainerDlg::OnBnClickedLoadTm)
 	ON_BN_CLICKED(IDC_SELECT_MODEL, &CTrainerDlg::OnBnClickedSelectModel)
+	ON_CBN_SELCHANGE(IDC_TRANSFORM, &CTrainerDlg::OnSelchangeTransform)
 	ON_BN_CLICKED(IDC_USE_DECIMAL_SPLIT, &CTrainerDlg::OnBnClickedDecimalSplit)
 	ON_BN_CLICKED(IDC_CONNECT, &CTrainerDlg::OnBnClickedConnect)
 	ON_BN_CLICKED(IDC_STARTSTOP, &CTrainerDlg::OnBnClickedStartStop)
@@ -313,6 +314,7 @@ BOOL CTrainerDlg::OnInitDialog()
 	// Restore the OCR settings the user had on last exit (overrides defaults).
 	LoadOcrSettings();
 	UpdateDecimalSplitControls();   // sync the split boxes to the restored checkbox
+	ApplyTransformSelection(false); // sync the engine to the restored Transform combo
 
 	CString status;
 	status.Format("Ready. OCR model: %s. Server: %s.\nLoad a tablemap, then Connect and click a window.",
@@ -428,6 +430,34 @@ void CTrainerDlg::OnBnClickedSelectModel()
 	SetStatus(status);
 
 	UpdatePreview();   // re-run the selected region through the new model
+}
+
+// Push the desktop "Transform" combo into the shared engine selection so picking
+// AutoOcr0/AutoOcr1 actually takes effect (it drives CaptureTick + the web UI's
+// "current transform"). This combo only offers the Tesseract transforms; the
+// Text0..Text9 font engines are still selected from the web UI.
+void CTrainerDlg::ApplyTransformSelection(bool recognize)
+{
+	if (p_sample_store == NULL) {
+		return;
+	}
+	int sel = m_transform.GetCurSel();
+	CString tr;
+	if (sel >= 0) m_transform.GetLBText(sel, tr);
+	int index = 0;
+	if (tr.Left(7).CompareNoCase("AutoOcr") == 0) index = atoi(CStringA(tr.Mid(7)));
+	p_sample_store->SetTransform(TRAINER_MODE_AUTOOCR, index);
+	// Mirror the web UI's /api/transform: re-recognize the existing rows with the
+	// newly selected transform. Skipped at startup, when there are no samples yet.
+	if (recognize) {
+		SendMessage(WM_TRAINER_RECOGNIZE_ALL, 0, 0);
+	}
+	UpdatePreview();
+}
+
+void CTrainerDlg::OnSelchangeTransform()
+{
+	ApplyTransformSelection(true);
 }
 
 // Enable the split-result boxes only while decimal splitting is on; clear them

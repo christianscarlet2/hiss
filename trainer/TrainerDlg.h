@@ -40,6 +40,7 @@ protected:
 	virtual BOOL OnInitDialog();
 	afx_msg void OnBnClickedLoadTm();
 	afx_msg void OnBnClickedSelectModel();
+	afx_msg void OnSelchangeTransform();
 	afx_msg void OnBnClickedDecimalSplit();
 	afx_msg void OnBnClickedConnect();
 	afx_msg void OnBnClickedStartStop();
@@ -65,6 +66,9 @@ private:
 	void SaveOcrSettings();
 	void LoadOcrSettings();
 	STrainerOcrSettings ReadSettings();
+	// Push the desktop "Transform" combo (AutoOcr0/AutoOcr1) into the shared
+	// engine selection. Pass recognize=true to also re-run all table rows.
+	void ApplyTransformSelection(bool recognize);
 	void CaptureTick();
 	void UpdatePreview();
 	void UpdateDecimalSplitControls();   // enable/disable + clear the split-result boxes
