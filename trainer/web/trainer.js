@@ -107,12 +107,31 @@
     }
     btnSave.addEventListener('click', doSave);
 
-    btnDel.addEventListener('click', function () {
+    function deleteRow(refocus) {
+      // Remember the previous row's input so focus can continue after removal.
+      var prevInput = null;
+      if (refocus) {
+        var ins = tbody.querySelectorAll('input.label');
+        for (var k = 0; k < ins.length; k++) {
+          if (ins[k] === input) { if (k > 0) prevInput = ins[k - 1]; break; }
+        }
+      }
       api('POST', '/api/sample/delete?id=' + s.id, function () {
         if (tr.parentNode) tr.parentNode.removeChild(tr);
         delete rendered[s.id];
         retab();
+        if (refocus) {
+          var target = (prevInput && tbody.contains(prevInput)) ? prevInput : tbody.querySelector('input.label');
+          if (target) { target.focus(); target.select(); }
+        }
       });
+    }
+    btnDel.addEventListener('click', function () { deleteRow(false); });
+
+    // Delete key anywhere in the row removes it (then returns focus to the previous
+    // row's input so you can keep clearing bad samples without the mouse).
+    tr.addEventListener('keydown', function (e) {
+      if (e.key === 'Delete') { e.preventDefault(); deleteRow(true); }
     });
 
     btnUnder.addEventListener('click', function () {
@@ -209,6 +228,18 @@
     if (!confirm('Remove ALL samples from the list? (saved files are kept)')) return;
     api('POST', '/api/samples/clear', function () { refresh(); });
   });
+
+  var clearTrainingBtn = document.getElementById('clearTraining');
+  if (clearTrainingBtn) {
+    clearTrainingBtn.addEventListener('click', function () {
+      if (!confirm('Delete ALL files in the training\\ folder?')) return;
+      api('POST', '/api/training/clear', function (status, data) {
+        if (data && typeof data.deleted === 'number') {
+          statusEl.textContent = 'Deleted ' + data.deleted + ' training file(s)';
+        }
+      });
+    });
+  }
 
   dedupBtn.addEventListener('click', function () {
     api('POST', '/api/samples/dedup', function (status, data) {

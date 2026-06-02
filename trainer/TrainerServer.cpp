@@ -253,6 +253,32 @@ void CTrainerServer::HandleClient(SOCKET client)
 		return;
 	}
 
+	// API: delete every file in the training\ folder (moved here from the dialog).
+	if (path.CompareNoCase("/api/training/clear") == 0) {
+		LRESULT deleted = (g_trainer_main_hwnd != NULL)
+			? ::SendMessage(g_trainer_main_hwnd, WM_TRAINER_CLEAR_TRAINING, 0, 0) : 0;
+		CStringA body; body.Format("{\"ok\":true,\"deleted\":%d}", (int)deleted);
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	// API: which characters already have a font in a group (for the coverage footer).
+	if (path.CompareNoCase("/api/fonts/coverage") == 0) {
+		int group = atoi(QueryValue(query, "group"));
+		CStringA chars = (p_trainer_fonts != NULL) ? p_trainer_fonts->GroupChars(group) : CStringA("");
+		CStringA esc;
+		for (int i = 0; i < chars.GetLength(); ++i) {
+			char c = chars[i];
+			if (c == '"' || c == '\\') { esc += '\\'; esc += c; }
+			else esc += c;
+		}
+		CStringA body; body.Format("{\"ok\":true,\"group\":%d,\"chars\":\"%s\"}", group, esc.GetString());
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
 	// API: transform info - current transform + per-group font counts (for the dropdown).
 	if (path.CompareNoCase("/api/fonts/info") == 0) {
 		int mode = (p_sample_store != NULL) ? p_sample_store->TransformMode() : TRAINER_MODE_AUTOOCR;

@@ -404,6 +404,49 @@
     return tr;
   }
 
+  // Fixed bottom bar: a chip per pending glyph, coloured by whether a font already
+  // exists for it (accounted) or it still needs a character (unaccounted).
+  function renderGlyphBar(rows) {
+    if (!glyphbarSummary || !glyphbarChips) return;
+    var unacc = [], acc = [];
+    for (var i = 0; i < rows.length; i++) (rows[i].accounted ? acc : unacc).push(rows[i]);
+    glyphbarSummary.textContent = rows.length
+      ? (rows.length + ' glyph(s): ' + unacc.length + ' to account for, ' + acc.length + ' already accounted')
+      : 'No glyphs.';
+    glyphbarChips.innerHTML = '';
+    function addChip(gl, cls) {
+      var c = document.createElement('span');
+      c.className = 'chip ' + cls;
+      c.textContent = (gl.assigned ? gl.assigned + ' ' : '') + gl.region + '#' + gl.gid;
+      glyphbarChips.appendChild(c);
+    }
+    for (var u = 0; u < unacc.length; u++) addChip(unacc[u], 'unaccounted');
+    for (var a = 0; a < acc.length; a++) addChip(acc[a], 'accounted');
+  }
+
+  // Delete every pending glyph that already has a font (used after Capture when
+  // "Auto-remove accounted" is on).
+  function removeAccountedRows() {
+    var ids = Object.keys(rendered);
+    var pending = 0;
+    for (var i = 0; i < ids.length; i++) {
+      if (!rendered[ids[i]].accounted) continue;
+      pending++;
+      (function (id) {
+        api('POST', '/api/fonts/delete?gid=' + id, function () { pending--; if (pending === 0) refresh(); });
+      })(ids[i]);
+    }
+  }
+
+  function doCapture() {
+    statusEl.textContent = 'Capturing…';
+    api('POST', '/api/fonts/capture', function () {
+      refresh(function () {
+        if (autoRemoveAccounted && autoRemoveAccounted.checked) removeAccountedRows();
+      });
+    });
+  }
+
   function refresh(onDone) {
     api('GET', '/api/fonts/list', function (status, rows) {
       if (status !== 200 || !rows) { statusEl.textContent = 'Disconnected'; if (onDone) onDone(); return; }
@@ -424,12 +467,20 @@
           var newTr = buildRow(gl);
           tbody.appendChild(newTr);
           tbody.appendChild(rendered[gl.gid].editTr);   // details row follows its glyph row
+        } else {
+          // Keep an existing row's accounted state + marker in sync with the server.
+          var rec = rendered[gl.gid];
+          rec.accounted = !!gl.accounted;
+          rec.region = gl.region;
+          rec.assigned = gl.assigned || '';
+          rec.tr.classList.toggle('accounted', rec.accounted);
         }
         if (rows[j].assigned) labeled++;
       }
       retab();
       emptyHint.style.display = rows.length ? 'none' : '';
       statusEl.textContent = rows.length + ' glyph(s), ' + labeled + ' labeled';
+      renderGlyphBar(rows);
       if (onDone) onDone();
     });
   }
@@ -448,10 +499,7 @@
     refresh();
   }
 
-  captureBtn.addEventListener('click', function () {
-    statusEl.textContent = 'Capturing…';
-    api('POST', '/api/fonts/capture', function () { refresh(); });
-  });
+  captureBtn.addEventListener('click', doCapture);
 
   clearAllBtn.addEventListener('click', function () {
     if (!confirm('Discard ALL pending glyphs? (Saved fonts are kept.)')) return;
@@ -628,5 +676,10 @@
   }
 
   refresh();
-  setInterval(refresh, 1500);
+  // Poll: when "Auto capture" is on, re-capture scrapes on each tick (which also
+  // refreshes + auto-removes accounted if enabled); otherwise just refresh.
+  setInterval(function () {
+    if (autoCapture && autoCapture.checked) doCapture();
+    else refresh();
+  }, 1500);
 })();

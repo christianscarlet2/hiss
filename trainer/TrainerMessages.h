@@ -12,6 +12,8 @@
 #define WM_TRAINER_SET_CAPTURE   (WM_APP + 6)   // start/stop sample capture from the web UI
 // wParam: glyph id. lParam: (mode<<8)|index. Returns the recognized char code (0 = none).
 #define WM_TRAINER_OCR_GLYPH     (WM_APP + 7)   // OCR a font glyph's reference image (fonts editor)
+// Delete every file in the training\ folder. Returns the number of files deleted.
+#define WM_TRAINER_CLEAR_TRAINING (WM_APP + 8)  // "Clear Training Files" (moved to the web UI)
 
 // Transform modes stored in the sample store (which engine recognizes the table).
 #define TRAINER_MODE_AUTOOCR 0                  // Tesseract (AutoOcr0/AutoOcr1)

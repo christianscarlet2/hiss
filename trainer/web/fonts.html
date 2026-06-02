@@ -20,17 +20,29 @@
     <button id="deleteTm" class="danger" tabindex="-1" title="Remove every t$ font record from the tablemap file">Delete All from .tm</button>
   </header>
   <div class="toolbar2">
-    <span class="gclabel">Global colour</span>
-    <button id="gcEyedrop" tabindex="-1" title="Eyedropper: click, then click any Reference or Scrape image to grab its colour">⊙ Eyedropper</button>
+    <span class="gclabel">Colour 1</span>
+    <button id="gcEyedrop" tabindex="-1" title="Eyedropper: click, then click any Reference or Scrape image to grab its colour into Colour 1">⊙</button>
     <span id="gcSwatch" class="swatch sm"></span>
     <label class="gcfield">A<input id="gcA" type="number" min="0" max="255" value="255" tabindex="-1"></label>
     <label class="gcfield">R<input id="gcR" type="number" min="0" max="255" value="0" tabindex="-1"></label>
     <label class="gcfield">G<input id="gcG" type="number" min="0" max="255" value="0" tabindex="-1"></label>
     <label class="gcfield">B<input id="gcB" type="number" min="0" max="255" value="0" tabindex="-1"></label>
     <label class="gcfield">Radius<input id="gcRad" type="number" value="0" tabindex="-1"></label>
+
+    <span class="gcsep"></span>
+    <span class="gclabel">Colour 2</span>
+    <button id="gc2Eyedrop" tabindex="-1" title="Eyedropper: grab a colour into Colour 2">⊙</button>
+    <span id="gc2Swatch" class="swatch sm"></span>
+    <label class="gcfield">A<input id="gc2A" type="number" min="0" max="255" value="255" tabindex="-1"></label>
+    <label class="gcfield">R<input id="gc2R" type="number" min="0" max="255" value="255" tabindex="-1"></label>
+    <label class="gcfield">G<input id="gc2G" type="number" min="0" max="255" value="255" tabindex="-1"></label>
+    <label class="gcfield">B<input id="gc2B" type="number" min="0" max="255" value="255" tabindex="-1"></label>
+    <label class="gcfield">Radius<input id="gc2Rad" type="number" value="0" tabindex="-1"></label>
+
+    <span class="gcsep"></span>
     <select id="gcGroup" tabindex="-1"></select>
-    <button id="gcApply" tabindex="-1">Apply to group</button>
-    <button id="gcApplyAll" tabindex="-1" title="Write this colour to every balance region (fixes regions that capture nothing)">Apply to all regions</button>
+    <button id="gcApply" tabindex="-1">Apply C1 to group</button>
+    <button id="gcApplyAll" tabindex="-1" title="Write Colour 1 to every balance region (fixes regions that capture nothing)">Apply C1 to all regions</button>
     <button id="gcHelp" class="help" tabindex="-1" title="How does this work?">?</button>
   </div>
   <main>
@@ -47,10 +59,14 @@
     </p>
   </main>
 
-  <!-- Fixed bottom bar: which glyphs still need a character vs. already accounted for -->
+  <!-- Fixed bottom bar: full target charset, highlighting glyphs not yet accounted
+       for (no font in the current group). Two rows: digits/symbols, then letters. -->
   <div id="glyphbar" class="statusbar">
-    <span id="glyphbarSummary" class="gbsummary">No glyphs.</span>
-    <div id="glyphbarChips" class="gbchips"></div>
+    <span id="glyphbarSummary" class="gbsummary">Unaccounted for glyphs</span>
+    <div class="gbcov">
+      <div id="covRow1" class="covrow"></div>
+      <div id="covRow2" class="covrow"></div>
+    </div>
   </div>
 
   <!-- Help dialog for the global per-group colour picker -->

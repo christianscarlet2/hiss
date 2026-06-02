@@ -48,7 +48,7 @@ protected:
 	afx_msg LRESULT OnOcrGlyph(WPARAM wParam, LPARAM lParam);
 	afx_msg void OnBnClickedOpenTable();
 	afx_msg void OnBnClickedCreateFonts();
-	afx_msg void OnBnClickedClearTraining();
+	afx_msg LRESULT OnClearTraining(WPARAM wParam, LPARAM lParam);
 	afx_msg void OnTimer(UINT_PTR nIDEvent);
 	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
 	afx_msg void OnMouseLeave();
@@ -74,6 +74,7 @@ private:
 	// engine selection. Pass recognize=true to also re-run all table rows.
 	void ApplyTransformSelection(bool recognize);
 	void CaptureTick();
+	int  ClearTrainingFiles();   // delete every file in training\; returns the count
 	// Start/stop/toggle sample capture (action: 1/2/3; 0 = query only).
 	// Returns 1 if capturing afterwards, else 0. Used by the web Start/Stop button.
 	int SetCapture(int action);

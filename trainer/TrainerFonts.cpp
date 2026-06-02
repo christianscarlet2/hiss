@@ -680,6 +680,21 @@ int CTrainerFonts::group_count(int g)
 	return n;
 }
 
+// All distinct characters that currently have at least one font record in group g
+// (used by the editor's "unaccounted glyphs" coverage footer).
+CStringA CTrainerFonts::GroupChars(int g)
+{
+	CStringA out;
+	if (g < 0 || g >= TFE_NUM_FONT_GROUPS) return out;
+	EnterCriticalSection(&_cs);
+	for (TFontGroup::const_iterator it = _groups[g].begin(); it != _groups[g].end(); ++it) {
+		char c = it->second.ch;
+		if (c != 0 && out.Find(c) < 0) out += c;
+	}
+	LeaveCriticalSection(&_cs);
+	return out;
+}
+
 bool CTrainerFonts::HasHexmash(int g, const CStringA &hexmash)
 {
 	if (g < 0 || g >= TFE_NUM_FONT_GROUPS) return false;

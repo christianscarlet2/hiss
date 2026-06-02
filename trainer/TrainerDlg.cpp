@@ -239,7 +239,7 @@ BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_MESSAGE(WM_TRAINER_OCR_GLYPH, &CTrainerDlg::OnOcrGlyph)
 	ON_BN_CLICKED(IDC_OPEN_TABLE, &CTrainerDlg::OnBnClickedOpenTable)
 	ON_BN_CLICKED(IDC_CREATE_FONTS, &CTrainerDlg::OnBnClickedCreateFonts)
-	ON_BN_CLICKED(IDC_CLEAR_TRAINING, &CTrainerDlg::OnBnClickedClearTraining)
+	ON_MESSAGE(WM_TRAINER_CLEAR_TRAINING, &CTrainerDlg::OnClearTraining)
 	ON_WM_TIMER()
 	ON_WM_MOUSEMOVE()
 	ON_WM_MOUSELEAVE()
@@ -763,11 +763,10 @@ void CTrainerDlg::OnBnClickedCreateFonts()
 	OpenFontsWindow();
 }
 
-void CTrainerDlg::OnBnClickedClearTraining()
+// Delete every file in the training\ folder next to the exe. Returns the count.
+// The confirmation now lives in the web UI ("Clear Training Files" button).
+int CTrainerDlg::ClearTrainingFiles()
 {
-	if (AfxMessageBox("Delete ALL files in the training\\ folder?", MB_YESNO | MB_ICONWARNING) != IDYES) {
-		return;
-	}
 	char path[MAX_PATH] = { 0 };
 	::GetModuleFileName(NULL, path, MAX_PATH);
 	char *last = strrchr(path, '\\');
@@ -790,6 +789,13 @@ void CTrainerDlg::OnBnClickedClearTraining()
 	CString status;
 	status.Format("Deleted %d file(s) from %s", deleted, dir.GetString());
 	SetStatus(status);
+	return deleted;
+}
+
+// Triggered by the Sample Gen web window's "Clear Training Files" button.
+LRESULT CTrainerDlg::OnClearTraining(WPARAM, LPARAM)
+{
+	return (LRESULT)ClearTrainingFiles();
 }
 
 STrainerOcrSettings CTrainerDlg::ReadSettings()
