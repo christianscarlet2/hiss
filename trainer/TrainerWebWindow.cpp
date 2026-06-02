@@ -14,6 +14,7 @@ IMPLEMENT_DYNAMIC(CTrainerWebWindow, CWnd)
 BEGIN_MESSAGE_MAP(CTrainerWebWindow, CWnd)
 	ON_WM_CREATE()
 	ON_WM_SIZE()
+	ON_WM_CLOSE()
 	ON_MESSAGE(WM_EXITSIZEMOVE, &CTrainerWebWindow::OnExitSizeMove)
 END_MESSAGE_MAP()
 
@@ -74,6 +75,18 @@ LRESULT CTrainerWebWindow::OnExitSizeMove(WPARAM, LPARAM)
 {
 	TrainerDB_SaveWindowRect(GetSafeHwnd(), CStringA(_settings_field));
 	return 0;
+}
+
+// Closing HIDES the window instead of destroying it, so the window and its WebView2
+// survive and the tool reopens instantly (the trainer's Open buttons just re-show it).
+// We deliberately do NOT call CWnd::OnClose(), which would DestroyWindow(). The window
+// is finally torn down when its owner (the main dialog) is destroyed at app exit.
+void CTrainerWebWindow::OnClose()
+{
+	if (::IsWindow(GetSafeHwnd())) {
+		TrainerDB_SaveWindowRect(GetSafeHwnd(), CStringA(_settings_field));   // remember placement
+		ShowWindow(SW_HIDE);
+	}
 }
 
 int CTrainerWebWindow::OnCreate(LPCREATESTRUCT lpCreateStruct)

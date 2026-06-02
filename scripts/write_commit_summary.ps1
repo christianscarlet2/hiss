@@ -71,7 +71,19 @@ try {
                 return ''
             }
 
-            $subject = Get-FirstLine $result
+            # Prefer a concise, Claude-written subject (a short line describing just the
+            # change) from <gitdir>\CLAUDE_COMMIT_SUBJECT, so the commit's first line
+            # reads cleanly instead of echoing the whole reply. Consume it after use.
+            $subject = $null
+            $subjFile = Join-Path $gitDir "CLAUDE_COMMIT_SUBJECT"
+            if (Test-Path -LiteralPath $subjFile) {
+                $s = Get-Content -LiteralPath $subjFile -Raw
+                if ($s) { $subject = (($s -split "`n")[0]).Trim() }
+                Remove-Item -LiteralPath $subjFile -Force -ErrorAction SilentlyContinue
+            }
+            # Fallback when no concise subject was written: first meaningful line of the
+            # result (else the request), stripped of markdown noise.
+            if (-not $subject) { $subject = Get-FirstLine $result }
             if (-not $subject) { $subject = Get-FirstLine $request }
             if (-not $subject) { $subject = 'autocommit' }
             if ($subject.Length -gt 72) { $subject = $subject.Substring(0, 72).TrimEnd() }
