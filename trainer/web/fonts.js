@@ -490,7 +490,7 @@
   // the current group from the database (after a confirm), then refresh coverage.
   function deleteCharFonts(ch, colour) {
     var g = defaultGroup;
-    if (!confirm('Delete the saved font(s) for "' + ch + '" (Colour ' + colour + ', Text' + g + ') from the database?\n\nThis removes every glyph saved as "' + ch + '" in this group and cannot be undone.')) {
+    if (!confirm('Delete the saved font(s) for "' + ch + '" (Text' + g + ') from the database?\n\nThis removes every glyph saved as "' + ch + '" in this group — for BOTH colours. You can undo with Ctrl+Z.')) {
       return;
     }
     api('POST', '/api/fonts/deletechar?group=' + g + '&ch=' + encodeURIComponent(ch), function (status, data) {
