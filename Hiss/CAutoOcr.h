@@ -89,6 +89,8 @@ private:
 	bool        _nopre_a0, _nopre_a1;   // skip resize/char-spacing enhancement
 	bool        _nowl_a0, _nowl_a1;     // disable the char whitelist
 	bool        _nocs_a0, _nocs_a1;     // disable only the character-spacing step
+	std::vector<CString> _decimal_fields;   // field types that use decimal splitting (Vision Settings > Fields)
+	bool RegionUsesDecimalSplit(const CString &region_name);
 
 	vector<pair<Rect, CString>> ResultBoxes, ResultBoxes2;
 	CString ResultString, ResultString2;

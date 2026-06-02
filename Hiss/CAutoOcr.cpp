@@ -14,6 +14,7 @@
 #include "StdAfx.h"
 #include "CAutoOcr.h"
 #include "..\CTablemap\CTablemapDB.h"
+#include "..\Vision\DecimalSplit.h"
 
 #include "CAutoconnector.h"
 #include "..\Shared\WindowCapture.h"
@@ -173,6 +174,10 @@ void CAutoOcr::LoadModelSettings() {
 	_nopre_a0 = _nopre_a1 = false;
 	_nowl_a0 = _nowl_a1 = false;
 	_nocs_a0 = _nocs_a1 = false;
+	_decimal_fields.clear();
+	if (p_tablemap_db != NULL) {
+		p_tablemap_db->GetSettingArray("decimal_split_fields", "fields", &_decimal_fields);
+	}
 	if (p_tablemap_db != NULL) {
 		const char *keys[2] = { "autoocr0", "autoocr1" };
 		for (int g = 0; g < 2; ++g) {
@@ -759,6 +764,17 @@ static CString StripBalanceUnitSuffix(CString s) {
 	return s;
 }
 
+// True when this region's name matches one of the field types selected for
+// decimal splitting in Vision (Settings > Fields), e.g. "balance", "pot".
+bool CAutoOcr::RegionUsesDecimalSplit(const CString &region_name) {
+	CString lower = region_name; lower.MakeLower();
+	for (size_t i = 0; i < _decimal_fields.size(); ++i) {
+		CString f = _decimal_fields[i]; f.MakeLower(); f.Trim();
+		if (!f.IsEmpty() && lower.Find(f) != -1) return true;
+	}
+	return false;
+}
+
 CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
 	// Tesseract's TessBaseAPI is NOT thread-safe and CAutoOcr's instance
 	// members (ResultBoxes, ResultString, bestRect, ...) are shared across
@@ -807,18 +823,40 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
 
 	if (region->second.transform == "A0") {
 		EnsureModelLoaded(_model_a0);
-		img_resized = prepareImage(img_orig, settings, true, tablemap_threshold);
-		img_resized2 = prepareImage(img_orig, settings, true, tablemap_threshold, true);
-	}
-	if (region->second.transform == "A1") {
+	} else if (region->second.transform == "A1") {
 		EnsureModelLoaded(_model_a1);
-		img_resized = prepareImage(img_orig, settings, true, tablemap_threshold);
-		img_resized2 = prepareImage(img_orig, settings, true, tablemap_threshold, true);
 	}
 
 	vector<CString> lst;
 	CString ocr_result, ocr_result2;
-	{
+
+	// Decimal splitting (Vision's Settings > Fields list). When the region's name
+	// matches a selected field type, find the decimal separator, OCR each half
+	// independently and join them with ".". Falls back to whole-image OCR if no
+	// separator is found.
+	bool did_decimal = false;
+	if (RegionUsesDecimalSplit(CString(region->first))
+			&& img_orig.type() == CV_8UC3 && img_orig.cols >= 3 && img_orig.rows >= 3) {
+		int sx = FindDecimalSplitX(img_orig.data, img_orig.cols, img_orig.rows, (int)img_orig.step);
+		if (sx > 0 && sx < img_orig.cols) {
+			Mat left = img_orig(Rect(0, 0, sx, img_orig.rows)).clone();
+			Mat right = img_orig(Rect(sx, 0, img_orig.cols - sx, img_orig.rows)).clone();
+			ResultString = ""; ResultString2 = "";
+			prepareImage(left, settings, true, tablemap_threshold);
+			CString left_text = ResultString;
+			ResultString = ""; ResultString2 = "";
+			prepareImage(right, settings, true, tablemap_threshold);
+			CString right_text = ResultString;
+			left_text.Trim(); right_text.Trim();
+			ocr_result = left_text + "." + right_text;
+			ocr_result2 = "";
+			did_decimal = true;
+		}
+	}
+
+	if (!did_decimal) {
+		img_resized = prepareImage(img_orig, settings, true, tablemap_threshold);
+		img_resized2 = prepareImage(img_orig, settings, true, tablemap_threshold, true);
 		if (!img_resized.empty()) {
 			img_resized.convertTo(img_resized, CV_8UC3);
 			cvtColor(img_resized, img_resized, COLOR_GRAY2BGR);

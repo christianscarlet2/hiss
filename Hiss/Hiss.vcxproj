@@ -221,6 +221,7 @@
     <ClCompile Include="CBetSlider.cpp" />
     <ClCompile Include="Card.cpp" />
     <ClCompile Include="CAutoOcr.cpp" />
+    <ClCompile Include="..\Vision\DecimalSplit.cpp" />
     <ClCompile Include="CAutoplayerButton.cpp" />
     <ClCompile Include="CBetsizeInputBox.cpp" />
     <ClCompile Include="CBlindGuesser.cpp" />
@@ -512,6 +513,7 @@
     <ClInclude Include="CBetSlider.h" />
     <ClInclude Include="Card.h" />
     <ClInclude Include="CAutoOcr.h" />
+    <ClInclude Include="..\Vision\DecimalSplit.h" />
     <ClInclude Include="CAutoplayerButton.h" />
     <ClInclude Include="CBetsizeInputBox.h" />
     <ClInclude Include="CBlindGuesser.h" />
