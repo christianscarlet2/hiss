@@ -72,31 +72,40 @@ try {
     }
 
     if (-not $usedSummary) {
-        $message = "autocommit"
+        # Verbose fallback (no Claude summary present): subject names the newest file
+        # and the count, and the body lists every changed file -- nothing truncated.
+        $count = $changedFiles.Count
+        $subject = "autocommit: $count file(s) changed ($(Get-Date -Format 'yyyy-MM-dd HH:mm'))"
         if ($null -ne $newestChange) {
             $relativePath = Resolve-Path -LiteralPath $newestChange.FullName -Relative
             $relativePath = $relativePath.TrimStart(".", "\", "/")
-            $message = "autocommit: latest change in $relativePath"
+            $subject = "autocommit: $relativePath (+$([math]::Max(0, $count - 1)) more) ($(Get-Date -Format 'yyyy-MM-dd HH:mm'))"
         }
-        $message = "$message ($(Get-Date -Format 'yyyy-MM-dd HH:mm'))"
+        $body = ($changedFiles | ForEach-Object { " - $_" }) -join "`n"
+        $message = "$subject`n`nFiles changed ($count):`n$body"
     }
 
     & git add -A
+    # Always commit from a file (-F) so newlines and special characters (quotes,
+    # the multi-line request/result/file-list) survive -- passing them via -m
+    # through PowerShell 5.1's native-arg handling corrupts the message.
+    $fallbackFile = $null
     if ($usedSummary) {
-        # Commit straight from the file so newlines and special characters (e.g.
-        # quotes) in the summary survive -- passing them via -m through PowerShell
-        # 5.1's native-arg handling corrupts the message.
         $commitOutput = & git commit -F $summaryFile 2>&1
     } else {
-        $commitOutput = & git commit -m $message 2>&1
+        $fallbackFile = if ($gitDir) { Join-Path $gitDir "CLAUDE_FALLBACK_MSG" } else { Join-Path $repoRoot ".git\CLAUDE_FALLBACK_MSG" }
+        [System.IO.File]::WriteAllText($fallbackFile, $message, (New-Object System.Text.UTF8Encoding($false)))
+        $commitOutput = & git commit -F $fallbackFile 2>&1
     }
     if ($LASTEXITCODE -ne 0) {
         throw ($commitOutput -join "`n")
     }
 
-    # Consume the summary so it is used for exactly one commit.
+    # Consume the message file so it is used for exactly one commit.
     if ($usedSummary) {
         Remove-Item -LiteralPath $summaryFile -Force -ErrorAction SilentlyContinue
+    } elseif ($fallbackFile) {
+        Remove-Item -LiteralPath $fallbackFile -Force -ErrorAction SilentlyContinue
     }
 
     Write-AutoCommitLog "Committed changes with message: $message"

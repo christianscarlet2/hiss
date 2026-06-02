@@ -200,11 +200,6 @@
       img.src = '/api/fonts/glyph/image?gid=' + gl.gid + bust;     // mask thumbnail
       imgR.src = '/api/fonts/glyph/regular?gid=' + gl.gid + bust;  // reference thumbnail
     }
-    function doRegen() {
-      var q = '/api/fonts/glyph/regen?gid=' + gl.gid
-        + '&a=' + st.a + '&r=' + st.r + '&g=' + st.g + '&b=' + st.b + '&radius=' + st.radius;
-      api('POST', q, function () { reloadImages(); });
-    }
 
     var tdC = document.createElement('td');
     tdC.className = 'c';
@@ -215,34 +210,23 @@
     input.value = gl.assigned || '';
     if (input.value) input.classList.add('done');
     else ocrFill(gl.gid, input);   // suggest the character via the chosen transform
-    function commit() {
+    // Saving is now an explicit action: C1/C2 (or F1/F2) create the font under that
+    // colour. Typing only edits the character -- it never saves or removes the row.
+    function saveChar(which) {
       var val = input.value;
-      if (val) {
-        // If this glyph already has a font, confirm before (re)creating it. On "No",
-        // clear the typed character WITHOUT saving or removing the row.
-        var rec = rendered[gl.gid];
-        if (rec && rec.accounted &&
-            !confirm('This glyph has already been accounted for.\nContinue and (re)create the font?')) {
-          input.value = '';
-          input.classList.remove('done');
-          return;
-        }
-        input.classList.add('done');
-        setScanning(true);
-        api('POST', '/api/fonts/setchar?gid=' + gl.gid + '&ch=' + encodeURIComponent(val), function () {
-          markColour(rowGroup, rowColour, val);   // colour-coverage footer (C1 -> row 1, C2 -> row 2)
-          refresh(function () { setScanning(false); focusFirstEmpty(); });
-        });
-      } else {
-        // Clearing a char creates no font and triggers no rescan.
-        input.classList.remove('done');
-        api('POST', '/api/fonts/setchar?gid=' + gl.gid + '&ch=', function () {});
+      if (!val) return;   // colour chosen as a preview only; nothing to save yet
+      var rec = rendered[gl.gid];
+      if (rec && rec.accounted &&
+          !confirm('This glyph has already been accounted for.\nContinue and (re)create the font?')) {
+        return;
       }
+      input.classList.add('done');
+      setScanning(true);
+      api('POST', '/api/fonts/setchar?gid=' + gl.gid + '&ch=' + encodeURIComponent(val), function () {
+        markColour(rowGroup, which, val);   // C1 -> colour-1 row, C2 -> colour-2 row
+        refresh(function () { setScanning(false); focusFirstEmpty(); });
+      });
     }
-    input.addEventListener('input', commit);
-    input.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); commit(); }
-    });
     tdC.appendChild(input);
     var spin = document.createElement('span');
     spin.className = 'spin';   // visible only while tbody has the .scanning class
@@ -290,7 +274,10 @@
       st.a = c.a; st.r = c.r; st.g = c.g; st.b = c.b; st.radius = c.radius;
       col1Btn.classList.toggle('on', which === 1);
       col2Btn.classList.toggle('on', which === 2);
-      doRegen();
+      // Re-segment the glyph with the chosen colour, then save the font under it.
+      var q = '/api/fonts/glyph/regen?gid=' + gl.gid
+        + '&a=' + st.a + '&r=' + st.r + '&g=' + st.g + '&b=' + st.b + '&radius=' + st.radius;
+      api('POST', q, function () { reloadImages(); saveChar(which); });
     }
     col1Btn.addEventListener('click', function () { chooseColour(1); });
     col2Btn.addEventListener('click', function () { chooseColour(2); });
@@ -321,6 +308,40 @@
   // colour" it shows the database coverage (any font for the char) in a single block.
   var CHARSET_ROW1 = '0123456789._-';
   var CHARSET_ROW2 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+
+  // Darkest colour of the first scrape, used as the unaccounted-chip background so
+  // the chips preview the digit's table appearance (dark bg + picker-coloured text).
+  var darkestScrape = null;   // 'rgb(r,g,b)'
+  var darkestGid = null;
+  function computeDarkest(gid) {
+    if (gid == null || gid === darkestGid) return;
+    darkestGid = gid;
+    var im = new Image();
+    im.onload = function () {
+      try {
+        var cv = document.createElement('canvas');
+        cv.width = im.naturalWidth; cv.height = im.naturalHeight;
+        if (!cv.width || !cv.height) return;
+        var ctx = cv.getContext('2d');
+        ctx.drawImage(im, 0, 0);
+        var d = ctx.getImageData(0, 0, cv.width, cv.height).data;
+        var minLum = 1e9, dr = 0, dg = 0, db = 0;
+        for (var i = 0; i < d.length; i += 4) {
+          var r = d[i], g = d[i + 1], b = d[i + 2];
+          var lum = 0.299 * r + 0.587 * g + 0.114 * b;
+          if (lum < minLum) { minLum = lum; dr = r; dg = g; db = b; }
+        }
+        darkestScrape = 'rgb(' + dr + ',' + dg + ',' + db + ')';
+        updateCoverageFooter();
+      } catch (e) {}
+    };
+    im.src = '/api/fonts/glyph/full?gid=' + gid;
+  }
+  // Current picker colour (1 or 2) as a CSS rgb() string, for the chip text colour.
+  function colourRgb(which) {
+    var c = colourVals(which);
+    return 'rgb(' + c.r + ',' + c.g + ',' + c.b + ')';
+  }
 
   function ensureCov(g) { g = String(g); if (!colourCov[g]) colourCov[g] = { 1: {}, 2: {} }; return colourCov[g]; }
   function loadCovState() {
@@ -359,7 +380,7 @@
     updateCoverageFooter();
   }
 
-  function fillCharsetRows(rowEl1, rowEl2, coveredObj, summaryEl, labelPrefix) {
+  function fillCharsetRows(rowEl1, rowEl2, coveredObj, summaryEl, labelPrefix, textColor) {
     var missing = 0;
     function fill(rowEl, chars) {
       if (!rowEl) return;
@@ -370,8 +391,13 @@
         var s = document.createElement('span');
         s.className = 'covchip' + (acc ? '' : ' unaccounted');
         s.textContent = ch;
+        if (!acc) {
+          // Preview the glyph: darkest-scrape background + the picker's colour as text.
+          if (darkestScrape) s.style.backgroundColor = darkestScrape;
+          if (textColor) s.style.color = textColor;
+          missing++;
+        }
         rowEl.appendChild(s);
-        if (!acc) missing++;
       }
     }
     fill(rowEl1, CHARSET_ROW1);
@@ -389,13 +415,13 @@
         for (var i = 0; i < dbChars.length; i++) c[1][dbChars.charAt(i)] = true;
         saveCovState();
       }
-      fillCharsetRows(covRow1, covRow2, c[1], glyphbarSummary, 'Colour 1 — unaccounted (Text' + defaultGroup + ')');
-      fillCharsetRows(cov2Row1, cov2Row2, c[2], glyphbarSummary2, 'Colour 2 — unaccounted (Text' + defaultGroup + ')');
+      fillCharsetRows(covRow1, covRow2, c[1], glyphbarSummary, 'Colour 1 — unaccounted (Text' + defaultGroup + ')', colourRgb(1));
+      fillCharsetRows(cov2Row1, cov2Row2, c[2], glyphbarSummary2, 'Colour 2 — unaccounted (Text' + defaultGroup + ')', colourRgb(2));
     } else {
       if (covBlock2) covBlock2.style.display = 'none';
       var covered = {};
       if (dbChars) for (var j = 0; j < dbChars.length; j++) covered[dbChars.charAt(j)] = true;
-      fillCharsetRows(covRow1, covRow2, covered, glyphbarSummary, 'Unaccounted for glyphs (Text' + defaultGroup + ')');
+      fillCharsetRows(covRow1, covRow2, covered, glyphbarSummary, 'Unaccounted for glyphs (Text' + defaultGroup + ')', colourRgb(1));
     }
   }
   function updateCoverageFooter() {
@@ -468,6 +494,7 @@
       }
       // The footer tracks coverage for the group the pending glyphs belong to.
       if (rows.length && typeof rows[0].group === 'number') defaultGroup = rows[0].group;
+      if (rows.length) computeDarkest(rows[0].gid);   // darkest colour of the first scrape
       retab();
       emptyHint.style.display = rows.length ? 'none' : '';
       statusEl.textContent = rows.length + ' glyph(s), ' + labeled + ' labeled';
@@ -504,8 +531,10 @@
     if (!confirm('Delete ALL font records (t$) for this tablemap from the hiss database?')) return;
     api('POST', '/api/fonts/deletealltm', function (status, data) {
       if (data && data.ok) {
+        colourCov = {};      // every glyph is unaccounted again
+        saveCovState();
         statusEl.textContent = 'Deleted ' + (data.removed || 0) + ' font record(s) from the database';
-        refresh();   // fonts changed -> refresh coverage + accounted markers
+        refresh();           // re-renders the footer (all chars unaccounted)
       } else {
         statusEl.textContent = (data && data.error) ? data.error : 'Delete failed';
       }
@@ -594,6 +623,47 @@
   [gc2A, gc2R, gc2G, gc2B].forEach(function (inp) { inp.addEventListener('input', gc2Sync); });
   gcSync(); gc2Sync();
 
+  // Persist the two toolbar colours in the DB settings table and reload them on open.
+  function colourCsv(which) {
+    var c = colourVals(which);
+    return c.a + ',' + c.r + ',' + c.g + ',' + c.b + ',' + c.radius;
+  }
+  function saveColours() {
+    api('POST', '/api/fonts/colours?c1=' + encodeURIComponent(colourCsv(1))
+      + '&c2=' + encodeURIComponent(colourCsv(2)), function () {});
+  }
+  function applyColourCsv(which, csv) {
+    if (!csv) return;
+    var p = ('' + csv).split(',');
+    if (p.length < 4) return;
+    if (which === 2) {
+      gc2A.value = clamp255(p[0]); gc2R.value = clamp255(p[1]); gc2G.value = clamp255(p[2]); gc2B.value = clamp255(p[3]);
+      if (p.length >= 5) gc2Rad.value = parseInt(p[4], 10) || 0;
+      gc2Sync();
+    } else {
+      gcA.value = clamp255(p[0]); gcR.value = clamp255(p[1]); gcG.value = clamp255(p[2]); gcB.value = clamp255(p[3]);
+      if (p.length >= 5) gcRad.value = parseInt(p[4], 10) || 0;
+      gcSync();
+    }
+  }
+  function loadColours() {
+    api('GET', '/api/fonts/colours', function (status, data) {
+      if (data && data.ok) {
+        applyColourCsv(1, data.c1);
+        applyColourCsv(2, data.c2);
+        updateCoverageFooter();   // footer chip text colours follow the pickers
+      }
+    });
+  }
+  // Live-tint the footer chips as a colour is edited; persist when the edit commits.
+  [gcA, gcR, gcG, gcB, gc2A, gc2R, gc2G, gc2B].forEach(function (inp) {
+    inp.addEventListener('input', function () { updateCoverageFooter(); });
+  });
+  [gcA, gcR, gcG, gcB, gcRad, gc2A, gc2R, gc2G, gc2B, gc2Rad].forEach(function (inp) {
+    inp.addEventListener('change', saveColours);
+  });
+  loadColours();
+
   // Read one of the two global colour blocks (which = 1 or 2).
   function colourVals(which) {
     if (which === 2) {
@@ -628,6 +698,8 @@
     }
     var n = gcArmTarget || 1;
     setArmed(0);
+    saveColours();            // persist the picked colour
+    updateCoverageFooter();   // re-tint the footer chips
     statusEl.textContent = 'Picked Colour ' + n + ' rgb(' + clamp255(r) + ',' + clamp255(g) + ',' + clamp255(b) + ') — set radius';
   }
 

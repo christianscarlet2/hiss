@@ -5,6 +5,7 @@
 #include "FontGlyphStore.h"
 #include "TrainerMessages.h"
 #include "TablemapRegions.h"
+#include "TrainerDB.h"
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -258,6 +259,23 @@ void CTrainerServer::HandleClient(SOCKET client)
 		LRESULT deleted = (g_trainer_main_hwnd != NULL)
 			? ::SendMessage(g_trainer_main_hwnd, WM_TRAINER_CLEAR_TRAINING, 0, 0) : 0;
 		CStringA body; body.Format("{\"ok\":true,\"deleted\":%d}", (int)deleted);
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	// API: persist/load the two toolbar colours (Colour 1 / Colour 2) in the global
+	// settings table. Values are "a,r,g,b,radius". Saves when c1/c2 are supplied;
+	// always returns the current values.
+	if (path.CompareNoCase("/api/fonts/colours") == 0) {
+		CStringA c1 = UrlDecode(QueryValue(query, "c1"));
+		CStringA c2 = UrlDecode(QueryValue(query, "c2"));
+		if (!c1.IsEmpty()) TrainerDB_SetSetting("font_colours", "c1", CString(c1));
+		if (!c2.IsEmpty()) TrainerDB_SetSetting("font_colours", "c2", CString(c2));
+		CStringA g1 = CStringA(TrainerDB_GetSetting("font_colours", "c1"));
+		CStringA g2 = CStringA(TrainerDB_GetSetting("font_colours", "c2"));
+		CStringA body;
+		body.Format("{\"ok\":true,\"c1\":\"%s\",\"c2\":\"%s\"}", g1.GetString(), g2.GetString());
 		CStringA response = Response(body, "application/json; charset=utf-8");
 		send(client, response.GetString(), response.GetLength(), 0);
 		return;

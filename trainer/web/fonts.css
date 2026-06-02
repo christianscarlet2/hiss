@@ -46,17 +46,17 @@ main { flex: 1; overflow: auto; padding: 8px 12px; }
    last child after the scrollable <main>. */
 .statusbar {
   flex: 0 0 auto;
-  display: flex; flex-direction: column; gap: 4px;
-  padding: 6px 12px;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 8px 12px;
   background: #2b2f36; color: #fff;
   border-top: 1px solid #1c1f24;
-  max-height: 200px; overflow: auto;
+  max-height: 220px; overflow: auto;
 }
-.statusbar .gbmulti { font-weight: 600; }
+.statusbar .gbmulti { font-weight: 600; margin-bottom: 2px; }
 .statusbar .gbmulti select { font-size: 13px; padding: 1px 4px; margin-left: 4px; }
 .statusbar .gbblock { display: flex; align-items: flex-start; gap: 10px; }
 .statusbar .gbsummary { font-weight: 600; white-space: nowrap; min-width: 240px; }
-.statusbar .gbcov { display: flex; flex-direction: column; gap: 3px; }
+.statusbar .gbcov { display: flex; flex-direction: column; gap: 6px; }
 .statusbar .covrow { display: flex; flex-wrap: wrap; gap: 3px; }
 .statusbar .covchip {
   display: inline-flex; align-items: center; justify-content: center;
@@ -139,6 +139,7 @@ td.r { color: #6b7280; font-size: 11px; white-space: nowrap; }
 td.a { width: 1%; white-space: nowrap; }
 td.a button { padding: 1px 7px; background: #8a929c; }
 td.a button:hover { background: #767e88; }
+td.a button + button { margin-left: 6px; }   /* spacing between C1, C2 and X */
 td.ag { width: 1%; white-space: nowrap; }
 td.ag button { padding: 1px 8px; font-size: 11px; background: #5a6675; }
 td.ag button:hover { background: #4a5563; }
