@@ -216,10 +216,19 @@
       var val = input.value;
       if (!val) return;   // colour chosen as a preview only; nothing to save yet
       var rec = rendered[gl.gid];
-      if (rec && rec.accounted &&
-          !confirm('This glyph has already been accounted for.\nContinue and (re)create the font?')) {
-        return;
+      // Warn before (re)creating a font that would duplicate something already there:
+      // the same character already saved under this colour in this group takes
+      // precedence (the case the coverage footer tracks); otherwise the glyph shape
+      // itself may already have a font (accounted). Show at most one confirm.
+      var cov = ensureCov(rowGroup);
+      var warn = null;
+      if (cov[which] && cov[which][val]) {
+        warn = 'Colour ' + which + ' already has a font for "' + val + '" in Text' + rowGroup
+             + '.\nContinue and (re)create it?';
+      } else if (rec && rec.accounted) {
+        warn = 'This glyph has already been accounted for.\nContinue and (re)create the font?';
       }
+      if (warn && !confirm(warn)) return;
       input.classList.add('done');
       setScanning(true);
       api('POST', '/api/fonts/setchar?gid=' + gl.gid + '&ch=' + encodeURIComponent(val), function () {
@@ -296,9 +305,21 @@
       else if (e.key === 'F2') { e.preventDefault(); chooseColour(2); }
     });
 
+    // Re-segment this glyph with the toolbar colour it is currently using (rowColour),
+    // updating only the thumbnails — no font is saved. Used when the toolbar Colour 1/2
+    // or its radius is adjusted, so the segmentation preview tracks the colour live.
+    function regenPreview() {
+      var c = colourVals(rowColour);
+      st.a = c.a; st.r = c.r; st.g = c.g; st.b = c.b; st.radius = c.radius;
+      var q = '/api/fonts/glyph/regen?gid=' + gl.gid
+        + '&a=' + st.a + '&r=' + st.r + '&g=' + st.g + '&b=' + st.b + '&radius=' + st.radius;
+      api('POST', q, function () { reloadImages(); });
+    }
+
     if (gl.accounted) tr.classList.add('accounted');
     rendered[gl.gid] = { tr: tr, input: input,
-                         accounted: !!gl.accounted, region: gl.region, assigned: gl.assigned || '' };
+                         accounted: !!gl.accounted, region: gl.region, assigned: gl.assigned || '',
+                         getColour: function () { return rowColour; }, regenPreview: regenPreview };
     return tr;
   }
 
@@ -662,6 +683,27 @@
   [gcA, gcR, gcG, gcB, gcRad, gc2A, gc2R, gc2G, gc2B, gc2Rad].forEach(function (inp) {
     inp.addEventListener('change', saveColours);
   });
+
+  // Adjusting a toolbar colour or its radius re-segments every pending glyph currently
+  // using that colour (rowColour, default 1), so the thumbnails track the colour live.
+  // Preview only — nothing is saved until C1/C2 (or F1/F2) on a row. Debounced so a run
+  // of keystrokes / spinner clicks coalesces into one regen pass.
+  function debounce(fn, ms) {
+    var t = null;
+    return function () { if (t) clearTimeout(t); t = setTimeout(fn, ms); };
+  }
+  function regenGlyphsForColour(which) {
+    for (var id in rendered) {
+      if (!rendered.hasOwnProperty(id)) continue;
+      var rec = rendered[id];
+      if (rec.getColour && rec.getColour() === which && rec.regenPreview) rec.regenPreview();
+    }
+  }
+  var regenC1 = debounce(function () { regenGlyphsForColour(1); }, 300);
+  var regenC2 = debounce(function () { regenGlyphsForColour(2); }, 300);
+  [gcA, gcR, gcG, gcB, gcRad].forEach(function (inp) { inp.addEventListener('input', regenC1); });
+  [gc2A, gc2R, gc2G, gc2B, gc2Rad].forEach(function (inp) { inp.addEventListener('input', regenC2); });
+
   loadColours();
 
   // Read one of the two global colour blocks (which = 1 or 2).
@@ -700,6 +742,7 @@
     setArmed(0);
     saveColours();            // persist the picked colour
     updateCoverageFooter();   // re-tint the footer chips
+    regenGlyphsForColour(n);  // re-segment glyphs using this colour with the picked value
     statusEl.textContent = 'Picked Colour ' + n + ' rgb(' + clamp255(r) + ',' + clamp255(g) + ',' + clamp255(b) + ') — set radius';
   }
 

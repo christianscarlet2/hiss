@@ -39,7 +39,7 @@
           {
             "type": "command",
             "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:\\www\\openholdembot_old\\scripts\\write_commit_summary.ps1\"",
-            "timeout": 15
+            "timeout": 120
           }
         ]
       }
