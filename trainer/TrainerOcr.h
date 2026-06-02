@@ -16,6 +16,7 @@ struct STrainerOcrSettings {
 	bool    no_preprocess;   // feed the raw crop straight to Tesseract (skip resize/sharpen/binarize/spacing/crop)
 	bool    no_whitelist;    // do not restrict recognized characters at all
 	bool    use_decimal_split; // split the image at the decimal, OCR each half, join with "."
+	int     decimal_split_margin_pct; // extra trim each side of the decimal, as % of its width
 };
 
 STrainerOcrSettings DefaultOcrSettings();

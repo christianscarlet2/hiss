@@ -224,12 +224,15 @@ void CTrainerDlg::DoDataExchange(CDataExchange *pDX)
 	DDX_Control(pDX, IDC_CHAR_SPACING, m_charSpacing);
 	DDX_Control(pDX, IDC_CHAR_SPACING_SPIN, m_charSpacingSpin);
 	DDX_Control(pDX, IDC_OCR_RESULT, m_ocrResult);
+	DDX_Control(pDX, IDC_SPLIT_MARGIN, m_splitMargin);
+	DDX_Control(pDX, IDC_SPLIT_MARGIN_SPIN, m_splitMarginSpin);
 }
 
 BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_BN_CLICKED(IDC_LOAD_TM, &CTrainerDlg::OnBnClickedLoadTm)
 	ON_BN_CLICKED(IDC_SELECT_MODEL, &CTrainerDlg::OnBnClickedSelectModel)
 	ON_CBN_SELCHANGE(IDC_TRANSFORM, &CTrainerDlg::OnSelchangeTransform)
+	ON_EN_CHANGE(IDC_SPLIT_MARGIN, &CTrainerDlg::OnChangeSplitMargin)
 	ON_BN_CLICKED(IDC_USE_DECIMAL_SPLIT, &CTrainerDlg::OnBnClickedDecimalSplit)
 	ON_BN_CLICKED(IDC_CONNECT, &CTrainerDlg::OnBnClickedConnect)
 	ON_BN_CLICKED(IDC_STARTSTOP, &CTrainerDlg::OnBnClickedStartStop)
@@ -308,6 +311,10 @@ BOOL CTrainerDlg::OnInitDialog()
 	m_charSpacingSpin.SetRange(0, 50);
 	m_charSpacingSpin.SetPos(6);
 	m_charSpacingSpin.SetBuddy(&m_charSpacing);
+	m_splitMargin.SetWindowText("10");
+	m_splitMarginSpin.SetRange(0, 50);
+	m_splitMarginSpin.SetPos(10);
+	m_splitMarginSpin.SetBuddy(&m_splitMargin);
 	CheckDlgButton(IDC_NO_PREPROCESS, BST_UNCHECKED);
 	CheckDlgButton(IDC_NO_WHITELIST, BST_UNCHECKED);
 	CheckDlgButton(IDC_USE_DECIMAL_SPLIT, BST_UNCHECKED);
@@ -473,6 +480,9 @@ void CTrainerDlg::UpdateDecimalSplitControls()
 	CWnd *re = GetDlgItem(IDC_SPLIT_RIGHT);
 	if (le != NULL) le->EnableWindow(on);
 	if (re != NULL) re->EnableWindow(on);
+	// The "Decimal trim %" control only matters while splitting is active.
+	if (m_splitMargin.GetSafeHwnd() != NULL) m_splitMargin.EnableWindow(on);
+	if (m_splitMarginSpin.GetSafeHwnd() != NULL) m_splitMarginSpin.EnableWindow(on);
 	if (!on) {
 		// Disabled: grey the boxes and show "disabled" rather than a stale value.
 		SetDlgItemText(IDC_SPLIT_LEFT, "disabled");
@@ -484,6 +494,14 @@ void CTrainerDlg::OnBnClickedDecimalSplit()
 {
 	UpdateDecimalSplitControls();
 	UpdatePreview();   // refresh the boxes/preview immediately
+}
+
+// Re-run the split preview the instant the trim changes (typing or spin), rather
+// than waiting for the next capture-timer tick. Fires harmlessly during startup
+// SetWindowText too (UpdatePreview no-ops with no frame/selection).
+void CTrainerDlg::OnChangeSplitMargin()
+{
+	UpdatePreview();
 }
 
 LRESULT CALLBACK CTrainerDlg::LowLevelMouseProc(int code, WPARAM wParam, LPARAM lParam)
@@ -603,6 +621,7 @@ void CTrainerDlg::SaveOcrSettings()
 	RegWriteString("ocr_no_preprocess", (IsDlgButtonChecked(IDC_NO_PREPROCESS) == BST_CHECKED) ? "1" : "0");
 	RegWriteString("ocr_no_whitelist", (IsDlgButtonChecked(IDC_NO_WHITELIST) == BST_CHECKED) ? "1" : "0");
 	RegWriteString("ocr_decimal_split", (IsDlgButtonChecked(IDC_USE_DECIMAL_SPLIT) == BST_CHECKED) ? "1" : "0");
+	m_splitMargin.GetWindowText(t); RegWriteString("ocr_split_margin", t);
 }
 
 void CTrainerDlg::LoadOcrSettings()
@@ -630,6 +649,8 @@ void CTrainerDlg::LoadOcrSettings()
 	if (!v.IsEmpty()) CheckDlgButton(IDC_NO_WHITELIST, v == "1" ? BST_CHECKED : BST_UNCHECKED);
 	v = RegReadString("ocr_decimal_split");
 	if (!v.IsEmpty()) CheckDlgButton(IDC_USE_DECIMAL_SPLIT, v == "1" ? BST_CHECKED : BST_UNCHECKED);
+	v = RegReadString("ocr_split_margin");
+	if (!v.IsEmpty()) { m_splitMargin.SetWindowText(v); m_splitMarginSpin.SetPos(atoi(v)); }
 }
 
 LRESULT CTrainerDlg::OnRegionSelected(WPARAM wParam, LPARAM lParam)
@@ -730,6 +751,7 @@ STrainerOcrSettings CTrainerDlg::ReadSettings()
 	s.no_preprocess = (IsDlgButtonChecked(IDC_NO_PREPROCESS) == BST_CHECKED);
 	s.no_whitelist = (IsDlgButtonChecked(IDC_NO_WHITELIST) == BST_CHECKED);
 	s.use_decimal_split = (IsDlgButtonChecked(IDC_USE_DECIMAL_SPLIT) == BST_CHECKED);
+	m_splitMargin.GetWindowText(t); s.decimal_split_margin_pct = atoi(t);
 	return s;
 }
 

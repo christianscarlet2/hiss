@@ -41,6 +41,7 @@ protected:
 	afx_msg void OnBnClickedLoadTm();
 	afx_msg void OnBnClickedSelectModel();
 	afx_msg void OnSelchangeTransform();
+	afx_msg void OnChangeSplitMargin();
 	afx_msg void OnBnClickedDecimalSplit();
 	afx_msg void OnBnClickedConnect();
 	afx_msg void OnBnClickedStartStop();
@@ -79,8 +80,8 @@ private:
 	// OCR settings controls
 	CComboBox m_transform;
 	CComboBox m_matchMode;
-	CEdit m_threshold, m_charSpacing, m_ocrResult;
-	CSpinButtonCtrl m_thresholdSpin, m_charSpacingSpin;
+	CEdit m_threshold, m_charSpacing, m_ocrResult, m_splitMargin;
+	CSpinButtonCtrl m_thresholdSpin, m_charSpacingSpin, m_splitMarginSpin;
 
 	std::vector<STrainerRegion> _regions;
 	std::vector<std::vector<BYTE> > _last;

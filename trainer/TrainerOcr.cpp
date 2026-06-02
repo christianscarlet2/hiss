@@ -30,6 +30,7 @@ STrainerOcrSettings DefaultOcrSettings()
 	s.no_preprocess = false;
 	s.no_whitelist = false;
 	s.use_decimal_split = false;
+	s.decimal_split_margin_pct = 10;
 	return s;
 }
 
@@ -378,17 +379,17 @@ bool CTrainerOcr::RunDecimalSplit(const Mat &crop_bgr, int threshold,
 		return false;
 	}
 
-	// Map the decimal's column span back to the OCR image and cut it out with a
-	// small safety margin, so neither half keeps any of the decimal's pixels.
-	int oleft  = (int)(dleft  / scale + 0.5);
-	int oright = (int)(dright / scale + 0.5);
-	if (oleft <= 0 || oright >= ocr_img.cols || oleft >= oright) return false;
-	// Small margin only -- just enough to swallow rounding/aliasing around the
-	// decimal. A larger margin eats the gap and pushes the first right-side digit
-	// against the image edge, which Tesseract then misreads.
-	int margin = max(1, (int)((oright - oleft) * 0.10 + 0.5));
-	int cut_l = max(1, oleft - margin);
-	int cut_r = min(ocr_img.cols - 1, oright + margin);
+	// Measure the decimal span AND the user "Decimal trim %" in the high-res
+	// detection image (where the dot is several pixels wide so the % has real
+	// resolution), then map the final cut columns back to the OCR image. Done in
+	// OCR-image space the trim would round to the 1px floor for every percentage on
+	// a tiny raw crop, so adjusting it had no visible effect. A larger trim eats the
+	// gap and pushes the first right-side digit against the edge, which Tesseract
+	// misreads; floored at 1px (detection space) as a guard against a sliver.
+	double trim = (_s.decimal_split_margin_pct > 0 ? _s.decimal_split_margin_pct : 0) / 100.0;
+	int margin_d = max(1, (int)((dright - dleft) * trim + 0.5));
+	int cut_l = max(1, (int)((dleft  - margin_d) / scale + 0.5));
+	int cut_r = min(ocr_img.cols - 1, (int)((dright + margin_d) / scale + 0.5));
 	if (cut_l >= cut_r) return false;
 
 	Mat leftImg  = ocr_img.colRange(0, cut_l).clone();
