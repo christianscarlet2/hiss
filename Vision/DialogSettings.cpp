@@ -337,15 +337,24 @@ void CDlgSettings::RunPreview()
 	COpenScrapeDoc *pDoc = (view != NULL) ? view->GetDocument() : NULL;
 	if (view == NULL || pDoc == NULL) return;
 
-	if (pDoc->attached_hwnd == NULL) {
+	if (pDoc->attached_hwnd == NULL || pDoc->attached_bitmap == NULL) {
 		SetDlgItemText(IDC_SET_LIVE_HINT, "Connect to a table first (View > Connect To Window).");
 		return;
 	}
-	CString name = view->PreviewRegionName();
+	// The selected region comes from the TableMap tree dialog.
+	CString name;
+	if (theApp.m_TableMapDlg != NULL)
+		name = theApp.m_TableMapDlg->SelectedRegionName();
+	if (name.IsEmpty())
+		name = view->PreviewRegionName();   // fallback: scrape-view selection
 	if (name.IsEmpty()) {
-		SetDlgItemText(IDC_SET_LIVE_HINT, "Select a region in the tablemap view to preview these settings.");
+		SetDlgItemText(IDC_SET_LIVE_HINT, "Select a region in the TableMap tree to preview these settings.");
 		return;
 	}
+	CString hint;
+	hint.Format("Live: region '%s'  (transform %s)", name.GetString(),
+		(m_current_group == 3) ? "A1" : "A0");
+	SetDlgItemText(IDC_SET_LIVE_HINT, hint);
 
 	// Re-capture the live window so the preview tracks the table.
 	if (theApp.m_pMainWnd != NULL)

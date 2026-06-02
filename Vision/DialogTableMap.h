@@ -213,6 +213,9 @@ public:
 	virtual ~CDlgTableMap();
 	enum { IDD = IDD_TABLEMAP };
 	void create_tree(void);
+	// Name of the region currently selected in the tree, or "" if the selection
+	// is not a region. Used by the Settings live OCR preview.
+	CString SelectedRegionName();
 	void update_ocr_display(void);
 	void update_display(void);
 	void UpdateStatus(void);

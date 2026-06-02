@@ -747,6 +747,17 @@ HTREEITEM CDlgTableMap::GetTextSelItemAndRecordType(CString* sel_text, CString* 
 	return record_type_node;
 }
 
+CString CDlgTableMap::SelectedRegionName()
+{
+	CString sel, type;
+	GetTextSelItemAndRecordType(&sel, &type);
+	if (type == "Regions" && p_tablemap != NULL
+			&& p_tablemap->r$()->find(sel.GetString()) != p_tablemap->r$()->end()) {
+		return sel;
+	}
+	return "";
+}
+
 void CDlgTableMap::UpdateDialogTitleForSelection(CString sel_text, CString type_text, HTREEITEM type_node)
 {
 	if (type_node == NULL) {
