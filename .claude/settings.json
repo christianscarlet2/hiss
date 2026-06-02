@@ -43,8 +43,8 @@
           },
           {
             "type": "command",
-            "command": "powershell.exe -NoProfile -Command \"[System.Media.SystemSounds]::Asterisk.Play(); Start-Sleep -Milliseconds 400\"",
-            "timeout": 5
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:\\www\\openholdembot_old\\scripts\\play_sound.ps1\" \"C:\\www\\openholdembot_old\\scripts\\sounds\\zelda-success.wav\"",
+            "timeout": 10
           }
         ]
       }
@@ -54,8 +54,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell.exe -NoProfile -Command \"[System.Media.SystemSounds]::Exclamation.Play(); Start-Sleep -Milliseconds 400\"",
-            "timeout": 5
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:\\www\\openholdembot_old\\scripts\\play_sound.ps1\" \"C:\\www\\openholdembot_old\\scripts\\sounds\\mario-info.wav\"",
+            "timeout": 10
           }
         ]
       }
