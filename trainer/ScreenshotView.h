@@ -25,6 +25,7 @@ protected:
 	afx_msg void OnPaint();
 	afx_msg BOOL OnEraseBkgnd(CDC *pDC);
 	afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
+	afx_msg LRESULT OnExitSizeMove(WPARAM wParam, LPARAM lParam);
 
 private:
 	void ClearBitmap();

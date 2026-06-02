@@ -244,6 +244,7 @@ BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_MESSAGE(WM_TRAINER_OPEN_FONTS, &CTrainerDlg::OnOpenFonts)
 	ON_MESSAGE(WM_TRAINER_CAPTURE_FONTS, &CTrainerDlg::OnCaptureFonts)
 	ON_MESSAGE(WM_TRAINER_RECOGNIZE_ALL, &CTrainerDlg::OnRecognizeAll)
+	ON_MESSAGE(WM_EXITSIZEMOVE, &CTrainerDlg::OnExitSizeMove)
 END_MESSAGE_MAP()
 
 HWND g_trainer_main_hwnd = NULL;
@@ -321,6 +322,9 @@ BOOL CTrainerDlg::OnInitDialog()
 		ocr_ok ? _ocr.model_name().GetString() : "FAILED (check tessdata\\my_model)",
 		(_server != NULL && _server->port() != 0) ? "running" : "FAILED");
 	SetStatus(status);
+
+	// Put the main window back where it was on last close.
+	TrainerDB_RestoreWindowRect(GetSafeHwnd(), "main");
 
 	// Reload the last tablemap and reconnect to the last window if it's open.
 	RestoreLastSession();
@@ -1105,9 +1109,18 @@ void CTrainerDlg::UpdatePreview()
 	m_ocrResult.SetWindowText(r);
 }
 
+// Fires once when the user finishes dragging/resizing the window (not per pixel),
+// so we persist the placement here rather than on every WM_MOVE/WM_SIZE.
+LRESULT CTrainerDlg::OnExitSizeMove(WPARAM, LPARAM)
+{
+	TrainerDB_SaveWindowRect(GetSafeHwnd(), "main");
+	return 0;
+}
+
 void CTrainerDlg::OnDestroy()
 {
 	SaveOcrSettings();   // persist Image Processing settings for next launch
+	TrainerDB_SaveWindowRect(GetSafeHwnd(), "main");   // backstop: save final placement
 	KillTimer(TRAINER_TIMER);
 	_capturing = false;
 	if (::IsWindow(_zoom.GetSafeHwnd())) {

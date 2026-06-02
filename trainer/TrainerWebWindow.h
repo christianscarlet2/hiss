@@ -20,6 +20,7 @@ public:
 protected:
 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
 	afx_msg void OnSize(UINT nType, int cx, int cy);
+	afx_msg LRESULT OnExitSizeMove(WPARAM wParam, LPARAM lParam);
 
 private:
 	void ResizeBrowser(void);
@@ -29,4 +30,5 @@ private:
 	ICoreWebView2 *_webview;
 	unsigned short _port;
 	CString _path;
+	CString _settings_field;   // window-placement settings field (distinguishes the two instances)
 };

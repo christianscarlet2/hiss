@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "TrainerWebWindow.h"
+#include "TrainerDB.h"
 #include <wrl.h>
 #include "WebView2.h"
 
@@ -13,6 +14,7 @@ IMPLEMENT_DYNAMIC(CTrainerWebWindow, CWnd)
 BEGIN_MESSAGE_MAP(CTrainerWebWindow, CWnd)
 	ON_WM_CREATE()
 	ON_WM_SIZE()
+	ON_MESSAGE(WM_EXITSIZEMOVE, &CTrainerWebWindow::OnExitSizeMove)
 END_MESSAGE_MAP()
 
 CTrainerWebWindow::CTrainerWebWindow()
@@ -41,13 +43,16 @@ BOOL CTrainerWebWindow::Create(CWnd *owner, unsigned short port, const CString &
 	_owner = owner;
 	_port = port;
 	_path = path;
+	// Two instances share this class (the table page and the fonts editor); key
+	// their saved placement on the page so each remembers its own position/size.
+	_settings_field = (path.Find("fonts") >= 0) ? "web_fonts" : "web_table";
 	CString class_name = AfxRegisterWndClass(
 		CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW,
 		AfxGetApp()->LoadStandardCursor(IDC_ARROW),
 		(HBRUSH)(COLOR_WINDOW + 1),
 		::LoadIcon(NULL, IDI_APPLICATION));
 
-	return CWnd::CreateEx(
+	BOOL ok = CWnd::CreateEx(
 		0,
 		class_name,
 		title,
@@ -58,6 +63,17 @@ BOOL CTrainerWebWindow::Create(CWnd *owner, unsigned short port, const CString &
 		kTrainerWebHeight,
 		owner == NULL ? NULL : owner->GetSafeHwnd(),
 		NULL);
+	if (ok) {
+		TrainerDB_RestoreWindowRect(GetSafeHwnd(), CStringA(_settings_field));
+	}
+	return ok;
+}
+
+// Persist position + size once the user finishes a move/resize drag.
+LRESULT CTrainerWebWindow::OnExitSizeMove(WPARAM, LPARAM)
+{
+	TrainerDB_SaveWindowRect(GetSafeHwnd(), CStringA(_settings_field));
+	return 0;
 }
 
 int CTrainerWebWindow::OnCreate(LPCREATESTRUCT lpCreateStruct)

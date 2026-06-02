@@ -359,14 +359,40 @@ bool CTrainerOcr::RunDecimalSplit(const Mat &crop_bgr, int threshold,
 	Mat ocr_img = buildOcrImage(crop_bgr, true, threshold);
 	if (ocr_img.empty()) return false;
 
+	// Decimal detection needs resolution: under "no preprocessing" the OCR image is
+	// the small raw crop, whose decimal dot is too few pixels for the connected-
+	// component heuristics. Detect on an upscaled copy and map the split columns
+	// back to the OCR image. (The normal pipeline is already large, so scale == 1
+	// and detection runs on the OCR image unchanged.)
+	const int kDetectMinHeight = 120;
+	double scale = 1.0;
+	Mat detect_img = ocr_img;
+	if (ocr_img.rows > 0 && ocr_img.rows < kDetectMinHeight) {
+		scale = (double)kDetectMinHeight / ocr_img.rows;
+		resize(ocr_img, detect_img, Size(), scale, scale, INTER_LANCZOS4);
+	}
+
 	int dleft = 0, dright = 0;
-	if (!FindDecimalSplit(ocr_img, &dleft, &dright) || dleft <= 0 || dright >= ocr_img.cols) {
-		// No decimal: let Run() OCR the whole (pre)processed image normally.
+	if (!FindDecimalSplit(detect_img, &dleft, &dright) || dleft <= 0 || dright >= detect_img.cols) {
+		// No decimal: let Run() OCR the whole image normally.
 		return false;
 	}
 
-	Mat leftImg  = ocr_img.colRange(0, dleft).clone();
-	Mat rightImg = ocr_img.colRange(dright, ocr_img.cols).clone();
+	// Map the decimal's column span back to the OCR image and cut it out with a
+	// small safety margin, so neither half keeps any of the decimal's pixels.
+	int oleft  = (int)(dleft  / scale + 0.5);
+	int oright = (int)(dright / scale + 0.5);
+	if (oleft <= 0 || oright >= ocr_img.cols || oleft >= oright) return false;
+	// Small margin only -- just enough to swallow rounding/aliasing around the
+	// decimal. A larger margin eats the gap and pushes the first right-side digit
+	// against the image edge, which Tesseract then misreads.
+	int margin = max(1, (int)((oright - oleft) * 0.10 + 0.5));
+	int cut_l = max(1, oleft - margin);
+	int cut_r = min(ocr_img.cols - 1, oright + margin);
+	if (cut_l >= cut_r) return false;
+
+	Mat leftImg  = ocr_img.colRange(0, cut_l).clone();
+	Mat rightImg = ocr_img.colRange(cut_r, ocr_img.cols).clone();
 
 	process_ocr(leftImg, false);    CString l = _result;  int confL = _last_conf;
 	process_ocr(rightImg, true);    CString r = _result2; int confR = _last_conf;

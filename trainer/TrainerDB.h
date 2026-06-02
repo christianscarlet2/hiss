@@ -23,3 +23,17 @@ bool TrainerDB_ListTablemaps(std::vector<CString> *names);
 
 // Returns the tablemaps.id for a name, or -1 if not found / on error.
 long TrainerDB_TablemapId(pconn *conn, const CString &name);
+
+// --- Global application settings (the "settings" table: key TEXT -> JSONB) -----
+// Each call opens and closes its own connection. `key` is the settings row;
+// `field` is a named field inside that row's JSON value.
+CString TrainerDB_GetSetting(const CString &key, const CString &field);
+bool    TrainerDB_SetSetting(const CString &key, const CString &field, const CString &value);
+
+// --- Persisted UI window placement --------------------------------------------
+// Position + size are stored as "x,y,w,h" (screen coords) under the settings key
+// "trainer_windows", one field per window (e.g. "main", "screenshot").
+void TrainerDB_SaveWindowRect(HWND hwnd, const char *field);
+// Restores a previously saved rect. Returns false (leaving the window where it is)
+// when nothing is saved or the saved rect no longer lands on any monitor.
+bool TrainerDB_RestoreWindowRect(HWND hwnd, const char *field);

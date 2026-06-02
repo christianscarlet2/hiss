@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "ScreenshotView.h"
+#include "TrainerDB.h"
 
 IMPLEMENT_DYNAMIC(CScreenshotView, CWnd)
 
@@ -7,6 +8,7 @@ BEGIN_MESSAGE_MAP(CScreenshotView, CWnd)
 	ON_WM_PAINT()
 	ON_WM_ERASEBKGND()
 	ON_WM_LBUTTONDOWN()
+	ON_MESSAGE(WM_EXITSIZEMOVE, &CScreenshotView::OnExitSizeMove)
 END_MESSAGE_MAP()
 
 CScreenshotView::CScreenshotView()
@@ -41,7 +43,7 @@ BOOL CScreenshotView::Create(CWnd *owner)
 		(HBRUSH)::GetStockObject(DKGRAY_BRUSH),
 		::LoadIcon(NULL, IDI_APPLICATION));
 
-	return CWnd::CreateEx(
+	BOOL ok = CWnd::CreateEx(
 		0,
 		class_name,
 		"Tesseract Trainer — Screenshot (click a region)",
@@ -49,6 +51,17 @@ BOOL CScreenshotView::Create(CWnd *owner)
 		CW_USEDEFAULT, CW_USEDEFAULT, 900, 600,
 		owner == NULL ? NULL : owner->GetSafeHwnd(),
 		NULL);
+	if (ok) {
+		TrainerDB_RestoreWindowRect(GetSafeHwnd(), "screenshot");
+	}
+	return ok;
+}
+
+// Persist position + size once the user finishes a move/resize drag.
+LRESULT CScreenshotView::OnExitSizeMove(WPARAM, LPARAM)
+{
+	TrainerDB_SaveWindowRect(GetSafeHwnd(), "screenshot");
+	return 0;
 }
 
 void CScreenshotView::UpdateFrame(HBITMAP src, int src_w, int src_h,
