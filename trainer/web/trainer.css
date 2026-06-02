@@ -42,6 +42,9 @@ th { color: #9aa3ab; font-weight: 500; position: sticky; top: 49px; background: 
 .imgcol { width: 320px; }
 .actcol { width: 1%; white-space: nowrap; }
 tr.saved { opacity: .5; }
+/* Rows whose value contains a 1 or 7 (easily-confused digits): light-yellow flag. */
+tr.has17 td { background: #fff7c2; }
+tr.has17 td.region, tr.has17 .region { color: #5a5326; }
 td.img img {
   background: #0c0e10; border: 1px solid #333; image-rendering: pixelated;
   max-width: 300px; max-height: 80px;

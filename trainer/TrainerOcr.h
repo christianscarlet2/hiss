@@ -56,7 +56,7 @@ private:
 	bool FindDecimalSplit(const cv::Mat &img, int *out_left, int *out_right);
 	// Returns true if a decimal was found and handled; false to let Run() fall
 	// back to the normal whole-image OCR path.
-	bool RunDecimalSplit(const cv::Mat &crop_bgr, int threshold,
+	bool RunDecimalSplit(const cv::Mat &crop_bgr, int threshold, bool is_balance,
 		cv::Mat *preview_bgr, CString *text, int *mean_conf);
 	cv::Mat BuildSplitPreview(const cv::Mat &left, const cv::Mat &right);
 

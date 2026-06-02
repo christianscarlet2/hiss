@@ -11,6 +11,13 @@
   var rendered = {};
   var currentTransform = 'AutoOcr0';
 
+  // Flag rows whose value contains a 1 or 7 (the easily-confused digits) so they
+  // stand out for a quick manual check. Updates live as the value is edited.
+  function has17(v) { return /[17]/.test(v || ''); }
+  function markRow(tr, value) {
+    if (has17(value)) tr.classList.add('has17'); else tr.classList.remove('has17');
+  }
+
   function api(method, url, cb) {
     var xhr = new XMLHttpRequest();
     xhr.open(method, url, true);
@@ -69,6 +76,7 @@
     input.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { doSave(); }
     });
+    input.addEventListener('input', function () { markRow(tr, input.value); });
     var unit = document.createElement('span');
     unit.className = 'unit';
     unit.textContent = '+ BB';   // " BB" is appended to the .gt.txt on save
@@ -118,6 +126,7 @@
 
     rendered[s.id] = { tr: tr, input: input, saved: !!s.saved };
     if (s.saved) tr.classList.add('saved');
+    markRow(tr, input.value);
     return tr;
   }
 

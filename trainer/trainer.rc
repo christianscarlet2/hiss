@@ -24,7 +24,7 @@ FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
     PUSHBUTTON      "Load Tablemap...",IDC_LOAD_TM,7,7,80,16
     PUSHBUTTON      "Connect (click a window)",IDC_CONNECT,91,7,104,16
-    PUSHBUTTON      "Open Table",IDC_OPEN_TABLE,199,7,66,16
+    PUSHBUTTON      "Open Sample Gen",IDC_OPEN_TABLE,199,7,66,16
     PUSHBUTTON      "Clear Training Files",IDC_CLEAR_TRAINING,269,7,84,16
     PUSHBUTTON      "Start",IDC_STARTSTOP,7,28,60,16
     CONTROL         "Ignore bad scrapes",IDC_IGNORE_BAD,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,73,32,114,10

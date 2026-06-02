@@ -46,7 +46,7 @@ static std::string StripAllWhitespace(const char *str)
 	return out;
 }
 
-// Balance fields show "2.28 BB"; drop a trailing "BB" (or "88" misread of BB).
+// Balance fields show "2.28 BB"; drop a trailing "BB".
 static CString StripBalanceUnitSuffix(CString s)
 {
 	s.Trim();
@@ -55,11 +55,19 @@ static CString StripBalanceUnitSuffix(CString s)
 	while (end > 0 && (s[end - 1] == 'B' || s[end - 1] == 'b')) end--;
 	if (end < n) {
 		s = s.Left(end);
-	} else if (s.GetLength() >= 2 && s.Right(2) == "88") {
-		CString candidate = s.Left(s.GetLength() - 2);
-		if (candidate.FindOneOf("0123456789") != -1) s = candidate;
 	}
 	s.Trim(" .");
+	return s;
+}
+
+// Noise characters Tesseract sometimes emits that are never valid in our fields.
+// Shared by the normal path and the decimal-split path so both clean identically.
+static CString StripBlacklistChars(CString s)
+{
+	static const char *kBlacklist = "!%&*+;=?@^/\"`#<{([])}>|";
+	for (const char *p = kBlacklist; *p; ++p) {
+		s.Remove(*p);
+	}
 	return s;
 }
 
@@ -354,7 +362,7 @@ Mat CTrainerOcr::BuildSplitPreview(const Mat &left, const Mat &right)
 // Build the OCR-input image, split it at the decimal, OCR each half with the
 // current settings, and join the two halves with a "." -- Tesseract is far more
 // reliable on single digit-runs than on a number containing a tiny decimal dot.
-bool CTrainerOcr::RunDecimalSplit(const Mat &crop_bgr, int threshold,
+bool CTrainerOcr::RunDecimalSplit(const Mat &crop_bgr, int threshold, bool is_balance,
 	Mat *preview_bgr, CString *text, int *mean_conf)
 {
 	Mat ocr_img = buildOcrImage(crop_bgr, true, threshold);
@@ -397,8 +405,12 @@ bool CTrainerOcr::RunDecimalSplit(const Mat &crop_bgr, int threshold,
 
 	process_ocr(leftImg, false);    CString l = _result;  int confL = _last_conf;
 	process_ocr(rightImg, true);    CString r = _result2; int confR = _last_conf;
-	// Each half is one side of the decimal; drop any stray dot Tesseract emits.
+	// Same blacklist cleanup the whole-image path applies, then drop any stray dot
+	// Tesseract emits (the decimal is re-added as the joint between the halves).
+	l = StripBlacklistChars(l); r = StripBlacklistChars(r);
 	l.Remove('.'); r.Remove('.'); l.Trim(); r.Trim();
+	// A balance field's trailing "BB" unit lands on the right half; strip it.
+	if (is_balance) r = StripBalanceUnitSuffix(r);
 	// The decimal is always the joint between the two halves' OCR results.
 	CString combined = l + "." + r;
 	_did_split = true; _split_left = l; _split_right = r;
@@ -443,7 +455,7 @@ void CTrainerOcr::Run(const Mat &crop_bgr, const STrainerOcrSettings &settings,
 	// Decimal-splitting path: split, OCR each half, join with ".". If no decimal
 	// is found it returns false and we fall through to normal whole-image OCR.
 	if (_s.use_decimal_split &&
-		RunDecimalSplit(crop_bgr, threshold, preview_bgr, text, mean_conf)) {
+		RunDecimalSplit(crop_bgr, threshold, is_balance, preview_bgr, text, mean_conf)) {
 		return;
 	}
 
@@ -454,12 +466,8 @@ void CTrainerOcr::Run(const Mat &crop_bgr, const STrainerOcrSettings &settings,
 	CString ocr_result2 = _result2;
 
 	// Clean noise but never strip valid OCR characters.
-	const char *blacklist = "!%&*+;=?@^/\"`#<{([])}>|";
-	for (size_t i = 0; i < strlen(blacklist); i++) {
-		char c = blacklist[i];
-		if (ocr_result.Find(c) != -1) ocr_result.Replace(c, '\0');
-		if (ocr_result2.Find(c) != -1) ocr_result2.Replace(c, '\0');
-	}
+	ocr_result = StripBlacklistChars(ocr_result);
+	ocr_result2 = StripBlacklistChars(ocr_result2);
 
 	if (CString(region_name).MakeLower().Find("balance") != -1) {
 		ocr_result = StripBalanceUnitSuffix(ocr_result);
