@@ -671,6 +671,25 @@ void CTrainerFonts::RemoveHexmash(int group, const CStringA &hexmash)
 	LeaveCriticalSection(&_cs);
 }
 
+int CTrainerFonts::RemoveCharFromGroup(int group, char ch)
+{
+	if (group < 0 || group >= TFE_NUM_FONT_GROUPS || ch == 0) return 0;
+	EnterCriticalSection(&_cs);
+	// A character can have several font records (different glyph shapes), each keyed
+	// by hexmash. Collect all whose record maps to this char, then erase them.
+	std::vector<CStringA> keys;
+	for (TFontGroup::const_iterator it = _groups[group].begin(); it != _groups[group].end(); ++it) {
+		if (it->second.ch == ch) keys.push_back(it->first);
+	}
+	for (size_t i = 0; i < keys.size(); i++) _groups[group].erase(keys[i]);
+	int count = (int)keys.size();
+	LeaveCriticalSection(&_cs);
+	// Persist the deletion to the hiss database (full font-set sync, same path as a
+	// save). Report failure so the UI doesn't claim success on a DB error.
+	if (count > 0 && !SaveToDB()) return -1;
+	return count;
+}
+
 int CTrainerFonts::group_count(int g)
 {
 	if (g < 0 || g >= TFE_NUM_FONT_GROUPS) return 0;

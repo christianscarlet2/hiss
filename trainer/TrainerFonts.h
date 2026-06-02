@@ -80,6 +80,10 @@ public:
 	void SetGlyph(int group, const TGlyph &glyph, char ch);
 	// Remove a hexmash from a group (thread-safe).
 	void RemoveHexmash(int group, const CStringA &hexmash);
+	// Remove EVERY font record mapping to character `ch` from group `group`, then
+	// persist to the database. Returns the number of records removed, or -1 if the
+	// database write failed (used by the footer's click-to-delete).
+	int RemoveCharFromGroup(int group, char ch);
 
 	int      group_count(int g);     // number of records currently in group g
 	CStringA GroupChars(int g);      // distinct characters that have a font in group g

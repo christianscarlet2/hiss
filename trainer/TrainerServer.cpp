@@ -586,6 +586,19 @@ void CTrainerServer::HandleClient(SOCKET client)
 		send(client, response.GetString(), response.GetLength(), 0);
 		return;
 	}
+	// Delete every font record for ONE character in a group (footer chip click).
+	if (path.CompareNoCase("/api/fonts/deletechar") == 0) {
+		int group = atoi(QueryValue(query, "group"));
+		CStringA ch = UrlDecode(QueryValue(query, "ch"));
+		int removed = (p_trainer_fonts != NULL && !ch.IsEmpty())
+			? p_trainer_fonts->RemoveCharFromGroup(group, ch[0]) : 0;
+		CStringA body;
+		if (removed < 0) body = "{\"ok\":false,\"error\":\"Database write failed.\"}";
+		else            body.Format("{\"ok\":true,\"removed\":%d}", removed);
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
 	// Save all labeled glyphs into the tablemap's t$ groups, then persist the .tm.
 	if (path.CompareNoCase("/api/fonts/save") == 0) {
 		int written = (p_font_glyph_store != NULL) ? p_font_glyph_store->SaveAll() : 0;

@@ -424,7 +424,7 @@
     updateCoverageFooter();
   }
 
-  function fillCharsetRows(rowEl1, rowEl2, coveredObj, summaryEl, labelPrefix, textColor) {
+  function fillCharsetRows(rowEl1, rowEl2, coveredObj, summaryEl, labelPrefix, textColor, colour) {
     var missing = 0;
     function fill(rowEl, chars) {
       if (!rowEl) return;
@@ -440,6 +440,14 @@
           if (darkestScrape) s.style.backgroundColor = darkestScrape;
           if (textColor) s.style.color = textColor;
           missing++;
+        } else {
+          // Accounted chips have saved font(s): clicking one deletes them (with a
+          // confirm). See the red hint under the footer.
+          s.classList.add('deletable');
+          s.title = 'Click to delete the saved font(s) for "' + ch + '"';
+          (function (chr) {
+            s.addEventListener('click', function () { deleteCharFonts(chr, colour || 1); });
+          })(ch);
         }
         rowEl.appendChild(s);
         // When more than one glyph was saved for this char under this colour, show a
@@ -468,14 +476,35 @@
         for (var i = 0; i < dbChars.length; i++) c[1][dbChars.charAt(i)] = 1;   // count of 1 each
         saveCovState();
       }
-      fillCharsetRows(covRow1, covRow2, c[1], glyphbarSummary, 'Colour 1 — unaccounted (Text' + defaultGroup + ')', colourRgb(1));
-      fillCharsetRows(cov2Row1, cov2Row2, c[2], glyphbarSummary2, 'Colour 2 — unaccounted (Text' + defaultGroup + ')', colourRgb(2));
+      fillCharsetRows(covRow1, covRow2, c[1], glyphbarSummary, 'Colour 1 — unaccounted (Text' + defaultGroup + ')', colourRgb(1), 1);
+      fillCharsetRows(cov2Row1, cov2Row2, c[2], glyphbarSummary2, 'Colour 2 — unaccounted (Text' + defaultGroup + ')', colourRgb(2), 2);
     } else {
       if (covBlock2) covBlock2.style.display = 'none';
       var covered = {};
       if (dbChars) for (var j = 0; j < dbChars.length; j++) covered[dbChars.charAt(j)] = true;
-      fillCharsetRows(covRow1, covRow2, covered, glyphbarSummary, 'Unaccounted for glyphs (Text' + defaultGroup + ')', colourRgb(1));
+      fillCharsetRows(covRow1, covRow2, covered, glyphbarSummary, 'Unaccounted for glyphs (Text' + defaultGroup + ')', colourRgb(1), 1);
     }
+  }
+  // Click-to-delete from the footer: remove EVERY saved font for character `ch` in
+  // the current group from the database (after a confirm), then refresh coverage.
+  function deleteCharFonts(ch, colour) {
+    var g = defaultGroup;
+    if (!confirm('Delete the saved font(s) for "' + ch + '" (Colour ' + colour + ', Text' + g + ') from the database?\n\nThis removes every glyph saved as "' + ch + '" in this group and cannot be undone.')) {
+      return;
+    }
+    api('POST', '/api/fonts/deletechar?group=' + g + '&ch=' + encodeURIComponent(ch), function (status, data) {
+      if (data && data.ok) {
+        // The fonts are gone server-side; clear this char from both colours' coverage
+        // so its chip stops showing as accounted, then re-pull.
+        var c = ensureCov(g);
+        delete c[1][ch]; delete c[2][ch];
+        saveCovState();
+        statusEl.textContent = 'Deleted ' + (data.removed || 0) + ' font record(s) for "' + ch + '" (Text' + g + ')';
+        refresh();
+      } else {
+        statusEl.textContent = (data && data.error) ? data.error : 'Delete failed';
+      }
+    });
   }
   function updateCoverageFooter() {
     api('GET', '/api/fonts/coverage?group=' + defaultGroup, function (status, data) {
