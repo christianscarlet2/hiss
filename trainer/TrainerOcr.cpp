@@ -166,6 +166,15 @@ Mat CTrainerOcr::ScaleOcrViewImage(Mat img_bounded)
 
 Mat CTrainerOcr::buildOcrImage(Mat img_orig, bool binarize, int threshold)
 {
+	// "No preprocessing": hand the untouched crop straight to Tesseract -- no
+	// grayscale, resize, binarize or character-spacing. (Run() also forces
+	// word-box cropping off in this mode.) This is what the "No preprocessing"
+	// checkbox promises; the threshold/spacing controls simply don't apply here.
+	// The page-seg mode is still set in process_ocr, so "Mode" works either way.
+	if (_s.no_preprocess) {
+		return img_orig.clone();
+	}
+
 	Mat img_resized;
 	int basewidth, hsize;
 	float wpercent;
@@ -179,32 +188,30 @@ Mat CTrainerOcr::buildOcrImage(Mat img_orig, bool binarize, int threshold)
 		basewidth = (int)((float)img_orig.cols * wpercent);
 	}
 	cvtColor(img_orig, img_resized, COLOR_BGR2GRAY);
-	// The upscale + character-spacing are enhancement: skipped under "no
-	// preprocessing". Threshold binarization ALWAYS applies (and the page-seg
-	// mode is always set in process_ocr), so threshold and mode work whether
-	// preprocessing is on or off. (Sharpen and cropping were removed.)
-	if (!_s.no_preprocess) {
-		resize(img_resized, img_resized, Size(basewidth, hsize), INTER_LANCZOS4);
-	}
+	resize(img_resized, img_resized, Size(basewidth, hsize), INTER_LANCZOS4);
 	if (binarize) {
 		img_resized = binarize_array_opencv(img_resized, threshold);
-		if (!_s.no_preprocess) {
-			img_resized = AddCharacterSpacing(img_resized, _s.char_spacing);
-		}
+		img_resized = AddCharacterSpacing(img_resized, _s.char_spacing);
 	}
 	return img_resized;
 }
 
 Mat CTrainerOcr::prepareImage(Mat img_orig, bool binarize, int threshold, bool second_pass)
 {
-	Mat img_resized = buildOcrImage(img_orig, binarize, threshold);
+	Mat img_ocr = buildOcrImage(img_orig, binarize, threshold);
+	process_ocr(img_ocr, second_pass);
 
-	Mat img_bounded = img_resized.clone();
-	img_bounded.convertTo(img_bounded, CV_8UC3);
-	cvtColor(img_bounded, img_bounded, COLOR_GRAY2BGR);
-
-	process_ocr(img_resized, second_pass);
-	return ScaleOcrViewImage(img_bounded);
+	// Preview = exactly what Tesseract received. The normal pipeline yields a
+	// 1-channel (gray/binary) image we colour-convert for display and shrink back
+	// to preview scale; the raw "no preprocessing" crop is already BGR at region
+	// scale, so show it as-is.
+	if (img_ocr.channels() == 1) {
+		Mat img_bounded;
+		img_ocr.convertTo(img_bounded, CV_8UC1);
+		cvtColor(img_bounded, img_bounded, COLOR_GRAY2BGR);
+		return ScaleOcrViewImage(img_bounded);
+	}
+	return img_ocr.clone();
 }
 
 void CTrainerOcr::process_ocr(Mat img_orig, bool second_pass)
