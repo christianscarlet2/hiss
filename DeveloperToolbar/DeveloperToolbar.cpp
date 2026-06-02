@@ -15,6 +15,8 @@
 #include <string>
 #include <vector>
 
+#include "libpq-fe.h"
+
 #pragma comment(lib, "comctl32.lib")
 
 #define IDC_WIDTH_EDIT 1001
@@ -30,6 +32,7 @@
 #define IDC_CLOSE_ALL_BUTTON 1011
 #define IDC_OPEN_SCRCPY_BUTTON 1012
 #define IDC_OPEN_TRAINER_BUTTON 1013
+#define IDC_REC_SCRCPY_BUTTON 1014
 
 #define TIMER_WINDOW_MONITOR 2001
 
@@ -51,6 +54,7 @@ static HWND g_open_openscrape_button = NULL;
 static HWND g_open_openholdem_button = NULL;
 static HWND g_open_scrcpy_button = NULL;
 static HWND g_open_trainer_button = NULL;
+static HWND g_rec_scrcpy_button = NULL;
 static HWND g_close_all_button = NULL;
 static HWND g_build_progress = NULL;
 static HWND g_alert_text = NULL;
@@ -1046,6 +1050,240 @@ static void OpenExternalExecutable(const char *exe_path, const char *display_nam
   }
 }
 
+// ---- scrcpy window auto-positioning (placement persisted to the Hiss postgres DB) ---
+// The scrcpy mirror window is created by scrcpy.exe (its title is the device name); it
+// is NOT the console/terminal window scrcpy may also spawn. We locate it as a visible,
+// non-owned, captioned top-level window owned by a scrcpy.exe process. Its last
+// position/size lives in the `settings` table (key 'devtoolbar_windows', field
+// 'scrcpy', value "x,y,w,h") and is restored when scrcpy is opened from this toolbar.
+
+static const char *kScrcpyWindowsKey = "devtoolbar_windows";
+static const char *kScrcpyWindowField = "scrcpy";
+
+// Optional connection override at HKCU\Software\Hiss\Trainer "hiss_conn" (shared with
+// the trainer, so a single registry value points every tool at the same database).
+static std::string DbReadConnOverride() {
+  std::string out;
+  HKEY key;
+  if (RegOpenKeyExA(HKEY_CURRENT_USER, "Software\\Hiss\\Trainer", 0, KEY_READ, &key) == ERROR_SUCCESS) {
+    char buf[1024] = {0};
+    DWORD size = sizeof(buf), type = 0;
+    if (RegQueryValueExA(key, "hiss_conn", NULL, &type, (LPBYTE)buf, &size) == ERROR_SUCCESS && type == REG_SZ) {
+      out = buf;
+    }
+    RegCloseKey(key);
+  }
+  return out;
+}
+
+static PGconn *DbConnect() {
+  std::string conn = DbReadConnOverride();
+  if (conn.empty()) {
+    conn = "host=127.0.0.1 port=5432 user=postgres password='dbpass' dbname='hiss'";
+  }
+  PGconn *c = PQconnectdb(conn.c_str());
+  if (c == NULL || PQstatus(c) != CONNECTION_OK) {
+    if (c) PQfinish(c);
+    return NULL;
+  }
+  return c;
+}
+
+static std::string SqlEscapeLiteral(const std::string &s) {
+  std::string out;
+  for (size_t i = 0; i < s.size(); ++i) {
+    if (s[i] == '\'') out += "''"; else out += s[i];
+  }
+  return out;
+}
+
+// Upsert the rect as "x,y,w,h" into settings(key='devtoolbar_windows').value->'scrcpy'
+// (same JSON-merge shape as TrainerDB_SetSetting).
+static bool DbSaveScrcpyRect(const RECT &r) {
+  PGconn *conn = DbConnect();
+  if (conn == NULL) return false;
+  char val[64] = {0};
+  sprintf_s(val, "%d,%d,%d,%d", (int)r.left, (int)r.top, (int)(r.right - r.left), (int)(r.bottom - r.top));
+  const std::string v = SqlEscapeLiteral(val);
+  const std::string field = SqlEscapeLiteral(kScrcpyWindowField);
+  const std::string key = SqlEscapeLiteral(kScrcpyWindowsKey);
+  const std::string sql =
+    "INSERT INTO settings(key,value,updated_at) VALUES ('" + key + "', jsonb_build_object('" + field +
+    "', to_jsonb('" + v + "'::text)), now()) ON CONFLICT (key) DO UPDATE SET value = jsonb_set("
+    "COALESCE(settings.value,'{}'::jsonb), '{" + field + "}', to_jsonb('" + v + "'::text)), updated_at = now()";
+  PGresult *res = PQexec(conn, sql.c_str());
+  bool ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
+  if (res) PQclear(res);
+  PQfinish(conn);
+  return ok;
+}
+
+static bool DbLoadScrcpyRect(RECT *out) {
+  if (out == NULL) return false;
+  PGconn *conn = DbConnect();
+  if (conn == NULL) return false;
+  const std::string field = SqlEscapeLiteral(kScrcpyWindowField);
+  const std::string key = SqlEscapeLiteral(kScrcpyWindowsKey);
+  const std::string sql = "SELECT value->>'" + field + "' FROM settings WHERE key='" + key + "'";
+  PGresult *res = PQexec(conn, sql.c_str());
+  bool ok = false;
+  if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) > 0 && !PQgetisnull(res, 0, 0)) {
+    int x = 0, y = 0, w = 0, h = 0;
+    if (sscanf_s(PQgetvalue(res, 0, 0), "%d,%d,%d,%d", &x, &y, &w, &h) == 4 && w >= 50 && h >= 50) {
+      out->left = x; out->top = y; out->right = x + w; out->bottom = y + h;
+      ok = true;
+    }
+  }
+  if (res) PQclear(res);
+  PQfinish(conn);
+  return ok;
+}
+
+static void CollectScrcpyPids(std::vector<DWORD> *pids) {
+  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snapshot == INVALID_HANDLE_VALUE) return;
+  PROCESSENTRY32 entry = {0};
+  entry.dwSize = sizeof(entry);
+  if (Process32First(snapshot, &entry)) {
+    do {
+      if (_stricmp(entry.szExeFile, "scrcpy.exe") == 0) pids->push_back(entry.th32ProcessID);
+    } while (Process32Next(snapshot, &entry));
+  }
+  CloseHandle(snapshot);
+}
+
+// True if `window` is a scrcpy mirror window (owned by a scrcpy pid, visible, top-level,
+// captioned, and not the console). `pids` is the current set of scrcpy.exe process ids.
+static bool IsScrcpyMirrorWindow(HWND window, const std::vector<DWORD> &pids) {
+  DWORD wpid = 0;
+  GetWindowThreadProcessId(window, &wpid);
+  bool pid_match = false;
+  for (size_t i = 0; i < pids.size(); ++i) {
+    if (pids[i] == wpid) { pid_match = true; break; }
+  }
+  if (!pid_match) return false;
+  if (!IsWindowVisible(window) || GetWindow(window, GW_OWNER) != NULL) return false;
+  char cls[64] = {0};
+  GetClassNameA(window, cls, sizeof(cls));
+  if (_stricmp(cls, "ConsoleWindowClass") == 0) return false;   // skip scrcpy's terminal
+  if ((GetWindowLong(window, GWL_STYLE) & WS_CAPTION) != WS_CAPTION) return false;
+  return true;
+}
+
+struct ScrcpyWindowSearch {
+  const std::vector<DWORD> *pids;
+  const std::vector<HWND> *exclude;   // windows that existed before launch (skip them)
+  HWND window;
+};
+
+static BOOL CALLBACK FindScrcpyWindowProc(HWND window, LPARAM param) {
+  ScrcpyWindowSearch *s = (ScrcpyWindowSearch*)param;
+  if (!IsScrcpyMirrorWindow(window, *s->pids)) return TRUE;
+  if (s->exclude) {
+    for (size_t i = 0; i < s->exclude->size(); ++i) {
+      if ((*s->exclude)[i] == window) return TRUE;
+    }
+  }
+  s->window = window;
+  return FALSE;
+}
+
+// Find a scrcpy mirror window. When `exclude` is given, only a window NOT in that list
+// is returned (so the launcher repositions the newly-opened one, not a pre-existing one).
+static HWND FindScrcpyWindow(const std::vector<HWND> *exclude) {
+  std::vector<DWORD> pids;
+  CollectScrcpyPids(&pids);
+  if (pids.empty()) return NULL;
+  ScrcpyWindowSearch s = { &pids, exclude, NULL };
+  EnumWindows(FindScrcpyWindowProc, (LPARAM)&s);
+  return s.window;
+}
+
+static BOOL CALLBACK CollectScrcpyWindowsProc(HWND window, LPARAM param) {
+  ScrcpyWindowSearch *s = (ScrcpyWindowSearch*)param;
+  if (IsScrcpyMirrorWindow(window, *s->pids)) {
+    const_cast<std::vector<HWND>*>(s->exclude)->push_back(window);
+  }
+  return TRUE;
+}
+
+static void CollectScrcpyWindows(std::vector<HWND> *out) {
+  std::vector<DWORD> pids;
+  CollectScrcpyPids(&pids);
+  if (pids.empty()) return;
+  ScrcpyWindowSearch s = { &pids, out, NULL };   // reuse `exclude` slot as the output list
+  EnumWindows(CollectScrcpyWindowsProc, (LPARAM)&s);
+}
+
+struct ScrcpyPositionJob {
+  RECT rect;                 // saved placement to apply
+  std::vector<HWND> before;  // scrcpy windows already open at launch time
+};
+
+static DWORD WINAPI ScrcpyPositionThread(LPVOID param) {
+  ScrcpyPositionJob *job = (ScrcpyPositionJob*)param;
+  // Poll up to ~25s for the NEW mirror window to appear (USB/adb startup can be slow).
+  HWND win = NULL;
+  for (int i = 0; i < 100 && win == NULL; ++i) {
+    win = FindScrcpyWindow(&job->before);
+    if (win == NULL) Sleep(250);
+  }
+  if (win != NULL) {
+    RECT r = job->rect;
+    // Only move if the saved placement still lands on a monitor (handles a screen that
+    // was unplugged since the position was recorded).
+    if (MonitorFromRect(&r, MONITOR_DEFAULTTONULL) != NULL) {
+      SetWindowPos(win, NULL, r.left, r.top, r.right - r.left, r.bottom - r.top,
+        SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+  }
+  delete job;
+  return 0;
+}
+
+// Launch scrcpy, then (if a placement was recorded) move the new mirror window to it on
+// a background thread once the window actually appears.
+static void OpenScrcpyAndPosition() {
+  std::vector<HWND> before;
+  CollectScrcpyWindows(&before);   // so we reposition only the window this launch opens
+  RECT saved;
+  const bool have_saved = DbLoadScrcpyRect(&saved);
+
+  OpenExternalExecutable(kScrcpyPath, "Scrcpy");
+
+  if (!have_saved) {
+    SetStatusText("Opened scrcpy. No saved position yet - use \"Rec Scrcpy Pos\" to record one.");
+    return;
+  }
+  ScrcpyPositionJob *job = new ScrcpyPositionJob();
+  job->rect = saved;
+  job->before = before;
+  HANDLE th = CreateThread(NULL, 0, ScrcpyPositionThread, job, 0, NULL);
+  if (th != NULL) CloseHandle(th); else delete job;
+}
+
+// Record the current scrcpy mirror window's position + size into the Hiss database.
+static void RecordScrcpyPosition() {
+  HWND win = FindScrcpyWindow(NULL);
+  if (win == NULL) {
+    SetStatusText("scrcpy mirror window not found. Open scrcpy and connect a device first.");
+    return;
+  }
+  RECT r;
+  if (!GetWindowRect(win, &r)) {
+    SetStatusText("Could not read the scrcpy window position.");
+    return;
+  }
+  if (DbSaveScrcpyRect(r)) {
+    char msg[160] = {0};
+    sprintf_s(msg, "Recorded scrcpy position %d,%d  %dx%d to the Hiss database.",
+      (int)r.left, (int)r.top, (int)(r.right - r.left), (int)(r.bottom - r.top));
+    SetStatusText(msg);
+  } else {
+    SetStatusText("Failed to write scrcpy position to the Hiss database.");
+  }
+}
+
 static void CreateChildControls(HWND hwnd) {
   CreateWindow("STATIC", "Width",
     WS_CHILD | WS_VISIBLE,
@@ -1094,6 +1332,10 @@ static void CreateChildControls(HWND hwnd) {
     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
     16, 154, 104, 28, hwnd, (HMENU)IDC_OPEN_TRAINER_BUTTON, g_instance, NULL);
 
+  g_rec_scrcpy_button = CreateWindow("BUTTON", "Rec Scrcpy Pos",
+    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+    126, 154, 220, 28, hwnd, (HMENU)IDC_REC_SCRCPY_BUTTON, g_instance, NULL);
+
   g_build_progress = CreateWindowEx(0, PROGRESS_CLASS, "",
     WS_CHILD | WS_VISIBLE,
     16, 194, 330, 18, hwnd, (HMENU)IDC_BUILD_PROGRESS, g_instance, NULL);
@@ -1136,7 +1378,11 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARA
       return 0;
     }
     if (LOWORD(wparam) == IDC_OPEN_SCRCPY_BUTTON) {
-      OpenExternalExecutable(kScrcpyPath, "Scrcpy");
+      OpenScrcpyAndPosition();
+      return 0;
+    }
+    if (LOWORD(wparam) == IDC_REC_SCRCPY_BUTTON) {
+      RecordScrcpyPosition();
       return 0;
     }
     if (LOWORD(wparam) == IDC_OPEN_TRAINER_BUTTON) {
