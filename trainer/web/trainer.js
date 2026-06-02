@@ -60,10 +60,6 @@
     var img = document.createElement('img');
     img.src = '/api/sample/image?id=' + s.id;
     tdImg.appendChild(img);
-    var rg = document.createElement('div');
-    rg.className = 'region';
-    rg.textContent = s.region + '  #' + s.id;
-    tdImg.appendChild(rg);
     tr.appendChild(tdImg);
 
     var tdTxt = document.createElement('td');
@@ -268,7 +264,36 @@
     });
   });
 
+  // ---- Start/Stop sample capture (moved here from the desktop dialog) ---------
+  var startStopBtn = document.getElementById('startStop');
+  var capturing = false;
+  function setCaptureLabel(on) {
+    capturing = !!on;
+    startStopBtn.textContent = on ? 'Stop' : 'Start';
+    startStopBtn.classList.toggle('warn', on);   // amber while capturing
+  }
+  if (startStopBtn) {
+    startStopBtn.addEventListener('click', function () {
+      var wasCapturing = capturing;
+      api('POST', '/api/capture?set=toggle', function (status, data) {
+        if (data) {
+          setCaptureLabel(data.capturing);
+          // Asked to start but it didn't take -> not connected / no tablemap.
+          if (!wasCapturing && !data.capturing) {
+            statusEl.textContent = 'Connect to a table and load a tablemap in the trainer first.';
+          }
+        }
+      });
+    });
+  }
+  function pollCapture() {
+    api('GET', '/api/capture', function (status, data) {
+      if (status === 200 && data) setCaptureLabel(data.capturing);
+    });
+  }
+
   loadFontInfo();
+  pollCapture();
   refresh();
-  setInterval(refresh, 1000);
+  setInterval(function () { refresh(); pollCapture(); }, 1000);
 })();

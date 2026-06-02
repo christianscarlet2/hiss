@@ -39,17 +39,21 @@ main { padding: 10px 14px 40px; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #2c3036; vertical-align: middle; }
 th { color: #9aa3ab; font-weight: 500; position: sticky; top: 49px; background: #202327; }
-.imgcol { width: 320px; }
+.imgcol { width: 1%; white-space: nowrap; }   /* shrink to the image's own width */
 .actcol { width: 1%; white-space: nowrap; }
 tr.saved { opacity: .5; }
-/* Rows whose value contains a 1 or 7 (easily-confused digits): light-yellow flag. */
-tr.has17 td { background: #fff7c2; }
-tr.has17 td.region, tr.has17 .region { color: #5a5326; }
+/* Rows whose value contains a 1 or 7 (easily-confused digits): light-grey flag. */
+tr.has17 td { background: #d3d3d3; }
+/* Scaled up to the input box's height; width follows the crop's aspect (no fixed
+   width, so the element is exactly the image -- no letterbox/black box). */
 td.img img {
+  display: block;
+  height: 37px; width: auto;
   background: #0c0e10; border: 1px solid #333; image-rendering: pixelated;
-  max-width: 300px; max-height: 80px;
 }
-td.region { color: #7f8a93; font-size: 11px; }
+/* Only 3px between the image and the input box. */
+td.img { padding-right: 0; }
+td.img + td { padding-left: 3px; }
 .labelrow { display: flex; align-items: center; gap: 8px; }
 input.label {
   flex: 0 1 300px; padding: 7px 9px; font-size: 15px;

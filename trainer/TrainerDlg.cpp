@@ -235,7 +235,7 @@ BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_EN_CHANGE(IDC_SPLIT_MARGIN, &CTrainerDlg::OnChangeSplitMargin)
 	ON_BN_CLICKED(IDC_USE_DECIMAL_SPLIT, &CTrainerDlg::OnBnClickedDecimalSplit)
 	ON_BN_CLICKED(IDC_CONNECT, &CTrainerDlg::OnBnClickedConnect)
-	ON_BN_CLICKED(IDC_STARTSTOP, &CTrainerDlg::OnBnClickedStartStop)
+	ON_MESSAGE(WM_TRAINER_SET_CAPTURE, &CTrainerDlg::OnSetCapture)
 	ON_BN_CLICKED(IDC_OPEN_TABLE, &CTrainerDlg::OnBnClickedOpenTable)
 	ON_BN_CLICKED(IDC_CLEAR_TRAINING, &CTrainerDlg::OnBnClickedClearTraining)
 	ON_WM_TIMER()
@@ -663,27 +663,41 @@ LRESULT CTrainerDlg::OnRegionSelected(WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
-void CTrainerDlg::OnBnClickedStartStop()
+// Start/stop/toggle capture. action: 1=start, 2=stop, 3=toggle, 0=query only.
+// Returns 1 if capturing afterwards, else 0. Drives the web Start/Stop button.
+int CTrainerDlg::SetCapture(int action)
 {
-	if (_attached == NULL || !::IsWindow(_attached)) {
-		SetStatus("Connect to a window first.");
-		return;
-	}
-	if (_regions.empty()) {
-		SetStatus("Load a tablemap with balance regions first.");
-		return;
-	}
-	_capturing = !_capturing;
-	if (_capturing) {
+	bool want;
+	if (action == 1)      want = true;
+	else if (action == 2) want = false;
+	else if (action == 3) want = !_capturing;
+	else                  return _capturing ? 1 : 0;   // status query
+
+	if (want) {
+		if (_attached == NULL || !::IsWindow(_attached)) {
+			SetStatus("Connect to a window first.");
+			return _capturing ? 1 : 0;
+		}
+		if (_regions.empty()) {
+			SetStatus("Load a tablemap with balance regions first.");
+			return _capturing ? 1 : 0;
+		}
 		for (size_t i = 0; i < _have_baseline.size(); ++i) {
 			_have_baseline[i] = false;   // capture changes from now on
 		}
-		SetDlgItemText(IDC_STARTSTOP, "Stop");
+		_capturing = true;
 		SetStatus("Capturing... change balances on the table to generate samples.");
 	} else {
-		SetDlgItemText(IDC_STARTSTOP, "Start");
+		_capturing = false;
 		SetStatus("Stopped (screenshot view still live).");
 	}
+	return _capturing ? 1 : 0;
+}
+
+// Sent by the HTTP server thread when the web Start/Stop button is clicked.
+LRESULT CTrainerDlg::OnSetCapture(WPARAM wParam, LPARAM)
+{
+	return (LRESULT)SetCapture((int)wParam);
 }
 
 void CTrainerDlg::OnBnClickedOpenTable()
@@ -945,8 +959,7 @@ void CTrainerDlg::CaptureTick()
 {
 	if (_attached == NULL || !::IsWindow(_attached)) {
 		KillTimer(TRAINER_TIMER);
-		_capturing = false;
-		SetDlgItemText(IDC_STARTSTOP, "Start");
+		_capturing = false;   // web Start/Stop button re-syncs via /api/capture
 		SetStatus("The attached window is gone. Reconnect.");
 		return;
 	}

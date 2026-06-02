@@ -236,6 +236,23 @@ void CTrainerServer::HandleClient(SOCKET client)
 		return;
 	}
 
+	// API: start/stop sample capture (the Start/Stop button moved to the web UI).
+	// Optional ?set=start|stop|toggle; with no `set`, just reports current state.
+	if (path.CompareNoCase("/api/capture") == 0) {
+		CStringA set = UrlDecode(QueryValue(query, "set"));
+		int action = 0;   // 0 = status only
+		if (set.CompareNoCase("start") == 0) action = 1;
+		else if (set.CompareNoCase("stop") == 0) action = 2;
+		else if (set.CompareNoCase("toggle") == 0) action = 3;
+		LRESULT capturing = (g_trainer_main_hwnd != NULL)
+			? ::SendMessage(g_trainer_main_hwnd, WM_TRAINER_SET_CAPTURE, (WPARAM)action, 0) : 0;
+		CStringA body;
+		body.Format("{\"ok\":true,\"capturing\":%s}", capturing ? "true" : "false");
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
 	// API: transform info - current transform + per-group font counts (for the dropdown).
 	if (path.CompareNoCase("/api/fonts/info") == 0) {
 		int mode = (p_sample_store != NULL) ? p_sample_store->TransformMode() : TRAINER_MODE_AUTOOCR;

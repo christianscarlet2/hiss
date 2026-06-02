@@ -44,7 +44,7 @@ protected:
 	afx_msg void OnChangeSplitMargin();
 	afx_msg void OnBnClickedDecimalSplit();
 	afx_msg void OnBnClickedConnect();
-	afx_msg void OnBnClickedStartStop();
+	afx_msg LRESULT OnSetCapture(WPARAM wParam, LPARAM lParam);
 	afx_msg void OnBnClickedOpenTable();
 	afx_msg void OnBnClickedClearTraining();
 	afx_msg void OnTimer(UINT_PTR nIDEvent);
@@ -72,6 +72,9 @@ private:
 	// engine selection. Pass recognize=true to also re-run all table rows.
 	void ApplyTransformSelection(bool recognize);
 	void CaptureTick();
+	// Start/stop/toggle sample capture (action: 1/2/3; 0 = query only).
+	// Returns 1 if capturing afterwards, else 0. Used by the web Start/Stop button.
+	int SetCapture(int action);
 	void UpdatePreview();
 	void UpdateDecimalSplitControls();   // enable/disable + clear the split-result boxes
 	void DrawMatToStatic(int ctrl_id, const cv::Mat &bgr);
