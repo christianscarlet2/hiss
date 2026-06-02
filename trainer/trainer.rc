@@ -17,7 +17,7 @@ IDI_TRAINER             ICON                    "res\\trainer.ico"
 
 /////////////////////////////////////////////////////////////////////////////
 // Dialog
-IDD_TRAINER_DIALOG DIALOGEX 0, 0, 360, 262
+IDD_TRAINER_DIALOG DIALOGEX 0, 0, 360, 344
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX
 CAPTION "Tesseract Trainer"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
@@ -27,7 +27,8 @@ BEGIN
     PUSHBUTTON      "Open Table",IDC_OPEN_TABLE,199,7,66,16
     PUSHBUTTON      "Clear Training Files",IDC_CLEAR_TRAINING,269,7,84,16
     PUSHBUTTON      "Start",IDC_STARTSTOP,7,28,60,16
-    CONTROL         "Ignore bad scrapes",IDC_IGNORE_BAD,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,73,32,120,10
+    CONTROL         "Ignore bad scrapes",IDC_IGNORE_BAD,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,73,32,114,10
+    PUSHBUTTON      "Select Model...",IDC_SELECT_MODEL,245,28,108,16
 
     GROUPBOX        "Image Processing (OCR)",IDC_STATIC,7,50,346,96
     LTEXT           "Transform:",IDC_STATIC,14,65,40,8
@@ -45,13 +46,26 @@ BEGIN
     LTEXT           "Sharpen %:",IDC_STATIC,110,105,44,8
     EDITTEXT        IDC_SHARPEN,156,103,30,14,ES_AUTOHSCROLL | ES_NUMBER
     CONTROL         "",IDC_SHARPEN_SPIN,"msctls_updown32",UDS_SETBUDDYINT | UDS_ARROWKEYS | UDS_NOTHOUSANDS,186,103,11,14
+    LTEXT           "Spacing px:",IDC_STATIC,205,105,44,8
+    EDITTEXT        IDC_CHAR_SPACING,251,103,30,14,ES_AUTOHSCROLL | ES_NUMBER
+    CONTROL         "",IDC_CHAR_SPACING_SPIN,"msctls_updown32",UDS_SETBUDDYINT | UDS_ARROWKEYS | UDS_NOTHOUSANDS,281,103,11,14
+    CONTROL         "No preprocessing",IDC_NO_PREPROCESS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,127,90,10
+    CONTROL         "Disable whitelist",IDC_NO_WHITELIST,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,108,127,82,10
+    CONTROL         "Use decimal splitting",IDC_USE_DECIMAL_SPLIT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,196,127,110,10
 
-    GROUPBOX        "OCR Preview (selected region)",IDC_STATIC,7,150,346,64
-    CONTROL         "",IDC_OCR_PREVIEW,"Static",SS_BLACKFRAME,14,164,210,42
-    LTEXT           "Result:",IDC_STATIC,232,166,30,8
-    EDITTEXT        IDC_OCR_RESULT,232,178,114,14,ES_AUTOHSCROLL | ES_READONLY
+    GROUPBOX        "Scraped Region (OCR input \x96 hover to zoom 4x)",IDC_STATIC,7,150,346,58
+    CONTROL         "",IDC_SCRAPE_PREVIEW,"Static",SS_BLACKFRAME,14,162,332,40
 
-    LTEXT           "Idle.",IDC_STATUS,7,220,346,36
+    GROUPBOX        "OCR Preview (selected region)",IDC_STATIC,7,212,346,86
+    CONTROL         "",IDC_OCR_PREVIEW,"Static",SS_BLACKFRAME,14,226,210,42
+    LTEXT           "Split left:",IDC_STATIC,232,222,44,8
+    EDITTEXT        IDC_SPLIT_LEFT,232,232,114,12,ES_AUTOHSCROLL | ES_READONLY
+    LTEXT           "Split right:",IDC_STATIC,232,248,44,8
+    EDITTEXT        IDC_SPLIT_RIGHT,232,258,114,12,ES_AUTOHSCROLL | ES_READONLY
+    LTEXT           "Result:",IDC_STATIC,232,274,44,8
+    EDITTEXT        IDC_OCR_RESULT,232,284,114,12,ES_AUTOHSCROLL | ES_READONLY
+
+    LTEXT           "Idle.",IDC_STATUS,7,304,346,36
 END
 
 /////////////////////////////////////////////////////////////////////////////

@@ -9,6 +9,26 @@ class CTrainerServer;
 class CTrainerWebWindow;
 class CScreenshotView;
 
+// Borderless, click-through, top-most popup used as a hover magnifier: paints a
+// cv::Mat scaled by a factor next to the mouse. Created once, then shown/hidden.
+class CZoomPopup : public CWnd {
+public:
+	CZoomPopup();
+	virtual ~CZoomPopup();
+	BOOL EnsureCreated(CWnd *owner);
+	// Show 'bgr' magnified by 'factor', anchored near the given screen point.
+	void ShowImage(const cv::Mat &bgr, int factor, CPoint screen_anchor);
+	void HidePopup();
+
+protected:
+	afx_msg void OnPaint();
+	afx_msg BOOL OnEraseBkgnd(CDC *pDC);
+	DECLARE_MESSAGE_MAP()
+
+private:
+	cv::Mat _bgra;   // 32bpp copy for painting (DWORD-aligned rows)
+};
+
 class CTrainerDlg : public CDialog {
 public:
 	CTrainerDlg(CWnd *pParent = NULL);
@@ -19,11 +39,15 @@ protected:
 	virtual void DoDataExchange(CDataExchange *pDX);
 	virtual BOOL OnInitDialog();
 	afx_msg void OnBnClickedLoadTm();
+	afx_msg void OnBnClickedSelectModel();
+	afx_msg void OnBnClickedDecimalSplit();
 	afx_msg void OnBnClickedConnect();
 	afx_msg void OnBnClickedStartStop();
 	afx_msg void OnBnClickedOpenTable();
 	afx_msg void OnBnClickedClearTraining();
 	afx_msg void OnTimer(UINT_PTR nIDEvent);
+	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
+	afx_msg void OnMouseLeave();
 	afx_msg LRESULT OnAttachWindow(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnRegionSelected(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnOpenFonts(WPARAM wParam, LPARAM lParam);
@@ -43,14 +67,15 @@ private:
 	STrainerOcrSettings ReadSettings();
 	void CaptureTick();
 	void UpdatePreview();
+	void UpdateDecimalSplitControls();   // enable/disable + clear the split-result boxes
 	void DrawMatToStatic(int ctrl_id, const cv::Mat &bgr);
 	void ClearPreview();
 
 	// OCR settings controls
 	CComboBox m_transform;
 	CComboBox m_matchMode;
-	CEdit m_threshold, m_cropSize, m_sharpen, m_ocrResult;
-	CSpinButtonCtrl m_thresholdSpin, m_cropSpin, m_sharpenSpin;
+	CEdit m_threshold, m_cropSize, m_sharpen, m_charSpacing, m_ocrResult;
+	CSpinButtonCtrl m_thresholdSpin, m_cropSpin, m_sharpenSpin, m_charSpacingSpin;
 
 	std::vector<STrainerRegion> _regions;
 	std::vector<std::vector<BYTE> > _last;
@@ -64,6 +89,11 @@ private:
 	HBITMAP _frame;        // latest captured client bitmap (owned)
 	int _frame_w, _frame_h;
 	int _selected;         // selected region index, -1 = none
+
+	// Hover-magnifier for the scraped-region preview (IDC_SCRAPE_PREVIEW).
+	cv::Mat _scrape_img;   // the exact image fed to OCR (raw if preprocessing off)
+	CZoomPopup _zoom;
+	bool _tracking_mouse;  // WM_MOUSELEAVE requested?
 
 	void OpenFontsWindow();
 	void CaptureFontsForEditor();

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<alto xmlns="http://www.loc.gov/standards/alto/ns-v3#" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.loc.gov/standards/alto/ns-v3# http://www.loc.gov/alto/v3/alto-3-0.xsd">
+	<Description>
+		<MeasurementUnit>pixel</MeasurementUnit>
+		<sourceImageInformation>
+			<fileName>C:/www/openholdembot_old/tesseract-demo/sample.png</fileName>
+		</sourceImageInformation>
+		<OCRProcessing ID="OCR_0">
+			<ocrProcessingStep>
+				<processingSoftware>
+					<softwareName>tesseract v5.5.0.20241111</softwareName>
+				</processingSoftware>
+			</ocrProcessingStep>
+		</OCRProcessing>
+	</Description>
+	<Layout>
+		<Page WIDTH="700" HEIGHT="160" PHYSICAL_IMG_NR="0" ID="page_0">
+			<PrintSpace HPOS="0" VPOS="0" WIDTH="700" HEIGHT="160">
+				<ComposedBlock ID="cblock_0" HPOS="25" VPOS="59" WIDTH="641" HEIGHT="40">
+					<TextBlock ID="block_0" HPOS="25" VPOS="59" WIDTH="641" HEIGHT="40">
+						<TextLine ID="line_0" HPOS="25" VPOS="59" WIDTH="641" HEIGHT="40">
+							<String ID="string_0" HPOS="25" VPOS="60" WIDTH="232" HEIGHT="38" WC="0.94" CONTENT="Tesseract"/><SP WIDTH="18" VPOS="60" HPOS="257"/>
+							<String ID="string_1" HPOS="275" VPOS="60" WIDTH="69" HEIGHT="38" WC="0.94" CONTENT="5.5"/><SP WIDTH="35" VPOS="60" HPOS="344"/>
+							<String ID="string_2" HPOS="379" VPOS="59" WIDTH="113" HEIGHT="40" WC="0.95" CONTENT="OCR"/><SP WIDTH="37" VPOS="59" HPOS="492"/>
+							<String ID="string_3" HPOS="529" VPOS="60" WIDTH="137" HEIGHT="38" WC="0.96" CONTENT="12345"/>
+						</TextLine>
+					</TextBlock>
+				</ComposedBlock>
+			</PrintSpace>
+		</Page>
+	</Layout>
+</alto>

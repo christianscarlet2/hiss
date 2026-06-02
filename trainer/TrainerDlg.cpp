@@ -92,6 +92,103 @@ static HWND FindTopWindow(const CString &title, const CString &cls, HWND self)
 	return f.result;
 }
 
+// ---------------------------------------------------------------------------
+// CZoomPopup: borderless, click-through, top-most hover magnifier.
+// ---------------------------------------------------------------------------
+BEGIN_MESSAGE_MAP(CZoomPopup, CWnd)
+	ON_WM_PAINT()
+	ON_WM_ERASEBKGND()
+END_MESSAGE_MAP()
+
+CZoomPopup::CZoomPopup() {}
+CZoomPopup::~CZoomPopup() {}
+
+BOOL CZoomPopup::EnsureCreated(CWnd *owner)
+{
+	if (::IsWindow(GetSafeHwnd())) {
+		return TRUE;
+	}
+	CString cls = AfxRegisterWndClass(0, ::LoadCursor(NULL, IDC_ARROW),
+		(HBRUSH)::GetStockObject(BLACK_BRUSH), NULL);
+	// WS_EX_TRANSPARENT keeps the pointer "passing through" so the cursor never
+	// counts as hovering the popup (which would bounce the owner's mouse-leave).
+	return CreateEx(
+		WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
+		cls, "", WS_POPUP,
+		0, 0, 16, 16,
+		owner != NULL ? owner->GetSafeHwnd() : NULL, NULL);
+}
+
+void CZoomPopup::HidePopup()
+{
+	if (::IsWindow(GetSafeHwnd())) {
+		ShowWindow(SW_HIDE);
+	}
+}
+
+void CZoomPopup::ShowImage(const Mat &bgr, int factor, CPoint screen_anchor)
+{
+	if (bgr.empty() || !::IsWindow(GetSafeHwnd())) {
+		return;
+	}
+	if (factor < 1) factor = 1;
+
+	// 32bpp copy so painting rows are DWORD-aligned.
+	cvtColor(bgr, _bgra, COLOR_BGR2BGRA);
+
+	// Magnified size, clamped to 95% of the work area (preserving aspect).
+	int w = _bgra.cols * factor;
+	int h = _bgra.rows * factor;
+	RECT wa; SystemParametersInfo(SPI_GETWORKAREA, 0, &wa, 0);
+	int maxW = (int)((wa.right - wa.left) * 0.95);
+	int maxH = (int)((wa.bottom - wa.top) * 0.95);
+	if ((w > maxW || h > maxH) && w > 0 && h > 0) {
+		double s = min((double)maxW / w, (double)maxH / h);
+		w = max(1, (int)(w * s));
+		h = max(1, (int)(h * s));
+	}
+
+	// Offset from the cursor; flip to the opposite side near a work-area edge.
+	const int kGap = 18;
+	int x = screen_anchor.x + kGap;
+	int y = screen_anchor.y + kGap;
+	if (x + w > wa.right)  x = screen_anchor.x - kGap - w;
+	if (y + h > wa.bottom) y = screen_anchor.y - kGap - h;
+	if (x < wa.left) x = wa.left;
+	if (y < wa.top)  y = wa.top;
+
+	SetWindowPos(&CWnd::wndTopMost, x, y, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+	Invalidate(FALSE);
+	UpdateWindow();
+}
+
+BOOL CZoomPopup::OnEraseBkgnd(CDC *)
+{
+	return TRUE;   // OnPaint covers the whole client area
+}
+
+void CZoomPopup::OnPaint()
+{
+	CPaintDC dc(this);
+	CRect rc; GetClientRect(&rc);
+	if (_bgra.empty()) {
+		dc.FillSolidRect(&rc, RGB(0, 0, 0));
+		return;
+	}
+	BITMAPINFO bi; ZeroMemory(&bi, sizeof(bi));
+	bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
+	bi.bmiHeader.biWidth = _bgra.cols;
+	bi.bmiHeader.biHeight = -_bgra.rows;   // top-down
+	bi.bmiHeader.biPlanes = 1;
+	bi.bmiHeader.biBitCount = 32;
+	bi.bmiHeader.biCompression = BI_RGB;
+	SetStretchBltMode(dc.GetSafeHdc(), COLORONCOLOR);   // crisp, blocky magnify
+	StretchDIBits(dc.GetSafeHdc(), 0, 0, rc.Width(), rc.Height(),
+		0, 0, _bgra.cols, _bgra.rows, _bgra.data, &bi, DIB_RGB_COLORS, SRCCOPY);
+	CBrush border(RGB(255, 220, 0));
+	dc.FrameRect(&rc, &border);
+}
+
 CTrainerDlg *CTrainerDlg::s_instance = NULL;
 
 CTrainerDlg::CTrainerDlg(CWnd *pParent)
@@ -108,6 +205,7 @@ CTrainerDlg::CTrainerDlg(CWnd *pParent)
 	_fonts_web = NULL;
 	_screenshot = NULL;
 	_icon = NULL;
+	_tracking_mouse = false;
 }
 
 CTrainerDlg::~CTrainerDlg()
@@ -125,16 +223,22 @@ void CTrainerDlg::DoDataExchange(CDataExchange *pDX)
 	DDX_Control(pDX, IDC_CROP_SPIN, m_cropSpin);
 	DDX_Control(pDX, IDC_SHARPEN, m_sharpen);
 	DDX_Control(pDX, IDC_SHARPEN_SPIN, m_sharpenSpin);
+	DDX_Control(pDX, IDC_CHAR_SPACING, m_charSpacing);
+	DDX_Control(pDX, IDC_CHAR_SPACING_SPIN, m_charSpacingSpin);
 	DDX_Control(pDX, IDC_OCR_RESULT, m_ocrResult);
 }
 
 BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_BN_CLICKED(IDC_LOAD_TM, &CTrainerDlg::OnBnClickedLoadTm)
+	ON_BN_CLICKED(IDC_SELECT_MODEL, &CTrainerDlg::OnBnClickedSelectModel)
+	ON_BN_CLICKED(IDC_USE_DECIMAL_SPLIT, &CTrainerDlg::OnBnClickedDecimalSplit)
 	ON_BN_CLICKED(IDC_CONNECT, &CTrainerDlg::OnBnClickedConnect)
 	ON_BN_CLICKED(IDC_STARTSTOP, &CTrainerDlg::OnBnClickedStartStop)
 	ON_BN_CLICKED(IDC_OPEN_TABLE, &CTrainerDlg::OnBnClickedOpenTable)
 	ON_BN_CLICKED(IDC_CLEAR_TRAINING, &CTrainerDlg::OnBnClickedClearTraining)
 	ON_WM_TIMER()
+	ON_WM_MOUSEMOVE()
+	ON_WM_MOUSELEAVE()
 	ON_WM_DESTROY()
 	ON_MESSAGE(WM_TRAINER_ATTACH, &CTrainerDlg::OnAttachWindow)
 	ON_MESSAGE(WM_TRAINER_REGION_SELECTED, &CTrainerDlg::OnRegionSelected)
@@ -180,7 +284,18 @@ BOOL CTrainerDlg::OnInitDialog()
 		p_trainer_server = _server;
 	}
 
-	bool ocr_ok = _ocr.Init("tessdata", "my_model");
+	// Restore a model the user picked via "Select Model..." on a previous run;
+	// otherwise fall back to the bundled tessdata\my_model.traineddata.
+	bool ocr_ok = false;
+	CString model_dir = RegReadString("ocr_model_dir");
+	CString model_lang = RegReadString("ocr_model_lang");
+	if (!model_dir.IsEmpty() && !model_lang.IsEmpty()
+		&& GetFileAttributes(model_dir + "\\" + model_lang + ".traineddata") != INVALID_FILE_ATTRIBUTES) {
+		ocr_ok = _ocr.Init(CStringA(model_dir + "\\"), CStringA(model_lang));
+	}
+	if (!ocr_ok) {
+		ocr_ok = _ocr.Init("tessdata", "my_model");
+	}
 
 	PopulateModeCombos();
 
@@ -199,13 +314,21 @@ BOOL CTrainerDlg::OnInitDialog()
 	m_sharpenSpin.SetRange(0, 500);
 	m_sharpenSpin.SetPos(100);
 	m_sharpenSpin.SetBuddy(&m_sharpen);
+	m_charSpacing.SetWindowText("6");
+	m_charSpacingSpin.SetRange(0, 50);
+	m_charSpacingSpin.SetPos(6);
+	m_charSpacingSpin.SetBuddy(&m_charSpacing);
+	CheckDlgButton(IDC_NO_PREPROCESS, BST_UNCHECKED);
+	CheckDlgButton(IDC_NO_WHITELIST, BST_UNCHECKED);
+	CheckDlgButton(IDC_USE_DECIMAL_SPLIT, BST_UNCHECKED);
 
 	// Restore the OCR settings the user had on last exit (overrides defaults).
 	LoadOcrSettings();
+	UpdateDecimalSplitControls();   // sync the split boxes to the restored checkbox
 
 	CString status;
 	status.Format("Ready. OCR model: %s. Server: %s.\nLoad a tablemap, then Connect and click a window.",
-		ocr_ok ? "my_model" : "FAILED (check tessdata\\my_model)",
+		ocr_ok ? _ocr.model_name().GetString() : "FAILED (check tessdata\\my_model)",
 		(_server != NULL && _server->port() != 0) ? "running" : "FAILED");
 	SetStatus(status);
 
@@ -258,6 +381,60 @@ void CTrainerDlg::OnBnClickedLoadTm()
 		return;
 	}
 	DoLoadTablemap(dlg.GetPathName());
+}
+
+void CTrainerDlg::OnBnClickedSelectModel()
+{
+	CFileDialog dlg(TRUE, "traineddata", NULL, OFN_FILEMUSTEXIST | OFN_HIDEREADONLY,
+		"Tesseract models (*.traineddata)|*.traineddata|All files (*.*)|*.*||", this);
+	if (dlg.DoModal() != IDOK) {
+		return;
+	}
+
+	// Tesseract's Init(datapath, lang) loads "<datapath>/<lang>.traineddata", so
+	// split the chosen file into its folder (datapath) and base name (language).
+	CString full = dlg.GetPathName();
+	int slash = full.ReverseFind('\\');
+	CString dir = (slash >= 0) ? full.Left(slash) : full;
+	CString file = (slash >= 0) ? full.Mid(slash + 1) : full;
+	int dot = file.ReverseFind('.');
+	CString lang = (dot >= 0) ? file.Left(dot) : file;
+
+	if (lang.IsEmpty() || !_ocr.Init(CStringA(dir + "\\"), CStringA(lang))) {
+		SetStatus("Failed to load OCR model: " + full);
+		return;
+	}
+
+	// Remember it so the next launch restores this model automatically.
+	RegWriteString("ocr_model_dir", dir);
+	RegWriteString("ocr_model_lang", lang);
+
+	CString status;
+	status.Format("Loaded OCR model: %s (from %s)", lang.GetString(), dir.GetString());
+	SetStatus(status);
+
+	UpdatePreview();   // re-run the selected region through the new model
+}
+
+// Enable the split-result boxes only while decimal splitting is on; clear them
+// when it's off so stale values never linger.
+void CTrainerDlg::UpdateDecimalSplitControls()
+{
+	bool on = (IsDlgButtonChecked(IDC_USE_DECIMAL_SPLIT) == BST_CHECKED);
+	CWnd *le = GetDlgItem(IDC_SPLIT_LEFT);
+	CWnd *re = GetDlgItem(IDC_SPLIT_RIGHT);
+	if (le != NULL) le->EnableWindow(on);
+	if (re != NULL) re->EnableWindow(on);
+	if (!on) {
+		SetDlgItemText(IDC_SPLIT_LEFT, "");
+		SetDlgItemText(IDC_SPLIT_RIGHT, "");
+	}
+}
+
+void CTrainerDlg::OnBnClickedDecimalSplit()
+{
+	UpdateDecimalSplitControls();
+	UpdatePreview();   // refresh the boxes/preview immediately
 }
 
 LRESULT CALLBACK CTrainerDlg::LowLevelMouseProc(int code, WPARAM wParam, LPARAM lParam)
@@ -375,6 +552,10 @@ void CTrainerDlg::SaveOcrSettings()
 	RegWriteString("ocr_use_crop", (IsDlgButtonChecked(IDC_USE_CROP) == BST_CHECKED) ? "1" : "0");
 	m_cropSize.GetWindowText(t); RegWriteString("ocr_crop", t);
 	m_sharpen.GetWindowText(t); RegWriteString("ocr_sharpen", t);
+	m_charSpacing.GetWindowText(t); RegWriteString("ocr_char_spacing", t);
+	RegWriteString("ocr_no_preprocess", (IsDlgButtonChecked(IDC_NO_PREPROCESS) == BST_CHECKED) ? "1" : "0");
+	RegWriteString("ocr_no_whitelist", (IsDlgButtonChecked(IDC_NO_WHITELIST) == BST_CHECKED) ? "1" : "0");
+	RegWriteString("ocr_decimal_split", (IsDlgButtonChecked(IDC_USE_DECIMAL_SPLIT) == BST_CHECKED) ? "1" : "0");
 }
 
 void CTrainerDlg::LoadOcrSettings()
@@ -402,6 +583,14 @@ void CTrainerDlg::LoadOcrSettings()
 	if (!v.IsEmpty()) { m_cropSize.SetWindowText(v); m_cropSpin.SetPos(atoi(v)); }
 	v = RegReadString("ocr_sharpen");
 	if (!v.IsEmpty()) { m_sharpen.SetWindowText(v); m_sharpenSpin.SetPos(atoi(v)); }
+	v = RegReadString("ocr_char_spacing");
+	if (!v.IsEmpty()) { m_charSpacing.SetWindowText(v); m_charSpacingSpin.SetPos(atoi(v)); }
+	v = RegReadString("ocr_no_preprocess");
+	if (!v.IsEmpty()) CheckDlgButton(IDC_NO_PREPROCESS, v == "1" ? BST_CHECKED : BST_UNCHECKED);
+	v = RegReadString("ocr_no_whitelist");
+	if (!v.IsEmpty()) CheckDlgButton(IDC_NO_WHITELIST, v == "1" ? BST_CHECKED : BST_UNCHECKED);
+	v = RegReadString("ocr_decimal_split");
+	if (!v.IsEmpty()) CheckDlgButton(IDC_USE_DECIMAL_SPLIT, v == "1" ? BST_CHECKED : BST_UNCHECKED);
 }
 
 LRESULT CTrainerDlg::OnRegionSelected(WPARAM wParam, LPARAM lParam)
@@ -493,10 +682,14 @@ STrainerOcrSettings CTrainerDlg::ReadSettings()
 	s.use_cropping = (IsDlgButtonChecked(IDC_USE_CROP) == BST_CHECKED);
 	m_cropSize.GetWindowText(t); s.crop_size = atoi(t);
 	m_sharpen.GetWindowText(t); s.sharpen = atoi(t);
+	m_charSpacing.GetWindowText(t); s.char_spacing = atoi(t);
 	int ti = m_transform.GetCurSel();
 	CString tr;
 	if (ti >= 0) m_transform.GetLBText(ti, tr);
 	s.transform = tr.IsEmpty() ? CString("AutoOcr0") : tr;
+	s.no_preprocess = (IsDlgButtonChecked(IDC_NO_PREPROCESS) == BST_CHECKED);
+	s.no_whitelist = (IsDlgButtonChecked(IDC_NO_WHITELIST) == BST_CHECKED);
+	s.use_decimal_split = (IsDlgButtonChecked(IDC_USE_DECIMAL_SPLIT) == BST_CHECKED);
 	return s;
 }
 
@@ -506,6 +699,42 @@ void CTrainerDlg::OnTimer(UINT_PTR nIDEvent)
 		CaptureTick();
 	}
 	CDialog::OnTimer(nIDEvent);
+}
+
+// Show the 4x hover magnifier while the cursor is over the scraped-region image.
+// The SS_BLACKFRAME static is hit-test-transparent, so the dialog receives these
+// moves with coordinates over the control's rect.
+void CTrainerDlg::OnMouseMove(UINT nFlags, CPoint point)
+{
+	CWnd *ctl = GetDlgItem(IDC_SCRAPE_PREVIEW);
+	bool over = false;
+	if (ctl != NULL && ::IsWindow(ctl->GetSafeHwnd()) && !_scrape_img.empty()) {
+		CRect rc; ctl->GetWindowRect(&rc);
+		ScreenToClient(&rc);
+		over = (rc.PtInRect(point) != FALSE);
+	}
+
+	if (over) {
+		CPoint screen = point; ClientToScreen(&screen);
+		if (_zoom.EnsureCreated(this)) {
+			_zoom.ShowImage(_scrape_img, 4, screen);
+		}
+		if (!_tracking_mouse) {
+			TRACKMOUSEEVENT t; t.cbSize = sizeof(t); t.dwFlags = TME_LEAVE;
+			t.hwndTrack = GetSafeHwnd(); t.dwHoverTime = 0;
+			_tracking_mouse = (TrackMouseEvent(&t) != FALSE);
+		}
+	} else {
+		_zoom.HidePopup();
+	}
+	CDialog::OnMouseMove(nFlags, point);
+}
+
+void CTrainerDlg::OnMouseLeave()
+{
+	_tracking_mouse = false;
+	_zoom.HidePopup();
+	CDialog::OnMouseLeave();
 }
 
 static bool CropRegionBgra(HBITMAP bmp, int bmpW, int bmpH, RECT r,
@@ -805,6 +1034,29 @@ void CTrainerDlg::UpdatePreview()
 	Mat preview; CString text; int conf = 0;
 	_ocr.Run(bgr, ReadSettings(), _regions[_selected].name, &preview, &text, &conf);
 
+	// Per-half results when decimal splitting is enabled (boxes are kept disabled
+	// + empty otherwise by UpdateDecimalSplitControls()).
+	if (IsDlgButtonChecked(IDC_USE_DECIMAL_SPLIT) == BST_CHECKED) {
+		SetDlgItemText(IDC_SPLIT_LEFT,  _ocr.did_split() ? _ocr.split_left()  : CString(""));
+		SetDlgItemText(IDC_SPLIT_RIGHT, _ocr.did_split() ? _ocr.split_right() : CString(""));
+	}
+
+	// Scraped-region (OCR input) view + hover-zoom source: show exactly what
+	// Tesseract received -- the raw crop when preprocessing is disabled, otherwise
+	// the fully preprocessed image -- even when nothing was recognized.
+	if (!preview.empty()) {
+		_scrape_img = preview.clone();
+		DrawMatToStatic(IDC_SCRAPE_PREVIEW, preview);
+	} else {
+		_scrape_img = Mat();
+		CWnd *sp = GetDlgItem(IDC_SCRAPE_PREVIEW);
+		if (sp != NULL) {
+			CClientDC dc(sp); CRect rc; sp->GetClientRect(&rc);
+			dc.FillSolidRect(&rc, RGB(0, 0, 0));
+		}
+		_zoom.HidePopup();
+	}
+
 	if (text.IsEmpty() || preview.empty()) {
 		ClearPreview();
 		CString r; r.Format("%s: (empty)", _regions[_selected].name.GetString());
@@ -822,6 +1074,9 @@ void CTrainerDlg::OnDestroy()
 	SaveOcrSettings();   // persist Image Processing settings for next launch
 	KillTimer(TRAINER_TIMER);
 	_capturing = false;
+	if (::IsWindow(_zoom.GetSafeHwnd())) {
+		_zoom.DestroyWindow();
+	}
 	if (_mouse_hook != NULL) {
 		UnhookWindowsHookEx(_mouse_hook);
 		_mouse_hook = NULL;

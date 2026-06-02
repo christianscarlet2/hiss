@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+ <head>
+  <title></title>
+  <meta http-equiv="Content-Type" content="text/html;charset=utf-8"/>
+  <meta name='ocr-system' content='tesseract v5.5.0.20241111' />
+  <meta name='ocr-capabilities' content='ocr_page ocr_carea ocr_par ocr_line ocrx_word ocrp_dir ocrp_lang ocrp_wconf'/>
+ </head>
+ <body>
+  <div class='ocr_page' id='page_1' title='image "C:/www/openholdembot_old/tesseract-demo/sample.png"; bbox 0 0 700 160; ppageno 0; scan_res 96 96'>
+   <div class='ocr_carea' id='block_1_1' title="bbox 25 59 666 99">
+    <p class='ocr_par' id='par_1_1' lang='eng' title="bbox 25 59 666 99">
+     <span class='ocr_line' id='line_1_1' title="bbox 25 59 666 99; baseline 0 -1; x_size 45.389832; x_descenders 6.3898306; x_ascenders 10">
+      <span class='ocrx_word' id='word_1_1' title='bbox 25 60 257 98; x_wconf 94'>Tesseract</span>
+      <span class='ocrx_word' id='word_1_2' title='bbox 275 60 344 98; x_wconf 94'>5.5</span>
+      <span class='ocrx_word' id='word_1_3' title='bbox 379 59 492 99; x_wconf 95'>OCR</span>
+      <span class='ocrx_word' id='word_1_4' title='bbox 529 60 666 98; x_wconf 96'>12345</span>
+     </span>
+    </p>
+   </div>
+  </div>
+ </body>
+</html>

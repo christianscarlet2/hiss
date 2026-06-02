@@ -2,5 +2,6 @@
     "claudeCode.allowDangerouslySkipPermissions": true,
     "github.copilot.chat.claudeAgent.allowDangerouslySkipPermissions": true,
     "github.copilot.chat.claudeAgent.allowAutoPermissions": true,
-    "chat.permissions.default": "autopilot"
+    "chat.permissions.default": "autopilot",
+    "claudeCode.initialPermissionMode": "bypassPermissions"
 }
