@@ -20,5 +20,18 @@
       "Bash(curl -s -m 6 \"http://127.0.0.1:28700/trainer/help.html\")",
       "PowerShell(try { $v = gh --version 2>$null; if \\($v\\) { \"gh: \" + \\($v | Select-Object -First 1\\) } else { \"gh: not found\" } } catch { \"gh: not found\" }; \"--- git credential manager ---\"; git config --get credential.helper)"
     ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:\\www\\openholdembot_old\\scripts\\write_commit_summary.ps1\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
   }
 }
