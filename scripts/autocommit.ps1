@@ -53,19 +53,50 @@ try {
         }
     }
 
-    $message = "autocommit"
-    if ($null -ne $newestChange) {
-        $relativePath = Resolve-Path -LiteralPath $newestChange.FullName -Relative
-        $relativePath = $relativePath.TrimStart(".", "\", "/")
-        $message = "autocommit: latest change in $relativePath"
+    # Prefer a Claude-authored summary of the work (written to
+    # .git\CLAUDE_COMMIT_MSG) so commits describe WHAT was done, not just which
+    # file changed last. The file lives under .git, so it is never staged itself,
+    # and it is consumed (deleted) after a successful commit. When it is absent we
+    # fall back to the "autocommit: latest change in <file>" message.
+    $gitDir = (& git rev-parse --git-dir 2>$null).Trim()
+    $summaryFile = if ($gitDir) { Join-Path $gitDir "CLAUDE_COMMIT_MSG" } else { $null }
+
+    $message = $null
+    $usedSummary = $false
+    if ($summaryFile -and (Test-Path -LiteralPath $summaryFile)) {
+        $summary = Get-Content -LiteralPath $summaryFile -Raw
+        if ($summary -and $summary.Trim() -ne "") {
+            $message = $summary.Trim()
+            $usedSummary = $true
+        }
     }
 
-    $message = "$message ($(Get-Date -Format 'yyyy-MM-dd HH:mm'))"
+    if (-not $usedSummary) {
+        $message = "autocommit"
+        if ($null -ne $newestChange) {
+            $relativePath = Resolve-Path -LiteralPath $newestChange.FullName -Relative
+            $relativePath = $relativePath.TrimStart(".", "\", "/")
+            $message = "autocommit: latest change in $relativePath"
+        }
+        $message = "$message ($(Get-Date -Format 'yyyy-MM-dd HH:mm'))"
+    }
 
     & git add -A
-    $commitOutput = & git commit -m $message 2>&1
+    if ($usedSummary) {
+        # Commit straight from the file so newlines and special characters (e.g.
+        # quotes) in the summary survive -- passing them via -m through PowerShell
+        # 5.1's native-arg handling corrupts the message.
+        $commitOutput = & git commit -F $summaryFile 2>&1
+    } else {
+        $commitOutput = & git commit -m $message 2>&1
+    }
     if ($LASTEXITCODE -ne 0) {
         throw ($commitOutput -join "`n")
+    }
+
+    # Consume the summary so it is used for exactly one commit.
+    if ($usedSummary) {
+        Remove-Item -LiteralPath $summaryFile -Force -ErrorAction SilentlyContinue
     }
 
     Write-AutoCommitLog "Committed changes with message: $message"
