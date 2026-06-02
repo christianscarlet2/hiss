@@ -43,7 +43,7 @@
           },
           {
             "type": "command",
-            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:\\www\\openholdembot_old\\scripts\\play_sound.ps1\" \"C:\\www\\openholdembot_old\\scripts\\sounds\\zelda-success.wav\"",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:\\www\\openholdembot_old\\scripts\\play_random_sound.ps1\" \"C:\\www\\openholdembot_old\\scripts\\sounds\"",
             "timeout": 10
           }
         ]
