@@ -701,7 +701,8 @@ static int KillRepoOutputProcesses(const std::string &repo_root) {
 
 static bool IsOpenHoldemOrOpenScrapeProcess(const PROCESSENTRY32 &entry) {
   return _stricmp(entry.szExeFile, "Hiss.exe") == 0
-    || _stricmp(entry.szExeFile, "Vision.exe") == 0;
+    || _stricmp(entry.szExeFile, "Vision.exe") == 0
+    || _stricmp(entry.szExeFile, "trainer.exe") == 0;
 }
 
 struct ProcessWindowSearch {
@@ -813,11 +814,11 @@ static int ForceCloseOpenHoldemAndOpenScrape() {
 }
 
 static void CloseAllOpenHoldemAndOpenScrape() {
-  const int saved = SaveOpenScrapeTablemapsBeforeClose();
+  // No autosave on close: just terminate the processes (Hiss/Vision/Trainer).
   const int killed = ForceCloseOpenHoldemAndOpenScrape();
   char status[160] = {0};
-  sprintf_s(status, "Saved %d Vision window%s. Closed %d Hiss/Vision process%s.",
-    saved, saved == 1 ? "" : "s", killed, killed == 1 ? "" : "es");
+  sprintf_s(status, "Closed %d Hiss/Vision/Trainer process%s.",
+    killed, killed == 1 ? "" : "es");
   SetStatusText(status);
 }
 

@@ -384,6 +384,11 @@ void COpenScrapeView::MoveGroupBy(CString group_name, int dx, int dy, bool recor
 	if (group == region_groups.end()) {
 		return;
 	}
+	// Locked groups can't be moved interactively (record_undo==true). Undo/redo
+	// replay (record_undo==false) is still allowed.
+	if (group->second.locked && record_undo) {
+		return;
+	}
 
 	std::vector<SOpenScrapeRegionMoveState> before;
 	if (record_undo) {
@@ -417,6 +422,28 @@ CString COpenScrapeView::GroupNameForRegion(CString name)
 		}
 	}
 	return "";
+}
+
+bool COpenScrapeView::IsGroupLocked(CString group_name)
+{
+	LoadGroupsFromTablemap();
+	std::map<CString, SOpenScrapeRegionGroup>::iterator g = region_groups.find(group_name);
+	return (g != region_groups.end()) && g->second.locked;
+}
+
+// Set/clear a group's locked flag and persist it (osgroup<N>locked symbol -> DB
+// on the next tablemap save).
+void COpenScrapeView::SetGroupLocked(CString group_name, bool locked)
+{
+	LoadGroupsFromTablemap();
+	std::map<CString, SOpenScrapeRegionGroup>::iterator g = region_groups.find(group_name);
+	if (g == region_groups.end()) {
+		return;
+	}
+	g->second.locked = locked;
+	SaveGroupsToTablemap();
+	GetDocument()->SetModifiedFlag(true);
+	Invalidate(false);
 }
 
 bool COpenScrapeView::GetGroupColorForRegion(CString name, COLORREF *color)
@@ -809,6 +836,7 @@ bool COpenScrapeView::DuplicateRegionGroupToPlayer(CString group_name, CString t
 	new_group.name = new_group_name;
 	new_group.color = new_color;
 	new_group.members = new_members;
+	new_group.locked = false;
 	region_groups[new_group_name] = new_group;
 	RebuildGroupBounds();
 	SaveGroupsToTablemap();
@@ -869,6 +897,11 @@ void COpenScrapeView::SaveGroupsToTablemap()
 			symbol.text.Append(g->second.members[i]);
 		}
 		p_tablemap->s$_insert(symbol);
+
+		key.Format("osgroup%dlocked", group_index);
+		symbol.name = key;
+		symbol.text = g->second.locked ? "1" : "0";
+		p_tablemap->s$_insert(symbol);
 	}
 
 	STablemapSymbol count_symbol;
@@ -899,10 +932,13 @@ void COpenScrapeView::LoadGroupsFromTablemap(bool force)
 		if (name == "" || members == "") {
 			continue;
 		}
+		key.Format("osgroup%dlocked", i);
+		CString locked = p_tablemap->GetTMSymbol(key);
 
 		SOpenScrapeRegionGroup group;
 		group.name = name;
 		group.color = strtoul(color.GetString(), NULL, 16);
+		group.locked = (locked == "1");
 		int pos = 0;
 		CString member = members.Tokenize(",", pos);
 		while (member != "") {
@@ -929,6 +965,7 @@ void COpenScrapeView::CreateGroupFromSelection()
 	group.name = group_name;
 	group.color = SelectedGroupColor();
 	group.members = selected_regions;
+	group.locked = false;
 	region_groups[group_name] = group;
 	RebuildGroupBounds();
 	SaveGroupsToTablemap();
@@ -1067,14 +1104,18 @@ void COpenScrapeView::DrawRegionGroups(CDC *pDC)
 			continue;
 		}
 		CPen group_pen;
-		group_pen.CreatePen(PS_SOLID, 2, g->second.color);
+		// Locked groups get a dashed border so they're visually distinct.
+		// (PS_DASH only renders dashes at width 1.)
+		group_pen.CreatePen(g->second.locked ? PS_DASH : PS_SOLID,
+			g->second.locked ? 1 : 2, g->second.color);
 		CPen *old_pen = pDC->SelectObject(&group_pen);
 		CGdiObject *old_brush = pDC->SelectStockObject(NULL_BRUSH);
 		pDC->Rectangle(g->second.bounds.left - 4, g->second.bounds.top - 18,
 			g->second.bounds.right + 5, g->second.bounds.bottom + 5);
 		pDC->SetTextColor(g->second.color);
 		pDC->SetBkMode(TRANSPARENT);
-		pDC->TextOut(g->second.bounds.left - 2, g->second.bounds.top - 17, g->second.name);
+		CString label = g->second.locked ? (g->second.name + " [locked]") : g->second.name;
+		pDC->TextOut(g->second.bounds.left - 2, g->second.bounds.top - 17, label);
 		pDC->SelectObject(old_pen);
 		pDC->SelectObject(old_brush);
 	}
@@ -1581,9 +1622,17 @@ void COpenScrapeView::OnLButtonDown(UINT nFlags, CPoint point)
 						theApp.m_TableMapDlg->m_TableMapTree.SelectItem(item);
 					}
 
-					dragging = true;
 					dragged_region = clicked_region->second.name;
 					dragged_group = GroupNameForRegion(dragged_region);
+					// A locked group (and its member regions) can't be moved.
+					if (!dragged_group.IsEmpty() && IsGroupLocked(dragged_group)) {
+						dragged_region = "";
+						dragged_group = "";
+						Invalidate(false);
+						CView::OnLButtonDown(nFlags, point);
+						return;
+					}
+					dragging = true;
 					drag_move_before = dragged_group.IsEmpty()
 						? CaptureMoveStateForRegion(dragged_region)
 						: CaptureMoveStateForGroup(dragged_group);
@@ -1604,6 +1653,11 @@ void COpenScrapeView::OnLButtonDown(UINT nFlags, CPoint point)
 					theApp.m_TableMapDlg->m_TableMapTree.SelectItem(item);
 				}
 
+				// A locked group can't be moved (selection above still happened).
+				if (IsGroupLocked(group_name)) {
+					CView::OnLButtonDown(nFlags, point);
+					return;
+				}
 				dragging = true;
 				dragged_region = "";
 				dragged_group = group_name;
@@ -1753,6 +1807,9 @@ void COpenScrapeView::OnRButtonDown(UINT nFlags, CPoint point)
 			menu.CreatePopupMenu();
 			const UINT kDeleteAllInGroupMenuId = 51003;
 			const UINT kDeleteGroupOnlyMenuId = 51004;
+			const UINT kToggleLockGroupMenuId = 51005;
+			bool group_locked = IsGroupLocked(empty_group_name);
+			menu.AppendMenu(MF_STRING, kToggleLockGroupMenuId, group_locked ? "Unlock group" : "Lock group");
 			menu.AppendMenu(MF_STRING, kDeleteAllInGroupMenuId, "Delete all regions in group");
 			menu.AppendMenu(MF_STRING, kDeleteGroupOnlyMenuId, "Delete group only (keep regions)");
 
@@ -1761,7 +1818,11 @@ void COpenScrapeView::OnRButtonDown(UINT nFlags, CPoint point)
 			UINT command = menu.TrackPopupMenu(TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
 				screen_point.x, screen_point.y, this);
 
-			if (command == kDeleteAllInGroupMenuId) {
+			if (command == kToggleLockGroupMenuId) {
+				SetGroupLocked(empty_group_name, !group_locked);
+				theApp.m_TableMapDlg->update_tree("Groups");
+			}
+			else if (command == kDeleteAllInGroupMenuId) {
 				CString message;
 				message.Format("Delete all regions in group '%s'?\n\nThis also removes the group.", empty_group_name);
 				if (AfxMessageBox(message, MB_YESNO) == IDYES && DeleteAllRegionsInGroup(empty_group_name)) {
@@ -1825,6 +1886,9 @@ void COpenScrapeView::OnRButtonDown(UINT nFlags, CPoint point)
 	menu.CreatePopupMenu();
 	const UINT kDeleteRegionMenuId = 51001;
 	const UINT kUngroupRegionMenuId = 51002;
+	const UINT kToggleLockGroupMenuId = 51005;
+	bool group_locked = IsGroupLocked(group_name);
+	menu.AppendMenu(MF_STRING, kToggleLockGroupMenuId, group_locked ? "Unlock group" : "Lock group");
 	menu.AppendMenu(MF_STRING, kDeleteRegionMenuId, "Delete");
 	menu.AppendMenu(MF_STRING, kUngroupRegionMenuId, "Ungroup this item");
 
@@ -1833,7 +1897,11 @@ void COpenScrapeView::OnRButtonDown(UINT nFlags, CPoint point)
 	UINT command = menu.TrackPopupMenu(TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
 		screen_point.x, screen_point.y, this);
 
-	if (command == kDeleteRegionMenuId) {
+	if (command == kToggleLockGroupMenuId) {
+		SetGroupLocked(group_name, !group_locked);
+		theApp.m_TableMapDlg->update_tree("Groups");
+	}
+	else if (command == kDeleteRegionMenuId) {
 		CString message;
 		message.Format("Delete region: %s?", region_name);
 		if (AfxMessageBox(message, MB_YESNO) == IDYES && p_tablemap->r$_erase(region_name)) {

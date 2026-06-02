@@ -23,6 +23,7 @@ struct SOpenScrapeRegionGroup {
 	COLORREF color;
 	std::vector<CString> members;
 	RECT bounds;
+	bool locked;   // persisted as osgroup<N>locked; a locked group can't be moved
 };
 
 struct SOpenScrapeRegionMoveState {
@@ -120,6 +121,8 @@ public:
 	bool GroupBoxMode() const { return group_box_mode; }
 	void SetSelectedGroupColor(int color_index);
 	CString GroupNameForRegion(CString name);
+	bool IsGroupLocked(CString group_name);
+	void SetGroupLocked(CString group_name, bool locked);
 	void MoveRegionBy(CString name, int dx, int dy);
 	void MoveRegionBy(CString name, int dx, int dy, bool record_undo);
 	void MoveRegionWithGroup(CString name, int dx, int dy);
