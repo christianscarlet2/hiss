@@ -328,10 +328,10 @@ static bool GenerateOne(const ST2ISettings &s, const CString &train_dir, const C
 	Mat sized;
 	resize(colored, sized, Size(new_w, target_h), 0, 0, INTER_AREA);
 
-	// Add a 2px border using the darkest colour sampled from an existing training image,
+	// Add a 4px border using the darkest colour sampled from an existing training image,
 	// extending the width/height a little.
 	Mat final_img;
-	copyMakeBorder(sized, final_img, 2, 2, 2, 2, BORDER_CONSTANT,
+	copyMakeBorder(sized, final_img, 4, 4, 4, 4, BORDER_CONSTANT,
 		Scalar(border_color[0], border_color[1], border_color[2]));
 
 	// Next free sample_NNNN (re-checked so concurrently-added files never clash).
