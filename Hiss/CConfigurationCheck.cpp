@@ -50,10 +50,12 @@ void CConfigurationCheck::CheckEnabledConfigurationChecks(bool force_all)
 	// No longer checking CheckForClassicalTheme();
   // as now (9.1.3) all themes (probably) are supported
   // out of the box with the same tablemaps.
-	if (Preferences()->configurationcheck_font_settings() || force_all)
-	{
-		CheckForFontSmoothing();
-	}
+	// Disabled on request: no startup warning about ClearType / font smoothing.
+	// (CheckForFontSmoothing() is intentionally not called.)
+	//if (Preferences()->configurationcheck_font_settings() || force_all)
+	//{
+	//	CheckForFontSmoothing();
+	//}
   // !! Might be reused for MSVCRT 2010
 	//CheckForMissingMSVCRT();
 }
