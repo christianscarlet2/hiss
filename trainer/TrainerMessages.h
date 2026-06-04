@@ -14,6 +14,11 @@
 #define WM_TRAINER_OCR_GLYPH     (WM_APP + 7)   // OCR a font glyph's reference image (fonts editor)
 // Delete every file in the training\ folder. Returns the number of files deleted.
 #define WM_TRAINER_CLEAR_TRAINING (WM_APP + 8)  // "Clear Training Files" (moved to the web UI)
+// text2image username-sample generation progress (worker thread -> UI dialog).
+// PROGRESS: wParam = samples done, lParam = total. DONE: wParam = generated count,
+// lParam = CStringA* error message (NULL on success; the handler deletes it).
+#define WM_TRAINER_T2I_PROGRESS  (WM_APP + 9)
+#define WM_TRAINER_T2I_DONE      (WM_APP + 10)
 
 // Transform modes stored in the sample store (which engine recognizes the table).
 #define TRAINER_MODE_AUTOOCR 0                  // Tesseract (AutoOcr0/AutoOcr1)

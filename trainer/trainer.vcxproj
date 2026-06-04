@@ -143,6 +143,7 @@
     <ClCompile Include="TrainerFonts.cpp" />
     <ClCompile Include="FontGlyphStore.cpp" />
     <ClCompile Include="ScreenshotView.cpp" />
+    <ClCompile Include="TextImageGen.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="stdafx.h" />
@@ -158,6 +159,7 @@
     <ClInclude Include="TrainerFonts.h" />
     <ClInclude Include="FontGlyphStore.h" />
     <ClInclude Include="ScreenshotView.h" />
+    <ClInclude Include="TextImageGen.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="res\trainer.ico" />

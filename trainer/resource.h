@@ -35,11 +35,30 @@
 #define IDC_SPLIT_MARGIN_SPIN           1030
 #define IDC_CREATE_FONTS                1031
 
+// text2image username-sample generation tool
+#define IDD_T2I_SETTINGS                130
+#define IDD_GEN_COUNT                   131
+#define IDD_T2I_PROGRESS                132
+#define IDR_TRAINER_MENU                133
+#define ID_TOOLS_SETTINGS              32771
+#define ID_TOOLS_GEN_SAMPLES          32772
+#define IDC_GEN_SAMPLES                 1032
+#define IDC_T2I_PATH                    1033
+#define IDC_T2I_BROWSE                  1034
+#define IDC_T2I_PT_HOST                 1035
+#define IDC_T2I_PT_PORT                 1036
+#define IDC_T2I_PT_USER                 1037
+#define IDC_T2I_PT_PASS                 1038
+#define IDC_T2I_PT_DB                   1039
+#define IDC_GEN_COUNT_EDIT              1040
+#define IDC_T2I_PROG_TEXT               1041
+#define IDC_T2I_PROG_BAR                1042
+
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        130
-#define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         1032
+#define _APS_NEXT_RESOURCE_VALUE        134
+#define _APS_NEXT_COMMAND_VALUE         32773
+#define _APS_NEXT_CONTROL_VALUE         1043
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

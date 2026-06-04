@@ -11,6 +11,7 @@
 #include "FontGlyphStore.h"
 #include "TrainerMessages.h"
 #include "WindowCapture.h"
+#include "TextImageGen.h"
 
 using namespace cv;
 using namespace tesseract;
@@ -239,6 +240,9 @@ BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_MESSAGE(WM_TRAINER_OCR_GLYPH, &CTrainerDlg::OnOcrGlyph)
 	ON_BN_CLICKED(IDC_OPEN_TABLE, &CTrainerDlg::OnBnClickedOpenTable)
 	ON_BN_CLICKED(IDC_CREATE_FONTS, &CTrainerDlg::OnBnClickedCreateFonts)
+	ON_BN_CLICKED(IDC_GEN_SAMPLES, &CTrainerDlg::OnGenerateSamples)
+	ON_COMMAND(ID_TOOLS_GEN_SAMPLES, &CTrainerDlg::OnGenerateSamples)
+	ON_COMMAND(ID_TOOLS_SETTINGS, &CTrainerDlg::OnToolsSettings)
 	ON_MESSAGE(WM_TRAINER_CLEAR_TRAINING, &CTrainerDlg::OnClearTraining)
 	ON_WM_TIMER()
 	ON_WM_MOUSEMOVE()
@@ -790,6 +794,19 @@ void CTrainerDlg::OnBnClickedOpenTable()
 void CTrainerDlg::OnBnClickedCreateFonts()
 {
 	OpenFontsWindow();
+}
+
+// "Generate Username Samples" button + Tools menu: ask for a count, then synthesize
+// that many username images with text2image into the training\ folder.
+void CTrainerDlg::OnGenerateSamples()
+{
+	T2I_GenerateInteractive(this);
+}
+
+// Tools > Settings...: edit the text2image.exe path + PT4 connection.
+void CTrainerDlg::OnToolsSettings()
+{
+	T2I_OpenSettings(this);
 }
 
 // Delete every file in the training\ folder next to the exe. Returns the count.

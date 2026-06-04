@@ -17,9 +17,10 @@ IDI_TRAINER             ICON                    "res\\trainer.ico"
 
 /////////////////////////////////////////////////////////////////////////////
 // Dialog
-IDD_TRAINER_DIALOG DIALOGEX 0, 0, 360, 344
+IDD_TRAINER_DIALOG DIALOGEX 0, 0, 360, 368
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX
 CAPTION "Tesseract Trainer"
+MENU IDR_TRAINER_MENU
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
     PUSHBUTTON      "Load Tablemap...",IDC_LOAD_TM,7,7,80,16
@@ -60,6 +61,64 @@ BEGIN
     EDITTEXT        IDC_OCR_RESULT,232,284,114,12,ES_AUTOHSCROLL | ES_READONLY
 
     LTEXT           "Idle.",IDC_STATUS,7,304,346,36
+    PUSHBUTTON      "Generate Username Samples (text2image)...",IDC_GEN_SAMPLES,7,346,200,16
+END
+
+/////////////////////////////////////////////////////////////////////////////
+// Menu
+IDR_TRAINER_MENU MENU
+BEGIN
+    POPUP "&Tools"
+    BEGIN
+        MENUITEM "&Settings...",                 ID_TOOLS_SETTINGS
+        MENUITEM "&Generate Username Samples...", ID_TOOLS_GEN_SAMPLES
+    END
+END
+
+/////////////////////////////////////////////////////////////////////////////
+// text2image / sample-generation dialogs
+IDD_T2I_SETTINGS DIALOGEX 0, 0, 284, 176
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Sample Generation Settings"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "text2image.exe:",IDC_STATIC,7,10,80,8
+    EDITTEXT        IDC_T2I_PATH,72,8,180,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "...",IDC_T2I_BROWSE,256,8,20,14
+    GROUPBOX        "PokerTracker 4 database (player names)",IDC_STATIC,7,30,270,114
+    LTEXT           "Host:",IDC_STATIC,16,48,40,8
+    EDITTEXT        IDC_T2I_PT_HOST,58,46,120,14,ES_AUTOHSCROLL
+    LTEXT           "Port:",IDC_STATIC,188,48,18,8
+    EDITTEXT        IDC_T2I_PT_PORT,208,46,46,14,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "User:",IDC_STATIC,16,70,40,8
+    EDITTEXT        IDC_T2I_PT_USER,58,68,120,14,ES_AUTOHSCROLL
+    LTEXT           "Password:",IDC_STATIC,16,92,40,8
+    EDITTEXT        IDC_T2I_PT_PASS,58,90,120,14,ES_AUTOHSCROLL | ES_PASSWORD
+    LTEXT           "Database:",IDC_STATIC,16,114,40,8
+    EDITTEXT        IDC_T2I_PT_DB,58,112,120,14,ES_AUTOHSCROLL
+    DEFPUSHBUTTON   "OK",IDOK,166,152,52,16
+    PUSHBUTTON      "Cancel",IDCANCEL,224,152,52,16
+END
+
+IDD_GEN_COUNT DIALOGEX 0, 0, 186, 78
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Generate Username Samples"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "How many samples to generate?",IDC_STATIC,7,10,172,8
+    EDITTEXT        IDC_GEN_COUNT_EDIT,7,24,64,14,ES_AUTOHSCROLL | ES_NUMBER
+    DEFPUSHBUTTON   "Generate",IDOK,66,52,52,16
+    PUSHBUTTON      "Cancel",IDCANCEL,124,52,52,16
+END
+
+IDD_T2I_PROGRESS DIALOGEX 0, 0, 248, 80
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION
+CAPTION "Generating Username Samples"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "Starting...",IDC_T2I_PROG_TEXT,10,10,228,8
+    CONTROL         "",IDC_T2I_PROG_BAR,"msctls_progress32",PBS_SMOOTH | WS_BORDER,10,26,228,14
+    PUSHBUTTON      "Cancel",IDCANCEL,99,52,52,16
 END
 
 /////////////////////////////////////////////////////////////////////////////
