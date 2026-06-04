@@ -783,6 +783,28 @@ bool CAutoOcr::RegionUsesDecimalSplit(const CString &region_name) {
 	return false;
 }
 
+// Add a 2px border of the image's darkest colour to the chosen side(s). Applied to the
+// colour half BEFORE OCR (always, independent of "no preprocessing"), so each decimal
+// half gets an outer margin in the image's own background colour.
+static Mat PadDarkestSides(const Mat &bgr, bool left, bool right)
+{
+	if (bgr.empty() || bgr.type() != CV_8UC3) return bgr;
+	Vec3b dark(0, 0, 0);
+	double min_lum = 1e30;
+	for (int y = 0; y < bgr.rows; ++y) {
+		const Vec3b *row = bgr.ptr<Vec3b>(y);
+		for (int x = 0; x < bgr.cols; ++x) {
+			const Vec3b &p = row[x];
+			double lum = 0.114 * p[0] + 0.587 * p[1] + 0.299 * p[2];
+			if (lum < min_lum) { min_lum = lum; dark = p; }
+		}
+	}
+	Mat out;
+	copyMakeBorder(bgr, out, 0, 0, left ? 2 : 0, right ? 2 : 0,
+		BORDER_CONSTANT, Scalar(dark[0], dark[1], dark[2]));
+	return out;
+}
+
 CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast, SAutoOcrSplit *split_out) {
 	// Tesseract's TessBaseAPI is NOT thread-safe and CAutoOcr's instance
 	// members (ResultBoxes, ResultString, bestRect, ...) are shared across
@@ -856,6 +878,11 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast, SAutoOc
 		if (sx > 0 && sx < img_orig.cols) {
 			Mat left = img_orig(Rect(0, 0, sx, img_orig.rows)).clone();
 			Mat right = img_orig(Rect(sx, 0, img_orig.cols - sx, img_orig.rows)).clone();
+			// Pad each half's OUTER edge with 2px of that half's darkest colour before
+			// OCR (always applied, not a preprocessing step): left half on its left,
+			// right half on its right.
+			left = PadDarkestSides(left, true, false);
+			right = PadDarkestSides(right, false, true);
 			ResultString = ""; ResultString2 = "";
 			Mat left_proc = prepareImage(left, settings, true, tablemap_threshold);
 			CString left_text = ResultString;

@@ -362,10 +362,34 @@ Mat CTrainerOcr::BuildSplitPreview(const Mat &left, const Mat &right)
 // Build the OCR-input image, split it at the decimal, OCR each half with the
 // current settings, and join the two halves with a "." -- Tesseract is far more
 // reliable on single digit-runs than on a number containing a tiny decimal dot.
+// Add a 2px border of the image's darkest colour to the chosen side(s). Applied to the
+// colour crop BEFORE any OCR (not a preprocessing step -- always done), so the decimal
+// halves get an outer margin in the image's own background colour.
+static Mat PadDarkestSides(const cv::Mat &bgr, bool left, bool right)
+{
+	if (bgr.empty() || bgr.type() != CV_8UC3) return bgr;
+	cv::Vec3b dark(0, 0, 0);
+	double min_lum = 1e30;
+	for (int y = 0; y < bgr.rows; ++y) {
+		const cv::Vec3b *row = bgr.ptr<cv::Vec3b>(y);
+		for (int x = 0; x < bgr.cols; ++x) {
+			const cv::Vec3b &p = row[x];
+			double lum = 0.114 * p[0] + 0.587 * p[1] + 0.299 * p[2];
+			if (lum < min_lum) { min_lum = lum; dark = p; }
+		}
+	}
+	cv::Mat out;
+	cv::copyMakeBorder(bgr, out, 0, 0, left ? 2 : 0, right ? 2 : 0,
+		cv::BORDER_CONSTANT, cv::Scalar(dark[0], dark[1], dark[2]));
+	return out;
+}
+
 bool CTrainerOcr::RunDecimalSplit(const Mat &crop_bgr, int threshold, bool is_balance,
 	Mat *preview_bgr, CString *text, int *mean_conf)
 {
-	Mat ocr_img = buildOcrImage(crop_bgr, true, threshold);
+	// Pad both outer edges of the colour crop with its darkest colour before OCR, so the
+	// left half gains 2px on its left and the right half 2px on its right.
+	Mat ocr_img = buildOcrImage(PadDarkestSides(crop_bgr, true, true), true, threshold);
 	if (ocr_img.empty()) return false;
 
 	// Decimal detection needs resolution: under "no preprocessing" the OCR image is
