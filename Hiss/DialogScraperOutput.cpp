@@ -20,6 +20,7 @@
 #include "CAutoOcr.h"
 #include "CScraper.h"
 #include "..\CTransform\CTransform.h"
+#include "..\CTablemap\CTablemapDB.h"
 #include "MainFrm.h"
 #include "OpenHoldem.h"
 
@@ -122,6 +123,9 @@ BOOL CDlgScraperOutput::OnInitDialog() {
 
 	in_startup = true;
   CDialog::OnInitDialog();
+	// The tablemap + OCR settings were snapshotted at connect time; refresh them from
+	// the hiss database so the Scraper Output reflects edits made in the trainer/Vision.
+	ReloadFromDatabase();
 	// Populate list box with all interesting regions
 	AddListboxItems();
 
@@ -170,6 +174,29 @@ void CDlgScraperOutput::PostNcDestroy() {
   CDialog::PostNcDestroy();
 }
 
+
+// Re-pull the connected tablemap (regions/transforms) and the OCR settings from the
+// hiss database, so the Scraper Output shows the CURRENT settings rather than the
+// connect-time snapshot. Done under the heartbeat lock so we never reload mid-scrape.
+void CDlgScraperOutput::ReloadFromDatabase() {
+	if (p_tablemap == NULL || p_tablemap_db == NULL) {
+		return;
+	}
+	CString name = p_tablemap->filename();   // DB key (set when loaded from the DB)
+	if (name.IsEmpty()) {
+		return;
+	}
+	if (p_heartbeat_thread != NULL) {
+		EnterCriticalSection(&p_heartbeat_thread->cs_update_in_progress);
+		p_tablemap_db->LoadTablemapFromDB(name, p_tablemap);
+		LeaveCriticalSection(&p_heartbeat_thread->cs_update_in_progress);
+	} else {
+		p_tablemap_db->LoadTablemapFromDB(name, p_tablemap);
+	}
+	// Re-read the per-transform OCR settings + decimal-split list (CAutoOcr caches them
+	// once per session otherwise).
+	AutoOcr()->LoadModelSettings();
+}
 
 void CDlgScraperOutput::AddListboxItems() {
 	m_RegionList.ResetContent();

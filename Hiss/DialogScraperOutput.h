@@ -63,6 +63,7 @@ class CDlgScraperOutput : public CDialog {
 	DECLARE_MESSAGE_MAP()
  private:
 	void AddListboxItems();
+	void ReloadFromDatabase();   // re-pull tablemap + OCR settings from the hiss DB
 };
 
 
