@@ -222,6 +222,12 @@ void COpenScrapeDoc::RefreshUiAfterLoad()
 
 bool COpenScrapeDoc::SaveCurrentToDb(const CString name)
 {
+	// Flush any value typed into an edit field that hasn't been committed yet (e.g.
+	// saving via Ctrl+S while the radius/tolerance field still has focus, so its
+	// EN_KILLFOCUS handler never ran). Otherwise that edit is silently lost on save.
+	if (theApp.m_TableMapDlg) {
+		theApp.m_TableMapDlg->CommitPendingEdits();
+	}
 	int ret = p_tablemap_db->SaveTablemapToDB(name, p_tablemap);
 	if (ret != SUCCESS) {
 		AfxMessageBox("Failed to save tablemap '" + name + "' to the hiss database:\n"

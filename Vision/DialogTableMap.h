@@ -213,6 +213,12 @@ public:
 	virtual ~CDlgTableMap();
 	enum { IDD = IDD_TABLEMAP };
 	void create_tree(void);
+	// Flush the currently-focused edit field (coords / colour / radius-tolerance /
+	// transform) into the selected region's in-memory record. Call this right before
+	// saving to the DB so a value typed but not yet "committed" (e.g. saving with
+	// Ctrl+S while the radius field still has focus, so its EN_KILLFOCUS never fired)
+	// is not silently dropped.
+	void CommitPendingEdits() { OnRegionChange(); }
 	// Name of the region currently selected in the tree, or "" if the selection
 	// is not a region. Used by the Settings live OCR preview.
 	CString SelectedRegionName();
