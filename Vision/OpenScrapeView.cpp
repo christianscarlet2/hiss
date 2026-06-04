@@ -1175,6 +1175,31 @@ void COpenScrapeView::DrawMagnifierPreview(CDC *pDC)
 		CRect source_rect((int)r_iter->second.left - 1, (int)r_iter->second.top - 1,
 			(int)r_iter->second.right + 2, (int)r_iter->second.bottom + 2);
 		CRect visible_rect(source_left, source_top, source_left + source_size, source_top + source_size);
+
+		// Orange overlay for the optional second rectangle (Color transform only).
+		// Drawn BEFORE the rect-1 visibility check so it still appears when the first
+		// rectangle is outside the magnifier window (rect 2 is a separate area).
+		if (r_iter->second.rect2_enabled
+			&& r_iter->second.transform.GetLength() > 0
+			&& r_iter->second.transform[0] == 'C') {
+			CRect source_rect2((int)r_iter->second.left2 - 1, (int)r_iter->second.top2 - 1,
+				(int)r_iter->second.right2 + 2, (int)r_iter->second.bottom2 + 2);
+			CRect intersection2;
+			if (intersection2.IntersectRect(&source_rect2, &visible_rect)) {
+				CPen region_pen2(PS_SOLID, 1, RGB(255, 140, 0));   // orange
+				CPen *old_region_pen2 = pDC->SelectObject(&region_pen2);
+				CGdiObject *old_region_brush2 = pDC->SelectStockObject(NULL_BRUSH);
+				CRect draw_rect2(
+					preview_rect.left + (source_rect2.left - source_left) * scale,
+					preview_rect.top + (source_rect2.top - source_top) * scale,
+					preview_rect.left + (source_rect2.right - source_left) * scale,
+					preview_rect.top + (source_rect2.bottom - source_top) * scale);
+				pDC->Rectangle(&draw_rect2);
+				pDC->SelectObject(old_region_pen2);
+				pDC->SelectObject(old_region_brush2);
+			}
+		}
+
 		CRect intersection;
 		if (!intersection.IntersectRect(&source_rect, &visible_rect)) {
 			continue;
@@ -1196,28 +1221,6 @@ void COpenScrapeView::DrawMagnifierPreview(CDC *pDC)
 		pDC->Rectangle(&draw_rect);
 		pDC->SelectObject(old_region_pen);
 		pDC->SelectObject(old_region_brush);
-
-		// Orange overlay for the optional second rectangle (Color transform only).
-		if (r_iter->second.rect2_enabled
-			&& r_iter->second.transform.GetLength() > 0
-			&& r_iter->second.transform[0] == 'C') {
-			CRect source_rect2((int)r_iter->second.left2 - 1, (int)r_iter->second.top2 - 1,
-				(int)r_iter->second.right2 + 2, (int)r_iter->second.bottom2 + 2);
-			CRect intersection2;
-			if (intersection2.IntersectRect(&source_rect2, &visible_rect)) {
-				CPen region_pen2(PS_SOLID, 1, RGB(255, 140, 0));   // orange
-				CPen *old_region_pen2 = pDC->SelectObject(&region_pen2);
-				CGdiObject *old_region_brush2 = pDC->SelectStockObject(NULL_BRUSH);
-				CRect draw_rect2(
-					preview_rect.left + (source_rect2.left - source_left) * scale,
-					preview_rect.top + (source_rect2.top - source_top) * scale,
-					preview_rect.left + (source_rect2.right - source_left) * scale,
-					preview_rect.top + (source_rect2.bottom - source_top) * scale);
-				pDC->Rectangle(&draw_rect2);
-				pDC->SelectObject(old_region_pen2);
-				pDC->SelectObject(old_region_brush2);
-			}
-		}
 	}
 
 	RebuildGroupBounds();
