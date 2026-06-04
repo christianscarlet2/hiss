@@ -76,6 +76,36 @@ void CDlgScraperOutput::DoDataExchange(CDataExchange* pDX) {
 	DDX_Control(pDX, IDC_SCRAPERBITMAP, m_ScraperBitmap);
 	DDX_Control(pDX, IDC_ZOOM, m_Zoom);
 	DDX_Control(pDX, IDC_SCRAPERRESULT, m_ScraperResult);
+	DDX_Control(pDX, IDC_SCRAPER_LEFT, m_ScraperLeft);
+	DDX_Control(pDX, IDC_SCRAPER_RIGHT, m_ScraperRight);
+	DDX_Control(pDX, IDC_RESULT_LEFT, m_ResultLeft);
+	DDX_Control(pDX, IDC_RESULT_RIGHT, m_ResultRight);
+}
+
+// Paint an OpenCV image (grayscale or BGR) into a static control, scaled to fit. Used
+// for the decimal-split left/right half previews; pass an empty Mat to clear to gray.
+static void BlitMatToStatic(CStatic &ctrl, const cv::Mat &img) {
+	if (ctrl.GetSafeHwnd() == NULL) return;
+	CDC *pDC = ctrl.GetDC();
+	if (pDC == NULL) return;
+	RECT rc; ctrl.GetClientRect(&rc);
+	int W = rc.right - rc.left, H = rc.bottom - rc.top;
+	CBrush gray; gray.CreateSolidBrush(COLOR_GRAY);
+	CBrush *oldb = pDC->SelectObject(&gray);
+	pDC->PatBlt(0, 0, W, H, PATCOPY);
+	pDC->SelectObject(oldb);
+	if (!img.empty()) {
+		cv::Mat disp;
+		if (img.channels() == 1) cv::cvtColor(img, disp, cv::COLOR_GRAY2BGRA);
+		else if (img.channels() == 3) cv::cvtColor(img, disp, cv::COLOR_BGR2BGRA);
+		else disp = img;
+		if (!disp.isContinuous()) disp = disp.clone();
+		BITMAPINFOHEADER bi = { sizeof(bi), disp.cols, -disp.rows, 1, 32, BI_RGB };
+		::SetStretchBltMode(pDC->GetSafeHdc(), COLORONCOLOR);
+		::StretchDIBits(pDC->GetSafeHdc(), 1, 1, W - 2, H - 2, 0, 0, disp.cols, disp.rows,
+			disp.data, (BITMAPINFO *)&bi, DIB_RGB_COLORS, SRCCOPY);
+	}
+	ctrl.ReleaseDC(pDC);
 }
 
 BEGIN_MESSAGE_MAP(CDlgScraperOutput, CDialog)
@@ -224,6 +254,11 @@ void CDlgScraperOutput::DoBitblt(HBITMAP bitmap, RMapCI r_iter) {
 
 	// return if all we needed to do was erase display
 	if (bitmap == NULL)	{
+		// Also clear the decimal-split previews/results.
+		m_ResultLeft.SetWindowText("");
+		m_ResultRight.SetWindowText("");
+		BlitMatToStatic(m_ScraperLeft, cv::Mat());
+		BlitMatToStatic(m_ScraperRight, cv::Mat());
 		DeleteDC(hdcCompat1);
 		DeleteDC(hdcCompat2);
 		DeleteDC(hdcScreen);
@@ -255,6 +290,7 @@ void CDlgScraperOutput::DoBitblt(HBITMAP bitmap, RMapCI r_iter) {
 			hdcCompat2, 0, 0, SRCCOPY );
 
 	// Output result
+	SAutoOcrSplit split;
 	if (r_iter->second.transform[0] == 'A') {
 		int region_width = r_iter->second.right - r_iter->second.left + 1;
 		int region_height = r_iter->second.bottom - r_iter->second.top + 1;
@@ -262,12 +298,33 @@ void CDlgScraperOutput::DoBitblt(HBITMAP bitmap, RMapCI r_iter) {
 			Mat input(region_height, region_width, CV_8UC4);
 			BITMAPINFOHEADER bi = { sizeof(bi), region_width, -region_height, 1, 32, BI_RGB };
 			GetDIBits(hdcCompat1, bitmap, 0, region_height, input.data, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
-			res = AutoOcr()->get_ocr_result(input, r_iter);
+			res = AutoOcr()->get_ocr_result(input, r_iter, false, &split);
 		}
 	} else {
 		trans.DoTransform(r_iter, hdcCompat1, &res);
 	}
-	m_ScraperResult.SetWindowText(res);
+	m_ScraperResult.SetWindowText(res);   // final result
+
+	// Decimal-split parity with trainer.exe: show the left/right halves + their text,
+	// and a red line on the region preview where the split happened.
+	if (split.did) {
+		m_ResultLeft.SetWindowText(split.left);
+		m_ResultRight.SetWindowText(split.right);
+		BlitMatToStatic(m_ScraperLeft, split.left_img);
+		BlitMatToStatic(m_ScraperRight, split.right_img);
+		// Red vertical separator at the split x (region pixels -> zoomed control coords).
+		int lx = 1 + split.split_x * zoom;
+		CPen redpen(PS_SOLID, 1, RGB(255, 0, 0));
+		CPen *oldpen2 = pDC->SelectObject(&redpen);
+		pDC->MoveTo(lx, 1);
+		pDC->LineTo(lx, rect.bottom - rect.top - 2);
+		pDC->SelectObject(oldpen2);
+	} else {
+		m_ResultLeft.SetWindowText("");
+		m_ResultRight.SetWindowText("");
+		BlitMatToStatic(m_ScraperLeft, cv::Mat());
+		BlitMatToStatic(m_ScraperRight, cv::Mat());
+	}
 
 	// Clean up
 	SelectObject(hdcCompat1, old_bitmap1);

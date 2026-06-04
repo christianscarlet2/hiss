@@ -52,6 +52,12 @@ class CDlgScraperOutput : public CDialog {
 	CStatic			m_ScraperBitmap;
 	CComboBox		m_Zoom;
 	CEdit			m_ScraperResult;
+	// Decimal-split parity with trainer.exe: processed left/right half images + their
+	// recognized text. The final ("left.right") result stays in m_ScraperResult.
+	CStatic			m_ScraperLeft;
+	CStatic			m_ScraperRight;
+	CEdit			m_ResultLeft;
+	CEdit			m_ResultRight;
 	bool			in_startup;
 
 	DECLARE_MESSAGE_MAP()

@@ -26,6 +26,12 @@ class CTablePositioner : public CSpaceOptimizedGlobalObject {
 	// To be called once per heartbeat
 	void AlwaysKeepPositionIfEnabled();
   void ResizeToTargetSize();
+  // Restore the connected table window's saved position+size from the shared DB
+  // (settings key "table_window", field = tablemap name). Returns true if a valid
+  // placement was applied (in which case the caller skips the forced positioning).
+  bool RestoreSavedPlacement();
+  // Save the connected table window's current position+size to that same DB setting.
+  void SaveCurrentPlacement();
  private:
 	int _number_of_tables;
 	HWND *HWNDs_of_child_windows;

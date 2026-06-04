@@ -775,7 +775,7 @@ bool CAutoOcr::RegionUsesDecimalSplit(const CString &region_name) {
 	return false;
 }
 
-CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
+CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast, SAutoOcrSplit *split_out) {
 	// Tesseract's TessBaseAPI is NOT thread-safe and CAutoOcr's instance
 	// members (ResultBoxes, ResultString, bestRect, ...) are shared across
 	// calls. CScraper drives OCR from the heartbeat thread while the scraper-
@@ -783,6 +783,8 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
 	// crashing inside tesseract55.dll (0xc0000005). Serialize through the
 	// existing critical section.
 	CSLock ocr_lock(m_critsec);
+
+	if (split_out != NULL) *split_out = SAutoOcrSplit();   // reset (race-free under the lock)
 
 	// Return string value from image. "" when OCR failed
 	if (!EnsureTesseractInitialized() || img_orig.empty() || img_orig.data == NULL) {
@@ -842,15 +844,23 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast) {
 			Mat left = img_orig(Rect(0, 0, sx, img_orig.rows)).clone();
 			Mat right = img_orig(Rect(sx, 0, img_orig.cols - sx, img_orig.rows)).clone();
 			ResultString = ""; ResultString2 = "";
-			prepareImage(left, settings, true, tablemap_threshold);
+			Mat left_proc = prepareImage(left, settings, true, tablemap_threshold);
 			CString left_text = ResultString;
 			ResultString = ""; ResultString2 = "";
-			prepareImage(right, settings, true, tablemap_threshold);
+			Mat right_proc = prepareImage(right, settings, true, tablemap_threshold);
 			CString right_text = ResultString;
 			left_text.Trim(); right_text.Trim();
 			ocr_result = left_text + "." + right_text;
 			ocr_result2 = "";
 			did_decimal = true;
+			if (split_out != NULL) {
+				split_out->did = true;
+				split_out->left = left_text;
+				split_out->right = right_text;
+				split_out->left_img = left_proc.clone();
+				split_out->right_img = right_proc.clone();
+				split_out->split_x = sx;
+			}
 		}
 	}
 

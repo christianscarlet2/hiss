@@ -44,6 +44,11 @@ protected:
 	afx_msg void OnSelchangeTransform();
 	afx_msg void OnChangeSplitMargin();
 	afx_msg void OnBnClickedDecimalSplit();
+	afx_msg void OnChangeThreshold();
+	afx_msg void OnSelchangeMatchMode();
+	afx_msg void OnChangeCharSpacing();
+	afx_msg void OnBnClickedNoPreprocess();
+	afx_msg void OnBnClickedNoWhitelist();
 	afx_msg void OnBnClickedConnect();
 	afx_msg LRESULT OnSetCapture(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnOcrGlyph(WPARAM wParam, LPARAM lParam);
@@ -60,6 +65,7 @@ protected:
 	afx_msg LRESULT OnOpenFonts(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnCaptureFonts(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnRecognizeAll(WPARAM wParam, LPARAM lParam);
+	afx_msg LRESULT OnReloadRegions(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnExitSizeMove(WPARAM wParam, LPARAM lParam);
 	afx_msg void OnDestroy();
 	DECLARE_MESSAGE_MAP()
@@ -81,6 +87,11 @@ private:
 	CString CurrentAutoOcrKey();                 // "autoocr0"/"autoocr1" per the Transform combo
 	bool ApplyModelFromDb(const CString &key);   // load that key's model into the preview engine
 	void SelectModelForKey(const CString &key);  // file-pick + store to the DB key
+	// Mirror the Image-Processing controls into the shared settings DB so Hiss/Vision
+	// use the same OCR settings, and the reverse (load a transform's settings into the
+	// controls). Keys: autoocr0/autoocr1 + the global decimal_split_fields list.
+	void PersistOcrSettingsToDb();
+	void LoadOcrSettingsFromDb(const CString &key);
 	void CaptureTick();
 	int  ClearTrainingFiles();   // delete every file in training\; returns the count
 	// Start/stop/toggle sample capture (action: 1/2/3; 0 = query only).
@@ -104,6 +115,7 @@ private:
 
 	HWND _attached;
 	bool _capturing;
+	bool _suppress_persist;   // true while LoadOcrSettingsFromDb populates controls
 	HHOOK _mouse_hook;
 
 	HBITMAP _frame;        // latest captured client bitmap (owned)

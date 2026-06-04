@@ -140,6 +140,7 @@ void CDlgSettings::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_SET_THRESHOLD_SPIN, m_threshold_spin);
 	DDX_Control(pDX, IDC_SET_MODE, m_mode);
 	DDX_Control(pDX, IDC_LST_DECIMAL_FIELDS, m_decimal);
+	DDX_Control(pDX, IDC_LST_SCRAPE_FIELDS, m_scrape);
 }
 
 BEGIN_MESSAGE_MAP(CDlgSettings, CDialog)
@@ -188,6 +189,22 @@ BOOL CDlgSettings::OnInitDialog()
 		for (size_t i = 0; i < selected.size(); ++i)
 			for (int j = 0; j < (int)m_field_types.size(); ++j)
 				if (m_field_types[j].CompareNoCase(selected[i]) == 0) { m_decimal.SetSel(j, TRUE); break; }
+	}
+
+	// Per-field-type scrape enable list (shared with the trainer via scrape_fields).
+	{
+		const char *scrape_types[] = { "balance", "name" };
+		for (int i = 0; i < (int)(sizeof(scrape_types) / sizeof(scrape_types[0])); ++i) {
+			m_scrape_types.push_back(CString(scrape_types[i]));
+			m_scrape.AddString(scrape_types[i]);
+		}
+		if (p_tablemap_db != NULL) {
+			std::vector<CString> on;
+			p_tablemap_db->GetSettingArray("scrape_fields", "fields", &on);
+			for (size_t i = 0; i < on.size(); ++i)
+				for (int j = 0; j < (int)m_scrape_types.size(); ++j)
+					if (m_scrape_types[j].CompareNoCase(on[i]) == 0) { m_scrape.SetSel(j, TRUE); break; }
+		}
 	}
 
 	m_current_group = 0;
@@ -261,10 +278,19 @@ void CDlgSettings::SaveDecimalFields()
 	p_tablemap_db->SetSettingArray("decimal_split_fields", "fields", chosen);
 }
 
+void CDlgSettings::SaveScrapeFields()
+{
+	if (p_tablemap_db == NULL) return;
+	std::vector<CString> chosen;
+	for (int j = 0; j < (int)m_scrape_types.size(); ++j)
+		if (m_scrape.GetSel(j) > 0) chosen.push_back(m_scrape_types[j]);
+	p_tablemap_db->SetSettingArray("scrape_fields", "fields", chosen);
+}
+
 void CDlgSettings::ShowPage(int index)
 {
 	int general[]  = { IDC_SET_GENERAL_TEXT };
-	int fields[]   = { IDC_SET_FIELDS_DECLBL, IDC_LST_DECIMAL_FIELDS };
+	int fields[]   = { IDC_SET_FIELDS_DECLBL, IDC_LST_DECIMAL_FIELDS, IDC_SET_SCRAPE_LBL, IDC_LST_SCRAPE_FIELDS };
 	int autoocr[]  = { IDC_SET_MODEL_LBL, IDC_EDIT_A0_MODEL, IDC_BTN_A0_BROWSE,
 		IDC_SET_THRESHOLD_LBL, IDC_SET_THRESHOLD, IDC_SET_THRESHOLD_SPIN,
 		IDC_SET_MODE_LBL, IDC_SET_MODE, IDC_CHK_NO_PREPROCESS, IDC_CHK_NO_WHITELIST,
@@ -282,6 +308,7 @@ void CDlgSettings::ShowPage(int index)
 	else if (index == 4) { show = advanced;show_n = sizeof(advanced)/ sizeof(int); title = "Advanced"; }
 
 	int all[] = { IDC_SET_GENERAL_TEXT, IDC_SET_FIELDS_DECLBL, IDC_LST_DECIMAL_FIELDS,
+		IDC_SET_SCRAPE_LBL, IDC_LST_SCRAPE_FIELDS,
 		IDC_SET_MODEL_LBL, IDC_EDIT_A0_MODEL, IDC_BTN_A0_BROWSE,
 		IDC_SET_THRESHOLD_LBL, IDC_SET_THRESHOLD, IDC_SET_THRESHOLD_SPIN,
 		IDC_SET_MODE_LBL, IDC_SET_MODE, IDC_CHK_NO_PREPROCESS, IDC_CHK_NO_WHITELIST,
@@ -449,6 +476,7 @@ void CDlgSettings::OnOK()
 {
 	if (m_current_group == 2 || m_current_group == 3) SaveGroup(m_current_group);
 	SaveDecimalFields();
+	SaveScrapeFields();
 	KillTimer(SETTINGS_POLL_TIMER);
 	DestroyWindow();
 }

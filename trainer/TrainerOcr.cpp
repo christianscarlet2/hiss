@@ -449,16 +449,19 @@ void CTrainerOcr::Run(const Mat &crop_bgr, const STrainerOcrSettings &settings,
 
 	int threshold = (_s.threshold > 0) ? _s.threshold : kTOcrDefaultThreshold;
 
-	// Balance regions: digits + dot only. Others: general set.
-	bool is_balance = (CString(region_name).MakeLower().Find("balance") != -1);
+	// Balance regions: digits + dot only. Others (incl. names): general set.
+	CString rlower = CString(region_name); rlower.MakeLower();
+	bool is_balance = (rlower.Find("balance") != -1);
+	bool is_name = (rlower.Find("name") != -1);
 	if (is_balance)
 		_whitelist = "0123456789.";
 	else
 		_whitelist = kGeneralWhitelist;
 
-	// Decimal-splitting path: split, OCR each half, join with ".". If no decimal
-	// is found it returns false and we fall through to normal whole-image OCR.
-	if (_s.use_decimal_split &&
+	// Decimal-splitting path: split, OCR each half, join with ".". Names are plain
+	// alphanumeric text, so never decimal-split them. If no decimal is found it
+	// returns false and we fall through to normal whole-image OCR.
+	if (_s.use_decimal_split && !is_name &&
 		RunDecimalSplit(crop_bgr, threshold, is_balance, preview_bgr, text, mean_conf)) {
 		return;
 	}

@@ -199,6 +199,7 @@ CTrainerDlg::CTrainerDlg(CWnd *pParent)
 {
 	_attached = NULL;
 	_capturing = false;
+	_suppress_persist = false;
 	_mouse_hook = NULL;
 	_frame = NULL;
 	_frame_w = _frame_h = 0;
@@ -236,6 +237,11 @@ BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_CBN_SELCHANGE(IDC_TRANSFORM, &CTrainerDlg::OnSelchangeTransform)
 	ON_EN_CHANGE(IDC_SPLIT_MARGIN, &CTrainerDlg::OnChangeSplitMargin)
 	ON_BN_CLICKED(IDC_USE_DECIMAL_SPLIT, &CTrainerDlg::OnBnClickedDecimalSplit)
+	ON_EN_CHANGE(IDC_THRESHOLD, &CTrainerDlg::OnChangeThreshold)
+	ON_CBN_SELCHANGE(IDC_MATCH_MODE, &CTrainerDlg::OnSelchangeMatchMode)
+	ON_EN_CHANGE(IDC_CHAR_SPACING, &CTrainerDlg::OnChangeCharSpacing)
+	ON_BN_CLICKED(IDC_NO_PREPROCESS, &CTrainerDlg::OnBnClickedNoPreprocess)
+	ON_BN_CLICKED(IDC_NO_WHITELIST, &CTrainerDlg::OnBnClickedNoWhitelist)
 	ON_BN_CLICKED(IDC_CONNECT, &CTrainerDlg::OnBnClickedConnect)
 	ON_MESSAGE(WM_TRAINER_SET_CAPTURE, &CTrainerDlg::OnSetCapture)
 	ON_MESSAGE(WM_TRAINER_OCR_GLYPH, &CTrainerDlg::OnOcrGlyph)
@@ -254,6 +260,7 @@ BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_MESSAGE(WM_TRAINER_OPEN_FONTS, &CTrainerDlg::OnOpenFonts)
 	ON_MESSAGE(WM_TRAINER_CAPTURE_FONTS, &CTrainerDlg::OnCaptureFonts)
 	ON_MESSAGE(WM_TRAINER_RECOGNIZE_ALL, &CTrainerDlg::OnRecognizeAll)
+	ON_MESSAGE(WM_TRAINER_RELOAD_REGIONS, &CTrainerDlg::OnReloadRegions)
 	ON_MESSAGE(WM_EXITSIZEMOVE, &CTrainerDlg::OnExitSizeMove)
 END_MESSAGE_MAP()
 
@@ -489,8 +496,11 @@ void CTrainerDlg::ApplyTransformSelection(bool recognize)
 	int index = 0;
 	if (tr.Left(7).CompareNoCase("AutoOcr") == 0) index = atoi(CStringA(tr.Mid(7)));
 	p_sample_store->SetTransform(TRAINER_MODE_AUTOOCR, index);
-	// Switch the preview engine to this transform's model (autoocr0/autoocr1, shared DB).
-	ApplyModelFromDb((index == 1) ? CString("autoocr1") : CString("autoocr0"));
+	// Switch the preview engine + Image-Processing controls to this transform's settings
+	// (autoocr0/autoocr1, shared DB).
+	CString key = (index == 1) ? CString("autoocr1") : CString("autoocr0");
+	ApplyModelFromDb(key);
+	LoadOcrSettingsFromDb(key);
 	// Mirror the web UI's /api/transform: re-recognize the existing rows with the
 	// newly selected transform. Skipped at startup, when there are no samples yet.
 	if (recognize) {
@@ -527,6 +537,87 @@ void CTrainerDlg::OnBnClickedDecimalSplit()
 {
 	UpdateDecimalSplitControls();
 	UpdatePreview();   // refresh the boxes/preview immediately
+	PersistOcrSettingsToDb();
+}
+
+// The remaining Image-Processing controls: refresh the live preview and push the new
+// value to the shared settings DB so Hiss/Vision use it too.
+void CTrainerDlg::OnChangeThreshold()      { UpdatePreview(); PersistOcrSettingsToDb(); }
+void CTrainerDlg::OnSelchangeMatchMode()   { UpdatePreview(); PersistOcrSettingsToDb(); }
+void CTrainerDlg::OnChangeCharSpacing()    { UpdatePreview(); PersistOcrSettingsToDb(); }
+void CTrainerDlg::OnBnClickedNoPreprocess(){ UpdatePreview(); PersistOcrSettingsToDb(); }
+void CTrainerDlg::OnBnClickedNoWhitelist() { UpdatePreview(); PersistOcrSettingsToDb(); }
+
+// Write the current Image-Processing controls to the shared settings DB (the same
+// place Hiss/Vision read from): per-transform fields under autoocr0/autoocr1, plus the
+// global decimal_split_fields list. No-op while LoadOcrSettingsFromDb is populating.
+void CTrainerDlg::PersistOcrSettingsToDb()
+{
+	if (_suppress_persist) return;
+	CString key = CurrentAutoOcrKey();
+
+	CString t;
+	m_threshold.GetWindowText(t);
+	TrainerDB_SetSetting(key, "threshold", t);
+
+	int sel = m_matchMode.GetCurSel();
+	CString mode;
+	if (sel >= 0) mode.Format("%d", (int)m_matchMode.GetItemData(sel));
+	TrainerDB_SetSetting(key, "mode", mode);
+
+	TrainerDB_SetSetting(key, "no_preprocess",
+		(IsDlgButtonChecked(IDC_NO_PREPROCESS) == BST_CHECKED) ? "1" : "0");
+	TrainerDB_SetSetting(key, "no_whitelist",
+		(IsDlgButtonChecked(IDC_NO_WHITELIST) == BST_CHECKED) ? "1" : "0");
+
+	// Hiss has only an on/off "no char spacing" bit (its spacing amount is a fixed
+	// constant); map it from whether the trainer's spacing value is 0.
+	CString cs; m_charSpacing.GetWindowText(cs);
+	TrainerDB_SetSetting(key, "no_char_spacing", (atoi(CStringA(cs)) == 0) ? "1" : "0");
+
+	// "Use decimal splitting" -> the global list of field types Hiss splits on. ON
+	// enables the full money-field set; OFF clears it.
+	std::vector<CString> fields;
+	if (IsDlgButtonChecked(IDC_USE_DECIMAL_SPLIT) == BST_CHECKED) {
+		const char *money[] = { "balance", "pot", "bet", "stack", "call", "raise", "blinds", "ante" };
+		for (int i = 0; i < (int)(sizeof(money) / sizeof(money[0])); ++i) fields.push_back(CString(money[i]));
+	}
+	TrainerDB_SetSettingArray("decimal_split_fields", "fields", fields);
+}
+
+// Populate the Image-Processing controls from a transform's settings in the DB, so
+// switching the Transform combo shows that transform's stored values. Only overrides a
+// control when the DB has a value for it (registry/defaults remain the fallback).
+void CTrainerDlg::LoadOcrSettingsFromDb(const CString &key)
+{
+	_suppress_persist = true;
+
+	CString thr = TrainerDB_GetSetting(key, "threshold");
+	if (!thr.IsEmpty()) { m_threshold.SetWindowText(thr); m_thresholdSpin.SetPos(atoi(CStringA(thr))); }
+
+	CString mode = TrainerDB_GetSetting(key, "mode");
+	if (!mode.IsEmpty()) {
+		int val = atoi(CStringA(mode));
+		for (int i = 0; i < m_matchMode.GetCount(); ++i)
+			if ((int)m_matchMode.GetItemData(i) == val) { m_matchMode.SetCurSel(i); break; }
+	}
+
+	CString nopre = TrainerDB_GetSetting(key, "no_preprocess");
+	if (!nopre.IsEmpty()) CheckDlgButton(IDC_NO_PREPROCESS, nopre == "1" ? BST_CHECKED : BST_UNCHECKED);
+	CString nowl = TrainerDB_GetSetting(key, "no_whitelist");
+	if (!nowl.IsEmpty()) CheckDlgButton(IDC_NO_WHITELIST, nowl == "1" ? BST_CHECKED : BST_UNCHECKED);
+
+	CString nocs = TrainerDB_GetSetting(key, "no_char_spacing");
+	if (nocs == "1") { m_charSpacing.SetWindowText("0"); m_charSpacingSpin.SetPos(0); }
+
+	// decimal_split_fields is global; value->>'fields' serializes the JSON array (e.g.
+	// ["balance",...]) or is empty/"[]" when off.
+	CString fields = TrainerDB_GetSetting("decimal_split_fields", "fields");
+	bool dec_on = (!fields.IsEmpty() && fields != "[]");
+	CheckDlgButton(IDC_USE_DECIMAL_SPLIT, dec_on ? BST_CHECKED : BST_UNCHECKED);
+	UpdateDecimalSplitControls();
+
+	_suppress_persist = false;
 }
 
 // Re-run the split preview the instant the trim changes (typing or spin), rather
@@ -693,6 +784,22 @@ LRESULT CTrainerDlg::OnRegionSelected(WPARAM wParam, LPARAM lParam)
 		_selected = idx;
 		UpdatePreview();
 	}
+	return 0;
+}
+
+// The shared scrape_fields list changed (web "Scrape balances/names" toggle): refresh
+// which field types are enabled, drop a now-disabled selection, and repaint the Table
+// View + preview.
+LRESULT CTrainerDlg::OnReloadRegions(WPARAM, LPARAM)
+{
+	TrainerRegions_RefreshEnabled(&_regions);
+	if (_selected >= 0 && _selected < (int)_regions.size() && !_regions[_selected].enabled) {
+		_selected = -1;
+	}
+	if (_screenshot != NULL && ::IsWindow(_screenshot->GetSafeHwnd())) {
+		_screenshot->UpdateFrame(_frame, _frame_w, _frame_h, _regions, _selected);
+	}
+	UpdatePreview();
 	return 0;
 }
 
@@ -1113,6 +1220,9 @@ void CTrainerDlg::CaptureTick()
 		bool ignore_bad = (IsDlgButtonChecked(IDC_IGNORE_BAD) == BST_CHECKED);
 		STrainerOcrSettings settings = ReadSettings();
 		for (size_t i = 0; i < _regions.size(); ++i) {
+			if (!_regions[i].enabled) {
+				continue;   // field type not in the shared scrape_fields list
+			}
 			std::vector<BYTE> cur;
 			int w = 0, h = 0;
 			if (!CropRegionBgra(_frame, bw, bh, _regions[i].rect, &cur, &w, &h)) {

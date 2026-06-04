@@ -46,7 +46,7 @@ BOOL CScreenshotView::Create(CWnd *owner)
 	BOOL ok = CWnd::CreateEx(
 		0,
 		class_name,
-		"Tesseract Trainer — Screenshot (click a region)",
+		"Table View",
 		WS_OVERLAPPEDWINDOW | WS_VISIBLE,
 		CW_USEDEFAULT, CW_USEDEFAULT, 900, 600,
 		owner == NULL ? NULL : owner->GetSafeHwnd(),
@@ -145,7 +145,11 @@ void CScreenshotView::OnPaint()
 		int rr = ox + (int)(r.right * scale);
 		int rb = oy + (int)(r.bottom * scale);
 		bool sel = ((int)i == _selected);
-		CPen pen(PS_SOLID, sel ? 2 : 1, sel ? RGB(255, 220, 0) : RGB(255, 60, 60));
+		// Disabled field types (not in the shared scrape_fields list) are drawn dim
+		// grey and can't be selected; enabled ones use yellow (selected) / red.
+		COLORREF col = !_regions[i].enabled ? RGB(110, 110, 110)
+			: (sel ? RGB(255, 220, 0) : RGB(255, 60, 60));
+		CPen pen(PS_SOLID, (sel && _regions[i].enabled) ? 2 : 1, col);
 		CPen *old_pen = dc.SelectObject(&pen);
 		CGdiObject *old_brush = dc.SelectStockObject(NULL_BRUSH);
 		dc.Rectangle(rl, rt, rr + 1, rb + 1);
@@ -174,6 +178,9 @@ void CScreenshotView::OnLButtonDown(UINT nFlags, CPoint point)
 	int sx = 0, sy = 0;
 	if (ViewToSource(point, &sx, &sy)) {
 		for (size_t i = 0; i < _regions.size(); i++) {
+			if (!_regions[i].enabled) {
+				continue;   // disabled field type: not selectable
+			}
 			const RECT &r = _regions[i].rect;
 			if (sx >= (int)r.left && sx <= (int)r.right && sy >= (int)r.top && sy <= (int)r.bottom) {
 				_selected = (int)i;

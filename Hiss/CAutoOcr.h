@@ -35,6 +35,17 @@ struct SAutoOcrSettings {
 	bool no_char_spacing;	// skip only the character-spacing step (ignored when no_preprocess)
 };
 
+// Decimal-split detail from the most recent get_ocr_result(), so the Scraper Output
+// window can mimic the trainer (show the left/right halves, their texts, and a red
+// split line). did == false when the region was OCR'd whole.
+struct SAutoOcrSplit {
+	bool did;
+	CString left, right;        // recognized text of each half
+	cv::Mat left_img, right_img; // processed (binarized) image fed to Tesseract per half
+	int split_x;                // separator x in the region's pixel coordinates
+	SAutoOcrSplit() : did(false), split_x(0) {}
+};
+
 class CAutoOcr : public CSpaceOptimizedGlobalObject {
 	friend class CScraper;
 public:
@@ -44,7 +55,7 @@ public:
 public:
 	CString GetDetectTemplateResult(CString area_name, CString tpl_name, RECT* rect_result);
 	vector<CString> GetDetectTemplatesResult(CString area_name);
-	CString get_ocr_result(Mat img_orig, RMapCI region, bool fast = false);
+	CString get_ocr_result(Mat img_orig, RMapCI region, bool fast = false, SAutoOcrSplit *split_out = NULL);
 	// Re-read the per-transform model/threshold/mode settings from the DB (called by the
 	// OCR preferences page so a model change takes effect without a restart).
 	void LoadModelSettings();

@@ -937,6 +937,23 @@
     });
   }
 
+  // Shared per-field-type scrape list (scrape_fields), same control as the Sample Gen
+  // tool: "Scrape balances" / "Scrape names" toggle which player fields are scraped.
+  var scrapeBalances = document.getElementById('scrapeBalances');
+  var scrapeNames = document.getElementById('scrapeNames');
+  function applyScrapeState(data) {
+    if (!data) return;
+    if (scrapeBalances) scrapeBalances.checked = !!data.balance;
+    if (scrapeNames) scrapeNames.checked = !!data.name;
+  }
+  function toggleScrapeField(field, on) {
+    api('POST', '/api/scrapefields?field=' + field + '&on=' + (on ? 1 : 0),
+      function (status, data) { if (status === 200) applyScrapeState(data); });
+  }
+  if (scrapeBalances) scrapeBalances.addEventListener('change', function () { toggleScrapeField('balance', scrapeBalances.checked); });
+  if (scrapeNames) scrapeNames.addEventListener('change', function () { toggleScrapeField('name', scrapeNames.checked); });
+  api('GET', '/api/scrapefields', function (status, data) { if (status === 200) applyScrapeState(data); });
+
   refresh();
   // Poll: when "Auto capture" is on, re-capture scrapes on each tick (which also
   // refreshes + auto-removes accounted if enabled); otherwise just refresh.

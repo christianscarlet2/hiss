@@ -201,11 +201,13 @@
 
 // Next default values for new objects
 // 
+#define IDC_LST_SCRAPE_FIELDS           1235
+#define IDC_SET_SCRAPE_LBL              1236
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        154
 #define _APS_NEXT_COMMAND_VALUE         32800
-#define _APS_NEXT_CONTROL_VALUE         1235
+#define _APS_NEXT_CONTROL_VALUE         1237
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

@@ -128,6 +128,10 @@
 #define IDC_ZOOM                        1090
 #define IDC_STATIC_ZOOM                 1091
 #define IDC_STATIC_RESULT               1092
+#define IDC_SCRAPER_LEFT                1431
+#define IDC_SCRAPER_RIGHT               1432
+#define IDC_RESULT_LEFT                 1433
+#define IDC_RESULT_RIGHT                1434
 #define IDC_TREE1                       1095
 #define IDC_TREE_PREFS                  1095
 #define IDC_SYMBOL_TREE                 1095
@@ -565,7 +569,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        191
 #define _APS_NEXT_COMMAND_VALUE         33001
-#define _APS_NEXT_CONTROL_VALUE         1431
+#define _APS_NEXT_CONTROL_VALUE         1435
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

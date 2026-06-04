@@ -254,6 +254,45 @@ void CTrainerServer::HandleClient(SOCKET client)
 		return;
 	}
 
+	// API: read / toggle the shared per-field-type scrape list (scrape_fields). With
+	// ?field=balance|name&on=0|1 it adds/removes that type and reloads the trainer's
+	// regions; with no params it just reports current state. Shared with Vision.
+	if (path.CompareNoCase("/api/scrapefields") == 0) {
+		CString raw = TrainerDB_GetSetting("scrape_fields", "fields");   // e.g. ["balance","name"]
+		CString trimmed = raw; trimmed.Trim();
+		std::vector<CString> fields;
+		int pos = 0;
+		while ((pos = raw.Find('"', pos)) >= 0) {
+			int end = raw.Find('"', pos + 1);
+			if (end < 0) break;
+			CString tok = raw.Mid(pos + 1, end - pos - 1); tok.MakeLower(); tok.Trim();
+			if (!tok.IsEmpty()) fields.push_back(tok);
+			pos = end + 1;
+		}
+		if (trimmed.IsEmpty()) { fields.clear(); fields.push_back("balance"); }   // unset default
+		CStringA field = UrlDecode(QueryValue(query, "field"));
+		if (!field.IsEmpty()) {
+			CStringA on = UrlDecode(QueryValue(query, "on"));
+			bool want = (on == "1" || on.CompareNoCase("true") == 0);
+			CString f(field); f.MakeLower();
+			for (size_t i = 0; i < fields.size(); ) {
+				if (fields[i] == f) fields.erase(fields.begin() + i); else ++i;
+			}
+			if (want) fields.push_back(f);
+			TrainerDB_SetSettingArray("scrape_fields", "fields", fields);
+			if (g_trainer_main_hwnd != NULL) ::PostMessage(g_trainer_main_hwnd, WM_TRAINER_RELOAD_REGIONS, 0, 0);
+		}
+		bool bal = false, nam = false;
+		for (size_t i = 0; i < fields.size(); ++i) {
+			if (fields[i] == "balance") bal = true; else if (fields[i] == "name") nam = true;
+		}
+		CStringA body;
+		body.Format("{\"ok\":true,\"balance\":%s,\"name\":%s}", bal ? "true" : "false", nam ? "true" : "false");
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
 	// API: delete every file in the training\ folder (moved here from the dialog).
 	if (path.CompareNoCase("/api/training/clear") == 0) {
 		LRESULT deleted = (g_trainer_main_hwnd != NULL)

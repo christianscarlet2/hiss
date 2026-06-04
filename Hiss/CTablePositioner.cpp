@@ -19,6 +19,7 @@
 #include "CSessionCounter.h"
 #include "CSharedMem.h"
 #include "../CTablemap/CTableMapAccess.h"
+#include "../CTablemap/CTablemapDB.h"
 
 #include "WinDef.h"
 #include "..\DLLs\WindowFunctions_DLL\window_functions.h"
@@ -65,6 +66,65 @@ void CTablePositioner::PositionMyWindow() {
 		// Preferences()->table_positioner_options() == k_position_tables_never
 		write_log(Preferences()->debug_table_positioner(), "[CTablePositioner] PositionMyWindow() Not doing anything because of Preferences()->\n");
 	}
+}
+
+// Key the saved placement on the loaded tablemap's name (so each table type keeps its
+// own spot); fall back to "default" when unknown.
+static CString TableWindowField() {
+  CString f = (p_tablemap != NULL) ? p_tablemap->filename() : CString("");
+  f.Trim();
+  if (f.IsEmpty()) f = "default";
+  return f;
+}
+
+bool CTablePositioner::RestoreSavedPlacement() {
+  HWND hwnd = p_autoconnector->attached_hwnd();
+  if (hwnd == NULL || !::IsWindow(hwnd) || p_tablemap_db == NULL) {
+    return false;
+  }
+  CString v = p_tablemap_db->GetSettingString("table_window", TableWindowField());
+  if (v.IsEmpty()) {
+    return false;
+  }
+  int parts[4] = { 0, 0, 0, 0 };
+  int n = 0, pos = 0;
+  while (n < 4) {
+    int comma = v.Find(',', pos);
+    CString tok = (comma < 0) ? v.Mid(pos) : v.Mid(pos, comma - pos);
+    parts[n++] = atoi(CStringA(tok));
+    if (comma < 0) break;
+    pos = comma + 1;
+  }
+  if (n != 4) {
+    return false;
+  }
+  int x = parts[0], y = parts[1], w = parts[2], h = parts[3];
+  if (w < 50 || h < 50) {
+    return false;   // never restore a collapsed window
+  }
+  // Drop placements that no longer land on any monitor (e.g. an unplugged screen).
+  RECT want = { x, y, x + w, y + h };
+  if (MonitorFromRect(&want, MONITOR_DEFAULTTONULL) == NULL) {
+    return false;
+  }
+  ::SetWindowPos(hwnd, NULL, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+  write_log(Preferences()->debug_table_positioner(),
+    "[CTablePositioner] Restored table window to %d,%d %dx%d from DB.\n", x, y, w, h);
+  return true;
+}
+
+void CTablePositioner::SaveCurrentPlacement() {
+  HWND hwnd = p_autoconnector->attached_hwnd();
+  if (hwnd == NULL || !::IsWindow(hwnd) || p_tablemap_db == NULL) {
+    return;
+  }
+  RECT r;
+  if (!::GetWindowRect(hwnd, &r)) {
+    return;
+  }
+  CString v;
+  v.Format("%d,%d,%d,%d", (int)r.left, (int)r.top, (int)(r.right - r.left), (int)(r.bottom - r.top));
+  p_tablemap_db->SetSettingString("table_window", TableWindowField(), v);
 }
 
 // To be called once per heartbeat

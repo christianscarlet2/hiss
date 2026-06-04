@@ -114,6 +114,43 @@ bool TrainerDB_SetSetting(const CString &key, const CString &field, const CStrin
 	return ok;
 }
 
+bool TrainerDB_SetSettingArray(const CString &key, const CString &field, const std::vector<CString> &values)
+{
+	PGconn *conn = TrainerDB_Connect();
+	if (conn == NULL) {
+		return false;
+	}
+	// Build a JSON array literal: ["a","b",...]. Escape backslash and quote for JSON,
+	// then EscapeSqlLiteral the whole thing for the SQL string literal.
+	CString arr = "[";
+	for (size_t i = 0; i < values.size(); ++i) {
+		if (i > 0) arr += ",";
+		CString v;
+		for (int j = 0; j < values[i].GetLength(); ++j) {
+			TCHAR c = values[i][j];
+			if (c == '\\' || c == '"') { v += '\\'; v += c; }
+			else v += c;
+		}
+		arr += "\""; arr += v; arr += "\"";
+	}
+	arr += "]";
+	CString sql;
+	sql.Format(
+		"INSERT INTO settings(key,value,updated_at) "
+		"VALUES ('%s', jsonb_build_object('%s', '%s'::jsonb), now()) "
+		"ON CONFLICT (key) DO UPDATE SET "
+		"value = jsonb_set(COALESCE(settings.value,'{}'::jsonb), '{%s}', '%s'::jsonb), "
+		"updated_at = now()",
+		EscapeSqlLiteral(key).GetString(),
+		EscapeSqlLiteral(field).GetString(), EscapeSqlLiteral(arr).GetString(),
+		EscapeSqlLiteral(field).GetString(), EscapeSqlLiteral(arr).GetString());
+	PGresult *res = PQexec(conn, sql.GetString());
+	bool ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
+	if (res) PQclear(res);
+	PQfinish(conn);
+	return ok;
+}
+
 static const char *kWindowSettingsKey = "trainer_windows";
 
 void TrainerDB_SaveWindowRect(HWND hwnd, const char *field)

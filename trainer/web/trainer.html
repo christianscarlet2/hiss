@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sample Gen Tool</title>
+  <title>Table View</title>
   <link rel="stylesheet" href="/trainer/trainer.css">
 </head>
 <body>
@@ -11,6 +11,8 @@
     <div class="title">Sample Gen Tool</div>
     <button id="startStop" tabindex="-1">Start</button>
     <label class="muted">Transform <select id="textGroup" tabindex="-1"></select></label>
+    <label class="muted"><input type="checkbox" id="scrapeBalances"> Scrape balances</label>
+    <label class="muted"><input type="checkbox" id="scrapeNames"> Scrape names</label>
     <label class="muted"><input type="checkbox" id="hideSaved"> Hide saved</label>
     <label class="muted"><input type="checkbox" id="autoDedup"> Auto delete dupes</label>
     <span class="spacer"></span>

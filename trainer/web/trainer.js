@@ -340,6 +340,27 @@
     });
   }
 
+  // Shared per-field-type scrape list (scrape_fields): "Scrape balances" / "Scrape
+  // names" toggle which player fields the trainer scrapes (shared with Vision + the
+  // Font Creation tool via the DB).
+  var scrapeBalances = document.getElementById('scrapeBalances');
+  var scrapeNames = document.getElementById('scrapeNames');
+  function applyScrapeState(data) {
+    if (!data) return;
+    if (scrapeBalances) scrapeBalances.checked = !!data.balance;
+    if (scrapeNames) scrapeNames.checked = !!data.name;
+  }
+  function loadScrapeFields() {
+    api('GET', '/api/scrapefields', function (status, data) { if (status === 200) applyScrapeState(data); });
+  }
+  function toggleScrapeField(field, on) {
+    api('POST', '/api/scrapefields?field=' + field + '&on=' + (on ? 1 : 0),
+      function (status, data) { if (status === 200) applyScrapeState(data); });
+  }
+  if (scrapeBalances) scrapeBalances.addEventListener('change', function () { toggleScrapeField('balance', scrapeBalances.checked); });
+  if (scrapeNames) scrapeNames.addEventListener('change', function () { toggleScrapeField('name', scrapeNames.checked); });
+  loadScrapeFields();
+
   loadFontInfo();
   pollCapture();
   refresh();

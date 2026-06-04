@@ -19,6 +19,9 @@
 // lParam = CStringA* error message (NULL on success; the handler deletes it).
 #define WM_TRAINER_T2I_PROGRESS  (WM_APP + 9)
 #define WM_TRAINER_T2I_DONE      (WM_APP + 10)
+// The shared scrape_fields list changed (web "Scrape balances/names" toggles); the
+// dialog refreshes each region's enabled flag + repaints the Table View.
+#define WM_TRAINER_RELOAD_REGIONS (WM_APP + 11)
 
 // Transform modes stored in the sample store (which engine recognizes the table).
 #define TRAINER_MODE_AUTOOCR 0                  // Tesseract (AutoOcr0/AutoOcr1)

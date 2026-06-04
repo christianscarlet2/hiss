@@ -320,8 +320,13 @@ bool CAutoConnector::Connect(HWND targetHWnd) {
 			PMainframe()->ResetDisplay();
       // log OH title bar text and table reset
       WriteLogTableReset("NEW CONNECTION");
-      p_table_positioner->ResizeToTargetSize();
-			p_table_positioner->PositionMyWindow();
+      // Prefer the table window's saved position+size (shared DB). Only fall back to
+      // the forced resize/reposition (which can shove it onto monitor 1) when there
+      // is no valid saved placement.
+      if (!p_table_positioner->RestoreSavedPlacement()) {
+        p_table_positioner->ResizeToTargetSize();
+        p_table_positioner->PositionMyWindow();
+      }
 			p_autoplayer->EngageAutoPlayerUponConnectionIfNeeded();
 		}
 	}
@@ -351,6 +356,9 @@ void CAutoConnector::Disconnect(CString reason_for_disconnection) {
 	write_log(Preferences()->debug_autoconnector(), "[CAutoConnector] Locking autoconnector-mutex\n");
   _autoconnector_mutex->Lock(INFINITE); 
 	p_engine_container->UpdateOnDisconnection();
+	// Remember where/how big the table window is, so the next connection restores it
+	// (shared DB) instead of forcing it onto monitor 1.
+	p_table_positioner->SaveCurrentPlacement();
 	// Clear "attached" info
 	set_attached_hwnd(NULL);
 	// Unattach OH.

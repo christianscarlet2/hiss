@@ -49,6 +49,8 @@ private:
 	CComboBox       m_mode;
 	CListBox        m_decimal;
 	std::vector<CString> m_field_types;   // canonical decimal-split field types
+	CListBox        m_scrape;             // per-field-type enable list (shared scrape_fields)
+	std::vector<CString> m_scrape_types;  // field types the trainer scrapes (balance, name)
 	CTrainerOcr     m_ocr;
 	CString         m_loaded_model;       // model currently Init'd in m_ocr
 	int             m_current_group;      // 0=General 1=Fields 2=AutoOcr0 3=AutoOcr1 4=Advanced
@@ -58,6 +60,7 @@ private:
 	void LoadGroup(int group);            // DB -> controls
 	void SaveGroup(int group);            // controls -> DB
 	void SaveDecimalFields();
+	void SaveScrapeFields();
 	void UpdateCharSpacingEnable();
 	void RunPreview();
 	bool RegionUsesDecimalSplit(const CString &name);

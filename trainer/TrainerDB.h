@@ -29,6 +29,9 @@ long TrainerDB_TablemapId(pconn *conn, const CString &name);
 // `field` is a named field inside that row's JSON value.
 CString TrainerDB_GetSetting(const CString &key, const CString &field);
 bool    TrainerDB_SetSetting(const CString &key, const CString &field, const CString &value);
+// Writes `values` as a JSON array into <key>.value->'<field>' (mirrors
+// CTablemapDB::SetSettingArray, the same format Hiss/Vision read via GetSettingArray).
+bool    TrainerDB_SetSettingArray(const CString &key, const CString &field, const std::vector<CString> &values);
 
 // --- Persisted UI window placement --------------------------------------------
 // Position + size are stored as "x,y,w,h" (screen coords) under the settings key

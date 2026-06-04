@@ -3,22 +3,41 @@
 #include "TrainerDB.h"
 #include "libpq-fe.h"
 #include <map>
+#include <set>
 
-// True for region names p0balance .. p8balance (exactly that shape).
-static bool IsBalanceRegionName(const CString &name)
+// If `name` is p<0-8><type> with a type the trainer scrapes ("balance"/"name"),
+// returns that type lowercased; otherwise returns "". (Empty => skip the region.)
+static CString PlayerFieldType(const CString &name)
 {
-	// p<digit>balance, digit 0..8
-	if (name.GetLength() < 9) {
-		return false;
+	if (name.GetLength() < 3) return "";
+	if (name[0] != 'p') return "";
+	if (name[1] < '0' || name[1] > '8') return "";
+	CString rest = name.Mid(2); rest.MakeLower();
+	if (rest == "balance" || rest == "name") return rest;
+	return "";
+}
+
+// The enabled field types from the shared `scrape_fields` setting (a JSON array such
+// as ["balance","name"]). Defaults to {"balance"} when unset, preserving the previous
+// balances-only behaviour. Determines each region's `enabled` flag.
+static void GetEnabledScrapeFields(std::set<CString> *out)
+{
+	out->clear();
+	CString raw = TrainerDB_GetSetting("scrape_fields", "fields");   // serialized JSON array
+	CString trimmed = raw; trimmed.Trim();
+	if (trimmed.IsEmpty()) {            // setting absent -> default to balances only
+		out->insert("balance");
+		return;
 	}
-	if (name[0] != 'p') {
-		return false;
+	// Parse quoted tokens. An explicit "[]" yields an empty set (nothing enabled).
+	int pos = 0;
+	while ((pos = raw.Find('"', pos)) >= 0) {
+		int end = raw.Find('"', pos + 1);
+		if (end < 0) break;
+		CString tok = raw.Mid(pos + 1, end - pos - 1); tok.MakeLower(); tok.Trim();
+		if (!tok.IsEmpty()) out->insert(tok);
+		pos = end + 1;
 	}
-	if (name[1] < '0' || name[1] > '8') {
-		return false;
-	}
-	CString rest = name.Mid(2);
-	return rest.CompareNoCase("balance") == 0;
 }
 
 bool LoadBalanceRegions(const CString &tm_path, std::vector<STrainerRegion> *out)
@@ -32,6 +51,9 @@ bool LoadBalanceRegions(const CString &tm_path, std::vector<STrainerRegion> *out
 	if (!file.Open(tm_path, CFile::modeRead | CFile::typeText)) {
 		return false;
 	}
+
+	std::set<CString> enabled;
+	GetEnabledScrapeFields(&enabled);
 
 	CString line;
 	while (file.ReadString(line)) {
@@ -51,7 +73,8 @@ bool LoadBalanceRegions(const CString &tm_path, std::vector<STrainerRegion> *out
 			|| sright.IsEmpty() || sbottom.IsEmpty()) {
 			continue;
 		}
-		if (!IsBalanceRegionName(name)) {
+		CString ftype = PlayerFieldType(name);
+		if (ftype.IsEmpty()) {
 			continue;
 		}
 		// Optional trailing fields: colour, radius, transform.
@@ -68,10 +91,22 @@ bool LoadBalanceRegions(const CString &tm_path, std::vector<STrainerRegion> *out
 		region.color = (COLORREF)strtoul(CStringA(scolor).GetString(), NULL, 16);
 		region.radius = sradius.IsEmpty() ? 0 : atol(sradius.GetString());
 		region.transform = stransform;
+		region.field_type = ftype;
+		region.enabled = (enabled.find(ftype) != enabled.end());
 		out->push_back(region);
 	}
 	file.Close();
 	return true;
+}
+
+void TrainerRegions_RefreshEnabled(std::vector<STrainerRegion> *regions)
+{
+	if (regions == NULL) return;
+	std::set<CString> enabled;
+	GetEnabledScrapeFields(&enabled);
+	for (size_t i = 0; i < regions->size(); ++i) {
+		(*regions)[i].enabled = (enabled.find((*regions)[i].field_type) != enabled.end());
+	}
 }
 
 // Escape single quotes for a SQL string literal.
@@ -103,13 +138,16 @@ bool LoadBalanceRegionsFromDB(const CString &tm_name, std::vector<STrainerRegion
 	CString sql;
 	sql.Format("SELECT name, rgn_left, rgn_top, rgn_right, rgn_bottom, color, radius,"
 		" COALESCE(transform,'') FROM tm_regions WHERE tablemap_id=%ld", id);
+	std::set<CString> enabled;
+	GetEnabledScrapeFields(&enabled);
 	PGresult *res = PQexec(conn, sql.GetString());
 	bool ok = (PQresultStatus(res) == PGRES_TUPLES_OK);
 	if (ok) {
 		int rows = PQntuples(res);
 		for (int i = 0; i < rows; ++i) {
 			CString name = PQgetvalue(res, i, 0);
-			if (!IsBalanceRegionName(name)) {
+			CString ftype = PlayerFieldType(name);
+			if (ftype.IsEmpty()) {
 				continue;
 			}
 			STrainerRegion region;
@@ -121,6 +159,8 @@ bool LoadBalanceRegionsFromDB(const CString &tm_name, std::vector<STrainerRegion
 			region.color = (COLORREF)strtoul(PQgetvalue(res, i, 5), NULL, 10);
 			region.radius = atol(PQgetvalue(res, i, 6));
 			region.transform = PQgetvalue(res, i, 7);
+			region.field_type = ftype;
+			region.enabled = (enabled.find(ftype) != enabled.end());
 			out->push_back(region);
 		}
 	}
