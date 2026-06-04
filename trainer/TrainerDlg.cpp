@@ -243,6 +243,7 @@ BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_EN_CHANGE(IDC_CHAR_SPACING, &CTrainerDlg::OnChangeCharSpacing)
 	ON_BN_CLICKED(IDC_NO_PREPROCESS, &CTrainerDlg::OnBnClickedNoPreprocess)
 	ON_BN_CLICKED(IDC_NO_WHITELIST, &CTrainerDlg::OnBnClickedNoWhitelist)
+	ON_BN_CLICKED(IDC_IGNORE_BAD, &CTrainerDlg::OnBnClickedIgnoreBad)
 	ON_BN_CLICKED(IDC_CONNECT, &CTrainerDlg::OnBnClickedConnect)
 	ON_MESSAGE(WM_TRAINER_SET_CAPTURE, &CTrainerDlg::OnSetCapture)
 	ON_MESSAGE(WM_TRAINER_OCR_GLYPH, &CTrainerDlg::OnOcrGlyph)
@@ -328,6 +329,11 @@ BOOL CTrainerDlg::OnInitDialog()
 
 	// Restore the OCR settings the user had on last exit (overrides defaults).
 	LoadOcrSettings();
+	// "Ignore bad scrapes" is persisted globally in the DB.
+	{
+		CString ib = TrainerDB_GetSetting("trainer", "ignore_bad");
+		if (!ib.IsEmpty()) CheckDlgButton(IDC_IGNORE_BAD, ib == "1" ? BST_CHECKED : BST_UNCHECKED);
+	}
 	UpdateDecimalSplitControls();   // sync the split boxes to the restored checkbox
 	ApplyTransformSelection(false); // sync the engine to the restored Transform combo
 
@@ -607,9 +613,15 @@ void CTrainerDlg::PersistOcrSettingsToDb()
 		(IsDlgButtonChecked(IDC_NO_WHITELIST) == BST_CHECKED) ? "1" : "0");
 
 	// Hiss has only an on/off "no char spacing" bit (its spacing amount is a fixed
-	// constant); map it from whether the trainer's spacing value is 0.
+	// constant); map it from whether the trainer's spacing value is 0. Also store the
+	// actual spacing value so the trainer restores it from the DB.
 	CString cs; m_charSpacing.GetWindowText(cs);
 	TrainerDB_SetSetting(key, "no_char_spacing", (atoi(CStringA(cs)) == 0) ? "1" : "0");
+	TrainerDB_SetSetting(key, "char_spacing", cs);
+
+	// Decimal trim % (preview tuning; trainer-only, but persisted so it survives).
+	CString sm; m_splitMargin.GetWindowText(sm);
+	TrainerDB_SetSetting(key, "split_margin", sm);
 	// NOTE: decimal_split_fields is intentionally NOT written here -- it's owned by the
 	// "Use decimal splitting" toggle and the Settings dialog's decimal multi-select, so
 	// per-transform edits (threshold/mode/...) don't clobber the field list.
@@ -637,8 +649,16 @@ void CTrainerDlg::LoadOcrSettingsFromDb(const CString &key)
 	CString nowl = TrainerDB_GetSetting(key, "no_whitelist");
 	if (!nowl.IsEmpty()) CheckDlgButton(IDC_NO_WHITELIST, nowl == "1" ? BST_CHECKED : BST_UNCHECKED);
 
-	CString nocs = TrainerDB_GetSetting(key, "no_char_spacing");
-	if (nocs == "1") { m_charSpacing.SetWindowText("0"); m_charSpacingSpin.SetPos(0); }
+	// Prefer the stored spacing value; else fall back to the on/off bit.
+	CString csv = TrainerDB_GetSetting(key, "char_spacing");
+	if (!csv.IsEmpty()) { m_charSpacing.SetWindowText(csv); m_charSpacingSpin.SetPos(atoi(CStringA(csv))); }
+	else {
+		CString nocs = TrainerDB_GetSetting(key, "no_char_spacing");
+		if (nocs == "1") { m_charSpacing.SetWindowText("0"); m_charSpacingSpin.SetPos(0); }
+	}
+
+	CString sm = TrainerDB_GetSetting(key, "split_margin");
+	if (!sm.IsEmpty()) { m_splitMargin.SetWindowText(sm); m_splitMarginSpin.SetPos(atoi(CStringA(sm))); }
 
 	// decimal_split_fields is global; value->>'fields' serializes the JSON array (e.g.
 	// ["balance",...]) or is empty/"[]" when off.
@@ -656,6 +676,16 @@ void CTrainerDlg::LoadOcrSettingsFromDb(const CString &key)
 void CTrainerDlg::OnChangeSplitMargin()
 {
 	UpdatePreview();
+	PersistOcrSettingsToDb();
+}
+
+// "Ignore bad scrapes" is a global trainer capture filter (not per-transform); persist
+// it under the "trainer" settings key so it survives restarts.
+void CTrainerDlg::OnBnClickedIgnoreBad()
+{
+	if (_suppress_persist) return;
+	TrainerDB_SetSetting("trainer", "ignore_bad",
+		(IsDlgButtonChecked(IDC_IGNORE_BAD) == BST_CHECKED) ? "1" : "0");
 }
 
 LRESULT CALLBACK CTrainerDlg::LowLevelMouseProc(int code, WPARAM wParam, LPARAM lParam)

@@ -49,6 +49,7 @@ protected:
 	afx_msg void OnChangeCharSpacing();
 	afx_msg void OnBnClickedNoPreprocess();
 	afx_msg void OnBnClickedNoWhitelist();
+	afx_msg void OnBnClickedIgnoreBad();
 	afx_msg void OnBnClickedConnect();
 	afx_msg LRESULT OnSetCapture(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnOcrGlyph(WPARAM wParam, LPARAM lParam);
