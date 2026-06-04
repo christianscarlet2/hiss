@@ -1368,11 +1368,14 @@ void COpenScrapeView::OnDraw(CDC* pDC)
 			pDC->SelectObject(oldbrush);
 		}
 
-		// Draw the optional second rectangle (blue) for the selected region.
-		if (r_iter->second.rect2_enabled && IsRegionSelected(r_iter->second.name))
+		// Draw the optional second rectangle (orange) whenever it is enabled and the
+		// region uses the Color transform, at its own coordinates.
+		if (r_iter->second.rect2_enabled
+			&& r_iter->second.transform.GetLength() > 0
+			&& r_iter->second.transform[0] == 'C')
 		{
 			CPen pen2;
-			pen2.CreatePen(PS_SOLID, 1, RGB(0, 0, 255));
+			pen2.CreatePen(PS_SOLID, 1, RGB(255, 140, 0));   // orange
 			pTempPen = (CPen*)pDC->SelectObject(&pen2);
 			oldpen.FromHandle((HPEN)pTempPen);
 			pTempBrush = (CBrush*)pDC->SelectObject(GetStockObject(NULL_BRUSH));
