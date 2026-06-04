@@ -200,6 +200,7 @@ CTrainerDlg::CTrainerDlg(CWnd *pParent)
 	_attached = NULL;
 	_capturing = false;
 	_suppress_persist = false;
+	_ocr_loaded_spec = "";
 	_mouse_hook = NULL;
 	_frame = NULL;
 	_frame_w = _frame_h = 0;
@@ -431,10 +432,15 @@ CString CTrainerDlg::CurrentAutoOcrKey()
 // "model") into the preview OCR engine. A .checkpoint can't be OCR'd, so it is stored
 // for the other tools but the preview falls back to tessdata\my_model. Returns true if
 // an engine is loaded.
-bool CTrainerDlg::ApplyModelFromDb(const CString &key)
+// Load a model spec (full path to a .traineddata, or a bare lang stem) into the preview
+// engine. A .checkpoint can't be OCR'd, so it falls back to tessdata\my_model. Skips the
+// re-Init when the same spec is already loaded.
+bool CTrainerDlg::ApplyModelSpec(const CString &spec_in)
 {
-	CString spec = TrainerDB_GetSetting(key, "model");
-	spec.Trim();
+	CString spec = spec_in; spec.Trim();
+	if (spec == _ocr_loaded_spec && _ocr.ready()) {
+		return true;   // already loaded
+	}
 	bool ok = false;
 	if (!spec.IsEmpty() && spec.Right(11).CompareNoCase(".checkpoint") != 0) {
 		int bslash = spec.ReverseFind('\\');
@@ -448,7 +454,28 @@ bool CTrainerDlg::ApplyModelFromDb(const CString &key)
 		if (!lang.IsEmpty()) ok = _ocr.Init(CStringA(dir + "\\"), CStringA(lang));
 	}
 	if (!ok) ok = _ocr.Init("tessdata", "my_model");   // graceful fallback
+	_ocr_loaded_spec = spec;
 	return ok;
+}
+
+bool CTrainerDlg::ApplyModelFromDb(const CString &key)
+{
+	return ApplyModelSpec(TrainerDB_GetSetting(key, "model"));
+}
+
+// Load the right model for previewing/scraping a region: player-name fields use the
+// text model (key autoocr_name, default "eng" so names work out of the box); all other
+// fields use the currently-selected transform's model.
+void CTrainerDlg::LoadOcrModelForRegion(int region_idx)
+{
+	if (region_idx >= 0 && region_idx < (int)_regions.size() && _regions[region_idx].field_type == "name") {
+		CString spec = TrainerDB_GetSetting("autoocr_name", "model");
+		spec.Trim();
+		if (spec.IsEmpty()) spec = "eng";   // bundled general text model
+		ApplyModelSpec(spec);
+	} else {
+		ApplyModelFromDb(CurrentAutoOcrKey());
+	}
 }
 
 // File-pick a model and store it in the shared DB under `key` (autoocr0/autoocr1), the
@@ -536,8 +563,17 @@ void CTrainerDlg::UpdateDecimalSplitControls()
 void CTrainerDlg::OnBnClickedDecimalSplit()
 {
 	UpdateDecimalSplitControls();
+	// Coarse toggle of the shared decimal_split_fields list: ON = the full money-field
+	// set, OFF = empty. (The Settings dialog's multi-select edits the same list finely.)
+	if (!_suppress_persist) {
+		std::vector<CString> fields;
+		if (IsDlgButtonChecked(IDC_USE_DECIMAL_SPLIT) == BST_CHECKED) {
+			const char *money[] = { "balance", "pot", "bet", "stack", "call", "raise", "blinds", "ante" };
+			for (int i = 0; i < (int)(sizeof(money) / sizeof(money[0])); ++i) fields.push_back(CString(money[i]));
+		}
+		TrainerDB_SetSettingArray("decimal_split_fields", "fields", fields);
+	}
 	UpdatePreview();   // refresh the boxes/preview immediately
-	PersistOcrSettingsToDb();
 }
 
 // The remaining Image-Processing controls: refresh the live preview and push the new
@@ -574,15 +610,9 @@ void CTrainerDlg::PersistOcrSettingsToDb()
 	// constant); map it from whether the trainer's spacing value is 0.
 	CString cs; m_charSpacing.GetWindowText(cs);
 	TrainerDB_SetSetting(key, "no_char_spacing", (atoi(CStringA(cs)) == 0) ? "1" : "0");
-
-	// "Use decimal splitting" -> the global list of field types Hiss splits on. ON
-	// enables the full money-field set; OFF clears it.
-	std::vector<CString> fields;
-	if (IsDlgButtonChecked(IDC_USE_DECIMAL_SPLIT) == BST_CHECKED) {
-		const char *money[] = { "balance", "pot", "bet", "stack", "call", "raise", "blinds", "ante" };
-		for (int i = 0; i < (int)(sizeof(money) / sizeof(money[0])); ++i) fields.push_back(CString(money[i]));
-	}
-	TrainerDB_SetSettingArray("decimal_split_fields", "fields", fields);
+	// NOTE: decimal_split_fields is intentionally NOT written here -- it's owned by the
+	// "Use decimal splitting" toggle and the Settings dialog's decimal multi-select, so
+	// per-transform edits (threshold/mode/...) don't clobber the field list.
 }
 
 // Populate the Image-Processing controls from a transform's settings in the DB, so
@@ -1244,7 +1274,12 @@ void CTrainerDlg::CaptureTick()
 				if (p_trainer_fonts != NULL)
 					text = p_trainer_fonts->RecognizeBgra(&cur[0], w, h, _regions[i].color, _regions[i].radius, index);
 			} else {
-				_ocr.Run(bgr, settings, _regions[i].name, &ocr_preview, &text, &conf);
+				// Name fields use the text model; decimal-split only when this field
+				// type is in the shared list (matches the live Hiss scraper).
+				LoadOcrModelForRegion((int)i);
+				STrainerOcrSettings rs = settings;
+				rs.use_decimal_split = TrainerRegionUsesDecimalSplit(_regions[i].name);
+				_ocr.Run(bgr, rs, _regions[i].name, &ocr_preview, &text, &conf);
 			}
 
 			if (text.IsEmpty()) {
@@ -1339,15 +1374,20 @@ void CTrainerDlg::UpdatePreview()
 	Mat bgr;
 	cvtColor(bgra, bgr, COLOR_BGRA2BGR);
 
-	Mat preview; CString text; int conf = 0;
-	_ocr.Run(bgr, ReadSettings(), _regions[_selected].name, &preview, &text, &conf);
+	// Preview exactly how this field type is scraped: name fields use the text model
+	// (general charset, no decimal split); balance/other fields use the transform model
+	// and decimal-split only if their type is in the shared decimal_split_fields list.
+	LoadOcrModelForRegion(_selected);
+	STrainerOcrSettings settings = ReadSettings();
+	settings.use_decimal_split = TrainerRegionUsesDecimalSplit(_regions[_selected].name);
 
-	// Per-half results when decimal splitting is enabled (boxes are kept disabled
-	// + empty otherwise by UpdateDecimalSplitControls()).
-	if (IsDlgButtonChecked(IDC_USE_DECIMAL_SPLIT) == BST_CHECKED) {
-		SetDlgItemText(IDC_SPLIT_LEFT,  _ocr.did_split() ? _ocr.split_left()  : CString(""));
-		SetDlgItemText(IDC_SPLIT_RIGHT, _ocr.did_split() ? _ocr.split_right() : CString(""));
-	}
+	Mat preview; CString text; int conf = 0;
+	_ocr.Run(bgr, settings, _regions[_selected].name, &preview, &text, &conf);
+
+	// Per-half results: shown whenever this region actually split (follows the list,
+	// not the old global checkbox).
+	SetDlgItemText(IDC_SPLIT_LEFT,  _ocr.did_split() ? _ocr.split_left()  : CString(""));
+	SetDlgItemText(IDC_SPLIT_RIGHT, _ocr.did_split() ? _ocr.split_right() : CString(""));
 
 	// Scraped-region (OCR input) view + hover-zoom source: show exactly what
 	// Tesseract received -- the raw crop when preprocessing is disabled, otherwise

@@ -86,6 +86,8 @@ private:
 	// "autoocr0"/"autoocr1", field "model").
 	CString CurrentAutoOcrKey();                 // "autoocr0"/"autoocr1" per the Transform combo
 	bool ApplyModelFromDb(const CString &key);   // load that key's model into the preview engine
+	bool ApplyModelSpec(const CString &spec);    // load a model spec (path/lang) into the engine
+	void LoadOcrModelForRegion(int region_idx);  // name regions -> name model, else transform model
 	void SelectModelForKey(const CString &key);  // file-pick + store to the DB key
 	// Mirror the Image-Processing controls into the shared settings DB so Hiss/Vision
 	// use the same OCR settings, and the reverse (load a transform's settings into the
@@ -116,6 +118,7 @@ private:
 	HWND _attached;
 	bool _capturing;
 	bool _suppress_persist;   // true while LoadOcrSettingsFromDb populates controls
+	CString _ocr_loaded_spec; // model spec currently loaded in _ocr (avoid redundant re-Init)
 	HHOOK _mouse_hook;
 
 	HBITMAP _frame;        // latest captured client bitmap (owned)

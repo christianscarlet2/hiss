@@ -32,6 +32,11 @@ bool LoadBalanceRegionsFromDB(const CString &tm_name, std::vector<STrainerRegion
 // place (cheap; no DB region reload). Call after the list changes.
 void TrainerRegions_RefreshEnabled(std::vector<STrainerRegion> *regions);
 
+// True if `region_name` matches a field type in the shared `decimal_split_fields` list
+// (same logic Hiss uses), so the trainer's preview/capture decimal-split decision
+// respects that list instead of a global toggle.
+bool TrainerRegionUsesDecimalSplit(const CString &region_name);
+
 // Rewrite the matching "r$<name> ..." line in place, replacing its colour (token 6,
 // 8-hex) and radius (token 7, decimal) and keeping every other field. Returns true
 // if the region line was found and the file was rewritten.

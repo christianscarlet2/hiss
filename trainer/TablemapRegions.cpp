@@ -109,6 +109,21 @@ void TrainerRegions_RefreshEnabled(std::vector<STrainerRegion> *regions)
 	}
 }
 
+bool TrainerRegionUsesDecimalSplit(const CString &region_name)
+{
+	CString lower = region_name; lower.MakeLower();
+	CString raw = TrainerDB_GetSetting("decimal_split_fields", "fields");   // ["balance",...]
+	int pos = 0;
+	while ((pos = raw.Find('"', pos)) >= 0) {
+		int end = raw.Find('"', pos + 1);
+		if (end < 0) break;
+		CString f = raw.Mid(pos + 1, end - pos - 1); f.MakeLower(); f.Trim();
+		if (!f.IsEmpty() && lower.Find(f) != -1) return true;
+		pos = end + 1;
+	}
+	return false;
+}
+
 // Escape single quotes for a SQL string literal.
 static CString SqlEsc(const CString &s)
 {
