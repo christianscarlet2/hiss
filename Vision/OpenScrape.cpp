@@ -224,12 +224,13 @@ BOOL COpenScrapeApp::InitInstance()
 	m_TableMapDlg = new CDlgTableMap(NULL);
 	m_TableMapDlg->Create(CDlgTableMap::IDD, m_pMainWnd);
 	m_TableMapDlg->ShowWindow(SW_SHOW);
-	LoadMostRecentTablemapIfNeeded();
+	// Restore the previous session from the hiss DB: last-used tablemap + reconnect
+	// to the last connected window. (Falls back internally to title/size auto-connect.)
+	((CMainFrame *)m_pMainWnd)->RestoreSessionFromDb();
 	if (p_tablemap != NULL && p_tablemap->filename() != "") {
 		m_TableMapDlg->create_tree();
 	}
 	ArrangeWindows();
-	((CMainFrame *)m_pMainWnd)->AutoConnectToTablemapTitleText();
 	return true;
 }
 

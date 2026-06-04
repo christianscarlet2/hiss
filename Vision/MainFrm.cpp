@@ -22,6 +22,7 @@
 #include "stdafx.h"
 #include "MainFrm.h"
 
+#include "../CTablemap/CTablemapDB.h"
 #include "CRegionCloner.h"
 #include "DialogCopyRegion.h"
 #include "DialogEdit.h"
@@ -237,6 +238,11 @@ BOOL CMainFrame::DestroyWindow()
 	reg.main_dx = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
 	reg.main_dy = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
 	reg.write_reg();
+
+	// Remember the session (last tablemap + connected window) to the hiss DB so the
+	// next launch reopens the same map and reconnects to the same window. Done before
+	// the doc/window tear-down so attached_hwnd is still valid.
+	SaveSessionToDb();
 
 	// Close the TableMap dialog here so it can save its position properly
 	if (theApp.m_TableMapDlg)  theApp.m_TableMapDlg->DestroyWindow();
@@ -489,6 +495,75 @@ void CMainFrame::OnViewConnecttowindow()
 		}
 	}
 	ForceRedraw();
+}
+
+// Restore the previous session on startup: load the last-used tablemap from the
+// hiss DB and reconnect to the last connected window (matched by its title, since
+// HWNDs are not stable across runs). Falls back to title/size auto-connect.
+void CMainFrame::RestoreSessionFromDb()
+{
+	if (p_tablemap_db == NULL) {
+		return;
+	}
+	COpenScrapeDoc *pDoc = COpenScrapeDoc::GetDocument();
+
+	// 1) Last tablemap (DB key).
+	CString tm = p_tablemap_db->GetSettingString("vision_session", "tablemap");
+	tm.Trim();
+	if (tm != "" && pDoc != NULL) {
+		pDoc->LoadFromDbByName(tm);
+	}
+
+	// 2) Last connected window, matched by remembered title.
+	CString want_title = p_tablemap_db->GetSettingString("vision_session", "window_title");
+	want_title.Trim();
+	bool reconnected = false;
+	if (want_title != "") {
+		g_tlist.RemoveAll();
+		EnumWindows(EnumProcTopLevelWindowList, NULL);
+		int exact = -1, partial = -1;
+		for (int i = 0; i < g_tlist.GetSize(); ++i) {
+			CString title = g_tlist[i].title;
+			title.Trim();
+			if (title == want_title) { exact = i; break; }
+			if (partial < 0 && title != "" && title.Find(want_title) >= 0) { partial = i; }
+		}
+		int pick = (exact >= 0) ? exact : partial;
+		if (pick >= 0) {
+			AttachToTableCandidate(g_tlist[pick]);
+			ForceRedraw();
+			BringOpenScrapeBackToFront();
+			reconnected = true;
+		}
+	}
+
+	// Fallback: connect via the tablemap's titletext/size rules.
+	if (!reconnected) {
+		AutoConnectToTablemapTitleText();
+	}
+}
+
+// Persist the current session (called on exit): the loaded tablemap name and the
+// title of the window we are attached to, into the hiss DB "settings" table.
+void CMainFrame::SaveSessionToDb()
+{
+	if (p_tablemap_db == NULL) {
+		return;
+	}
+	COpenScrapeDoc *pDoc = COpenScrapeDoc::GetDocument();
+
+	CString tm = (pDoc != NULL) ? pDoc->m_tm_name : CString("");
+	tm.Trim();
+	p_tablemap_db->SetSettingString("vision_session", "tablemap", tm);
+
+	CString window_title;
+	if (pDoc != NULL && pDoc->attached_hwnd != NULL && ::IsWindow(pDoc->attached_hwnd)) {
+		char title[256] = { 0 };
+		::GetWindowText(pDoc->attached_hwnd, title, sizeof(title) - 1);
+		window_title = title;
+	}
+	window_title.Trim();
+	p_tablemap_db->SetSettingString("vision_session", "window_title", window_title);
 }
 
 void CMainFrame::OnEditUpdatehashes()

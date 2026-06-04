@@ -55,6 +55,11 @@ class CMainFrame : public CFrameWnd {
  public:
 	virtual BOOL DestroyWindow();
 	afx_msg void OnViewConnecttowindow();
+	// Session persistence (hiss DB "settings" table, key "vision_session"): restore
+	// the last-used tablemap + reconnect to the last connected window on startup,
+	// and save both on exit.
+	void RestoreSessionFromDb();
+	void SaveSessionToDb();
 	virtual BOOL PreCreateWindow(CREATESTRUCT& cs);
 	virtual ~CMainFrame();
  private:

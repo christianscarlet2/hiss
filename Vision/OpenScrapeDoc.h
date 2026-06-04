@@ -44,6 +44,9 @@ public:
 	afx_msg void OnToolsSettings();
 	void RefreshUiAfterLoad();
 	bool SaveCurrentToDb(const CString name);
+	// Load a tablemap from the hiss DB by name (no picker dialog). Used to restore
+	// the last-used tablemap on startup. Returns true on success.
+	bool LoadFromDbByName(const CString name);
 	// Blink state
 	bool		blink_on;
 	// Window that we are attached to

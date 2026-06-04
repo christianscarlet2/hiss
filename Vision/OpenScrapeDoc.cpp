@@ -241,6 +241,27 @@ bool COpenScrapeDoc::SaveCurrentToDb(const CString name)
 	return true;
 }
 
+// Load a tablemap from the hiss DB by name, no picker (startup session restore).
+bool COpenScrapeDoc::LoadFromDbByName(const CString name)
+{
+	if (name.IsEmpty() || p_tablemap_db == NULL) {
+		return false;
+	}
+	if (!p_tablemap_db->TablemapExists(name)) {
+		return false;
+	}
+	if (p_tablemap_db->LoadTablemapFromDB(name, p_tablemap) != SUCCESS) {
+		return false;
+	}
+	m_tm_name = name;
+	valid_open = true;
+	is_dirty = false;
+	SetTitle(name);
+	SetModifiedFlag(FALSE);
+	RefreshUiAfterLoad();
+	return true;
+}
+
 // File > Open from Database: pick a tablemap by name and load it.
 void COpenScrapeDoc::OnFileOpenDb()
 {
