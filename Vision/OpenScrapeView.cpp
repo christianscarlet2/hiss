@@ -140,6 +140,7 @@ COpenScrapeView::COpenScrapeView()
 	group_color_index = 3;
 
 	drawing_rect = drawing_started = false;
+	drawing_rect2 = false;
 	color_point_mode = false;
 	color_dropper_mode = false;
 	group_box_mode = group_box_started = false;
@@ -1366,6 +1367,23 @@ void COpenScrapeView::OnDraw(CDC* pDC)
 			pDC->SelectObject(oldpen);
 			pDC->SelectObject(oldbrush);
 		}
+
+		// Draw the optional second rectangle (blue) for the selected region.
+		if (r_iter->second.rect2_enabled && IsRegionSelected(r_iter->second.name))
+		{
+			CPen pen2;
+			pen2.CreatePen(PS_SOLID, 1, RGB(0, 0, 255));
+			pTempPen = (CPen*)pDC->SelectObject(&pen2);
+			oldpen.FromHandle((HPEN)pTempPen);
+			pTempBrush = (CBrush*)pDC->SelectObject(GetStockObject(NULL_BRUSH));
+			oldbrush.FromHandle((HBRUSH)pTempBrush);
+
+			pDC->Rectangle(r_iter->second.left2 - 1, r_iter->second.top2 - 1,
+				r_iter->second.right2 + 2, r_iter->second.bottom2 + 2);
+
+			pDC->SelectObject(oldpen);
+			pDC->SelectObject(oldbrush);
+		}
 	}
 
 	DrawRegionGroups(pDC);
@@ -1559,6 +1577,33 @@ void COpenScrapeView::OnLButtonDown(UINT nFlags, CPoint point)
 			text.Format("%d", point.y);
 			theApp.m_TableMapDlg->m_Top.SetWindowText(text.GetString());
 			theApp.m_TableMapDlg->m_Bottom.SetWindowText(text.GetString());
+
+			Invalidate(false);
+		}
+	}
+
+	// Drawing the optional SECOND rectangle (region-only, for the Color transform)
+	else if (drawing_rect2)
+	{
+		drawrect_start = point;
+		drawing_started = true;
+
+		RMapI r_iter = p_tablemap->set_r$()->find(sel.GetString());
+		if (r_iter != p_tablemap->r$()->end())
+		{
+			drawrect_region = r_iter->second.name;
+			r_iter->second.rect2_enabled = true;
+			r_iter->second.left2 = point.x;
+			r_iter->second.top2 = point.y;
+			r_iter->second.right2 = point.x;
+			r_iter->second.bottom2 = point.y;
+
+			text.Format("%d", point.x);
+			theApp.m_TableMapDlg->m_Left2.SetWindowText(text.GetString());
+			theApp.m_TableMapDlg->m_Right2.SetWindowText(text.GetString());
+			text.Format("%d", point.y);
+			theApp.m_TableMapDlg->m_Top2.SetWindowText(text.GetString());
+			theApp.m_TableMapDlg->m_Bottom2.SetWindowText(text.GetString());
 
 			Invalidate(false);
 		}
@@ -1769,6 +1814,25 @@ void COpenScrapeView::OnLButtonUp(UINT nFlags, CPoint point)
 			tpl_iter->second.bottom = drawrect_start.y >= point.y ? drawrect_start.y : point.y;
 
 			theApp.m_TableMapDlg->m_DrawRect.OnBnClicked();
+			Invalidate(false);
+			theApp.m_TableMapDlg->Invalidate(false);
+		}
+	}
+
+	else if (drawing_rect2)
+	{
+		drawing_rect2 = false;
+		drawing_started = false;
+
+		RMapI r_iter = p_tablemap->set_r$()->find(drawrect_region.GetString());
+		if (r_iter != p_tablemap->r$()->end())
+		{
+			r_iter->second.left2 = drawrect_start.x<point.x ? drawrect_start.x : point.x;
+			r_iter->second.top2 = drawrect_start.y<point.y ? drawrect_start.y : point.y;
+			r_iter->second.right2 = drawrect_start.x>=point.x ? drawrect_start.x : point.x;
+			r_iter->second.bottom2 = drawrect_start.y>=point.y ? drawrect_start.y : point.y;
+
+			theApp.m_TableMapDlg->m_DrawRect2.OnBnClicked();
 			Invalidate(false);
 			theApp.m_TableMapDlg->Invalidate(false);
 		}
@@ -2061,6 +2125,32 @@ void COpenScrapeView::OnMouseMove(UINT nFlags, CPoint point)
 		}
 	}
 
+	else if (drawing_rect2 && drawing_started)
+	{
+		RMapI r_iter = p_tablemap->set_r$()->find(drawrect_region.GetString());
+		if (r_iter != p_tablemap->r$()->end())
+		{
+			r_iter->second.left2 = drawrect_start.x<point.x ? drawrect_start.x : point.x;
+			r_iter->second.top2 = drawrect_start.y<point.y ? drawrect_start.y : point.y;
+			r_iter->second.right2 = drawrect_start.x>=point.x ? drawrect_start.x : point.x;
+			r_iter->second.bottom2 = drawrect_start.y>=point.y ? drawrect_start.y : point.y;
+
+			text.Format("%d", r_iter->second.left2);
+			theApp.m_TableMapDlg->m_Left2.SetWindowText(text.GetString());
+			text.Format("%d", r_iter->second.top2);
+			theApp.m_TableMapDlg->m_Top2.SetWindowText(text.GetString());
+			text.Format("%d", r_iter->second.right2);
+			theApp.m_TableMapDlg->m_Right2.SetWindowText(text.GetString());
+			text.Format("%d", r_iter->second.bottom2);
+			theApp.m_TableMapDlg->m_Bottom2.SetWindowText(text.GetString());
+
+			theApp.m_TableMapDlg->update_display();
+			theApp.m_TableMapDlg->Invalidate(false);
+			Invalidate(false);
+			pDoc->SetModifiedFlag(true);
+		}
+	}
+
 	else if (dragging)
 	{
 		if (!dragged_group.IsEmpty() && dragged_region.IsEmpty())
@@ -2324,7 +2414,7 @@ BOOL COpenScrapeView::OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message)
 		return true;
 	}
 
-	if (drawing_rect)
+	if (drawing_rect || drawing_rect2)
 	{
 		::SetCursor(hCurDrawRect);
 		return true;

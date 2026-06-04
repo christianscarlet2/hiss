@@ -88,6 +88,7 @@
 #define IDC_RIGHT2                      1251
 #define IDC_BOTTOM2                     1252
 #define IDC_RECT2_ENABLE                1253
+#define IDC_DRAWRECT2                   1254
 #define IDC_DRAWRECT                    1043
 #define IDC_PARSEBUTTON                 1044
 #define IDC_NUDGE_UP                    1045
@@ -224,7 +225,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        154
 #define _APS_NEXT_COMMAND_VALUE         32800
-#define _APS_NEXT_CONTROL_VALUE         1254
+#define _APS_NEXT_CONTROL_VALUE         1255
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

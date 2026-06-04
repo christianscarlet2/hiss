@@ -251,6 +251,7 @@ BEGIN
     EDITTEXT        IDC_LEFT2,335,39,28,11,ES_AUTOHSCROLL | ES_NUMBER
     EDITTEXT        IDC_RIGHT2,367,39,28,11,ES_AUTOHSCROLL | ES_NUMBER
     EDITTEXT        IDC_BOTTOM2,358,51,28,11,ES_AUTOHSCROLL | ES_NUMBER
+    PUSHBUTTON      "Button1",IDC_DRAWRECT2,336,26,17,12,BS_BITMAP
     PUSHBUTTON      "Tall",IDC_NUDGE_TALLER,241,18,13,12,BS_CENTER
     PUSHBUTTON      "Shrt",IDC_NUDGE_SHORTER,259,18,13,12,BS_CENTER
     PUSHBUTTON      "Wid",IDC_NUDGE_WIDER,241,32,13,12,BS_CENTER
@@ -794,6 +795,8 @@ BEGIN
     IDC_ALPHA               "Alpha channel"
     IDC_PICKER              "Color picker"
     IDC_DRAWRECT            "Draw rectangle"
+    IDC_DRAWRECT2           "Draw the second rectangle"
+    IDC_RECT2_ENABLE        "Enable the optional second rectangle for the Color transform"
     IDC_NUDGE_UP            "Nudge up"
     IDC_RED_AVG             "Red average for region"
     IDC_GREEN_AVG           "Green average for region"

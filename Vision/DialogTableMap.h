@@ -149,8 +149,6 @@ protected:
 	CEdit				m_Alpha, m_Red, m_Green, m_Blue, m_RedAvg, m_GreenAvg, m_BlueAvg, m_Radius, m_Result, m_PixelSeparation, m_ImgProc, m_Threshold, m_CropSize, m_Sharpen;
 	CEdit				m_Alpha2, m_Red2, m_Green2, m_Blue2;
 	CEdit				m_Alpha3, m_Red3, m_Green3, m_Blue3;
-	// Optional second rectangle for the "Color" transform.
-	CEdit				m_Left2, m_Top2, m_Right2, m_Bottom2;
 	CButton				m_Rect2Enable;
 	CButton				m_New, m_Delete, m_Edit, m_CreateImage, m_CreateFont, m_FontPlus, m_FontMinus;
 	CButton				m_CreateGroup, m_GroupBox;
@@ -247,6 +245,10 @@ public:
 	CTreeCtrl			m_TableMapTree;
 	CEdit				m_Left, m_Top, m_Bottom, m_Right, m_xy;
 	CStickyButton		m_DrawRect;
+	// Optional second rectangle for the "Color" transform (public: the view writes
+	// to these while drag-drawing, mirroring the rect-1 controls above).
+	CEdit				m_Left2, m_Top2, m_Right2, m_Bottom2;
+	CStickyButton		m_DrawRect2;
 	CComboBox			m_MatchMode;
 	vector<pair<Rect, CString>> ResultBoxes, ResultBoxes2;
 	CString ResultString, ResultString2;

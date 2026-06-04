@@ -257,6 +257,7 @@ void CDlgTableMap::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_RIGHT2, m_Right2);
 	DDX_Control(pDX, IDC_BOTTOM2, m_Bottom2);
 	DDX_Control(pDX, IDC_RECT2_ENABLE, m_Rect2Enable);
+	DDX_Control(pDX, IDC_DRAWRECT2, m_DrawRect2);
 	DDX_Control(pDX, IDC_RADIUS, m_Radius);
 	DDX_Control(pDX, IDC_RESULT, m_Result);
 	DDX_Control(pDX, IDC_NEW, m_New);
@@ -496,6 +497,7 @@ BOOL CDlgTableMap::OnInitDialog()
 	drawrect_bitmap.LoadBitmap(IDB_DRAWRECTBITMAP);
 	h_drawrect_bitmap = (HBITMAP)drawrect_bitmap.GetSafeHandle();
 	m_DrawRect.SetBitmap(h_drawrect_bitmap);
+	m_DrawRect2.SetBitmap(h_drawrect_bitmap);
 
 	m_Transform.AddString("Color");
 	m_Transform.AddString("Image");
@@ -1938,6 +1940,7 @@ void CDlgTableMap::disable_and_clear_all(void)
 	m_Top2.EnableWindow(false);    m_Top2.SetWindowText("");
 	m_Right2.EnableWindow(false);  m_Right2.SetWindowText("");
 	m_Bottom2.EnableWindow(false); m_Bottom2.SetWindowText("");
+	m_DrawRect2.EnableWindow(false);
 
 	m_TrackerFontSet.SetCurSel(0);
 	m_TrackerFontNum.SetCurSel(1);
@@ -3442,6 +3445,7 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 	m_Top2.EnableWindow(rect2_on);
 	m_Right2.EnableWindow(rect2_on);
 	m_Bottom2.EnableWindow(rect2_on);
+	m_DrawRect2.EnableWindow(rect2_on);
 	text.Format("%d", sel_region->second.left2);   m_Left2.SetWindowText(text);
 	text.Format("%d", sel_region->second.top2);    m_Top2.SetWindowText(text);
 	text.Format("%d", sel_region->second.right2);  m_Right2.SetWindowText(text);
@@ -5503,6 +5507,11 @@ LRESULT CDlgTableMap::OnStickyButtonDown(WPARAM wp, LPARAM lp)
 		pView->drawing_rect = true;
 	}
 
+	else if ((HWND)wp == m_DrawRect2.GetSafeHwnd())
+	{
+		pView->drawing_rect2 = true;
+	}
+
 	else if ((HWND)wp == m_Picker.GetSafeHwnd())
 	{
 		picker_cursor = true;
@@ -5531,6 +5540,13 @@ LRESULT CDlgTableMap::OnStickyButtonUp(WPARAM wp, LPARAM lp)
 	if ((HWND)wp == m_DrawRect.GetSafeHwnd())
 	{
 		pView->drawing_rect = false;
+	}
+
+	else if ((HWND)wp == m_DrawRect2.GetSafeHwnd())
+	{
+		pView->drawing_rect2 = false;
+		update_display();
+		Invalidate(false);
 	}
 
 	else if ((HWND)wp == m_Picker.GetSafeHwnd())

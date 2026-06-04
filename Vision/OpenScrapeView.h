@@ -157,6 +157,7 @@ private:
 
 public:
 	bool		drawing_rect, drawing_started;
+	bool		drawing_rect2;   // drawing the optional second rectangle
 	bool		color_point_mode;
 	bool		color_dropper_mode;
 	CPoint		drawrect_start;
