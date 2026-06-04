@@ -39,7 +39,8 @@ protected:
 	virtual void DoDataExchange(CDataExchange *pDX);
 	virtual BOOL OnInitDialog();
 	afx_msg void OnBnClickedLoadTm();
-	afx_msg void OnBnClickedSelectModel();
+	afx_msg void OnBnClickedSelectModel();    // AutoOcr0 model
+	afx_msg void OnBnClickedSelectModel1();   // AutoOcr1 model
 	afx_msg void OnSelchangeTransform();
 	afx_msg void OnChangeSplitMargin();
 	afx_msg void OnBnClickedDecimalSplit();
@@ -75,6 +76,11 @@ private:
 	// Push the desktop "Transform" combo (AutoOcr0/AutoOcr1) into the shared
 	// engine selection. Pass recognize=true to also re-run all table rows.
 	void ApplyTransformSelection(bool recognize);
+	// OCR model selection shared with Hiss/Vision via the settings DB (keys
+	// "autoocr0"/"autoocr1", field "model").
+	CString CurrentAutoOcrKey();                 // "autoocr0"/"autoocr1" per the Transform combo
+	bool ApplyModelFromDb(const CString &key);   // load that key's model into the preview engine
+	void SelectModelForKey(const CString &key);  // file-pick + store to the DB key
 	void CaptureTick();
 	int  ClearTrainingFiles();   // delete every file in training\; returns the count
 	// Start/stop/toggle sample capture (action: 1/2/3; 0 = query only).

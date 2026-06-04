@@ -232,6 +232,7 @@ void CTrainerDlg::DoDataExchange(CDataExchange *pDX)
 BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_BN_CLICKED(IDC_LOAD_TM, &CTrainerDlg::OnBnClickedLoadTm)
 	ON_BN_CLICKED(IDC_SELECT_MODEL, &CTrainerDlg::OnBnClickedSelectModel)
+	ON_BN_CLICKED(IDC_SELECT_MODEL1, &CTrainerDlg::OnBnClickedSelectModel1)
 	ON_CBN_SELCHANGE(IDC_TRANSFORM, &CTrainerDlg::OnSelchangeTransform)
 	ON_EN_CHANGE(IDC_SPLIT_MARGIN, &CTrainerDlg::OnChangeSplitMargin)
 	ON_BN_CLICKED(IDC_USE_DECIMAL_SPLIT, &CTrainerDlg::OnBnClickedDecimalSplit)
@@ -293,18 +294,10 @@ BOOL CTrainerDlg::OnInitDialog()
 		p_trainer_server = _server;
 	}
 
-	// Restore a model the user picked via "Select Model..." on a previous run;
-	// otherwise fall back to the bundled tessdata\my_model.traineddata.
-	bool ocr_ok = false;
-	CString model_dir = RegReadString("ocr_model_dir");
-	CString model_lang = RegReadString("ocr_model_lang");
-	if (!model_dir.IsEmpty() && !model_lang.IsEmpty()
-		&& GetFileAttributes(model_dir + "\\" + model_lang + ".traineddata") != INVALID_FILE_ATTRIBUTES) {
-		ocr_ok = _ocr.Init(CStringA(model_dir + "\\"), CStringA(model_lang));
-	}
-	if (!ocr_ok) {
-		ocr_ok = _ocr.Init("tessdata", "my_model");
-	}
+	// Load a baseline engine; the real per-transform model (shared with Hiss/Vision
+	// via the settings DB) is applied by ApplyTransformSelection() below once the
+	// Transform combo is populated.
+	bool ocr_ok = _ocr.Init("tessdata", "my_model");
 
 	PopulateModeCombos();
 
@@ -416,38 +409,70 @@ void CTrainerDlg::OnBnClickedLoadTm()
 	}
 }
 
-void CTrainerDlg::OnBnClickedSelectModel()
+// "autoocr0"/"autoocr1" for the currently-selected Transform (defaults to autoocr0).
+CString CTrainerDlg::CurrentAutoOcrKey()
+{
+	int sel = m_transform.GetCurSel();
+	CString tr;
+	if (sel >= 0) m_transform.GetLBText(sel, tr);
+	int index = 0;
+	if (tr.Left(7).CompareNoCase("AutoOcr") == 0) index = atoi(CStringA(tr.Mid(7)));
+	return (index == 1) ? CString("autoocr1") : CString("autoocr0");
+}
+
+// Load the model stored in the shared settings DB (key autoocr0/autoocr1, field
+// "model") into the preview OCR engine. A .checkpoint can't be OCR'd, so it is stored
+// for the other tools but the preview falls back to tessdata\my_model. Returns true if
+// an engine is loaded.
+bool CTrainerDlg::ApplyModelFromDb(const CString &key)
+{
+	CString spec = TrainerDB_GetSetting(key, "model");
+	spec.Trim();
+	bool ok = false;
+	if (!spec.IsEmpty() && spec.Right(11).CompareNoCase(".checkpoint") != 0) {
+		int bslash = spec.ReverseFind('\\');
+		int fslash = spec.ReverseFind('/');
+		int cut = (bslash > fslash) ? bslash : fslash;
+		CString dir = (cut >= 0) ? spec.Left(cut) : CString("tessdata");
+		CString file = (cut >= 0) ? spec.Mid(cut + 1) : spec;
+		int dot = file.ReverseFind('.');
+		CString lang = (dot > 0) ? file.Left(dot) : file;
+		if (dir.IsEmpty()) dir = "tessdata";
+		if (!lang.IsEmpty()) ok = _ocr.Init(CStringA(dir + "\\"), CStringA(lang));
+	}
+	if (!ok) ok = _ocr.Init("tessdata", "my_model");   // graceful fallback
+	return ok;
+}
+
+// File-pick a model and store it in the shared DB under `key` (autoocr0/autoocr1), the
+// same place Hiss and Vision read it from, so all three stay in sync.
+void CTrainerDlg::SelectModelForKey(const CString &key)
 {
 	CFileDialog dlg(TRUE, "traineddata", NULL, OFN_FILEMUSTEXIST | OFN_HIDEREADONLY,
-		"Tesseract models (*.traineddata)|*.traineddata|All files (*.*)|*.*||", this);
+		"Tesseract models (*.traineddata;*.checkpoint)|*.traineddata;*.checkpoint|All files (*.*)|*.*||", this);
 	if (dlg.DoModal() != IDOK) {
 		return;
 	}
-
-	// Tesseract's Init(datapath, lang) loads "<datapath>/<lang>.traineddata", so
-	// split the chosen file into its folder (datapath) and base name (language).
 	CString full = dlg.GetPathName();
-	int slash = full.ReverseFind('\\');
-	CString dir = (slash >= 0) ? full.Left(slash) : full;
-	CString file = (slash >= 0) ? full.Mid(slash + 1) : full;
-	int dot = file.ReverseFind('.');
-	CString lang = (dot >= 0) ? file.Left(dot) : file;
+	TrainerDB_SetSetting(key, "model", full);   // shared with Hiss + Vision
 
-	if (lang.IsEmpty() || !_ocr.Init(CStringA(dir + "\\"), CStringA(lang))) {
-		SetStatus("Failed to load OCR model: " + full);
-		return;
-	}
-
-	// Remember it so the next launch restores this model automatically.
-	RegWriteString("ocr_model_dir", dir);
-	RegWriteString("ocr_model_lang", lang);
+	// Refresh the preview engine for the currently-selected transform (which may be
+	// the one just changed).
+	ApplyModelFromDb(CurrentAutoOcrKey());
 
 	CString status;
-	status.Format("Loaded OCR model: %s (from %s)", lang.GetString(), dir.GetString());
+	if (full.Right(11).CompareNoCase(".checkpoint") == 0) {
+		status.Format("Saved %s model: %s\n(checkpoint stored for all tools; not used for the OCR preview).",
+			key.GetString(), full.GetString());
+	} else {
+		status.Format("Saved %s model: %s", key.GetString(), full.GetString());
+	}
 	SetStatus(status);
-
 	UpdatePreview();   // re-run the selected region through the new model
 }
+
+void CTrainerDlg::OnBnClickedSelectModel()  { SelectModelForKey("autoocr0"); }
+void CTrainerDlg::OnBnClickedSelectModel1() { SelectModelForKey("autoocr1"); }
 
 // Push the desktop "Transform" combo into the shared engine selection so picking
 // AutoOcr0/AutoOcr1 actually takes effect (it drives CaptureTick + the web UI's
@@ -464,6 +489,8 @@ void CTrainerDlg::ApplyTransformSelection(bool recognize)
 	int index = 0;
 	if (tr.Left(7).CompareNoCase("AutoOcr") == 0) index = atoi(CStringA(tr.Mid(7)));
 	p_sample_store->SetTransform(TRAINER_MODE_AUTOOCR, index);
+	// Switch the preview engine to this transform's model (autoocr0/autoocr1, shared DB).
+	ApplyModelFromDb((index == 1) ? CString("autoocr1") : CString("autoocr0"));
 	// Mirror the web UI's /api/transform: re-recognize the existing rows with the
 	// newly selected transform. Skipped at startup, when there are no samples yet.
 	if (recognize) {

@@ -315,7 +315,7 @@ void CDlgSettings::OnBrowseModel()
 	int slash = current.ReverseFind('\\');
 	if (slash > 0) dir = current.Left(slash);
 	CFileDialog dlg(TRUE, "traineddata", NULL, OFN_FILEMUSTEXIST | OFN_HIDEREADONLY,
-		"Tesseract models (*.traineddata)|*.traineddata|All files (*.*)|*.*||", this);
+		"Tesseract models (*.traineddata;*.checkpoint)|*.traineddata;*.checkpoint|All files (*.*)|*.*||", this);
 	dlg.m_ofn.lpstrInitialDir = dir;
 	if (dlg.DoModal() == IDOK) m_model.SetWindowText(dlg.GetPathName());
 }

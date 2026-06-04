@@ -55,6 +55,11 @@
 #define IDD_SAPREFS21                   187
 #define IDD_SAPREFS22                   188
 #define ID_INDICATOR_GENERAL_HINT       189
+#define IDD_SAPREFS23                   190
+#define IDC_OCR_MODEL0                  1427
+#define IDC_OCR_BROWSE0                 1428
+#define IDC_OCR_MODEL1                  1429
+#define IDC_OCR_BROWSE1                 1430
 #define IDC_NEW                         1006
 #define IDC_DELETE                      1007
 #define IDC_RENAME                      1013
@@ -558,9 +563,9 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        190
+#define _APS_NEXT_RESOURCE_VALUE        191
 #define _APS_NEXT_COMMAND_VALUE         33001
-#define _APS_NEXT_CONTROL_VALUE         1427
+#define _APS_NEXT_CONTROL_VALUE         1431
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

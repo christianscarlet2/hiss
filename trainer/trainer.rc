@@ -17,7 +17,7 @@ IDI_TRAINER             ICON                    "res\\trainer.ico"
 
 /////////////////////////////////////////////////////////////////////////////
 // Dialog
-IDD_TRAINER_DIALOG DIALOGEX 0, 0, 360, 368
+IDD_TRAINER_DIALOG DIALOGEX 0, 0, 360, 388
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX
 CAPTION "Tesseract Trainer"
 MENU IDR_TRAINER_MENU
@@ -28,7 +28,6 @@ BEGIN
     PUSHBUTTON      "Open Sample Gen",IDC_OPEN_TABLE,199,7,154,16
     PUSHBUTTON      "Create Fonts",IDC_CREATE_FONTS,7,28,60,16
     CONTROL         "Ignore bad scrapes",IDC_IGNORE_BAD,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,73,32,114,10
-    PUSHBUTTON      "Select Model...",IDC_SELECT_MODEL,245,28,108,16
 
     GROUPBOX        "Image Processing (OCR)",IDC_STATIC,7,50,346,96
     LTEXT           "Transform:",IDC_STATIC,14,65,40,8
@@ -61,7 +60,9 @@ BEGIN
     EDITTEXT        IDC_OCR_RESULT,232,284,114,12,ES_AUTOHSCROLL | ES_READONLY
 
     LTEXT           "Idle.",IDC_STATUS,7,304,346,36
-    PUSHBUTTON      "Generate Username Samples (text2image)...",IDC_GEN_SAMPLES,7,346,200,16
+    PUSHBUTTON      "AutoOcr0 Model...",IDC_SELECT_MODEL,7,346,110,16
+    PUSHBUTTON      "AutoOcr1 Model...",IDC_SELECT_MODEL1,121,346,110,16
+    PUSHBUTTON      "Generate Username Samples (text2image)...",IDC_GEN_SAMPLES,7,368,235,16
 END
 
 /////////////////////////////////////////////////////////////////////////////

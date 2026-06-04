@@ -53,12 +53,13 @@
 #define IDC_GEN_COUNT_EDIT              1040
 #define IDC_T2I_PROG_TEXT               1041
 #define IDC_T2I_PROG_BAR                1042
+#define IDC_SELECT_MODEL1               1043
 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        134
 #define _APS_NEXT_COMMAND_VALUE         32773
-#define _APS_NEXT_CONTROL_VALUE         1043
+#define _APS_NEXT_CONTROL_VALUE         1044
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

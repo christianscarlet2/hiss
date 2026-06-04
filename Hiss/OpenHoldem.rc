@@ -916,6 +916,19 @@ BEGIN
     LTEXT           "Hiss windows will be ignored. See Preferences -> GUI.",IDC_STATIC,4,145,217,15
 END
 
+IDD_SAPREFS23 DIALOGEX 0, 0, 237, 213
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_SYSMENU
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "AutoOcr0 model (.traineddata):",IDC_STATIC,4,10,160,8
+    EDITTEXT        IDC_OCR_MODEL0,4,22,170,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Browse...",IDC_OCR_BROWSE0,178,22,52,14
+    LTEXT           "AutoOcr1 model (.traineddata):",IDC_STATIC,4,48,160,8
+    EDITTEXT        IDC_OCR_MODEL1,4,60,170,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Browse...",IDC_OCR_BROWSE1,178,60,52,14
+    LTEXT           "Pick the Tesseract .traineddata model for each AutoOcr engine. The full path is stored; leave blank to use the default ""my_model"" in the tessdata folder.",IDC_STATIC,4,86,226,32
+END
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
