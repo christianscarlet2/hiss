@@ -812,9 +812,56 @@ LRESULT CTrainerDlg::OnRegionSelected(WPARAM wParam, LPARAM lParam)
 	int idx = (int)wParam;
 	if (idx >= 0 && idx < (int)_regions.size()) {
 		_selected = idx;
-		UpdatePreview();
+		ApplyRegionTransform(idx);
 	}
 	return 0;
+}
+
+// Enable/disable the Image-Processing + transform + model controls together (used when
+// a non-AutoOcr region is selected).
+void CTrainerDlg::EnableOcrControls(bool on)
+{
+	const int ids[] = {
+		IDC_TRANSFORM, IDC_THRESHOLD, IDC_THRESHOLD_SPIN, IDC_MATCH_MODE,
+		IDC_CHAR_SPACING, IDC_CHAR_SPACING_SPIN, IDC_NO_PREPROCESS, IDC_NO_WHITELIST,
+		IDC_USE_DECIMAL_SPLIT, IDC_SPLIT_MARGIN, IDC_SPLIT_MARGIN_SPIN,
+		IDC_SELECT_MODEL, IDC_SELECT_MODEL1
+	};
+	for (int i = 0; i < (int)(sizeof(ids) / sizeof(ids[0])); ++i) {
+		CWnd *w = GetDlgItem(ids[i]);
+		if (w != NULL) w->EnableWindow(on ? TRUE : FALSE);
+	}
+}
+
+// Load the selected region's own transform (A0/A1) + its DB settings into the controls.
+// A region whose transform isn't AutoOcr0/AutoOcr1 has its options disabled, with a
+// warning, while it stays selected.
+void CTrainerDlg::ApplyRegionTransform(int idx)
+{
+	CString tr = _regions[idx].transform; tr.Trim();
+	int autoIndex = -1;
+	if (tr.CompareNoCase("A0") == 0) autoIndex = 0;
+	else if (tr.CompareNoCase("A1") == 0) autoIndex = 1;
+
+	if (autoIndex < 0) {
+		EnableOcrControls(false);
+		CString msg;
+		msg.Format("Region '%s' uses transform '%s', not AutoOcr0/AutoOcr1 \x96 OCR settings are disabled for this region.",
+			_regions[idx].name.GetString(),
+			_regions[idx].transform.IsEmpty() ? CString("(none)").GetString() : _regions[idx].transform.GetString());
+		SetStatus(msg);
+		UpdatePreview();   // still show the scraped image (no editable OCR settings)
+		return;
+	}
+
+	EnableOcrControls(true);
+	// Point the Transform combo at the region's own transform (programmatic SetCurSel
+	// does not fire OnSelchangeTransform), then load that transform's model + settings
+	// and refresh the preview.
+	CString want; want.Format("AutoOcr%d", autoIndex);
+	int ci = m_transform.FindStringExact(-1, want);
+	if (ci >= 0) m_transform.SetCurSel(ci);
+	ApplyTransformSelection(false);   // sets sample-store transform, loads DB settings, previews
 }
 
 // The shared scrape_fields list changed (web "Scrape balances/names" toggle): refresh

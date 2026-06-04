@@ -88,6 +88,10 @@ private:
 	bool ApplyModelFromDb(const CString &key);   // load that key's model into the preview engine
 	bool ApplyModelSpec(const CString &spec);    // load a model spec (path/lang) into the engine
 	void LoadOcrModelForRegion(int region_idx);  // name regions -> name model, else transform model
+	// Drive the OCR controls from the selected region's own transform (A0/A1): load that
+	// transform's settings; if the region isn't an AutoOcr region, warn + disable them.
+	void ApplyRegionTransform(int region_idx);
+	void EnableOcrControls(bool on);
 	void SelectModelForKey(const CString &key);  // file-pick + store to the DB key
 	// Mirror the Image-Processing controls into the shared settings DB so Hiss/Vision
 	// use the same OCR settings, and the reverse (load a transform's settings into the
