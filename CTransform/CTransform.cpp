@@ -79,96 +79,96 @@ int CTransform::DoTransform(RMapCI region,
 	return ERR_INVALID_TRANSFORM_TYPE;
 }
 
-int CTransform::CTypeTransform(RMapCI region, const HDC hdc, CString *text, COLORREF *cr_avg) {
-	int					x = 0, y = 0;
-	int					width = 0, height = 0;
-	int					rr_sum = 0, gg_sum = 0, bb_sum = 0, pix_cnt = 0;
-	double			rr_avg = 0., gg_avg = 0., bb_avg = 0.;
-	HBITMAP			hbm = NULL;
-	BYTE				*pBits = NULL, red = 0, green = 0, blue = 0;
-
-	// Allocate heap space for BITMAPINFO
-	BITMAPINFO	*bmi = NULL;
-	int			info_len = sizeof(BITMAPINFOHEADER) + 1024;
-	bmi = (BITMAPINFO *) ::HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, info_len);
-
-	// Get bitmap size
-	width = region->second.right - region->second.left + 1;
-	height = region->second.bottom - region->second.top + 1;
-
-	// Get pixels
-	// Populate BITMAPINFOHEADER
-	hbm = (HBITMAP) GetCurrentObject(hdc, OBJ_BITMAP);
+// Average colour (each channel 0..255) of the width x height image in the bitmap
+// currently selected into hdc. Returns false if the pixels can't be read.
+static bool AverageColorOfDC(const HDC hdc, int width, int height,
+							 double *out_r, double *out_g, double *out_b) {
+	*out_r = *out_g = *out_b = 0.;
+	if (hdc == NULL || width <= 0 || height <= 0) {
+		return false;
+	}
+	BITMAPINFO *bmi = (BITMAPINFO *) ::HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
+		sizeof(BITMAPINFOHEADER) + 1024);
+	HBITMAP hbm = (HBITMAP) GetCurrentObject(hdc, OBJ_BITMAP);
 	bmi->bmiHeader.biSize = sizeof(bmi->bmiHeader);
 	bmi->bmiHeader.biBitCount = 0;
 	::GetDIBits(hdc, hbm, 0, 0, NULL, bmi, DIB_RGB_COLORS);
-
-	// Get the actual argb bit information
 	bmi->bmiHeader.biHeight = -bmi->bmiHeader.biHeight;
-	pBits = new BYTE[bmi->bmiHeader.biSizeImage];
+	BYTE *pBits = new BYTE[bmi->bmiHeader.biSizeImage];
 	::GetDIBits(hdc, hbm, 0, height, pBits, bmi, DIB_RGB_COLORS);
 
-	// calculate average color of all pixels in region
-	rr_sum = gg_sum = bb_sum = pix_cnt = 0;
-	rr_avg = gg_avg = bb_avg = 0.;
-
-	for (x = 0; x < width; x++) 
-	{
-		for (y = 0; y < height; y++) 
-		{
-			red = pBits[y*width*4 + x*4 + 2];
-			green = pBits[y*width*4 + x*4 + 1];
-			blue = pBits[y*width*4 + x*4 + 0];
-			rr_sum += red;
-			gg_sum += green;
-			bb_sum += blue;
-			pix_cnt++;
+	long rr = 0, gg = 0, bb = 0, cnt = 0;
+	for (int x = 0; x < width; x++) {
+		for (int y = 0; y < height; y++) {
+			rr += pBits[y*width*4 + x*4 + 2];
+			gg += pBits[y*width*4 + x*4 + 1];
+			bb += pBits[y*width*4 + x*4 + 0];
+			cnt++;
 		}
 	}
-	if (pix_cnt != 0)
-	{
-		rr_avg = rr_sum/pix_cnt;
-		gg_avg = gg_sum/pix_cnt;
-		bb_avg = bb_sum/pix_cnt;
+	if (cnt != 0) {
+		*out_r = (double)rr / cnt;
+		*out_g = (double)gg / cnt;
+		*out_b = (double)bb / cnt;
 	}
-
-	if (cr_avg!=NULL)
-		*cr_avg = RGB(rr_avg, gg_avg, bb_avg);
-
-	// A region matches its first colour cube, and (when the optional second colour
-	// is enabled) ALSO matches if the sampled average falls in the second cube.
-	// Same tolerance (radius) is used for both cubes.
-	bool in_cube = IsInRGBColorCube(GetRValue(region->second.color),
-						 GetGValue(region->second.color),
-						 GetBValue(region->second.color),
-						 region->second.radius,
-						 (int) rr_avg, (int) gg_avg, (int) bb_avg);
-	if (!in_cube && region->second.color2_enabled) {
-		in_cube = IsInRGBColorCube(GetRValue(region->second.color2),
-						 GetGValue(region->second.color2),
-						 GetBValue(region->second.color2),
-						 region->second.radius,
-						 (int) rr_avg, (int) gg_avg, (int) bb_avg);
-	}
-	if (!in_cube && region->second.color3_enabled) {
-		in_cube = IsInRGBColorCube(GetRValue(region->second.color3),
-						 GetGValue(region->second.color3),
-						 GetBValue(region->second.color3),
-						 region->second.radius,
-						 (int) rr_avg, (int) gg_avg, (int) bb_avg);
-	}
-	if (in_cube)
-	{
-		*text = "true";
-	}
-	else {
-		*text = "false";
-	}
-
-	// Clean up
 	HeapFree(GetProcessHeap(), NULL, bmi);
-	delete []pBits;
+	delete [] pBits;
+	return true;
+}
 
+bool CTransform::AvgColorInAnyEnabledCube(RMapCI region, int r, int g, int b) {
+	if (IsInRGBColorCube(GetRValue(region->second.color), GetGValue(region->second.color),
+			GetBValue(region->second.color), region->second.radius, r, g, b)) {
+		return true;
+	}
+	if (region->second.color2_enabled
+		&& IsInRGBColorCube(GetRValue(region->second.color2), GetGValue(region->second.color2),
+			GetBValue(region->second.color2), region->second.radius, r, g, b)) {
+		return true;
+	}
+	if (region->second.color3_enabled
+		&& IsInRGBColorCube(GetRValue(region->second.color3), GetGValue(region->second.color3),
+			GetBValue(region->second.color3), region->second.radius, r, g, b)) {
+		return true;
+	}
+	return false;
+}
+
+int CTransform::CTypeTransform(RMapCI region, const HDC hdc, CString *text, COLORREF *cr_avg) {
+	// --- First rectangle: average its already-captured pixels (selected into hdc) ---
+	int width  = region->second.right  - region->second.left + 1;
+	int height = region->second.bottom - region->second.top  + 1;
+	double rr_avg = 0., gg_avg = 0., bb_avg = 0.;
+	AverageColorOfDC(hdc, width, height, &rr_avg, &gg_avg, &bb_avg);
+
+	if (cr_avg != NULL) {
+		*cr_avg = RGB((int)rr_avg, (int)gg_avg, (int)bb_avg);
+	}
+
+	// A region matches if the sampled average falls in ANY enabled colour cube
+	// (colour 1, plus optionally colour 2 / colour 3 - same tolerance).
+	bool in_cube = AvgColorInAnyEnabledCube(region, (int)rr_avg, (int)gg_avg, (int)bb_avg);
+
+	// --- Optional second rectangle: if rect 1 didn't match, sample rect 2 (captured
+	// into cur_bmp2 by the scraper) and test the same cubes. Result is true if ANY of
+	// the (up to 6) colour/rectangle combinations match. ---
+	if (!in_cube && region->second.rect2_enabled && region->second.cur_bmp2 != NULL) {
+		int w2 = region->second.right2  - region->second.left2 + 1;
+		int h2 = region->second.bottom2 - region->second.top2  + 1;
+		if (w2 > 0 && h2 > 0) {
+			HDC memdc = CreateCompatibleDC(hdc);
+			if (memdc != NULL) {
+				HBITMAP old_bmp = (HBITMAP) SelectObject(memdc, region->second.cur_bmp2);
+				double r2 = 0., g2 = 0., b2 = 0.;
+				AverageColorOfDC(memdc, w2, h2, &r2, &g2, &b2);
+				SelectObject(memdc, old_bmp);
+				DeleteDC(memdc);
+				in_cube = AvgColorInAnyEnabledCube(region, (int)r2, (int)g2, (int)b2);
+			}
+		}
+	}
+
+	*text = in_cube ? "true" : "false";
 	return ERR_GOOD_SCRAPE_GENERAL;
 }
 

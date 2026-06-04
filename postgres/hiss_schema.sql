@@ -65,6 +65,10 @@ CREATE TABLE IF NOT EXISTS tm_regions (      -- r$
   -- OR (when enabled) color3.
   color2 BIGINT DEFAULT 0, color2_enabled BOOL DEFAULT false,
   color3 BIGINT DEFAULT 0, color3_enabled BOOL DEFAULT false,
+  -- Optional SECOND rectangle: when rect2_enabled, the Color transform also samples
+  -- this rectangle and matches if ANY enabled cube matches in EITHER rectangle.
+  rgn_left2 INT DEFAULT 0, rgn_top2 INT DEFAULT 0, rgn_right2 INT DEFAULT 0,
+  rgn_bottom2 INT DEFAULT 0, rect2_enabled BOOL DEFAULT false,
   PRIMARY KEY (tablemap_id, name));
 
 CREATE TABLE IF NOT EXISTS tm_fonts (        -- t$  (x_values = space-separated hex tokens, e.g. "1e 1 1 1f")

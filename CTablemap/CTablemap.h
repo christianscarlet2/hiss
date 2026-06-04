@@ -61,6 +61,15 @@ struct STablemapRegion {
 	bool			color2_enabled = false;
 	COLORREF		color3 = 0;
 	bool			color3_enabled = false;
+	// Optional SECOND rectangle for the "Color" (C) transform. When rect2_enabled,
+	// the transform also samples this rectangle; the result is true if ANY enabled
+	// colour cube (1/2/3) matches in EITHER rectangle.
+	unsigned int	left2 = 0;
+	unsigned int	top2 = 0;
+	unsigned int	right2 = 0;
+	unsigned int	bottom2 = 0;
+	bool			rect2_enabled = false;
+	HBITMAP			cur_bmp2 = NULL;   // captured pixels of the second rectangle
 	HBITMAP			cur_bmp;
 	HBITMAP			last_bmp;
 	bool			use_default;

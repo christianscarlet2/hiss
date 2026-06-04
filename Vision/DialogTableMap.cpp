@@ -252,6 +252,11 @@ void CDlgTableMap::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_BLUE3, m_Blue3);
 	DDX_Control(pDX, IDC_PICKER3, m_Picker3);
 	DDX_Control(pDX, IDC_COLOR3_ENABLE, m_Color3Enable);
+	DDX_Control(pDX, IDC_LEFT2, m_Left2);
+	DDX_Control(pDX, IDC_TOP2, m_Top2);
+	DDX_Control(pDX, IDC_RIGHT2, m_Right2);
+	DDX_Control(pDX, IDC_BOTTOM2, m_Bottom2);
+	DDX_Control(pDX, IDC_RECT2_ENABLE, m_Rect2Enable);
 	DDX_Control(pDX, IDC_RADIUS, m_Radius);
 	DDX_Control(pDX, IDC_RESULT, m_Result);
 	DDX_Control(pDX, IDC_NEW, m_New);
@@ -334,6 +339,11 @@ BEGIN_MESSAGE_MAP(CDlgTableMap, CDialog)
 	ON_EN_KILLFOCUS(IDC_GREEN3, &CDlgTableMap::OnRegionChange)
 	ON_EN_KILLFOCUS(IDC_BLUE3, &CDlgTableMap::OnRegionChange)
 	ON_BN_CLICKED(IDC_COLOR3_ENABLE, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_LEFT2, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_TOP2, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_RIGHT2, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_BOTTOM2, &CDlgTableMap::OnRegionChange)
+	ON_BN_CLICKED(IDC_RECT2_ENABLE, &CDlgTableMap::OnRegionChange)
 	ON_EN_KILLFOCUS(IDC_LEFT, &CDlgTableMap::OnRegionChange)
 	ON_EN_KILLFOCUS(IDC_TOP, &CDlgTableMap::OnRegionChange)
 	ON_EN_KILLFOCUS(IDC_BOTTOM, &CDlgTableMap::OnRegionChange)
@@ -1376,6 +1386,17 @@ void CDlgTableMap::OnRegionChange()
 			(strtoul(red3.GetString(), NULL, 16));
 		sel_region->second.color3_enabled = (m_Color3Enable.GetCheck() == BST_CHECKED);
 
+		// Optional second rectangle
+		m_Left2.GetWindowText(text);
+		sel_region->second.left2 = strtoul(text.GetString(), NULL, 10);
+		m_Top2.GetWindowText(text);
+		sel_region->second.top2 = strtoul(text.GetString(), NULL, 10);
+		m_Right2.GetWindowText(text);
+		sel_region->second.right2 = strtoul(text.GetString(), NULL, 10);
+		m_Bottom2.GetWindowText(text);
+		sel_region->second.bottom2 = strtoul(text.GetString(), NULL, 10);
+		sel_region->second.rect2_enabled = (m_Rect2Enable.GetCheck() == BST_CHECKED);
+
 		// transform type
 		m_Transform.GetLBText(m_Transform.GetCurSel(), text);
 		sel_region->second.transform =
@@ -1910,6 +1931,13 @@ void CDlgTableMap::disable_and_clear_all(void)
 	m_Blue3.EnableWindow(false);
 	m_Blue3.SetWindowText("");
 	m_Picker3.EnableWindow(false);
+
+	m_Rect2Enable.EnableWindow(false);
+	m_Rect2Enable.SetCheck(BST_UNCHECKED);
+	m_Left2.EnableWindow(false);   m_Left2.SetWindowText("");
+	m_Top2.EnableWindow(false);    m_Top2.SetWindowText("");
+	m_Right2.EnableWindow(false);  m_Right2.SetWindowText("");
+	m_Bottom2.EnableWindow(false); m_Bottom2.SetWindowText("");
 
 	m_TrackerFontSet.SetCurSel(0);
 	m_TrackerFontNum.SetCurSel(1);
@@ -3405,6 +3433,20 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 	text.Format("%02x", (sel_region->second.color3 >> 16) & 0xff);
 	m_Blue3.SetWindowText(text);
 
+	// Second rectangle: editable only for the Color transform when "Enabled" is ticked.
+	bool rect2_is_color = (selected_transform == "Color");
+	bool rect2_on = rect2_is_color && sel_region->second.rect2_enabled;
+	m_Rect2Enable.EnableWindow(rect2_is_color);
+	m_Rect2Enable.SetCheck(sel_region->second.rect2_enabled ? BST_CHECKED : BST_UNCHECKED);
+	m_Left2.EnableWindow(rect2_on);
+	m_Top2.EnableWindow(rect2_on);
+	m_Right2.EnableWindow(rect2_on);
+	m_Bottom2.EnableWindow(rect2_on);
+	text.Format("%d", sel_region->second.left2);   m_Left2.SetWindowText(text);
+	text.Format("%d", sel_region->second.top2);    m_Top2.SetWindowText(text);
+	text.Format("%d", sel_region->second.right2);  m_Right2.SetWindowText(text);
+	text.Format("%d", sel_region->second.bottom2); m_Bottom2.SetWindowText(text);
+
 	// avg color fields
 	if (selected_transform == "Color")
 	{
@@ -3468,6 +3510,25 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 			sel_region->second.left, sel_region->second.top,
 			SRCCOPY);
 
+		// Optional second rectangle: capture it so the Color-transform preview reflects
+		// both rectangles (mirrors the live scraper). cur_bmp2 is a temporary here.
+		HBITMAP rect2_bmp = NULL;
+		HDC rect2_dc = NULL;
+		sel_region->second.cur_bmp2 = NULL;
+		if (selected_transform == "Color" && sel_region->second.rect2_enabled) {
+			int w2 = sel_region->second.right2 - sel_region->second.left2 + 1;
+			int h2 = sel_region->second.bottom2 - sel_region->second.top2 + 1;
+			if (w2 > 0 && h2 > 0) {
+				rect2_dc = CreateCompatibleDC(hdcScreen);
+				rect2_bmp = CreateCompatibleBitmap(hdcScreen, w2, h2);
+				HBITMAP rect2_old = (HBITMAP)SelectObject(rect2_dc, rect2_bmp);
+				BitBlt(rect2_dc, 0, 0, w2, h2, hdc_bitmap_orig,
+					sel_region->second.left2, sel_region->second.top2, SRCCOPY);
+				SelectObject(rect2_dc, rect2_old);
+				sel_region->second.cur_bmp2 = rect2_bmp;
+			}
+		}
+
 		// result field
 		if (selected_transform.Find("AutoOcr") != -1) {
 			if (w > 0 && h > 0) {
@@ -3519,6 +3580,11 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 
 		SelectObject(hdc_bitmap_orig, old_bitmap_orig);
 		DeleteDC(hdc_bitmap_orig);
+
+		// Clean up the optional second-rectangle capture
+		sel_region->second.cur_bmp2 = NULL;
+		if (rect2_bmp != NULL) DeleteObject(rect2_bmp);
+		if (rect2_dc != NULL) DeleteDC(rect2_dc);
 
 		DeleteDC(hdcScreen);
 		ReleaseDC(pDC);

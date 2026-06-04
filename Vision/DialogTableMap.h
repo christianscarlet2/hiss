@@ -149,6 +149,9 @@ protected:
 	CEdit				m_Alpha, m_Red, m_Green, m_Blue, m_RedAvg, m_GreenAvg, m_BlueAvg, m_Radius, m_Result, m_PixelSeparation, m_ImgProc, m_Threshold, m_CropSize, m_Sharpen;
 	CEdit				m_Alpha2, m_Red2, m_Green2, m_Blue2;
 	CEdit				m_Alpha3, m_Red3, m_Green3, m_Blue3;
+	// Optional second rectangle for the "Color" transform.
+	CEdit				m_Left2, m_Top2, m_Right2, m_Bottom2;
+	CButton				m_Rect2Enable;
 	CButton				m_New, m_Delete, m_Edit, m_CreateImage, m_CreateFont, m_FontPlus, m_FontMinus;
 	CButton				m_CreateGroup, m_GroupBox;
 	CComboBox			m_GroupColor;

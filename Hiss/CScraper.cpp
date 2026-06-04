@@ -105,6 +105,17 @@ bool CScraper::ProcessRegion(RMapCI r_iter) {
 									hdcWindowSnapshot, r_iter->second.left, r_iter->second.top, SRCCOPY);
 	//}
 	SelectObject(hdcCompatible, old_bitmap);
+
+	// Capture the optional second rectangle into its own bitmap (used by the Color
+	// transform to OR-match a second area against the colour cubes).
+	if (r_iter->second.rect2_enabled && r_iter->second.cur_bmp2 != NULL) {
+		HBITMAP old_bmp2 = (HBITMAP) SelectObject(hdcCompatible, r_iter->second.cur_bmp2);
+		BitBlt(hdcCompatible, 0, 0,
+			r_iter->second.right2 - r_iter->second.left2 + 1,
+			r_iter->second.bottom2 - r_iter->second.top2 + 1,
+			hdcWindowSnapshot, r_iter->second.left2, r_iter->second.top2, SRCCOPY);
+		SelectObject(hdcCompatible, old_bmp2);
+	}
 	//SaveHBITMAPToFile(r_iter->second.cur_bmp, "output.bmp");
 
 	// If the bitmaps are different, then continue on
@@ -1080,6 +1091,15 @@ void CScraper::CreateBitmaps(void) {
 			r_iter->second.last_bmp = WindowCaptureCreateDIBSection(w, h, NULL);
 			r_iter->second.cur_bmp = WindowCaptureCreateDIBSection(w, h, NULL);
 		//}
+		// Optional second rectangle (for the Color transform): its own capture bitmap.
+		r_iter->second.cur_bmp2 = NULL;
+		if (r_iter->second.rect2_enabled) {
+			int w2 = r_iter->second.right2 - r_iter->second.left2 + 1;
+			int h2 = r_iter->second.bottom2 - r_iter->second.top2 + 1;
+			if (w2 > 0 && h2 > 0) {
+				r_iter->second.cur_bmp2 = WindowCaptureCreateDIBSection(w2, h2, NULL);
+			}
+		}
 	}
 }
 
@@ -1093,6 +1113,9 @@ void CScraper::DeleteBitmaps(void) {
 	{
 		DeleteObject(r_iter->second.last_bmp); r_iter->second.last_bmp=NULL;
 		DeleteObject(r_iter->second.cur_bmp); r_iter->second.cur_bmp=NULL;
+		if (r_iter->second.cur_bmp2 != NULL) {
+			DeleteObject(r_iter->second.cur_bmp2); r_iter->second.cur_bmp2=NULL;
+		}
 	}
 }
 

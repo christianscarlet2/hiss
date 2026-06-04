@@ -66,6 +66,9 @@ class CTransform
  private:
 	// private functions and variables - not available via accessors or mutators
 	int CTypeTransform(RMapCI region, const HDC hdc, CString *text, COLORREF *cr_avg);
+	// True if (r,g,b) is inside the region's colour-1 cube, or its colour-2/colour-3
+	// cube when those are enabled (all sharing the same tolerance/radius).
+	bool AvgColorInAnyEnabledCube(RMapCI region, int r, int g, int b);
 	int ITypeTransform(RMapCI region, const HDC hdc, CString *text);
 	int HTypeTransform(RMapCI region, const HDC hdc, CString *text);
   int WTypeTransform(RMapCI region, const HDC hdc, CString *text);
