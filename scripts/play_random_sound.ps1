@@ -1,16 +1,10 @@
-# Plays a RANDOM PCM .wav from a folder (used by the Claude Code Stop hook so the
-# completion sound varies each turn). PlaySync blocks until the clip finishes so it
-# is not cut off when this short-lived hook process exits. Never fails the turn: a
-# missing folder, no files, or an audio error is swallowed.
-param([string]$Folder)
+# Claude Code "Stop" hook sound. Asks the local sb-soundpad sound server
+# (C:\www\sb-soundpad\sb_soundpad.py, http://127.0.0.1:7895) to play a RANDOM completion
+# sound; the server does the playback, so this is a quick fire-and-forget GET. The
+# folder argument from the previous local-wav version is accepted but ignored. Never
+# fails the turn: if the server isn't running the error is swallowed.
 $ErrorActionPreference = 'SilentlyContinue'
 try {
-    if ($Folder -and (Test-Path -LiteralPath $Folder)) {
-        $files = @(Get-ChildItem -LiteralPath $Folder -Filter *.wav -File)
-        if ($files.Count -gt 0) {
-            $pick = $files | Get-Random
-            (New-Object System.Media.SoundPlayer $pick.FullName).PlaySync()
-        }
-    }
+    Invoke-WebRequest -Uri 'http://127.0.0.1:7895/complete' -UseBasicParsing -TimeoutSec 4 | Out-Null
 } catch {}
 exit 0
