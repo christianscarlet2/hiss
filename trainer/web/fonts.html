@@ -29,7 +29,7 @@
     <label class="gcfield">R<input id="gcR" type="number" min="0" max="255" value="0" tabindex="-1"></label>
     <label class="gcfield">G<input id="gcG" type="number" min="0" max="255" value="0" tabindex="-1"></label>
     <label class="gcfield">B<input id="gcB" type="number" min="0" max="255" value="0" tabindex="-1"></label>
-    <label class="gcfield">Radius<input id="gcRad" type="number" value="0" tabindex="-1"></label>
+    <label class="gcfield">Tolerance<input id="gcRad" type="number" value="0" tabindex="-1"></label>
 
     <span class="gcsep"></span>
     <span class="gclabel">Colour 2</span>
@@ -39,7 +39,7 @@
     <label class="gcfield">R<input id="gc2R" type="number" min="0" max="255" value="255" tabindex="-1"></label>
     <label class="gcfield">G<input id="gc2G" type="number" min="0" max="255" value="255" tabindex="-1"></label>
     <label class="gcfield">B<input id="gc2B" type="number" min="0" max="255" value="255" tabindex="-1"></label>
-    <label class="gcfield">Radius<input id="gc2Rad" type="number" value="0" tabindex="-1"></label>
+    <label class="gcfield">Tolerance<input id="gc2Rad" type="number" value="0" tabindex="-1"></label>
 
     <span class="gcsep"></span>
     <select id="gcGroup" tabindex="-1"></select>
@@ -91,17 +91,18 @@
   <div id="helpOverlay" class="overlay" style="display:none">
     <div class="dialog">
       <h2>Global colour picker</h2>
-      <p>Sets one colour cube (the A/R/G/B centre + radius) for <b>every pending glyph in a font group</b> at once,
+      <p>Sets one colour cube (the A/R/G/B centre + tolerance) for <b>every pending glyph in a font group</b> at once,
          then re-segments those glyphs with it.</p>
       <ol>
         <li>Set the colour. Click <b>⊙ Eyedropper</b>, then click any row's <b>Reference</b> or <b>Scrape</b>
             image to grab that pixel's colour (a magnifier follows the cursor). Or type <b>A, R, G, B</b> (0–255)
-            directly. <b>Radius</b> is the colour-cube tolerance — a pixel is foreground when its Euclidean
-            distance from the centre colour is ≤ radius (same rule as Vision; a negative radius inverts it).</li>
+            directly. <b>Tolerance</b> is the colour-cube spread — a pixel is foreground when its Euclidean
+            distance from the centre colour is ≤ tolerance (0 = exact match; higher = more nearby colours; same
+            rule as Vision; a negative value inverts it).</li>
         <li><b>Apply to group</b> — every pending row whose Group is the selected Text&lt;n&gt; is re-binarised
-            with this colour, and the colour/radius are saved to each of those glyphs' region <code>r$</code>
+            with this colour, and the colour/tolerance are saved to each of those glyphs' region <code>r$</code>
             records.</li>
-        <li><b>Apply to all regions</b> — writes this colour/radius to <i>every</i> balance region's
+        <li><b>Apply to all regions</b> — writes this colour/tolerance to <i>every</i> balance region's
             <code>r$</code>, even ones that currently scrape nothing, then regenerates all pending glyphs. Use
             this to fix capture when some regions have the wrong colour: eyedrop a good colour from a working
             scrape, click this, then <b>Capture scrapes</b> again.</li>

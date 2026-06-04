@@ -15,7 +15,10 @@
 #include "CTableMaploader.h"
 
 #include "CAutoConnector.h"
+#include "CAutoOcr.h"
 #include "CFileSystemMonitor.h"
+#include "CHeartbeatThread.h"
+#include "DialogScraperOutput.h"
 
 #include "CTablemapCompletenessChecker.h"
 #include "CTablePointChecker.h"
@@ -204,6 +207,49 @@ void CTableMapLoader::ReloadAllTablemapsIfChanged() {
   }
   else {
     write_log(Preferences()->debug_tablemap_loader(), "[CTablemapLoader] All tablemaps unchanged; nothing to do.\n");
+  }
+}
+
+void CTableMapLoader::ReloadConnectedTablemapIfSettingsChanged() {
+  if (p_tablemap == NULL || p_tablemap_db == NULL) {
+    return;
+  }
+  CString name = p_tablemap->filename();   // DB key of the connected map
+  if (name.IsEmpty()) {
+    return;
+  }
+  CString revision = p_tablemap_db->GetSettingsRevision();
+  if (revision.IsEmpty()) {
+    // DB probe failed; leave the cached settings in place and try again next beat.
+    return;
+  }
+  if (_last_settings_revision.IsEmpty()) {
+    // First probe of the session: the connect-time snapshot is already current,
+    // so just remember the baseline without reloading.
+    _last_settings_revision = revision;
+    return;
+  }
+  if (revision == _last_settings_revision) {
+    return;   // nothing changed
+  }
+  _last_settings_revision = revision;
+  write_log(Preferences()->debug_tablemap_loader(),
+    "[CTablemapLoader] DB revision changed; live-reloading connected map [%s]\n",
+    name.GetString());
+  // Reload the connected map's regions/transforms under the heartbeat lock so we
+  // never swap the tablemap out mid-scrape. Then re-read the OCR settings (CAutoOcr
+  // otherwise caches them once per session).
+  if (p_heartbeat_thread != NULL) {
+    EnterCriticalSection(&p_heartbeat_thread->cs_update_in_progress);
+    p_tablemap_db->LoadTablemapFromDB(name, p_tablemap);
+    LeaveCriticalSection(&p_heartbeat_thread->cs_update_in_progress);
+  } else {
+    p_tablemap_db->LoadTablemapFromDB(name, p_tablemap);
+  }
+  AutoOcr()->LoadModelSettings();
+  // Refresh the Scraper Output dialog's region list if it is open.
+  if (m_ScraperOutputDlg != NULL) {
+    m_ScraperOutputDlg->UpdateDisplay();
   }
 }
 

@@ -284,7 +284,7 @@ BEGIN
     CONTROL         "",IDC_CURRENTREGION,"Static",SS_BLACKFRAME | SS_REALSIZEIMAGE,115,255,280,100
     LTEXT           "Transform",IDC_STATIC,123,75,34,8
     LTEXT           "A",IDC_STATIC,252,65,8,8
-    LTEXT           "Radius",IDC_STATIC,135,92,22,8
+    LTEXT           "Tolerance",IDC_STATIC,119,92,42,8
     LTEXT           "Result",IDC_STATIC,163,111,21,8
     GROUPBOX        "Pixel Separation",IDC_STATIC,115,144,225,105
     GROUPBOX        "Rectangle",IDC_STATIC,115,7,120,56,0,WS_EX_TRANSPARENT
@@ -815,7 +815,7 @@ BEGIN
     IDC_RIGHT               "Right border"
     IDC_TRANSFORM           "Transform type"
     IDC_ZOOM                "Zoom level for magnified view of currently selected region"
-    IDC_RADIUS              "Radius for color cube"
+    IDC_RADIUS              "Tolerance for color cube (0 = exact match; higher = more nearby colours)"
     IDC_RESULT              "Result of transformation"
     IDC_NEW                 "Create new record"
     IDC_DELETE              "Delete selected record"

@@ -26,6 +26,7 @@
 #include "..\DLLs\StringFunctions_DLL\string_functions.h"
 #include "..\DLLs\WindowFunctions_DLL\window_functions.h"
 #include "CAutoConnector.h"
+#include "CTablePositioner.h"
 #include "CAutoplayer.h"
 #include "CAutoplayerFunctions.h"
 #include "ChatTerminalServer.h"
@@ -566,6 +567,12 @@ void CMainFrame::OnEditPreferences() {
 }
 
 BOOL CMainFrame::DestroyWindow() {
+	// Remember the connected table window's position+size (shared DB) BEFORE the
+	// threads stop / we disconnect, so the next launch restores it instead of forcing
+	// it onto monitor 1.
+	if (p_table_positioner != NULL) {
+		p_table_positioner->SaveCurrentPlacement();
+	}
 	StopThreads();
   PMainframe()->KillTimers();
 	// Save window position

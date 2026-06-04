@@ -222,3 +222,14 @@ long TrainerDB_TablemapId(pconn *conn, const CString &name)
 	if (res) PQclear(res);
 	return id;
 }
+
+void TrainerDB_TouchTablemap(pconn *conn, long id)
+{
+	if (conn == NULL || id < 0) {
+		return;
+	}
+	CString sql;
+	sql.Format("UPDATE tablemaps SET updated_at=now() WHERE id=%ld", id);
+	PGresult *res = PQexec(conn, sql.GetString());
+	if (res) PQclear(res);
+}

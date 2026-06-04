@@ -278,6 +278,24 @@ CString CTablemapDB::GetSettingString(const CString key, const CString field) {
 	return result;
 }
 
+CString CTablemapDB::GetSettingsRevision() {
+	CString result;
+	if (!Connect()) return result;
+	// GREATEST of the newest settings row and the newest tablemap row. OCR/scrape
+	// settings bump settings.updated_at; tablemap + region edits bump tablemaps.updated_at.
+	const char *sql =
+		"SELECT GREATEST("
+		"COALESCE((SELECT max(updated_at) FROM settings), 'epoch'::timestamp),"
+		"COALESCE((SELECT max(updated_at) FROM tablemaps), 'epoch'::timestamp))::text";
+	PGresult *res = PQexec((PGconn *)_conn, sql);
+	if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) > 0
+			&& !PQgetisnull(res, 0, 0)) {
+		result = PQgetvalue(res, 0, 0);
+	}
+	if (res) PQclear(res);
+	return result;
+}
+
 bool CTablemapDB::GetSettingArray(const CString key, const CString field, std::vector<CString> *out) {
 	if (out == NULL) return false;
 	out->clear();

@@ -75,6 +75,11 @@ public:
 	bool    SetSettingString(const CString key, const CString field, const CString value);
 	bool    SetSettingArray(const CString key, const CString field, const std::vector<CString> &values);
 
+	// Cheap "anything changed?" probe for live-reload polling: the latest updated_at
+	// across the settings + tablemaps tables, as a text timestamp ("" on error).
+	// Hiss's heartbeat compares this against the last seen value.
+	CString GetSettingsRevision();
+
 private:
 	long GetTablemapId(const CString name);   // -1 if not found / error
 	bool ExecCommand(const CString &sql);      // expects PGRES_COMMAND_OK

@@ -29,6 +29,11 @@ class CTableMapLoader : public CSpaceOptimizedGlobalObject {
  public:
 	int NumberOfTableMapsLoaded() { return _number_of_tablemaps_loaded; }
 	void ReloadAllTablemapsIfChanged();
+	// Lightweight live-reload: if the hiss DB revision changed (OCR settings, scrape
+	// fields, or the connected tablemap's regions/transforms were edited in the
+	// trainer/Vision), re-pull the connected map + OCR settings WITHOUT disconnecting.
+	// Cheap revision probe; safe to call every heartbeat.
+	void ReloadConnectedTablemapIfSettingsChanged();
 	CString GetTablemapPathToLoad(int tablemap_index);
  private:
 	void ParseAllTableMapsToLoadConnectionData(CString scraper_directory);
@@ -39,6 +44,7 @@ class CTableMapLoader : public CSpaceOptimizedGlobalObject {
  private:
 	bool	tablemaps_in_scraper_folder_already_parsed;
 	int	_number_of_tablemaps_loaded;
+	CString	_last_settings_revision;   // last DB revision seen by the live-reload probe
 };
 
 typedef struct {

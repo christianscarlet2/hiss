@@ -24,6 +24,10 @@ bool TrainerDB_ListTablemaps(std::vector<CString> *names);
 // Returns the tablemaps.id for a name, or -1 if not found / on error.
 long TrainerDB_TablemapId(pconn *conn, const CString &name);
 
+// Bumps tablemaps.updated_at=now() for the given id, on an already-open connection.
+// Lets Hiss's heartbeat detect granular region edits (which only touch tm_regions).
+void TrainerDB_TouchTablemap(pconn *conn, long id);
+
 // --- Global application settings (the "settings" table: key TEXT -> JSONB) -----
 // Each call opens and closes its own connection. `key` is the settings row;
 // `field` is a named field inside that row's JSON value.

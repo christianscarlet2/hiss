@@ -206,6 +206,9 @@ bool SaveRegionColorRadius(const CString &tm_name, const CString &name, COLORREF
 	PGresult *res = PQexec(conn, sql.GetString());
 	bool ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
 	if (res) PQclear(res);
+	// Bump the parent row so Hiss's heartbeat (which polls max(tablemaps.updated_at))
+	// notices the change and live-reloads the connected map.
+	TrainerDB_TouchTablemap(conn, id);
 	PQfinish(conn);
 	return ok;
 }
@@ -230,6 +233,8 @@ bool SaveRegionTransform(const CString &tm_name, const CString &name, const CStr
 	PGresult *res = PQexec(conn, sql.GetString());
 	bool ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
 	if (res) PQclear(res);
+	// Bump the parent row so Hiss's heartbeat notices the change and live-reloads.
+	TrainerDB_TouchTablemap(conn, id);
 	PQfinish(conn);
 	return ok;
 }

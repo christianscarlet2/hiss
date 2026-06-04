@@ -125,8 +125,14 @@ UINT CHeartbeatThread::HeartbeatThreadFunction(LPVOID pParam) {
         p_autoconnector->Disconnect("table theme changed (tablepoints)");
       } else {
         LogMemoryUsage("H7");
+        // Lightweight "settings changed" live-reload: every few beats, cheaply probe
+        // the hiss DB revision and re-pull the connected map + OCR settings if the
+        // trainer/Vision edited them (no disconnect, no game-state reset).
+        if ((_heartbeat_counter % 8) == 0) {
+          p_tablemap_loader->ReloadConnectedTablemapIfSettingsChanged();
+        }
         ScrapeEvaluateAct();
-      } 		
+      }
 		}
     assert(p_watchdog != NULL);
     LogMemoryUsage("H8");
