@@ -196,6 +196,46 @@ static void LoadColours(int fg[2][3])
 
 static int ClampI(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
+// True if at least one sample_*.png already exists in training\.
+static bool HasTrainingPng(const CString &train_dir)
+{
+	WIN32_FIND_DATA fd;
+	HANDLE h = FindFirstFile(train_dir + "sample_*.png", &fd);
+	if (h == INVALID_HANDLE_VALUE) return false;
+	FindClose(h);
+	return true;
+}
+
+// Darkest colour (by luminance) across existing training PNGs, used as the generated
+// images' border so it matches the real captured table background. Scans up to 64
+// samples for speed. Returns false if there are no training PNGs to sample.
+static bool FindDarkestInTraining(const CString &train_dir, Vec3b *out)
+{
+	WIN32_FIND_DATA fd;
+	HANDLE h = FindFirstFile(train_dir + "sample_*.png", &fd);
+	if (h == INVALID_HANDLE_VALUE) return false;
+	double min_lum = 1e9;
+	bool found = false;
+	int scanned = 0;
+	do {
+		if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+		CString path = train_dir + fd.cFileName;
+		Mat img = imread(std::string(CStringA(path).GetString()), IMREAD_COLOR);
+		if (img.empty()) continue;
+		for (int y = 0; y < img.rows; ++y) {
+			const Vec3b *row = img.ptr<Vec3b>(y);
+			for (int x = 0; x < img.cols; ++x) {
+				const Vec3b &p = row[x];
+				double lum = 0.114 * p[0] + 0.587 * p[1] + 0.299 * p[2];
+				if (lum < min_lum) { min_lum = lum; *out = p; found = true; }
+			}
+		}
+		if (++scanned >= 64) break;
+	} while (FindNextFile(h, &fd));
+	FindClose(h);
+	return found;
+}
+
 // Highest existing sample_NNNN index + 1 (so new files continue after the last one).
 static int ComputeStartIndex(const CString &train_dir)
 {
@@ -217,7 +257,7 @@ static int ComputeStartIndex(const CString &train_dir)
 // names that already exist (so concurrently-created files never clash).
 static bool GenerateOne(const ST2ISettings &s, const CString &train_dir, const CString &fonts_dir,
 	const CString &tmp_dir, const CStringA &name, const CStringA &font_desc, const int fg[3],
-	int target_h, int *next_index)
+	const Vec3b &border_color, int target_h, int *next_index)
 {
 	const CString in_txt = tmp_dir + "\\in.txt";
 	const CString base   = tmp_dir + "\\s";
@@ -275,18 +315,24 @@ static bool GenerateOne(const ST2ISettings &s, const CString &train_dir, const C
 		Vec3b *op = colored.ptr<Vec3b>(y);
 		for (int x = 0; x < crop.cols; ++x) {
 			double a = (255.0 - gp[x]) / 255.0;
-			int B = (int)(bgB + (fg[2] - bgB) * a + 0.5);
-			int G = (int)(bgG + (fg[1] - bgG) * a + 0.5);
-			int R = (int)(bgR + (fg[0] - bgR) * a + 0.5);
-			op[x] = Vec3b((uchar)ClampI(B, 0, 255), (uchar)ClampI(G, 0, 255), (uchar)ClampI(R, 0, 255));
+			int B = ClampI((int)(bgB + (fg[2] - bgB) * a + 0.5), 0, 255);
+			int G = ClampI((int)(bgG + (fg[1] - bgG) * a + 0.5), 0, 255);
+			int R = ClampI((int)(bgR + (fg[0] - bgR) * a + 0.5), 0, 255);
+			op[x] = Vec3b((uchar)B, (uchar)G, (uchar)R);
 		}
 	}
 
 	// Size to match the existing training samples (line height ~14-15px).
 	int new_w = (int)((double)colored.cols * target_h / colored.rows + 0.5);
 	if (new_w < 1) new_w = 1;
+	Mat sized;
+	resize(colored, sized, Size(new_w, target_h), 0, 0, INTER_AREA);
+
+	// Add a 2px border using the darkest colour sampled from an existing training image,
+	// extending the width/height a little.
 	Mat final_img;
-	resize(colored, final_img, Size(new_w, target_h), 0, 0, INTER_AREA);
+	copyMakeBorder(sized, final_img, 2, 2, 2, 2, BORDER_CONSTANT,
+		Scalar(border_color[0], border_color[1], border_color[2]));
 
 	// Next free sample_NNNN (re-checked so concurrently-added files never clash).
 	CString png_path, txt_path, base_name;
@@ -347,6 +393,16 @@ static DWORD WINAPI T2IWorker(LPVOID param)
 		return 0;
 	}
 
+	// Border colour = darkest pixel from an existing training PNG (the real captured
+	// table background). If there are none, there is nothing to sample, so stop.
+	Vec3b border_color;
+	if (!FindDarkestInTraining(train_dir, &border_color)) {
+		PostMessage(job->notify, WM_TRAINER_T2I_DONE, 0,
+			(LPARAM) new CStringA("No training images found in training\\ to sample a border colour from. "
+				"Generate at least one training image first, then run this tool."));
+		return 0;
+	}
+
 	int fg[2][3]; LoadColours(fg);
 	int next_index = ComputeStartIndex(train_dir);
 	int made = 0;
@@ -357,7 +413,7 @@ static DWORD WINAPI T2IWorker(LPVOID param)
 		const CStringA &font = fonts[rand() % (int)fonts.size()];
 		const int *fgc = fg[rand() % 2];
 		const int th = 14 + (rand() % 2);   // 14 or 15 px tall
-		if (GenerateOne(job->settings, train_dir, fonts_dir, tmp_dir, name, font, fgc, th, &next_index))
+		if (GenerateOne(job->settings, train_dir, fonts_dir, tmp_dir, name, font, fgc, border_color, th, &next_index))
 			++made;
 		PostMessage(job->notify, WM_TRAINER_T2I_PROGRESS, (WPARAM)(i + 1), (LPARAM)job->count);
 	}
@@ -516,6 +572,14 @@ void T2I_GenerateInteractive(CWnd *parent)
 	ST2ISettings s = LoadSettings();
 	if (GetFileAttributes(s.exe_path) == INVALID_FILE_ATTRIBUTES) {
 		AfxMessageBox("text2image.exe was not found.\nSet its path in Tools > Settings...",
+			MB_OK | MB_ICONWARNING);
+		return;
+	}
+	// The generated images' border colour is sampled from an existing training PNG, so
+	// require at least one before generating.
+	if (!HasTrainingPng(ExeDir() + "training\\")) {
+		AfxMessageBox("No training images found in the training\\ folder.\n"
+			"Generate at least one training image first (capture a sample), then use this tool.",
 			MB_OK | MB_ICONWARNING);
 		return;
 	}
