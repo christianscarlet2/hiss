@@ -359,6 +359,7 @@ void CTrainerDlg::SetStatus(const CString &text)
 bool CTrainerDlg::DoLoadTablemap(const CString &name)
 {
 	// Tablemaps now live in the PostgreSQL "hiss" database; `name` is the DB key.
+	_tablemap_name = name;
 	_regions.clear();
 	if (!LoadBalanceRegionsFromDB(name, &_regions)) {
 		SetStatus("Failed to read the tablemap from the hiss database.");
@@ -543,6 +544,27 @@ void CTrainerDlg::ApplyTransformSelection(bool recognize)
 
 void CTrainerDlg::OnSelchangeTransform()
 {
+	// Changing the Transform combo while a region is selected REASSIGNS that region's
+	// transform method in the tablemap database (the combo offers AutoOcr0/AutoOcr1 ->
+	// "A0"/"A1"). Region-select drives the combo via SetCurSel, which does not fire this
+	// handler, so this only runs on a real user change.
+	if (_selected >= 0 && _selected < (int)_regions.size()) {
+		int sel = m_transform.GetCurSel();
+		CString tr;
+		if (sel >= 0) m_transform.GetLBText(sel, tr);
+		int index = 0;
+		if (tr.Left(7).CompareNoCase("AutoOcr") == 0) index = atoi(CStringA(tr.Mid(7)));
+		CString tcode = (index == 1) ? CString("A1") : CString("A0");
+		if (_regions[_selected].transform.CompareNoCase(tcode) != 0) {
+			_regions[_selected].transform = tcode;
+			if (!_tablemap_name.IsEmpty())
+				SaveRegionTransform(_tablemap_name, _regions[_selected].name, tcode);
+			CString status;
+			status.Format("Region '%s' transform set to %s in the tablemap.",
+				_regions[_selected].name.GetString(), tcode.GetString());
+			SetStatus(status);
+		}
+	}
 	ApplyTransformSelection(true);
 }
 

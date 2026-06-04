@@ -115,6 +115,7 @@ private:
 	CEdit m_threshold, m_charSpacing, m_ocrResult, m_splitMargin;
 	CSpinButtonCtrl m_thresholdSpin, m_charSpacingSpin, m_splitMarginSpin;
 
+	CString _tablemap_name;   // currently-loaded tablemap (DB key), for region writes
 	std::vector<STrainerRegion> _regions;
 	std::vector<std::vector<BYTE> > _last;
 	std::vector<std::vector<BYTE> > _committed;

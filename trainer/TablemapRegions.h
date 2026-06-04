@@ -37,6 +37,10 @@ void TrainerRegions_RefreshEnabled(std::vector<STrainerRegion> *regions);
 // respects that list instead of a global toggle.
 bool TrainerRegionUsesDecimalSplit(const CString &region_name);
 
+// Persist a region's transform method (e.g. "A0"/"A1") to tm_regions in the database.
+// tm_name is the tablemap NAME (DB key). Returns true on a successful write.
+bool SaveRegionTransform(const CString &tm_name, const CString &name, const CString &transform);
+
 // Rewrite the matching "r$<name> ..." line in place, replacing its colour (token 6,
 // 8-hex) and radius (token 7, decimal) and keeping every other field. Returns true
 // if the region line was found and the file was rewritten.

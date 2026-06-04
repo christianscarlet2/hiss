@@ -210,6 +210,30 @@ bool SaveRegionColorRadius(const CString &tm_name, const CString &name, COLORREF
 	return ok;
 }
 
+bool SaveRegionTransform(const CString &tm_name, const CString &name, const CString &transform)
+{
+	if (tm_name.IsEmpty() || name.IsEmpty()) {
+		return false;
+	}
+	PGconn *conn = TrainerDB_Connect();
+	if (conn == NULL) {
+		return false;
+	}
+	long id = TrainerDB_TablemapId(conn, tm_name);
+	if (id < 0) {
+		PQfinish(conn);
+		return false;
+	}
+	CString sql;
+	sql.Format("UPDATE tm_regions SET transform='%s' WHERE tablemap_id=%ld AND name='%s'",
+		SqlEsc(transform).GetString(), id, SqlEsc(name).GetString());
+	PGresult *res = PQexec(conn, sql.GetString());
+	bool ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
+	if (res) PQclear(res);
+	PQfinish(conn);
+	return ok;
+}
+
 // ---------------------------------------------------------------------------
 // Thread-safe region colour cache
 // ---------------------------------------------------------------------------
