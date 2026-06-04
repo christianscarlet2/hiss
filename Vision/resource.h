@@ -71,6 +71,12 @@
 #define IDC_ALPHA                       1040
 #define IDC_PICKER                      1041
 #define IDC_PARSERESULTS                1042
+#define IDC_ALPHA2                      1237
+#define IDC_RED2                        1238
+#define IDC_GREEN2                      1239
+#define IDC_BLUE2                       1240
+#define IDC_PICKER2                     1241
+#define IDC_COLOR2_ENABLE               1242
 #define IDC_DRAWRECT                    1043
 #define IDC_PARSEBUTTON                 1044
 #define IDC_NUDGE_UP                    1045
@@ -207,7 +213,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        154
 #define _APS_NEXT_COMMAND_VALUE         32800
-#define _APS_NEXT_CONTROL_VALUE         1237
+#define _APS_NEXT_CONTROL_VALUE         1243
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

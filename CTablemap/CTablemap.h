@@ -54,6 +54,11 @@ struct STablemapRegion {
 	unsigned int	bottom;
 	COLORREF		color;
 	int				radius;
+	// Optional second colour for the "Color" (C) transform. When color2_enabled is
+	// true, a region matches if the sampled colour is within tolerance (radius) of
+	// EITHER color OR color2. Defaults keep single-colour behaviour for older maps.
+	COLORREF		color2 = 0;
+	bool			color2_enabled = false;
 	HBITMAP			cur_bmp;
 	HBITMAP			last_bmp;
 	bool			use_default;

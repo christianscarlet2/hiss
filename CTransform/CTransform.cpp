@@ -135,11 +135,22 @@ int CTransform::CTypeTransform(RMapCI region, const HDC hdc, CString *text, COLO
 	if (cr_avg!=NULL)
 		*cr_avg = RGB(rr_avg, gg_avg, bb_avg);
 
-	if (IsInRGBColorCube(GetRValue(region->second.color), 
-						 GetGValue(region->second.color), 
-						 GetBValue(region->second.color), 
+	// A region matches its first colour cube, and (when the optional second colour
+	// is enabled) ALSO matches if the sampled average falls in the second cube.
+	// Same tolerance (radius) is used for both cubes.
+	bool in_cube = IsInRGBColorCube(GetRValue(region->second.color),
+						 GetGValue(region->second.color),
+						 GetBValue(region->second.color),
 						 region->second.radius,
-						 (int) rr_avg, (int) gg_avg, (int) bb_avg)) 
+						 (int) rr_avg, (int) gg_avg, (int) bb_avg);
+	if (!in_cube && region->second.color2_enabled) {
+		in_cube = IsInRGBColorCube(GetRValue(region->second.color2),
+						 GetGValue(region->second.color2),
+						 GetBValue(region->second.color2),
+						 region->second.radius,
+						 (int) rr_avg, (int) gg_avg, (int) bb_avg);
+	}
+	if (in_cube)
 	{
 		*text = "true";
 	}
