@@ -150,6 +150,13 @@ int CTransform::CTypeTransform(RMapCI region, const HDC hdc, CString *text, COLO
 						 region->second.radius,
 						 (int) rr_avg, (int) gg_avg, (int) bb_avg);
 	}
+	if (!in_cube && region->second.color3_enabled) {
+		in_cube = IsInRGBColorCube(GetRValue(region->second.color3),
+						 GetGValue(region->second.color3),
+						 GetBValue(region->second.color3),
+						 region->second.radius,
+						 (int) rr_avg, (int) gg_avg, (int) bb_avg);
+	}
 	if (in_cube)
 	{
 		*text = "true";

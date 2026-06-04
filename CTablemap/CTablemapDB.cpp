@@ -158,10 +158,13 @@ bool CTablemapDB::EnsureSchema() {
 		" color BIGINT, radius INT, transform TEXT, use_default BOOL, threshold INT,"
 		" use_cropping BOOL, crop_size INT, match_mode INT, sharpen INT,"
 		" color2 BIGINT DEFAULT 0, color2_enabled BOOL DEFAULT false,"
+		" color3 BIGINT DEFAULT 0, color3_enabled BOOL DEFAULT false,"
 		" PRIMARY KEY (tablemap_id, name));"
 		// Bring older databases up to date (no-op if the columns already exist).
 		"ALTER TABLE tm_regions ADD COLUMN IF NOT EXISTS color2 BIGINT DEFAULT 0;"
 		"ALTER TABLE tm_regions ADD COLUMN IF NOT EXISTS color2_enabled BOOL DEFAULT false;"
+		"ALTER TABLE tm_regions ADD COLUMN IF NOT EXISTS color3 BIGINT DEFAULT 0;"
+		"ALTER TABLE tm_regions ADD COLUMN IF NOT EXISTS color3_enabled BOOL DEFAULT false;"
 		"CREATE TABLE IF NOT EXISTS tm_fonts ("
 		" tablemap_id INT REFERENCES tablemaps(id) ON DELETE CASCADE,"
 		" font_group INT, ch TEXT, hexmash TEXT, x_values TEXT,"
@@ -413,7 +416,8 @@ int CTablemapDB::LoadTablemapFromDB(const CString name, CTablemap *tm) {
 	// --- regions (r$) ---
 	sql.Format("SELECT name, rgn_left, rgn_top, rgn_right, rgn_bottom, color, radius,"
 		" transform, use_default, threshold, use_cropping, crop_size, match_mode, sharpen,"
-		" COALESCE(color2,0), COALESCE(color2_enabled,false)"
+		" COALESCE(color2,0), COALESCE(color2_enabled,false),"
+		" COALESCE(color3,0), COALESCE(color3_enabled,false)"
 		" FROM tm_regions WHERE tablemap_id=%ld", id);
 	res = PQexec((PGconn *)_conn, sql.GetString());
 	if (PQresultStatus(res) == PGRES_TUPLES_OK) {
@@ -438,6 +442,8 @@ int CTablemapDB::LoadTablemapFromDB(const CString name, CTablemap *tm) {
 			r.sharpen = atoi(PQgetvalue(res, i, 13));
 			r.color2 = (COLORREF)strtoul(PQgetvalue(res, i, 14), 0, 10);
 			r.color2_enabled = (strcmp(PQgetvalue(res, i, 15), "t") == 0);
+			r.color3 = (COLORREF)strtoul(PQgetvalue(res, i, 16), 0, 10);
+			r.color3_enabled = (strcmp(PQgetvalue(res, i, 17), "t") == 0);
 			tm->r$_insert(r);
 		}
 	}
@@ -644,14 +650,15 @@ int CTablemapDB::SaveTablemapToDB(const CString name, CTablemap *tm) {
 			const STablemapRegion &g = it->second;
 			sql.Format("INSERT INTO tm_regions (tablemap_id,name,rgn_left,rgn_top,rgn_right,rgn_bottom,"
 				"color,radius,transform,use_default,threshold,use_cropping,crop_size,match_mode,sharpen,"
-				"color2,color2_enabled) "
-				"VALUES (%ld,'%s',%u,%u,%u,%u,%lu,%d,'%s',%s,%d,%s,%d,%d,%d,%lu,%s)",
+				"color2,color2_enabled,color3,color3_enabled) "
+				"VALUES (%ld,'%s',%u,%u,%u,%u,%lu,%d,'%s',%s,%d,%s,%d,%d,%d,%lu,%s,%lu,%s)",
 				id, EscapeSqlLiteral(g.name).GetString(),
 				g.left, g.top, g.right, g.bottom,
 				(unsigned long)g.color, g.radius, EscapeSqlLiteral(g.transform).GetString(),
 				g.use_default ? "true" : "false", g.threshold,
 				g.use_cropping ? "true" : "false", g.crop_size, g.match_mode, g.sharpen,
-				(unsigned long)g.color2, g.color2_enabled ? "true" : "false");
+				(unsigned long)g.color2, g.color2_enabled ? "true" : "false",
+				(unsigned long)g.color3, g.color3_enabled ? "true" : "false");
 			if (!ExecCommand(sql)) { ExecCommand("ROLLBACK"); return ERR_SYNTAX; }
 		}
 	}

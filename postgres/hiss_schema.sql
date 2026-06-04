@@ -60,9 +60,11 @@ CREATE TABLE IF NOT EXISTS tm_regions (      -- r$
   color BIGINT, radius INT, transform TEXT,
   use_default BOOL, threshold INT, use_cropping BOOL, crop_size INT,
   match_mode INT, sharpen INT,
-  -- Optional second colour cube for the "Color" (C) transform: a region matches if
-  -- the sampled colour is within tolerance (radius) of color OR (when enabled) color2.
+  -- Optional extra colour cubes for the "Color" (C) transform: a region matches if
+  -- the sampled colour is within tolerance (radius) of color OR (when enabled) color2
+  -- OR (when enabled) color3.
   color2 BIGINT DEFAULT 0, color2_enabled BOOL DEFAULT false,
+  color3 BIGINT DEFAULT 0, color3_enabled BOOL DEFAULT false,
   PRIMARY KEY (tablemap_id, name));
 
 CREATE TABLE IF NOT EXISTS tm_fonts (        -- t$  (x_values = space-separated hex tokens, e.g. "1e 1 1 1f")
