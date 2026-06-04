@@ -95,7 +95,6 @@ private:
 	bool        _models_loaded;
 	CString     _model_a0;
 	CString     _model_a1;
-	CString     _model_name;      // text model for player-name fields (key autoocr_name)
 	CString     _current_model;   // model currently loaded into api/api2
 	// Per-transform OCR settings (settings table keys autoocr0 / autoocr1).
 	int         _thr_a0, _thr_a1;       // binarize threshold

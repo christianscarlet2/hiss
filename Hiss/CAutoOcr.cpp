@@ -169,14 +169,6 @@ CAutoOcr::CAutoOcr() :
 void CAutoOcr::LoadModelSettings() {
 	_model_a0 = "my_model";
 	_model_a1 = "my_model";
-	// Player names are general text; balance models are digit-only LSTMs that can't
-	// emit letters. Use a dedicated text model (key autoocr_name), default "eng".
-	_model_name = "eng";
-	if (p_tablemap_db != NULL) {
-		CString nm = p_tablemap_db->GetSettingString("autoocr_name", "model");
-		nm.Trim();
-		if (!nm.IsEmpty()) _model_name = nm;
-	}
 	_thr_a0 = _thr_a1 = kDefaultAutoOcrThreshold;
 	_mode_a0 = _mode_a1 = (int)tesseract::PSM_SINGLE_COLUMN;
 	_nopre_a0 = _nopre_a1 = false;
@@ -853,12 +845,8 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast, SAutoOc
 	settings.use_cropping = false;   // never crop, even if a colour preset set it
 	tablemap_threshold = settings.threshold;
 
-	// Player-name fields need a text model (the balance models are digit-only and can
-	// only emit numbers); everything else uses the region's transform model.
-	bool is_name_region = (CString(region->first).MakeLower().Find("name") != -1);
-	if (is_name_region) {
-		EnsureModelLoaded(_model_name);
-	} else if (region->second.transform == "A0") {
+	// The region's transform field (A0/A1) decides which model OCRs it.
+	if (region->second.transform == "A0") {
 		EnsureModelLoaded(_model_a0);
 	} else if (region->second.transform == "A1") {
 		EnsureModelLoaded(_model_a1);

@@ -86,16 +86,13 @@ BEGIN
     LTEXT           "text2image.exe:",IDC_STATIC,7,10,80,8
     EDITTEXT        IDC_T2I_PATH,72,8,180,14,ES_AUTOHSCROLL
     PUSHBUTTON      "...",IDC_T2I_BROWSE,256,8,20,14
-    GROUPBOX        "OCR models (.traineddata / .checkpoint, shared with Hiss + Vision)",IDC_STATIC,7,28,270,90
+    GROUPBOX        "OCR models (.traineddata / .checkpoint, shared with Hiss + Vision)",IDC_STATIC,7,28,270,66
     LTEXT           "AutoOcr0 model:",IDC_STATIC,16,44,70,8
     EDITTEXT        IDC_T2I_A0_MODEL,90,42,150,14,ES_AUTOHSCROLL
     PUSHBUTTON      "...",IDC_T2I_A0_BROWSE,244,42,20,14
     LTEXT           "AutoOcr1 model:",IDC_STATIC,16,68,70,8
     EDITTEXT        IDC_T2I_A1_MODEL,90,66,150,14,ES_AUTOHSCROLL
     PUSHBUTTON      "...",IDC_T2I_A1_BROWSE,244,66,20,14
-    LTEXT           "Name model:",IDC_STATIC,16,92,70,8
-    EDITTEXT        IDC_T2I_NAME_MODEL,90,90,150,14,ES_AUTOHSCROLL
-    PUSHBUTTON      "...",IDC_T2I_NAME_BROWSE,244,90,20,14
     GROUPBOX        "Decimal splitting (shared with Hiss + Vision)",IDC_STATIC,7,124,270,90
     LTEXT           "Field types that use decimal splitting:",IDC_STATIC,16,138,250,8
     LISTBOX         IDC_T2I_DECIMAL_LIST,16,150,250,58,LBS_MULTIPLESEL | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP | WS_BORDER

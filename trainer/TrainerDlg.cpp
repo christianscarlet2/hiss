@@ -469,19 +469,18 @@ bool CTrainerDlg::ApplyModelFromDb(const CString &key)
 	return ApplyModelSpec(TrainerDB_GetSetting(key, "model"));
 }
 
-// Load the right model for previewing/scraping a region: player-name fields use the
-// text model (key autoocr_name, default "eng" so names work out of the box); all other
-// fields use the currently-selected transform's model.
+// Load the model for previewing/scraping a region from the region's OWN transform
+// field (A0 -> autoocr0, A1 -> autoocr1). The transform -- not a separate "name model"
+// -- decides which model is used; a name region simply uses whatever transform it's
+// assigned in the tablemap.
 void CTrainerDlg::LoadOcrModelForRegion(int region_idx)
 {
-	if (region_idx >= 0 && region_idx < (int)_regions.size() && _regions[region_idx].field_type == "name") {
-		CString spec = TrainerDB_GetSetting("autoocr_name", "model");
-		spec.Trim();
-		if (spec.IsEmpty()) spec = "eng";   // bundled general text model
-		ApplyModelSpec(spec);
-	} else {
-		ApplyModelFromDb(CurrentAutoOcrKey());
+	CString key = "autoocr0";
+	if (region_idx >= 0 && region_idx < (int)_regions.size()) {
+		CString tr = _regions[region_idx].transform; tr.Trim();
+		if (tr.CompareNoCase("A1") == 0) key = "autoocr1";
 	}
+	ApplyModelFromDb(key);
 }
 
 // File-pick a model and store it in the shared DB under `key` (autoocr0/autoocr1), the
