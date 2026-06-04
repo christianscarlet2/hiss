@@ -201,6 +201,7 @@ CDlgTableMap::CDlgTableMap(CWnd* pParent /*=NULL*/) : CDialog(CDlgTableMap::IDD,
 
 	picker_cursor = false;
 	picker_cursor2 = false;
+	picker_cursor3 = false;
 	hCurPicker = ::LoadCursor(AfxGetInstanceHandle(), MAKEINTRESOURCE(IDC_PICKERCURSOR));
 	hCurStandard = ::LoadCursor(NULL, IDC_ARROW);
 }
@@ -245,6 +246,12 @@ void CDlgTableMap::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_BLUE2, m_Blue2);
 	DDX_Control(pDX, IDC_PICKER2, m_Picker2);
 	DDX_Control(pDX, IDC_COLOR2_ENABLE, m_Color2Enable);
+	DDX_Control(pDX, IDC_ALPHA3, m_Alpha3);
+	DDX_Control(pDX, IDC_RED3, m_Red3);
+	DDX_Control(pDX, IDC_GREEN3, m_Green3);
+	DDX_Control(pDX, IDC_BLUE3, m_Blue3);
+	DDX_Control(pDX, IDC_PICKER3, m_Picker3);
+	DDX_Control(pDX, IDC_COLOR3_ENABLE, m_Color3Enable);
 	DDX_Control(pDX, IDC_RADIUS, m_Radius);
 	DDX_Control(pDX, IDC_RESULT, m_Result);
 	DDX_Control(pDX, IDC_NEW, m_New);
@@ -322,6 +329,11 @@ BEGIN_MESSAGE_MAP(CDlgTableMap, CDialog)
 	ON_EN_KILLFOCUS(IDC_GREEN2, &CDlgTableMap::OnRegionChange)
 	ON_EN_KILLFOCUS(IDC_BLUE2, &CDlgTableMap::OnRegionChange)
 	ON_BN_CLICKED(IDC_COLOR2_ENABLE, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_ALPHA3, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_RED3, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_GREEN3, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_BLUE3, &CDlgTableMap::OnRegionChange)
+	ON_BN_CLICKED(IDC_COLOR3_ENABLE, &CDlgTableMap::OnRegionChange)
 	ON_EN_KILLFOCUS(IDC_LEFT, &CDlgTableMap::OnRegionChange)
 	ON_EN_KILLFOCUS(IDC_TOP, &CDlgTableMap::OnRegionChange)
 	ON_EN_KILLFOCUS(IDC_BOTTOM, &CDlgTableMap::OnRegionChange)
@@ -569,8 +581,9 @@ BOOL CDlgTableMap::OnInitDialog()
 	picker_bitmap.LoadBitmap(IDB_PICKERBITMAP);
 	h_picker_bitmap = (HBITMAP)picker_bitmap.GetSafeHandle();
 	m_Picker.SetBitmap(h_picker_bitmap);
-	// Second-colour eyedropper shares the same bitmap.
+	// Second/third-colour eyedroppers share the same bitmap.
 	m_Picker2.SetBitmap(h_picker_bitmap);
+	m_Picker3.SetBitmap(h_picker_bitmap);
 
 	// Set text on nudge buttons
 	m_NudgeTaller.SetFont(&nudge_font);
@@ -1352,6 +1365,17 @@ void CDlgTableMap::OnRegionChange()
 			(strtoul(red2.GetString(), NULL, 16));
 		sel_region->second.color2_enabled = (m_Color2Enable.GetCheck() == BST_CHECKED);
 
+		CString alpha3, red3, green3, blue3;
+		m_Alpha3.GetWindowText(alpha3);
+		m_Red3.GetWindowText(red3);
+		m_Green3.GetWindowText(green3);
+		m_Blue3.GetWindowText(blue3);
+		sel_region->second.color3 = ((strtoul(alpha3.GetString(), NULL, 16)) << 24) +
+			((strtoul(blue3.GetString(), NULL, 16)) << 16) +
+			((strtoul(green3.GetString(), NULL, 16)) << 8) +
+			(strtoul(red3.GetString(), NULL, 16));
+		sel_region->second.color3_enabled = (m_Color3Enable.GetCheck() == BST_CHECKED);
+
 		// transform type
 		m_Transform.GetLBText(m_Transform.GetCurSel(), text);
 		sel_region->second.transform =
@@ -1874,6 +1898,18 @@ void CDlgTableMap::disable_and_clear_all(void)
 	m_Blue2.EnableWindow(false);
 	m_Blue2.SetWindowText("");
 	m_Picker2.EnableWindow(false);
+
+	m_Color3Enable.EnableWindow(false);
+	m_Color3Enable.SetCheck(BST_UNCHECKED);
+	m_Alpha3.EnableWindow(false);
+	m_Alpha3.SetWindowText("");
+	m_Red3.EnableWindow(false);
+	m_Red3.SetWindowText("");
+	m_Green3.EnableWindow(false);
+	m_Green3.SetWindowText("");
+	m_Blue3.EnableWindow(false);
+	m_Blue3.SetWindowText("");
+	m_Picker3.EnableWindow(false);
 
 	m_TrackerFontSet.SetCurSel(0);
 	m_TrackerFontNum.SetCurSel(1);
@@ -3328,6 +3364,14 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 	m_Blue2.EnableWindow(color2_on);
 	m_Picker2.EnableWindow(color2_on);
 
+	bool color3_on = color2_is_color && sel_region->second.color3_enabled;
+	m_Color3Enable.EnableWindow(color2_is_color);
+	m_Alpha3.EnableWindow(color3_on);
+	m_Red3.EnableWindow(color3_on);
+	m_Green3.EnableWindow(color3_on);
+	m_Blue3.EnableWindow(color3_on);
+	m_Picker3.EnableWindow(color3_on);
+
 	text.Format("%02x", (sel_region->second.color >> 24) & 0xff);
 	m_Alpha.SetWindowText(text);
 	text.Format("%02x", (sel_region->second.color >> 0) & 0xff);
@@ -3349,6 +3393,17 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 	m_Green2.SetWindowText(text);
 	text.Format("%02x", (sel_region->second.color2 >> 16) & 0xff);
 	m_Blue2.SetWindowText(text);
+
+	// Third colour readout + checkbox state.
+	m_Color3Enable.SetCheck(sel_region->second.color3_enabled ? BST_CHECKED : BST_UNCHECKED);
+	text.Format("%02x", (sel_region->second.color3 >> 24) & 0xff);
+	m_Alpha3.SetWindowText(text);
+	text.Format("%02x", (sel_region->second.color3 >> 0) & 0xff);
+	m_Red3.SetWindowText(text);
+	text.Format("%02x", (sel_region->second.color3 >> 8) & 0xff);
+	m_Green3.SetWindowText(text);
+	text.Format("%02x", (sel_region->second.color3 >> 16) & 0xff);
+	m_Blue3.SetWindowText(text);
 
 	// avg color fields
 	if (selected_transform == "Color")
@@ -5362,7 +5417,7 @@ BOOL CDlgTableMap::OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message)
 	GetCursorPos(&point);
 	m_BitmapFrame.ScreenToClient(&point);
 
-	if ((picker_cursor || picker_cursor2) &&
+	if ((picker_cursor || picker_cursor2 || picker_cursor3) &&
 		point.x >= bmp_rect.left && point.x <= bmp_rect.right &&
 		point.y >= bmp_rect.top && point.y <= bmp_rect.bottom)
 	{
@@ -5394,6 +5449,12 @@ LRESULT CDlgTableMap::OnStickyButtonDown(WPARAM wp, LPARAM lp)
 		SetCursor(hCurPicker);
 	}
 
+	else if ((HWND)wp == m_Picker3.GetSafeHwnd())
+	{
+		picker_cursor3 = true;
+		SetCursor(hCurPicker);
+	}
+
 	return false;
 }
 
@@ -5417,6 +5478,14 @@ LRESULT CDlgTableMap::OnStickyButtonUp(WPARAM wp, LPARAM lp)
 	else if ((HWND)wp == m_Picker2.GetSafeHwnd())
 	{
 		picker_cursor2 = false;
+		SetCursor(hCurStandard);
+		update_display();
+		Invalidate(false);
+	}
+
+	else if ((HWND)wp == m_Picker3.GetSafeHwnd())
+	{
+		picker_cursor3 = false;
 		SetCursor(hCurStandard);
 		update_display();
 		Invalidate(false);
@@ -5467,6 +5536,20 @@ void CDlgTableMap::OnLButtonDown(UINT nFlags, CPoint point)
 			pDoc->SetModifiedFlag(true);
 
 			m_Picker2.OnBnClicked();
+		}
+		else if (picker_cursor3 &&
+			point.x >= bmp_rect.left && point.x <= bmp_rect.right &&
+			point.y >= bmp_rect.top && point.y <= bmp_rect.bottom)
+		{
+			// Grab into the third colour cube (and make sure it's enabled).
+			sel_region->second.color3 = get_color_under_mouse(&nFlags, &point);
+			sel_region->second.color3_enabled = true;
+
+			update_display();
+			Invalidate(false);
+			pDoc->SetModifiedFlag(true);
+
+			m_Picker3.OnBnClicked();
 		}
 	}
 

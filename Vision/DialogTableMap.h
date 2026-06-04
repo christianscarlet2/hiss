@@ -141,13 +141,14 @@ protected:
 
 	CStatic				m_BitmapFrame, m_MatFrame;
 	CStickyButton		m_Picker;
-	// Optional second colour cube for the "Color" transform.
-	CStickyButton		m_Picker2;
-	CButton				m_Color2Enable;
+	// Optional second/third colour cubes for the "Color" transform.
+	CStickyButton		m_Picker2, m_Picker3;
+	CButton				m_Color2Enable, m_Color3Enable;
 	CSpinButtonCtrl		m_LeftSpin, m_TopSpin, m_BottomSpin, m_RightSpin, m_RadiusSpin, m_ThresholdSpin, m_CropSpin, m_SharpenSpin;
 	CComboBox			m_Transform, m_Zoom, m_TrackerFontSet, m_TrackerFontNum, m_TrackerCardNum;
 	CEdit				m_Alpha, m_Red, m_Green, m_Blue, m_RedAvg, m_GreenAvg, m_BlueAvg, m_Radius, m_Result, m_PixelSeparation, m_ImgProc, m_Threshold, m_CropSize, m_Sharpen;
 	CEdit				m_Alpha2, m_Red2, m_Green2, m_Blue2;
+	CEdit				m_Alpha3, m_Red3, m_Green3, m_Blue3;
 	CButton				m_New, m_Delete, m_Edit, m_CreateImage, m_CreateFont, m_FontPlus, m_FontMinus;
 	CButton				m_CreateGroup, m_GroupBox;
 	CComboBox			m_GroupColor;
@@ -173,6 +174,7 @@ protected:
 	HBITMAP				h_picker_bitmap, h_drawrect_bitmap;
 	bool				picker_cursor;
 	bool				picker_cursor2;   // eyedropper active for the 2nd colour
+	bool				picker_cursor3;   // eyedropper active for the 3rd colour
 	HCURSOR				hCurPicker, hCurStandard;
 	bool				ignore_changes;
 	CEdit			m_status_cards, m_status_fonts;
