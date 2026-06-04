@@ -793,9 +793,6 @@ LRESULT CTrainerDlg::OnRegionSelected(WPARAM wParam, LPARAM lParam)
 LRESULT CTrainerDlg::OnReloadRegions(WPARAM, LPARAM)
 {
 	TrainerRegions_RefreshEnabled(&_regions);
-	if (_selected >= 0 && _selected < (int)_regions.size() && !_regions[_selected].enabled) {
-		_selected = -1;
-	}
 	if (_screenshot != NULL && ::IsWindow(_screenshot->GetSafeHwnd())) {
 		_screenshot->UpdateFrame(_frame, _frame_w, _frame_h, _regions, _selected);
 	}

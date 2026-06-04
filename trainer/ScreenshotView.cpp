@@ -178,9 +178,8 @@ void CScreenshotView::OnLButtonDown(UINT nFlags, CPoint point)
 	int sx = 0, sy = 0;
 	if (ViewToSource(point, &sx, &sy)) {
 		for (size_t i = 0; i < _regions.size(); i++) {
-			if (!_regions[i].enabled) {
-				continue;   // disabled field type: not selectable
-			}
+			// Any region is clickable for OCR preview on the main window; the
+			// enabled/grey state only indicates whether it's auto-captured on Start.
 			const RECT &r = _regions[i].rect;
 			if (sx >= (int)r.left && sx <= (int)r.right && sy >= (int)r.top && sy <= (int)r.bottom) {
 				_selected = (int)i;

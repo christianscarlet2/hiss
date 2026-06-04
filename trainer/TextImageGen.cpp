@@ -434,11 +434,24 @@ protected:
 	virtual BOOL OnInitDialog();
 	virtual void OnOK();
 	afx_msg void OnBrowse();
+	afx_msg void OnBrowseA0();
+	afx_msg void OnBrowseA1();
 	DECLARE_MESSAGE_MAP()
 };
 BEGIN_MESSAGE_MAP(CT2ISettingsDlg, CDialog)
 	ON_BN_CLICKED(IDC_T2I_BROWSE, &CT2ISettingsDlg::OnBrowse)
+	ON_BN_CLICKED(IDC_T2I_A0_BROWSE, &CT2ISettingsDlg::OnBrowseA0)
+	ON_BN_CLICKED(IDC_T2I_A1_BROWSE, &CT2ISettingsDlg::OnBrowseA1)
 END_MESSAGE_MAP()
+
+// Pick a Tesseract model (.traineddata or .checkpoint) into the given control.
+static void BrowseModelInto(CWnd *parent, int edit_id)
+{
+	CString cur; parent->GetDlgItemText(edit_id, cur);
+	CFileDialog dlg(TRUE, "traineddata", cur, OFN_FILEMUSTEXIST | OFN_HIDEREADONLY,
+		"Tesseract models (*.traineddata;*.checkpoint)|*.traineddata;*.checkpoint|All files (*.*)|*.*||", parent);
+	if (dlg.DoModal() == IDOK) parent->SetDlgItemText(edit_id, dlg.GetPathName());
+}
 
 BOOL CT2ISettingsDlg::OnInitDialog()
 {
@@ -450,6 +463,10 @@ BOOL CT2ISettingsDlg::OnInitDialog()
 	SetDlgItemText(IDC_T2I_PT_USER, s.pt_user);
 	SetDlgItemText(IDC_T2I_PT_PASS, s.pt_pass);
 	SetDlgItemText(IDC_T2I_PT_DB, s.pt_dbname);
+	// AutoOcr0/AutoOcr1 model paths come from the shared DB (autoocr0/autoocr1.model),
+	// the same place Hiss + Vision read them.
+	SetDlgItemText(IDC_T2I_A0_MODEL, TrainerDB_GetSetting("autoocr0", "model"));
+	SetDlgItemText(IDC_T2I_A1_MODEL, TrainerDB_GetSetting("autoocr1", "model"));
 	return TRUE;
 }
 
@@ -463,6 +480,12 @@ void CT2ISettingsDlg::OnOK()
 	GetDlgItemText(IDC_T2I_PT_PASS, s.pt_pass);
 	GetDlgItemText(IDC_T2I_PT_DB, s.pt_dbname);
 	SaveSettings(s);
+	// Persist the AutoOcr models to the shared DB (Hiss + Vision pick them up).
+	CString a0, a1;
+	GetDlgItemText(IDC_T2I_A0_MODEL, a0); a0.Trim();
+	GetDlgItemText(IDC_T2I_A1_MODEL, a1); a1.Trim();
+	TrainerDB_SetSetting("autoocr0", "model", a0);
+	TrainerDB_SetSetting("autoocr1", "model", a1);
 	CDialog::OnOK();
 }
 
@@ -472,6 +495,9 @@ void CT2ISettingsDlg::OnBrowse()
 		"Executables (*.exe)|*.exe|All files (*.*)|*.*||", this);
 	if (dlg.DoModal() == IDOK) SetDlgItemText(IDC_T2I_PATH, dlg.GetPathName());
 }
+
+void CT2ISettingsDlg::OnBrowseA0() { BrowseModelInto(this, IDC_T2I_A0_MODEL); }
+void CT2ISettingsDlg::OnBrowseA1() { BrowseModelInto(this, IDC_T2I_A1_MODEL); }
 
 // ---- "how many?" ----
 class CGenCountDlg : public CDialog {
