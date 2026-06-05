@@ -86,10 +86,11 @@ const char* tessPageSegModeLabels[kNumberOfTesseractPageSegModes] = {
 };
 
 // Restrict Tesseract output to characters that actually occur in tables
-// (letters, digits, dot and underscore). Keeps recognition from inventing
-// punctuation/symbols without breaking text regions such as player names.
+// (letters, digits, dot, underscore, hyphen and question mark). Keeps recognition
+// from inventing punctuation/symbols without breaking text regions such as player
+// names (which can contain '-', '_' and '?').
 const char* kTesseractCharWhitelist =
-	"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._";
+	"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-?";
 
 // Extra upscale applied to the prepared image before binarization / OCR.
 const int kOcrScaleUpFactor = 3;
@@ -2076,6 +2077,25 @@ Mat CDlgTableMap::binarize_array_opencv(Mat image, int threshold) {
 	cvtColor(img, img, COLOR_BGR2GRAY);
 	Mat thresh, blur;
 	cv::threshold(img, thresh, threshold, 255, THRESH_BINARY_INV); // 100 threshold
+
+	// Auto-recover a badly-chosen manual threshold. On a light-on-dark region (e.g. a
+	// player name where the dark background's grey level is near the chosen threshold)
+	// the fixed threshold can merge text and background into a near all-black (or all-
+	// white) image, destroying the text -- Tesseract then returns digit-like noise. If
+	// the result is degenerate BUT the source clearly has contrast (so there really is
+	// something to read), fall back to Otsu's automatic threshold, which separates text
+	// from background regardless of brightness. Well-tuned regions (balances) stay as-is.
+	{
+		int total = thresh.rows * thresh.cols;
+		int white = countNonZero(thresh);
+		double ink_ratio = (total > 0) ? (double)white / (double)total : 0.0;
+		double minv = 0.0, maxv = 0.0;
+		cv::minMaxLoc(img, &minv, &maxv);
+		if ((ink_ratio < 0.02 || ink_ratio > 0.98) && (maxv - minv) > 60.0) {
+			cv::threshold(img, thresh, 0, 255, THRESH_BINARY_INV | THRESH_OTSU);
+		}
+	}
+
 	float kernel_data[9] = { 1, 2, 1, 2, 4, 2, 1, 2, 1 };
 	Mat kernel = Mat(1, 1, CV_32F, kernel_data);
 	cv::filter2D(thresh, blur, -1, kernel);
@@ -2311,15 +2331,31 @@ Mat CDlgTableMap::prepareImage(Mat img_orig, bool binarize, int threshold, bool 
 	return ScaleOcrViewImage(img_bounded);
 }
 
+// Keep only characters that are in the active whitelist. Tesseract recognises text more
+// accurately WITHOUT a forced tessedit_char_whitelist (the whitelist makes it shoehorn
+// glyphs into allowed characters), so we let it run unconstrained and filter its output
+// here instead.
+static CString ScrubToWhitelist(const CString &s, const CString &whitelist) {
+	if (whitelist.IsEmpty()) return s;
+	CString out;
+	for (int i = 0; i < s.GetLength(); ++i) {
+		if (whitelist.Find(s[i]) != -1) out += s[i];
+	}
+	return out;
+}
+
 void CDlgTableMap::process_ocr(Mat img_orig, bool fast, bool second_pass) {
 	if (!m_TableMapTree.GetSelectedItem())
 		return;
 
+	CString active_whitelist = m_ocr_char_whitelist.IsEmpty()
+		? CString(kTesseractCharWhitelist) : m_ocr_char_whitelist;
+
 	tesseract::PageSegMode page_seg_mode = static_cast<tesseract::PageSegMode>(SelectedTesseractPageSegMode());
 	api->SetPageSegMode(page_seg_mode);
 	api->SetVariable("user_defined_dpi", "300");
-	api->SetVariable("tessedit_char_whitelist",
-		m_ocr_char_whitelist.IsEmpty() ? kTesseractCharWhitelist : m_ocr_char_whitelist.GetString());
+	// No tessedit_char_whitelist: Tesseract is more accurate unconstrained; we scrub the
+	// result against the whitelist afterwards.
 	api->SetImage(img_orig.data, img_orig.cols, img_orig.rows, img_orig.channels(), img_orig.step);
 	api->Recognize(0);
 
@@ -2341,11 +2377,9 @@ void CDlgTableMap::process_ocr(Mat img_orig, bool fast, bool second_pass) {
 				}
 				api2->SetPageSegMode(page_seg_mode);
 				api2->SetVariable("user_defined_dpi", "300");
-				api2->SetVariable("tessedit_char_whitelist",
-					m_ocr_char_whitelist.IsEmpty() ? kTesseractCharWhitelist : m_ocr_char_whitelist.GetString());
 				api2->SetImage(img_cropped.data, img_cropped.cols, img_cropped.rows, img_cropped.channels(), img_cropped.step);
 				api2->Recognize(0);
-				word = trim(api2->GetUTF8Text()).c_str();
+				word = ScrubToWhitelist(trim(api2->GetUTF8Text()).c_str(), active_whitelist);
 				pair<Rect, CString> matchPair({ x1, y1, x2 - x1, y2 - y1 }, word);
 				if (second_pass)
 					ResultBoxes2.push_back(matchPair);
@@ -2356,9 +2390,9 @@ void CDlgTableMap::process_ocr(Mat img_orig, bool fast, bool second_pass) {
 	}
 	else {
 		if (second_pass)
-			ResultString2 = trim(api->GetUTF8Text()).c_str();
+			ResultString2 = ScrubToWhitelist(trim(api->GetUTF8Text()).c_str(), active_whitelist);
 		else
-			ResultString = trim(api->GetUTF8Text()).c_str();
+			ResultString = ScrubToWhitelist(trim(api->GetUTF8Text()).c_str(), active_whitelist);
 	}
 	api->Clear();
 	api2->Clear();
