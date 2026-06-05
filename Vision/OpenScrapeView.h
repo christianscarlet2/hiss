@@ -164,6 +164,8 @@ public:
 	// Force the card-result overlay cache to recompute on the next paint (call after
 	// the tablemap's images/hashes/regions change, e.g. Create Image / Create Hash).
 	void InvalidateCardResults() { _card_results_bmp = NULL; }
+	// Re-run card detection on the currently displayed frame and repaint.
+	void RefreshCurrentScreenshot();
 	// 0-based index of the currently-displayed buffered capture (-1 if none).
 	int CaptureIndex() const { return _capture_index; }
 	// Persist / restore the capture buffer across runs (PNGs under vision_captures\).

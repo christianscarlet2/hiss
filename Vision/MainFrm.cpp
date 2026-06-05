@@ -65,6 +65,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
 	ON_COMMAND(ID_AUTO_CAPTURE_BACK, &CMainFrame::OnAutoCaptureBack)
 	ON_COMMAND(ID_AUTO_CAPTURE_NEXT, &CMainFrame::OnAutoCaptureNext)
 	ON_COMMAND(ID_AUTO_CAPTURE_CLEAR, &CMainFrame::OnAutoCaptureClear)
+	ON_COMMAND(ID_AUTO_CAPTURE_REFRESH, &CMainFrame::OnAutoCaptureRefresh)
 	ON_UPDATE_COMMAND_UI(ID_AUTO_CAPTURE_BACK, &CMainFrame::OnUpdateAutoCaptureNav)
 	ON_UPDATE_COMMAND_UI(ID_AUTO_CAPTURE_NEXT, &CMainFrame::OnUpdateAutoCaptureNav)
 	ON_UPDATE_COMMAND_UI(ID_AUTO_CAPTURE_CLEAR, &CMainFrame::OnUpdateAutoCaptureNav)
@@ -896,6 +897,11 @@ void CMainFrame::OnAutoCaptureClear()
 {
 	COpenScrapeView *pView = COpenScrapeView::GetView();
 	if (pView) pView->ClearCaptures();
+}
+void CMainFrame::OnAutoCaptureRefresh()
+{
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	if (pView) pView->RefreshCurrentScreenshot();
 }
 void CMainFrame::OnUpdateAutoCaptureNav(CCmdUI *pCmdUI)
 {

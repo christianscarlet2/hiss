@@ -5307,9 +5307,12 @@ void CDlgTableMap::OnBnClickedCreateImage()
 		if (child_node)
 			m_TableMapTree.SelectItem(child_node);
 
-		// The image set changed: refresh the table-view detection overlay cache.
+		// The image set changed: refresh the table-view detection overlay cache and
+		// recompute the Result field now (re-selecting the same region doesn't fire a
+		// tree selection-change, so force the refresh).
 		if (COpenScrapeView::GetView() != NULL)
 			COpenScrapeView::GetView()->InvalidateCardResults();
+		update_display();
 		//Invalidate(false);
 		pDoc->SetModifiedFlag(true);
 	}
@@ -7416,9 +7419,11 @@ void CDlgTableMap::CreateHash(int hash_type)
 		if (child_node)
 			m_TableMapTree.SelectItem(child_node);
 
-		// The hash set changed: refresh the table-view detection overlay cache.
+		// The hash set changed: refresh the overlay cache and recompute the Result
+		// field now (re-selecting the same region won't fire a selection-change).
 		if (COpenScrapeView::GetView() != NULL)
 			COpenScrapeView::GetView()->InvalidateCardResults();
+		update_display();
 		//Invalidate(false);
 		pDoc->SetModifiedFlag(true);
 

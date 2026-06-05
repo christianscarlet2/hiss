@@ -25,7 +25,7 @@ if ($bg -lt 0) { $bg = 7 }
 if ($fg -lt 0) { $fg = 0 }
 
 $oldRow = ((($width*4 + 31) -band -32) / 8)      # 72
-$newW = 208                                       # 13 glyphs (9 orig + AUTO/back/next/clear)
+$newW = 224                                       # 14 glyphs (9 orig + AUTO/back/next/clear/refresh)
 $newRow = ((($newW*4 + 31) -band -32) / 8)
 
 # Decode original into a [y][x] index grid (file rows are bottom-up).
@@ -79,6 +79,26 @@ for ($i = 0; $i -le 8; $i++) {
   SetPx (192 + 12 - $i) (4 + $i) $fg
   SetPx (192 + 11 - $i) (4 + $i) $fg
 }
+
+# Refresh (circular arrow) in cell x=208, centred (8,8) radius ~5, gap top-right + arrowhead.
+for ($iy = 0; $iy -le 15; $iy++) {
+  for ($rx = 0; $rx -le 15; $rx++) {
+    $dx = $rx - 8; $dy = $iy - 8
+    $d = [math]::Sqrt($dx*$dx + $dy*$dy)
+    if ($d -ge 4.0 -and $d -le 5.7) {
+      if ($dy -le -1 -and $dx -ge 1) { continue }   # gap in the upper-right
+      SetPx (208 + $rx) $iy $fg
+    }
+  }
+}
+# Arrowhead at the gap (top), pointing right/clockwise.
+SetPx (208 + 8)  2 $fg
+SetPx (208 + 9)  2 $fg
+SetPx (208 + 10) 2 $fg
+SetPx (208 + 10) 3 $fg
+SetPx (208 + 10) 4 $fg
+SetPx (208 + 9)  4 $fg
+SetPx (208 + 11) 3 $fg
 
 # Re-encode pixel rows (bottom-up, 4bpp packed, padded to newRow).
 $pixels = New-Object 'byte[]' ($newRow * $height)

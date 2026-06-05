@@ -60,6 +60,7 @@ class CMainFrame : public CFrameWnd {
 	afx_msg void OnAutoCaptureBack();
 	afx_msg void OnAutoCaptureNext();
 	afx_msg void OnAutoCaptureClear();
+	afx_msg void OnAutoCaptureRefresh();
 	afx_msg void OnUpdateAutoCaptureNav(CCmdUI *pCmdUI);
 	DECLARE_MESSAGE_MAP()
 

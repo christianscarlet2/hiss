@@ -103,6 +103,7 @@ BEGIN
     SEPARATOR
     BUTTON      ID_AUTO_CAPTURE_NEXT
     BUTTON      ID_AUTO_CAPTURE_CLEAR
+    BUTTON      ID_AUTO_CAPTURE_REFRESH
 END
 
 
@@ -801,6 +802,7 @@ BEGIN
     ID_AUTO_CAPTURE_BACK "Previous captured screenshot\nPrev capture"
     ID_AUTO_CAPTURE_NEXT "Next captured screenshot\nNext capture"
     ID_AUTO_CAPTURE_CLEAR "Clear all captured screenshots\nClear captures"
+    ID_AUTO_CAPTURE_REFRESH "Re-run card detection on the current screenshot\nRefresh detection"
 END
 
 STRINGTABLE

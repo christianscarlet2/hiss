@@ -224,12 +224,10 @@ void COpenHoldemApp::FinishInitialization() {
 		m_pMainWnd);
 	assert(p_openholdem_title != NULL);
 	p_openholdem_title->UpdateTitle();
-	// The one and only window has been initialized, so show and update it
-	if (Preferences()->gui_first_visible() && (p_sessioncounter->session_id() == 0)) {
-    m_pMainWnd->ShowWindow(SW_SHOW);
-	}	else {
-    m_pMainWnd->ShowWindow(SW_MINIMIZE);
-	}
+	// Show each instance (no auto-minimize for secondary instances) and restore its
+	// own last size/position from the DB, so multiple instances open where they last
+	// closed.
+	m_pMainWnd->ShowWindow(SW_SHOW);
 	m_pMainWnd->UpdateWindow();
 	// Restore this instance's saved window size/position (per-instance, shared DB).
 	((CMainFrame *)m_pMainWnd)->RestoreWindowPlacementFromDb();

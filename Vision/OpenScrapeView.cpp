@@ -1845,6 +1845,15 @@ void COpenScrapeView::LoadCapturesFromDisk()
 	_capture_index = -1;   // don't override the live frame until the user navigates
 }
 
+// Toolbar "Refresh detection": re-run card detection on the current frame.
+void COpenScrapeView::RefreshCurrentScreenshot()
+{
+	InvalidateCardResults();   // force RefreshCardResultsIfNeeded to recompute
+	CMainFrame *mf = (CMainFrame *)AfxGetMainWnd();
+	if (mf) mf->ForceRedraw();
+	Invalidate(FALSE);
+}
+
 // Toolbar "Clear screenshots": drop the whole capture buffer and repaint.
 void COpenScrapeView::ClearCaptures()
 {
