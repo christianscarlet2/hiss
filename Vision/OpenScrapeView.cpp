@@ -1896,6 +1896,27 @@ void COpenScrapeView::RefreshCurrentScreenshot()
 
 // ===== "Debug this field" support =========================================
 
+// Small modal dialog that shows the debug folder path in a read-only but SELECTABLE
+// (and pre-selected) edit box so it can be copied, with an "Open Folder" button.
+class CDebugDoneDlg : public CDialog {
+ public:
+	CString m_path;
+	explicit CDebugDoneDlg(CWnd *parent = NULL) : CDialog(IDD_DEBUG_DONE, parent) {}
+ protected:
+	virtual BOOL OnInitDialog() {
+		CDialog::OnInitDialog();
+		SetDlgItemText(IDC_DEBUG_PATH, m_path);
+		CEdit *e = (CEdit *)GetDlgItem(IDC_DEBUG_PATH);
+		if (e != NULL) { e->SetFocus(); e->SetSel(0, -1); }   // pre-select for instant Ctrl+C
+		return FALSE;   // we set focus ourselves
+	}
+	afx_msg void OnOpenFolder() { ShellExecuteA(NULL, "open", m_path, NULL, NULL, SW_SHOWNORMAL); }
+	DECLARE_MESSAGE_MAP()
+};
+BEGIN_MESSAGE_MAP(CDebugDoneDlg, CDialog)
+	ON_BN_CLICKED(IDC_DEBUG_OPEN, &CDebugDoneDlg::OnOpenFolder)
+END_MESSAGE_MAP()
+
 static CString DebugTimeStamp()
 {
 	SYSTEMTIME st;
@@ -2170,7 +2191,25 @@ void COpenScrapeView::DebugRegionToFolder(const CString &region_name)
 
 	if (scraped != NULL) DeleteObject(scraped);
 
-	AfxMessageBox("Debug written to:\r\n" + folder);
+	// Put the folder path on the clipboard so it's easy to paste, and offer to open it.
+	if (OpenClipboard()) {
+		EmptyClipboard();
+		int bytes = (folder.GetLength() + 1) * sizeof(char);
+		HGLOBAL hmem = GlobalAlloc(GMEM_MOVEABLE, bytes);
+		if (hmem != NULL) {
+			void *dst = GlobalLock(hmem);
+			if (dst != NULL) {
+				memcpy(dst, (LPCSTR)folder, bytes);
+				GlobalUnlock(hmem);
+				SetClipboardData(CF_TEXT, hmem);
+			}
+		}
+		CloseClipboard();
+	}
+	// Show the path in a dialog whose field is selectable/copyable (and pre-selected).
+	CDebugDoneDlg dlg(this);
+	dlg.m_path = folder;
+	dlg.DoModal();
 }
 
 // Toolbar "Clear screenshots": drop the whole capture buffer and repaint.
