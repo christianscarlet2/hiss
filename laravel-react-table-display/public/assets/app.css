@@ -97,25 +97,9 @@ body {
 }
 
 .card.back {
-  background: #000000;   /* dark card edge */
-  position: relative;
+  background: #c0142b;
+  border: 1px solid #111;
   padding: 0;
-}
-
-.card.back .back-inner {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  right: 2px;
-  bottom: 2px;
-  /* dark, ominous centre glow */
-  background: radial-gradient(circle at 50% 42%, #14210f 0%, #060606 78%);
-  border: 1px solid #2e7d32;     /* subtle green frame */
-  border-radius: 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
   overflow: hidden;
 }
 

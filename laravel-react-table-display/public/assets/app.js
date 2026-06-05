@@ -35,26 +35,10 @@ function CardView(props) {
   var value = props.value || '';
   var isBack = value === 'BACK' || value === 'CARD_BACK' || value === '??';
   if (isBack) {
-    // Face-down card: dark "satanic" back — an inverted pentagram behind two
-    // intertwined green snakes with glowing red eyes (no rank text).
+    // Face-down card: dark "satanic" back (inverted pentagram + two intertwined green
+    // snakes). Rendered as a PNG so it works regardless of inline-SVG support.
     return e('div', { className: 'card back' },
-      e('div', { className: 'back-inner' },
-        e('svg', { className: 'back-art', viewBox: '0 0 40 80', preserveAspectRatio: 'none' },
-          e('g', { fill: 'none', stroke: '#7a1010', strokeWidth: 1, opacity: 0.9 },
-            e('circle', { cx: 20, cy: 40, r: 13 }),
-            e('polygon', { points: '32.36,44.02 7.64,44.02 27.64,29.48 20,53 12.36,29.48' })
-          ),
-          e('g', { fill: 'none', stroke: '#35c43a', strokeWidth: 2.6, strokeLinecap: 'round', strokeLinejoin: 'round' },
-            e('path', { d: 'M13 11 C27 20 5 33 20 42 C33 50 11 63 22 71' }),
-            e('path', { d: 'M27 11 C13 20 35 33 20 42 C7 50 29 63 18 71' })
-          ),
-          e('circle', { cx: 13, cy: 10, r: 3.2, fill: '#35c43a' }),
-          e('circle', { cx: 27, cy: 10, r: 3.2, fill: '#35c43a' }),
-          e('circle', { cx: 12, cy: 9.3, r: 0.9, fill: '#ff2020' }),
-          e('circle', { cx: 28, cy: 9.3, r: 0.9, fill: '#ff2020' }),
-          e('path', { d: 'M13 7 l0 -4 M27 7 l0 -4', stroke: '#ff2020', strokeWidth: 1, strokeLinecap: 'round' })
-        )
-      )
+      e('img', { className: 'back-art', src: '/table-display/assets/cardback.png?v=4', alt: '' })
     );
   }
   var text = value && value !== 'NC' ? value : '';

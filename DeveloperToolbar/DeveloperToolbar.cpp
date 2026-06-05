@@ -1508,9 +1508,12 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show_command) {
   common_controls.dwICC = ICC_PROGRESS_CLASS | ICC_STANDARD_CLASSES;
   InitCommonControlsEx(&common_controls);
 
-  // Rubber-duck app icon (debugging mascot) loaded from the source res/ folder.
-  HICON duck_big = (HICON)LoadImageA(NULL, kDuckIcoPath, IMAGE_ICON, 32, 32, LR_LOADFROMFILE);
-  HICON duck_small = (HICON)LoadImageA(NULL, kDuckIcoPath, IMAGE_ICON, 16, 16, LR_LOADFROMFILE);
+  // Rubber-duck app icon (debugging mascot), embedded as resource id 1 so Windows
+  // Explorer / taskbar show it on the exe too (falls back to the file if missing).
+  HICON duck_big = (HICON)LoadImage(instance, MAKEINTRESOURCE(1), IMAGE_ICON, 32, 32, 0);
+  HICON duck_small = (HICON)LoadImage(instance, MAKEINTRESOURCE(1), IMAGE_ICON, 16, 16, 0);
+  if (duck_big == NULL)   duck_big = (HICON)LoadImageA(NULL, kDuckIcoPath, IMAGE_ICON, 32, 32, LR_LOADFROMFILE);
+  if (duck_small == NULL) duck_small = (HICON)LoadImageA(NULL, kDuckIcoPath, IMAGE_ICON, 16, 16, LR_LOADFROMFILE);
 
   WNDCLASSEX window_class = {0};
   window_class.cbSize = sizeof(window_class);

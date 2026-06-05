@@ -1,0 +1,3 @@
+// Embeds the rubber-duck application icon so Windows Explorer / taskbar show it.
+// Resource id 1 = the lowest icon ordinal, which is what Explorer displays for the exe.
+1 ICON "res\\devtoolbar.ico"
