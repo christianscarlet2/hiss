@@ -1420,13 +1420,29 @@ void COpenScrapeView::DrawCardResultOverlay(CDC *pDC, RMapCI r_iter)
 	const Gdiplus::REAL padX = 4.0f, padY = 2.0f, gap = 3.0f;
 	Gdiplus::REAL boxW = measured.Width + padX * 2;
 	Gdiplus::REAL boxH = measured.Height + padY * 2;
+	CRect client;
+	GetClientRect(&client);
+
+	// Vertical: float just ABOVE the region; if there's no room above, drop just BELOW
+	// it. Either way the label never sits on top of the region itself.
+	Gdiplus::REAL aboveY = (Gdiplus::REAL)r_iter->second.top - boxH - gap;
+	Gdiplus::REAL belowY = (Gdiplus::REAL)r_iter->second.bottom + gap;
+	Gdiplus::REAL boxY;
+	if (aboveY >= (Gdiplus::REAL)client.top) {
+		boxY = aboveY;
+	} else if (belowY + boxH <= (Gdiplus::REAL)client.bottom) {
+		boxY = belowY;
+	} else {
+		boxY = aboveY;   // tiny view: neither fully fits; keep it above
+	}
+
+	// Horizontal: centre on the region, then nudge inside the view edges so it isn't
+	// clipped. Shifting only sideways keeps it clear of the region (which is above/below).
 	Gdiplus::REAL cx = (Gdiplus::REAL)((int)r_iter->second.left + (int)r_iter->second.right) / 2.0f;
 	Gdiplus::REAL boxX = cx - boxW / 2.0f;
-	Gdiplus::REAL boxY = (Gdiplus::REAL)r_iter->second.top - boxH - gap;
-	if (boxX < 0) boxX = 0;
-	if (boxY < 0) {
-		boxY = (Gdiplus::REAL)r_iter->second.bottom + gap;   // no room above -> below
-	}
+	if (boxX + boxW > (Gdiplus::REAL)client.right) boxX = (Gdiplus::REAL)client.right - boxW;
+	if (boxX < (Gdiplus::REAL)client.left)         boxX = (Gdiplus::REAL)client.left;
+
 	Gdiplus::RectF box(boxX, boxY, boxW, boxH);
 
 	// Solid, easy-to-read background + thin border; full-opacity coloured glyph.
