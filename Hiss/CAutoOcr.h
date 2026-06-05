@@ -33,6 +33,7 @@ struct SAutoOcrSettings {
 	CString whitelist;	// Tesseract char whitelist; empty = no restriction
 	bool no_preprocess;	// skip the resize/char-spacing enhancement (threshold+mode still apply)
 	bool no_char_spacing;	// skip only the character-spacing step (ignored when no_preprocess)
+	bool auto_threshold;	// true => Otsu auto-threshold (non-balance/text regions) instead of `threshold`
 };
 
 // Decimal-split detail from the most recent get_ocr_result(), so the Scraper Output
@@ -63,7 +64,7 @@ private:
 	RECT detectTemplate(Mat area, Mat tpl, int match_mode);
 	void process_ocr(Mat img_orig, const SAutoOcrSettings &settings, bool fast = false, bool second_pass = false);
 	Mat prepareImage(Mat img_orig, const SAutoOcrSettings &settings, bool binarize = true, int threshold = 100, bool second_pass = false);
-	Mat binarize_array_opencv(Mat image, int threshold);
+	Mat binarize_array_opencv(Mat image, int threshold, bool auto_threshold = false);
 	COLORREF AverageFourByFour(Mat img, int center_x, int center_y);
 	bool ReadColorPresetColor(int index, COLORREF *color);
 	bool ReadColorPresetSamplePoint(int index, RMapCI region, int *rel_x, int *rel_y);

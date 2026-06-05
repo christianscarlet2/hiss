@@ -205,7 +205,8 @@ private:
 	Mat binarize_array_opencv(Mat image, int threshold);
 	CScrollHelper* m_scrollHelper;
 	int threshold, match_mode;
-	CString m_ocr_char_whitelist;	// Tesseract whitelist for the region being OCR'd
+	CString m_ocr_char_whitelist;	// scrub set for the region being OCR'd
+	bool m_ocr_auto_threshold;		// true => Otsu auto-threshold (non-balance/text regions)
 	bool proceed_scroll = true;
 	std::vector<ImageProcessingPreset> m_ImageProcessingPresets;
 

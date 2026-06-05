@@ -314,28 +314,25 @@ bool CAutoOcr::EnsureTesseractInitialized() {
 
 
 ////  Automatic Text Detection and Recognition functions  ///////////
-Mat CAutoOcr::binarize_array_opencv(Mat image, int threshold) {
-	// Binarize image from gray channel with 100 as threshold
+Mat CAutoOcr::binarize_array_opencv(Mat image, int threshold, bool auto_threshold) {
+	// Binarize image from gray channel
 	Mat img;
 	cvtColor(image, img, COLOR_BGR2RGB);
 	cvtColor(img, img, COLOR_BGR2GRAY);
 	Mat thresh, blur;
-	cv::threshold(img, thresh, threshold, 255, THRESH_BINARY_INV); // 100 threshold
-
-	// Auto-recover a badly-chosen manual threshold (matches Vision). On a light-on-dark
-	// region (e.g. a player name on a dark background) a fixed threshold can merge text and
-	// background into a near all-black/all-white image, destroying the text -- OCR then
-	// returns digit-like noise. If the result is degenerate BUT the source clearly has
-	// contrast, fall back to Otsu's automatic threshold. Well-tuned regions stay as-is.
-	{
+	if (auto_threshold) {
+		// Otsu auto-threshold with polarity correction (matches Vision): robust for text
+		// regions of any brightness/polarity (e.g. light player names on a dark table).
+		// Tesseract wants dark text on a light background, so the majority class
+		// (background) is made white and the minority class (text) black.
+		cv::threshold(img, thresh, 0, 255, THRESH_BINARY_INV | THRESH_OTSU);
 		int total = thresh.rows * thresh.cols;
 		int white = countNonZero(thresh);
-		double ink_ratio = (total > 0) ? (double)white / (double)total : 0.0;
-		double minv = 0.0, maxv = 0.0;
-		cv::minMaxLoc(img, &minv, &maxv);
-		if ((ink_ratio < 0.02 || ink_ratio > 0.98) && (maxv - minv) > 60.0) {
-			cv::threshold(img, thresh, 0, 255, THRESH_BINARY_INV | THRESH_OTSU);
-		}
+		if (white < total - white)             // background (the majority) ended up black
+			cv::bitwise_not(thresh, thresh);   // ... so flip to background-white / text-black
+	}
+	else {
+		cv::threshold(img, thresh, threshold, 255, THRESH_BINARY_INV); // manual (balances)
 	}
 
 	float kernel_data[9] = { 1, 2, 1, 2, 4, 2, 1, 2, 1 };
@@ -606,7 +603,7 @@ Mat CAutoOcr::prepareImage(Mat img_orig, const SAutoOcrSettings &settings, bool 
 	// Threshold binarization ALWAYS applies (independent of "no preprocessing").
 	// Character spacing is enhancement and is skipped under "no preprocessing".
 	if (binarize) {
-		img_resized = binarize_array_opencv(img_resized, threshold);
+		img_resized = binarize_array_opencv(img_resized, threshold, settings.auto_threshold);
 		if (!settings.no_preprocess && !settings.no_char_spacing) {
 			img_resized = AddCharacterSpacing(img_resized, kOcrCharSpacingPx);
 		}
@@ -860,10 +857,12 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast, SAutoOc
 	settings.no_char_spacing = isA1 ? _nocs_a1 : _nocs_a0;
 	// Balance fields are pure numbers; restrict OCR to digits and a dot. Other
 	// regions use the general character set.
-	if (CString(region->first).MakeLower().Find("balance") != -1)
-		settings.whitelist = "0123456789.";
-	else
-		settings.whitelist = kGeneralWhitelist;
+	bool is_balance = (CString(region->first).MakeLower().Find("balance") != -1);
+	settings.whitelist = is_balance ? CString("0123456789.") : CString(kGeneralWhitelist);
+	// Balances keep the manual threshold (the custom OCR model is tuned for it); other
+	// regions (player names, often light text on a dark table) use Otsu auto-thresholding,
+	// which reads correctly regardless of brightness/polarity. Matches Vision.
+	settings.auto_threshold = !is_balance;
 	// NOTE: the whitelist is no longer sent to Tesseract (it recognises better
 	// unconstrained); it is only used to SCRUB the output. So we always keep it set and
 	// the old "no whitelist" option no longer suppresses it -- matching Vision, which

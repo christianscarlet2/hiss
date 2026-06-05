@@ -2076,24 +2076,19 @@ Mat CDlgTableMap::binarize_array_opencv(Mat image, int threshold) {
 	cvtColor(image, img, COLOR_BGR2RGB);
 	cvtColor(img, img, COLOR_BGR2GRAY);
 	Mat thresh, blur;
-	cv::threshold(img, thresh, threshold, 255, THRESH_BINARY_INV); // 100 threshold
-
-	// Auto-recover a badly-chosen manual threshold. On a light-on-dark region (e.g. a
-	// player name where the dark background's grey level is near the chosen threshold)
-	// the fixed threshold can merge text and background into a near all-black (or all-
-	// white) image, destroying the text -- Tesseract then returns digit-like noise. If
-	// the result is degenerate BUT the source clearly has contrast (so there really is
-	// something to read), fall back to Otsu's automatic threshold, which separates text
-	// from background regardless of brightness. Well-tuned regions (balances) stay as-is.
-	{
+	if (m_ocr_auto_threshold) {
+		// Otsu auto-threshold with polarity correction: robust for text regions of any
+		// brightness/polarity (e.g. light player names on a dark table). Tesseract wants
+		// dark text on a light background, so we make the majority class (background)
+		// white and the minority class (text/ink) black.
+		cv::threshold(img, thresh, 0, 255, THRESH_BINARY_INV | THRESH_OTSU);
 		int total = thresh.rows * thresh.cols;
 		int white = countNonZero(thresh);
-		double ink_ratio = (total > 0) ? (double)white / (double)total : 0.0;
-		double minv = 0.0, maxv = 0.0;
-		cv::minMaxLoc(img, &minv, &maxv);
-		if ((ink_ratio < 0.02 || ink_ratio > 0.98) && (maxv - minv) > 60.0) {
-			cv::threshold(img, thresh, 0, 255, THRESH_BINARY_INV | THRESH_OTSU);
-		}
+		if (white < total - white)              // background (the majority) ended up black
+			cv::bitwise_not(thresh, thresh);    // ... so flip to background-white / text-black
+	}
+	else {
+		cv::threshold(img, thresh, threshold, 255, THRESH_BINARY_INV);
 	}
 
 	float kernel_data[9] = { 1, 2, 1, 2, 4, 2, 1, 2, 1 };
@@ -2430,12 +2425,14 @@ CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast,
 	m_Threshold.GetWindowText(txt);
 	threshold = atoi(txt);
 
-	// Balance fields are pure numbers ("2.28 BB"); restrict OCR to digits and a
-	// dot so letters/symbols can't sneak in. Other regions keep the general set.
-	if (CString(region_name).MakeLower().Find("balance") != -1)
-		m_ocr_char_whitelist = "0123456789.";
-	else
-		m_ocr_char_whitelist = kTesseractCharWhitelist;
+	// Balance fields are pure numbers ("2.28 BB"); restrict OCR to digits and a dot so
+	// letters/symbols can't sneak in. Balances keep the manual threshold (the custom OCR
+	// model is tuned for it). Other regions (e.g. player names, often light text on a dark
+	// background) use Otsu auto-thresholding, which is far more robust than a hand-picked
+	// threshold and reads correctly regardless of brightness/polarity.
+	bool is_balance = (CString(region_name).MakeLower().Find("balance") != -1);
+	m_ocr_char_whitelist = is_balance ? CString("0123456789.") : CString(kTesseractCharWhitelist);
+	m_ocr_auto_threshold = !is_balance;
 
 	if (transform == "AutoOcr0") {
 		img_resized = prepareImage(img_orig, true, threshold);
