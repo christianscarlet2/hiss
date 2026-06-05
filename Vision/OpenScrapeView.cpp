@@ -1763,8 +1763,8 @@ void COpenScrapeView::ClearCaptureBuffer()
 	_last_capture_sig = "";   // allow re-capturing a situation after a clear
 }
 
-// Per-instance folder for persisted capture PNGs (next to the exe).
-static CString CaptureDir()
+// Root folder for persisted capture PNGs (next to the exe).
+static CString CaptureRoot()
 {
 	char module[MAX_PATH] = { 0 };
 	GetModuleFileNameA(NULL, module, MAX_PATH);
@@ -1772,8 +1772,17 @@ static CString CaptureDir()
 	int slash = dir.ReverseFind('\\');
 	if (slash >= 0) dir = dir.Left(slash);
 	CString out;
-	out.Format("%s\\vision_captures\\%d\\", dir.GetString(), theApp.sessionnum);
+	out.Format("%s\\vision_captures\\", dir.GetString());
 	return out;
+}
+
+// Folder the captures are saved into. A single stable folder so they persist across
+// reopen: the old per-process-count subfolder (theApp.sessionnum) was non-deterministic
+// -- it was the number of Vision processes running at startup, so a buffer saved while
+// two instances were open ("2\") was never found on a later single-instance launch ("1\").
+static CString CaptureDir()
+{
+	return CaptureRoot();
 }
 
 static int PngEncoderClsid(CLSID *clsid)
@@ -1830,6 +1839,35 @@ void COpenScrapeView::LoadCapturesFromDisk()
 	if (h != INVALID_HANDLE_VALUE) {
 		do { files.push_back(CString(fd.cFileName)); } while (FindNextFileA(h, &fd));
 		FindClose(h);
+	}
+	// Migration: older builds stored captures under a per-process-count subfolder
+	// (vision_captures\<N>\). If the stable folder is empty, adopt the most-recently
+	// written legacy subfolder so previously-captured screenshots aren't orphaned.
+	if (files.empty()) {
+		CString root = CaptureRoot();
+		WIN32_FIND_DATAA sub;
+		HANDLE sh = FindFirstFileA(root + "*", &sub);
+		CString best_dir;
+		FILETIME best_time = { 0, 0 };
+		if (sh != INVALID_HANDLE_VALUE) {
+			do {
+				if (!(sub.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
+				if (sub.cFileName[0] == '.') continue;
+				if (CompareFileTime(&sub.ftLastWriteTime, &best_time) >= 0) {
+					best_time = sub.ftLastWriteTime;
+					best_dir.Format("%s%s\\", root.GetString(), sub.cFileName);
+				}
+			} while (FindNextFileA(sh, &sub));
+			FindClose(sh);
+		}
+		if (!best_dir.IsEmpty()) {
+			dir = best_dir;
+			HANDLE h2 = FindFirstFileA(dir + "capture_*.png", &fd);
+			if (h2 != INVALID_HANDLE_VALUE) {
+				do { files.push_back(CString(fd.cFileName)); } while (FindNextFileA(h2, &fd));
+				FindClose(h2);
+			}
+		}
 	}
 	std::sort(files.begin(), files.end(), [](const CString &a, const CString &b) { return a.Compare(b) < 0; });
 	for (size_t i = 0; i < files.size(); ++i) {

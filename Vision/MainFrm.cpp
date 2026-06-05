@@ -22,6 +22,7 @@
 #include "stdafx.h"
 #include "MainFrm.h"
 
+#include <gdiplus.h>
 #include "../CTablemap/CTablemapDB.h"
 #include "CRegionCloner.h"
 #include "DialogCopyRegion.h"
@@ -127,12 +128,197 @@ CMainFrame::~CMainFrame() {
 //
 /////////////////////////////////////////////////////
 
+// ---------------------------------------------------------------------------
+// Modern toolbar icons, drawn at runtime with GDI+ (anti-aliased, 32-bpp alpha)
+// instead of the old 4-bpp Toolbar.bmp. One clever glyph per command, in the same
+// order as the IDR_MAINFRAME TOOLBAR resource (image index == button position).
+// ---------------------------------------------------------------------------
+namespace {
+	using namespace Gdiplus;
+
+	const Color kInk(255, 52, 58, 68);      // primary stroke (dark slate)
+	const Color kGreen(255, 46, 170, 90);   // connect / go
+	const Color kBlue(255, 40, 120, 210);   // navigation
+	const Color kAmber(255, 235, 150, 30);  // files / energy
+	const Color kRed(255, 214, 69, 69);     // destructive
+
+	static Pen *MakePen(const Color &c, REAL w) {
+		Pen *p = new Pen(c, w);
+		p->SetStartCap(LineCapRound);
+		p->SetEndCap(LineCapRound);
+		p->SetLineJoin(LineJoinRound);
+		return p;
+	}
+	static void Poly(Graphics &g, const Color &fill, const Color &stroke,
+			REAL sw, const PointF *pts, int n) {
+		GraphicsPath path;
+		path.AddLines(pts, n);
+		path.CloseFigure();
+		SolidBrush b(fill);
+		g.FillPath(&b, &path);
+		if (sw > 0) { Pen *p = MakePen(stroke, sw); g.DrawPath(p, &path); delete p; }
+	}
+	static void Chevron(Graphics &g, const Color &c, REAL x0, REAL x1, REAL ymid) {
+		Pen *p = MakePen(c, 2.0f);
+		PointF pts[3] = { PointF(x1, 3.5f), PointF(x0, ymid), PointF(x1, 12.5f) };
+		g.DrawLines(p, pts, 3);
+		delete p;
+	}
+	static void CircularArrow(Graphics &g, const Color &c) {
+		Pen *p = MakePen(c, 1.7f);
+		g.DrawArc(p, 3.2f, 3.2f, 9.6f, 9.6f, 35.0f, 275.0f);   // open at the top-right
+		// arrowhead at the arc's end (~35 deg)
+		PointF head[3] = { PointF(12.6f, 3.4f), PointF(13.4f, 6.6f), PointF(10.2f, 5.6f) };
+		SolidBrush b(c);
+		GraphicsPath hp; hp.AddLines(head, 3); hp.CloseFigure();
+		g.FillPath(&b, &hp);
+		delete p;
+	}
+
+	// Draw glyph `which` into a 16x16 Graphics already cleared to transparent.
+	static void RenderToolbarGlyph(Graphics &g, int which) {
+		switch (which) {
+		case 0: {   // FILE_NEW: page with a folded corner + green plus
+			PointF page[6] = { PointF(3,2), PointF(9,2), PointF(12,5),
+				PointF(12,14), PointF(3,14), PointF(3,2) };
+			Poly(g, Color(255,245,247,250), kInk, 1.3f, page, 6);
+			Pen *fold = MakePen(kInk, 1.1f);
+			PointF f[3] = { PointF(9,2), PointF(9,5), PointF(12,5) };
+			g.DrawLines(fold, f, 3); delete fold;
+			Pen *pl = MakePen(kGreen, 1.7f);
+			g.DrawLine(pl, 7.5f, 8.5f, 7.5f, 12.0f);
+			g.DrawLine(pl, 5.8f, 10.25f, 9.2f, 10.25f); delete pl;
+			break; }
+		case 1: {   // FILE_OPEN: open folder
+			PointF back[6] = { PointF(2,5), PointF(6,5), PointF(7.2f,6.3f),
+				PointF(13,6.3f), PointF(13,12), PointF(2,12) };
+			Poly(g, kAmber, kInk, 1.1f, back, 6);
+			PointF flap[4] = { PointF(3,12), PointF(5,8), PointF(14.5f,8), PointF(12.5f,12) };
+			Poly(g, Color(255,250,200,110), kInk, 1.1f, flap, 4);
+			break; }
+		case 2: {   // FILE_SAVE: down arrow into a tray
+			Pen *tray = MakePen(kInk, 1.6f);
+			PointF t[4] = { PointF(3.5f,10.5f), PointF(3.5f,13), PointF(12.5f,13), PointF(12.5f,10.5f) };
+			g.DrawLines(tray, t, 4); delete tray;
+			Pen *arr = MakePen(kBlue, 1.8f);
+			g.DrawLine(arr, 8.0f, 2.5f, 8.0f, 9.3f);
+			PointF h[3] = { PointF(5.3f,6.8f), PointF(8,9.6f), PointF(10.7f,6.8f) };
+			g.DrawLines(arr, h, 3); delete arr;
+			break; }
+		case 3: {   // CONNECT: green dot with a white check
+			SolidBrush gb(kGreen);
+			g.FillEllipse(&gb, 2.5f, 2.5f, 11.0f, 11.0f);
+			Pen *chk = MakePen(Color(255,255,255,255), 1.8f);
+			PointF c[3] = { PointF(5.4f,8.4f), PointF(7.3f,10.4f), PointF(10.8f,5.7f) };
+			g.DrawLines(chk, c, 3); delete chk;
+			break; }
+		case 4:   // PREV window: left chevron
+			Chevron(g, kBlue, 5.5f, 10, 8); break;
+		case 5:   // REFRESH: blue circular arrow
+			CircularArrow(g, kBlue); break;
+		case 6:   // NEXT window: right chevron
+			Chevron(g, kBlue, 10.5f, 6, 8); break;
+		case 7: {   // ABOUT: the all-seeing eye (matches Vision's app icon)
+			Pen *eye = MakePen(kInk, 1.4f);
+			g.DrawEllipse(eye, 2.5f, 5.0f, 11.0f, 6.0f);
+			delete eye;
+			SolidBrush ib(kInk);
+			g.FillEllipse(&ib, 6.4f, 5.9f, 3.2f, 3.2f);
+			SolidBrush hl(Color(255,255,255,255));
+			g.FillEllipse(&hl, 7.3f, 6.5f, 1.1f, 1.1f);
+			break; }
+		case 8: {   // TRAINING: a target
+			Pen *o = MakePen(kInk, 1.5f);
+			g.DrawEllipse(o, 2.7f, 2.7f, 10.6f, 10.6f);
+			g.DrawEllipse(o, 5.4f, 5.4f, 5.2f, 5.2f); delete o;
+			SolidBrush rb(kRed);
+			g.FillEllipse(&rb, 6.9f, 6.9f, 2.2f, 2.2f);
+			break; }
+		case 9: {   // AUTO: lightning bolt (auto-capture energy)
+			PointF bolt[6] = { PointF(9,2), PointF(4.5f,9), PointF(7.3f,9),
+				PointF(6.5f,14), PointF(11.5f,6.5f), PointF(8.4f,6.5f) };
+			Poly(g, kAmber, Color(255,180,110,10), 1.0f, bolt, 6);
+			break; }
+		case 10: {  // AUTO back: media-previous |<
+			Pen *bar = MakePen(kInk, 1.8f);
+			g.DrawLine(bar, 5.0f, 4.0f, 5.0f, 12.0f); delete bar;
+			PointF tri[3] = { PointF(11.5f,4), PointF(11.5f,12), PointF(6.6f,8) };
+			Poly(g, kInk, kInk, 0, tri, 3);
+			break; }
+		case 11: {  // AUTO next: media-next >|
+			PointF tri[3] = { PointF(4.5f,4), PointF(4.5f,12), PointF(9.4f,8) };
+			Poly(g, kInk, kInk, 0, tri, 3);
+			Pen *bar = MakePen(kInk, 1.8f);
+			g.DrawLine(bar, 11.0f, 4.0f, 11.0f, 12.0f); delete bar;
+			break; }
+		case 12: {  // AUTO clear: trash can
+			Pen *p = MakePen(kRed, 1.5f);
+			g.DrawLine(p, 3.4f, 4.6f, 12.6f, 4.6f);              // lid
+			PointF handle[4] = { PointF(6.4f,4.6f), PointF(6.4f,3), PointF(9.6f,3), PointF(9.6f,4.6f) };
+			g.DrawLines(p, handle, 4);
+			PointF body[4] = { PointF(4.6f,4.6f), PointF(5.4f,13), PointF(10.6f,13), PointF(11.4f,4.6f) };
+			g.DrawLines(p, body, 4);
+			g.DrawLine(p, 8.0f, 6.6f, 8.0f, 11.2f);              // centre slat
+			delete p;
+			break; }
+		case 13:   // AUTO refresh detection: green circular arrow
+			CircularArrow(g, kGreen); break;
+		default: break;
+		}
+	}
+}  // namespace
+
+// Build the 32-bpp alpha image list of GDI+ glyphs and attach it to the toolbar.
+void CMainFrame::BuildToolbarImageList()
+{
+	const int S = 16;
+	const int N = 14;   // number of BUTTONs in IDR_MAINFRAME, in resource order
+	if (m_ToolbarImages.GetSafeHandle() != NULL) {
+		m_ToolbarImages.DeleteImageList();
+	}
+	if (!m_ToolbarImages.Create(S, S, ILC_COLOR32, N, 0)) {
+		return;
+	}
+	for (int i = 0; i < N; ++i) {
+		BITMAPINFO bi;
+		ZeroMemory(&bi, sizeof(bi));
+		bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+		bi.bmiHeader.biWidth = S;
+		bi.bmiHeader.biHeight = -S;          // top-down
+		bi.bmiHeader.biPlanes = 1;
+		bi.bmiHeader.biBitCount = 32;
+		bi.bmiHeader.biCompression = BI_RGB;
+		void *bits = NULL;
+		HBITMAP dib = CreateDIBSection(NULL, &bi, DIB_RGB_COLORS, &bits, NULL, 0);
+		if (dib == NULL) continue;
+		{
+			// Premultiplied ARGB so the image list blends the alpha correctly.
+			Gdiplus::Bitmap bmp(S, S, S * 4, PixelFormat32bppPARGB, (BYTE *)bits);
+			Gdiplus::Graphics g(&bmp);
+			g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+			g.Clear(Gdiplus::Color(0, 0, 0, 0));
+			RenderToolbarGlyph(g, i);
+			g.Flush();
+		}
+		// CImageList::Add has no HBITMAP overload; use the Win32 API so the 32-bpp
+		// alpha channel is honoured (no mask, ILC_COLOR32).
+		ImageList_Add(m_ToolbarImages.GetSafeHandle(), dib, NULL);
+		DeleteObject(dib);
+	}
+	m_wndToolBar.GetToolBarCtrl().SetImageList(&m_ToolbarImages);
+}
+
 bool CMainFrame::CreateToolbar()
 {
-	return (m_wndToolBar.CreateEx(this, NULL, 
-		WS_CHILD | WS_VISIBLE | CBRS_TOP
-		| CBRS_GRIPPER | CBRS_TOOLTIPS | CBRS_FLYBY | CBRS_SIZE_DYNAMIC) 
-		&& m_wndToolBar.LoadToolBar(IDR_MAINFRAME));
+	if (!(m_wndToolBar.CreateEx(this, NULL,
+			WS_CHILD | WS_VISIBLE | CBRS_TOP
+			| CBRS_GRIPPER | CBRS_TOOLTIPS | CBRS_FLYBY | CBRS_SIZE_DYNAMIC)
+			&& m_wndToolBar.LoadToolBar(IDR_MAINFRAME))) {
+		return false;
+	}
+	// Swap the old 4-bpp bitmap for the GDI+-rendered modern icon set.
+	BuildToolbarImageList();
+	return true;
 }
 
 bool CMainFrame::CreateStatusBar()

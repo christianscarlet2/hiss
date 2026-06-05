@@ -602,22 +602,27 @@ BOOL CMainFrame::DestroyWindow() {
 	if (p_table_positioner != NULL) {
 		p_table_positioner->SaveCurrentPlacement();
 	}
+	// Save window position to the shared DB BEFORE StopThreads(): stopping the
+	// heartbeat thread tears down the DB connection p_tablemap_db rides on, so any
+	// write after StopThreads() silently no-ops (which is why hiss_window never
+	// persisted before). The registry write is fine either way but kept here too.
+	{
+		WINDOWPLACEMENT wp;
+		GetWindowPlacement(&wp);
+		Preferences()->SetValue(k_prefs_main_x, wp.rcNormalPosition.left);
+		Preferences()->SetValue(k_prefs_main_y, wp.rcNormalPosition.top);
+		// Save this instance's full size+position to the shared DB, keyed by session
+		// id, so each of several open instances restores its own window.
+		if (p_tablemap_db != NULL) {
+			CString v;
+			v.Format("%d,%d,%d,%d", wp.rcNormalPosition.left, wp.rcNormalPosition.top,
+				wp.rcNormalPosition.right - wp.rcNormalPosition.left,
+				wp.rcNormalPosition.bottom - wp.rcNormalPosition.top);
+			p_tablemap_db->SetSettingString("hiss_window", HissWindowField(), v);
+		}
+	}
 	StopThreads();
   PMainframe()->KillTimers();
-	// Save window position
-  WINDOWPLACEMENT wp;
-	GetWindowPlacement(&wp);
-	Preferences()->SetValue(k_prefs_main_x, wp.rcNormalPosition.left);
- 	Preferences()->SetValue(k_prefs_main_y, wp.rcNormalPosition.top);
-	// Also save this instance's full size+position to the shared DB, keyed by
-	// session id, so each of several open instances restores its own window.
-	if (p_tablemap_db != NULL) {
-		CString v;
-		v.Format("%d,%d,%d,%d", wp.rcNormalPosition.left, wp.rcNormalPosition.top,
-			wp.rcNormalPosition.right - wp.rcNormalPosition.left,
-			wp.rcNormalPosition.bottom - wp.rcNormalPosition.top);
-		p_tablemap_db->SetSettingString("hiss_window", HissWindowField(), v);
-	}
   write_log(Preferences()->debug_gui(), "[GUI] Going to delete the GUI\n");
   write_log(Preferences()->debug_gui(), "[GUI] this = [%i]\n", this);
   // All OK here

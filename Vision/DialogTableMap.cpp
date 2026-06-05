@@ -473,6 +473,7 @@ BOOL CDlgTableMap::OnInitDialog()
 	operations_menu.AppendMenu(MF_STRING, ID_OPERATIONS_CREATE_HASHES_IMAGES_0, "Create hashes of all Images (0)");
 	m_TableMapMenu.AppendMenu(MF_POPUP, (UINT_PTR)operations_menu.Detach(), "Operations");
 	SetMenu(&m_TableMapMenu);
+	UpdateHashMenuCount();   // show the real creatable-hash count, not a hardcoded (0)
 
 	// Setup text entry fields and spinners
 	m_Left.SetWindowText("0");
@@ -4641,6 +4642,9 @@ void CDlgTableMap::OnBnClickedDelete()
 
 		Invalidate(false);
 		pDoc->SetModifiedFlag(true);
+		// Deleting an image or hash changes how many hashes are still creatable; this
+		// handler removes the tree node directly (no update_tree), so refresh here.
+		UpdateHashMenuCount();
 	}
 }
 
@@ -4693,7 +4697,36 @@ HTREEITEM CDlgTableMap::update_tree(CString node_text)
 		node = m_TableMapTree.GetNextItem(node, TVGN_NEXT);
 		text = m_TableMapTree.GetItemText(node);
 	}
+	// The tree is rebuilt only on structural changes (add/update/delete of an image,
+	// hash, region, ...) -- exactly when the creatable-hash count can change -- so this
+	// is the single point to refresh the "Create hashes of all Images (N)" caption.
+	UpdateHashMenuCount();
 	return node;
+}
+
+// Count images whose computed hash isn't already present in hash-group `hash_type`.
+int CDlgTableMap::CountCreatableHashes(int hash_type)
+{
+	if (p_tablemap == NULL) return 0;
+	if (hash_type < 0 || hash_type >= k_max_number_of_hash_groups_in_tablemap) return 0;
+	int n = 0;
+	for (IMapCI i_iter = p_tablemap->i$()->begin(); i_iter != p_tablemap->i$()->end(); ++i_iter) {
+		uint32_t hash = p_tablemap->CalculateHashValue(i_iter, hash_type);
+		if (p_tablemap->h$(hash_type)->find(hash) == p_tablemap->h$(hash_type)->end()) {
+			++n;
+		}
+	}
+	return n;
+}
+
+void CDlgTableMap::UpdateHashMenuCount()
+{
+	if (m_TableMapMenu.GetSafeHmenu() == NULL) return;
+	CString caption;
+	caption.Format("Create hashes of all Images (%d)", CountCreatableHashes(0));
+	m_TableMapMenu.ModifyMenu(ID_OPERATIONS_CREATE_HASHES_IMAGES_0,
+		MF_BYCOMMAND | MF_STRING, ID_OPERATIONS_CREATE_HASHES_IMAGES_0, caption);
+	DrawMenuBar();
 }
 
 void CDlgTableMap::OnBnClickedEdit()
@@ -7319,7 +7352,7 @@ void CDlgTableMap::CreateHashesOfAllImages(int hash_type)
 {
 	COpenScrapeDoc* pDoc = COpenScrapeDoc::GetDocument();
 	int added = 0;
-	CString errors;
+	int skipped = 0;
 	for (IMapCI i_iter = p_tablemap->i$()->begin(); i_iter != p_tablemap->i$()->end(); ++i_iter) {
 		STablemapHashValue new_hash;
 		new_hash.name = i_iter->second.name;
@@ -7328,9 +7361,7 @@ void CDlgTableMap::CreateHashesOfAllImages(int hash_type)
 			++added;
 		}
 		else {
-			CString line;
-			line.Format("%s\n", new_hash.name);
-			errors += line;
+			++skipped;
 		}
 	}
 	update_tree("Hashes");
@@ -7341,12 +7372,11 @@ void CDlgTableMap::CreateHashesOfAllImages(int hash_type)
 	}
 	if (added > 0 && COpenScrapeView::GetView() != NULL)
 		COpenScrapeView::GetView()->InvalidateCardResults();
+	// Concise summary only -- the full list of skipped (already-existing) hash names
+	// was just noise.
 	CString message;
-	message.Format("Created %d image hash records for position %d.", added, hash_type);
-	if (!errors.IsEmpty()) {
-		message += "\n\nSkipped existing hashes:\n";
-		message += errors;
-	}
+	message.Format("Created %d image hash records for position %d (%d already existed).",
+		added, hash_type, skipped);
 	MessageBox(message, "Create image hashes", MB_OK);
 }
 void CDlgTableMap::OnBnClickedCreateHash0()

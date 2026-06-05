@@ -66,6 +66,7 @@ class CMainFrame : public CFrameWnd {
 
 	CStatusBar	m_wndStatusBar;
 	CToolBar		m_wndToolBar;
+	CImageList	m_ToolbarImages;  // modern GDI+-rendered toolbar icons (32bpp alpha)
 	CBlueStatic	m_CaptureCount;   // blue "(N)" captured-screenshot count on the toolbar
 	CBlueStatic	m_CaptureIndex;   // "i/N" current capture index, between the arrows
  public:
@@ -84,6 +85,7 @@ class CMainFrame : public CFrameWnd {
 	virtual ~CMainFrame();
  private:
 	bool CreateToolbar();
+	void BuildToolbarImageList();   // render the modern icon set with GDI+
 	bool CreateStatusBar();
 	void AttachToTableCandidate(const STableList &candidate);
 	bool TableCandidateMatchesTitleText(const STableList &candidate);

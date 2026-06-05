@@ -183,6 +183,12 @@
 #define ID_TOOLS_SHIFTREGIONS           32795
 #define ID_DB_IMPORT_FILE               32797
 #define ID_DB_IMPORT_FOLDER             32798
+#define ID_DB_DELETE_TABLEMAP           32806
+#define IDD_SAVECHANGES_DB              154
+#define IDC_SC_MESSAGE                  1267
+#define IDC_SC_SAVE                     1268
+#define IDC_SC_SAVEAS                   1269
+#define IDC_SC_DISCARD                  1270
 #define ID_TOOLS_SETTINGS               32799
 #define IDD_SETTINGS                    153
 #define IDC_SETTINGS_GROUPS             1200
@@ -240,9 +246,9 @@
 #define IDC_CAPTURE_INDEX               1266
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        154
-#define _APS_NEXT_COMMAND_VALUE         32806
-#define _APS_NEXT_CONTROL_VALUE         1267
+#define _APS_NEXT_RESOURCE_VALUE        155
+#define _APS_NEXT_COMMAND_VALUE         32807
+#define _APS_NEXT_CONTROL_VALUE         1271
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

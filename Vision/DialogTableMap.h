@@ -239,6 +239,11 @@ public:
 	void update_display(void);
 	void UpdateStatus(void);
 	HTREEITEM update_tree(CString node_text);
+	// Number of stored images whose hash isn't in hash-group 0 yet (i.e. how many new
+	// hash records "Create hashes of all Images" would add right now).
+	int CountCreatableHashes(int hash_type);
+	// Refresh the "Create hashes of all Images (N)" menu caption to that live count.
+	void UpdateHashMenuCount();
 	void GroupRegions(void);
 	void UngroupRegions(void);
 	void UpdateDisplayOfAllRegions();
