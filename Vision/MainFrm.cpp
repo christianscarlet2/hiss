@@ -163,14 +163,16 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct)
 		TRACE0("Failed to create status bar\n");
 		return -1;      // fail to create
 	}
-	// "i/N" current capture index, reserved between the back/next arrows.
+	// "i/N" current capture index, centred in a tight reserved slot between the arrows.
 	{
 		int backIdx = m_wndToolBar.CommandToIndex(ID_AUTO_CAPTURE_BACK);
 		if (backIdx >= 0) {
 			int sepIdx = backIdx + 1;   // the SEPARATOR placed after BACK in the resource
-			m_wndToolBar.SetButtonInfo(sepIdx, IDC_CAPTURE_INDEX, TBBS_SEPARATOR, 40);
+			const int kSlotWidth = 30;
+			m_wndToolBar.SetButtonInfo(sepIdx, IDC_CAPTURE_INDEX, TBBS_SEPARATOR, kSlotWidth);
 			CRect rc;
 			m_wndToolBar.GetItemRect(sepIdx, &rc);
+			// Centre the label within the reserved slot.
 			m_CaptureIndex.Create("-/-", WS_CHILD | WS_VISIBLE | SS_CENTER | SS_CENTERIMAGE,
 				rc, &m_wndToolBar, IDC_CAPTURE_INDEX);
 		}
