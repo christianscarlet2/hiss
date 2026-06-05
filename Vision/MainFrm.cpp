@@ -172,6 +172,7 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct)
 			m_wndToolBar.SetButtonInfo(sepIdx, IDC_CAPTURE_INDEX, TBBS_SEPARATOR, kSlotWidth);
 			CRect rc;
 			m_wndToolBar.GetItemRect(sepIdx, &rc);
+			rc.left += 7;   // nudge the (centred) label right so it reads centred in the slot
 			// Centre the label within the reserved slot.
 			m_CaptureIndex.Create("-/-", WS_CHILD | WS_VISIBLE | SS_CENTER | SS_CENTERIMAGE,
 				rc, &m_wndToolBar, IDC_CAPTURE_INDEX);
