@@ -238,6 +238,7 @@ int CTransform::ITypeTransform(RMapCI region, const HDC hdc, CString *text)
 	// built for photographic difference and ranks tiny clean card glyphs badly (it would
 	// report e.g. "3d" closer than "Qd").
 	unsigned int best_total_diff = 0xffffffff;   // summed |dR|+|dG|+|dB| over the region
+	unsigned int best_blank_diff = 0xffffffff;   // closest "no card" (empty-named) template
 	int dim = width * height;
 	for (IMapCI i_iter=p_tablemap->i$()->begin(); i_iter!=p_tablemap->i$()->end(); i_iter++)
 	{
@@ -256,22 +257,35 @@ int CTransform::ITypeTransform(RMapCI region, const HDC hdc, CString *text)
 		if (total < best_total_diff) {
 			best_match = i_iter;
 			best_total_diff = total;
-			if (total == 0) break;   // byte-identical: definitive
+		}
+		// An image with an empty name is a "no card / blank slot" template.
+		if (i_iter->second.name.IsEmpty() && total < best_blank_diff) {
+			best_blank_diff = total;
 		}
 	}
 
 	// ImgB was never owned by args here; make sure its destructor won't touch it.
 	args.ImgB = NULL;
 
-	// Acceptance: take the winner only if its AVERAGE per-channel difference is below this.
-	// This is resolution-independent (a 10x10 suit and a 22x39 rank are judged the same
-	// way) and separates a present card (typically avg-diff < ~60) from a blank / card-back
-	// / transition frame (typically > ~120). The previous "% of pixels over a fixed
-	// tolerance" gate was far too strict on small regions -- it rejected a correct "s" suit
-	// whose avg-diff was only 26. Higher value == looser fit.
-	const double kAcceptAvgChannelDiff = 90.0;   // 0..255
-	double avg = (dim > 0) ? (double)best_total_diff / (double)(dim * 3) : 1e9;
-	if (best_match != p_tablemap->i$()->end() && avg < kAcceptAvgChannelDiff)
+	double avg       = (dim > 0) ? (double)best_total_diff / (double)(dim * 3) : 1e9;
+	double blank_avg = (dim > 0) ? (double)best_blank_diff / (double)(dim * 3) : 1e9;
+
+	// Average per-channel difference (0..255), resolution-independent so a 10x10 suit and
+	// a 22x39 rank are judged the same way.
+	//   kBlankAvgDiff:  if the region matches a known blank/"no card" template this closely,
+	//                   it IS a blank -- report no card. This guards against tablemaps that
+	//                   accidentally saved the empty slot under a card name (e.g. a blank
+	//                   captured as "Qd"): a real card face differs from a blank by ~150+,
+	//                   so this never suppresses a genuine card.
+	//   kAcceptAvgDiff: otherwise accept the pixel-closest card image if it's close enough.
+	const double kBlankAvgDiff  = 40.0;
+	const double kAcceptAvgDiff = 90.0;
+	if (best_blank_diff != 0xffffffff && blank_avg < kBlankAvgDiff)
+	{
+		*text = "";                          // matched a blank slot -> no card
+		retval = ERR_GOOD_SCRAPE_GENERAL;
+	}
+	else if (best_match != p_tablemap->i$()->end() && avg < kAcceptAvgDiff)
 	{
 		*text = best_match->second.name.GetString();
 		retval = ERR_GOOD_SCRAPE_GENERAL;
