@@ -41,6 +41,7 @@
 #include "DialogEditGrHashPoints.h"
 
 #include "..\CTablemap\CTablemap.h"
+#include "..\CTablemap\CTablemapDB.h"   // p_tablemap_db (shared OCR-model settings)
 #include "..\Hiss\NumericalFunctions.h"
 #include "..\Shared\WindowCapture.h"
 
@@ -110,6 +111,10 @@ const double kOcrSharpenSigma = 1.0;
 // Blank columns inserted between adjacent characters so glyphs that sit too
 // close (e.g. "17.71") get separated before OCR. Value is in upscaled pixels.
 const int kOcrCharSpacingPx = 6;
+
+// Timer that polls the shared DB settings revision so a model/OCR-setting change made in
+// preferences (here or in another app) is picked up live: reload the model + reprocess.
+const UINT_PTR kSettingsProbeTimer = 0x5EC0;
 
 static bool ControlHasFocus(CWnd &control)
 {
@@ -397,6 +402,7 @@ BEGIN_MESSAGE_MAP(CDlgTableMap, CDialog)
 	ON_NOTIFY(UDN_DELTAPOS, IDC_RADIUS_SPIN, &CDlgTableMap::OnDeltaposRadiusSpin)
 	ON_NOTIFY_EX(TTN_NEEDTEXT, 0, OnToolTipText)
 	ON_WM_CREATE()
+	ON_WM_TIMER()
 	ON_WM_SIZE()
 	ON_WM_MOVE()
 	ON_WM_VSCROLL()
@@ -674,6 +680,9 @@ BOOL CDlgTableMap::OnInitDialog()
 		MessageBox("Failed to load tessdata files.\nMake sure tessdata folder is present and/or datas are not corrupted.", "AutoOcr error", MB_OK);
 		return FALSE;
 	}
+	m_current_ocr_model = "my_model";   // matches the Init above; EnsureOcrModel swaps as needed
+	// Poll the shared settings revision so a model change in preferences applies live.
+	SetTimer(kSettingsProbeTimer, 750, NULL);
 	//api->SetPageSegMode(PSM_SINGLE_LINE);
 	//api->SetVariable("user_defined_dpi", "300");
 
@@ -2435,6 +2444,65 @@ static CString StripBalanceUnitSuffix(CString s) {
 	return s;
 }
 
+// Split a model spec ("W:\dir\eng.traineddata" or just "my_model") into the Tesseract
+// data dir + language. Mirrors Hiss's SplitModelSpec so both apps resolve models alike.
+static void SplitModelSpec(const CString &spec, CString *dir, CString *lang) {
+	CString s = spec; s.Trim();
+	if (s.IsEmpty()) { *dir = "tessdata"; *lang = "my_model"; return; }
+	int bslash = s.ReverseFind('\\');
+	int fslash = s.ReverseFind('/');
+	int cut = (bslash > fslash) ? bslash : fslash;
+	CString file = (cut >= 0) ? s.Mid(cut + 1) : s;
+	CString d = (cut >= 0) ? s.Left(cut) : CString("tessdata");
+	int dot = file.ReverseFind('.');
+	CString l = (dot > 0) ? file.Left(dot) : file;
+	if (d.IsEmpty()) d = "tessdata";
+	if (l.IsEmpty()) l = "my_model";
+	*dir = d; *lang = l;
+}
+
+// (Re)load the configured model for this transform into api/api2. The AutoOcr0/AutoOcr1
+// model paths live in the shared DB settings (keys autoocr0/autoocr1, field "model") and
+// are picked by the preferences/Settings pickers in any app. We re-read the setting on
+// every OCR and re-Init Tesseract ONLY when the chosen model actually changes, so editing
+// the model in preferences takes effect here automatically (no restart).
+bool CDlgTableMap::EnsureOcrModel(const CString &transform) {
+	CString key = (transform == "AutoOcr1") ? CString("autoocr1") : CString("autoocr0");
+	CString spec = (p_tablemap_db != NULL) ? p_tablemap_db->GetSettingString(key, "model") : CString("");
+	if (spec.IsEmpty()) spec = "my_model";   // fall back to the bundled model
+	if (spec == m_current_ocr_model) return true;   // already loaded
+	CString dir, lang;
+	SplitModelSpec(spec, &dir, &lang);
+	if (api->Init(CStringA(dir).GetString(), CStringA(lang).GetString()) == -1) return false;
+	if (api2->Init(CStringA(dir).GetString(), CStringA(lang).GetString()) == -1) return false;
+	m_current_ocr_model = spec;
+	return true;
+}
+
+// Live-reload probe: when the shared DB settings revision changes (e.g. the AutoOcr model
+// was changed in preferences here or in another app), force the model to reload and
+// reprocess everything -- the active region's Result, the card-result overlays, and (if
+// auto-polling) the buffered frames re-run their detection on the next paint/poll.
+void CDlgTableMap::OnTimer(UINT_PTR nIDEvent) {
+	if (nIDEvent == kSettingsProbeTimer && p_tablemap_db != NULL) {
+		CString rev = p_tablemap_db->GetSettingsRevision();
+		if (!rev.IsEmpty() && rev != m_last_settings_revision) {
+			bool first = m_last_settings_revision.IsEmpty();
+			m_last_settings_revision = rev;
+			if (!first) {
+				m_current_ocr_model = "";   // force EnsureOcrModel to re-Init with the new model
+				COpenScrapeView *view = COpenScrapeView::GetView();
+				if (view != NULL) view->InvalidateCardResults();   // drop overlay cache
+				update_display();                                  // re-OCR the active region
+				if (view != NULL) {
+					view->RefreshCurrentScreenshot();   // recompute overlays + repaint (re-OCRs auto-polled frame)
+				}
+			}
+		}
+	}
+	CDialog::OnTimer(nIDEvent);
+}
+
 CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast, CString region_name) {
 	// Return string value from image. "" when OCR failed
 	Mat img_resized, img_resized2;
@@ -2460,6 +2528,7 @@ CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast,
 	// regions (player names) are fed the upscaled grayscale directly.
 	bool binarize_for_ocr = is_balance;
 	if (transform == "AutoOcr0" || transform == "AutoOcr1") {
+		EnsureOcrModel(transform);   // use the model configured for this transform (live)
 		img_resized = prepareImage(img_orig, binarize_for_ocr, threshold);
 		img_resized2 = prepareImage(img_orig, binarize_for_ocr, threshold, true);
 	}

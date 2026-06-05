@@ -53,6 +53,7 @@ protected:
 	afx_msg void OnRegionChange();
 	afx_msg void OnOcrRegionChange();
 	afx_msg void OnZoomChange();
+	afx_msg void OnTimer(UINT_PTR nIDEvent);   // OCR-settings live-reload probe
 	afx_msg void OnTvnSelchangedTablemapTree(NMHDR *pNMHDR, LRESULT *pResult);
 	afx_msg void OnDeltaposLeftSpin(NMHDR *pNMHDR, LRESULT *pResult);
 	afx_msg void OnDeltaposTopSpin(NMHDR *pNMHDR, LRESULT *pResult);
@@ -207,6 +208,11 @@ private:
 	int threshold, match_mode;
 	CString m_ocr_char_whitelist;	// scrub set for the region being OCR'd
 	bool m_ocr_auto_threshold;		// true => Otsu auto-threshold (non-balance/text regions)
+	CString m_current_ocr_model;	// model spec currently loaded into api/api2
+	CString m_last_settings_revision;	// last DB settings revision seen by the probe timer
+	// (Re)load the configured AutoOcr0/AutoOcr1 model for `transform` into api/api2,
+	// re-Initialising only when the model actually changes. Returns false on failure.
+	bool EnsureOcrModel(const CString &transform);
 	Mat m_last_ocr_input;			// exact image last handed to Tesseract (for debug dump)
  public:
 	// Write the most recent Tesseract input image to a file (for "Debug this field").
