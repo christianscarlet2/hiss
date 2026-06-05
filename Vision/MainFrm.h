@@ -66,6 +66,7 @@ class CMainFrame : public CFrameWnd {
 	CStatusBar	m_wndStatusBar;
 	CToolBar		m_wndToolBar;
 	CBlueStatic	m_CaptureCount;   // blue "(N)" captured-screenshot count on the toolbar
+	CBlueStatic	m_CaptureIndex;   // "i/N" current capture index, between the arrows
  public:
 	virtual BOOL DestroyWindow();
 	afx_msg void OnViewConnecttowindow();

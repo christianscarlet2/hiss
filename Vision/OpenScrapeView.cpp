@@ -24,6 +24,8 @@
 #include "../CTransform/CTransform.h"
 #include "../Shared/ParallelWorkerPool.h"
 #include <gdiplus.h>
+#include <shlobj.h>
+#include <algorithm>
 #include <ctype.h>
 
 // Shared in-process worker pool for parallel card detection (sized from the
@@ -1755,6 +1757,92 @@ void COpenScrapeView::ClearCaptureBuffer()
 	_capture_sizes.clear();
 	_capture_index = -1;
 	_last_capture_sig = "";   // allow re-capturing a situation after a clear
+}
+
+// Per-instance folder for persisted capture PNGs (next to the exe).
+static CString CaptureDir()
+{
+	char module[MAX_PATH] = { 0 };
+	GetModuleFileNameA(NULL, module, MAX_PATH);
+	CString dir(module);
+	int slash = dir.ReverseFind('\\');
+	if (slash >= 0) dir = dir.Left(slash);
+	CString out;
+	out.Format("%s\\vision_captures\\%d\\", dir.GetString(), theApp.sessionnum);
+	return out;
+}
+
+static int PngEncoderClsid(CLSID *clsid)
+{
+	UINT num = 0, size = 0;
+	Gdiplus::GetImageEncodersSize(&num, &size);
+	if (size == 0) return -1;
+	Gdiplus::ImageCodecInfo *info = (Gdiplus::ImageCodecInfo *)malloc(size);
+	if (info == NULL) return -1;
+	Gdiplus::GetImageEncoders(num, size, info);
+	int found = -1;
+	for (UINT i = 0; i < num; ++i) {
+		if (wcscmp(info[i].MimeType, L"image/png") == 0) { *clsid = info[i].Clsid; found = (int)i; break; }
+	}
+	free(info);
+	return found;
+}
+
+// Save the capture buffer to disk so it survives a restart.
+void COpenScrapeView::SaveCapturesToDisk()
+{
+	CString dir = CaptureDir();
+	SHCreateDirectoryExA(NULL, dir, NULL);
+	// Clear any previous PNGs.
+	WIN32_FIND_DATAA fd;
+	HANDLE h = FindFirstFileA(dir + "capture_*.png", &fd);
+	if (h != INVALID_HANDLE_VALUE) {
+		do { DeleteFileA(dir + fd.cFileName); } while (FindNextFileA(h, &fd));
+		FindClose(h);
+	}
+	CLSID png;
+	if (PngEncoderClsid(&png) < 0) return;
+	for (size_t i = 0; i < _capture_buffer.size(); ++i) {
+		if (_capture_buffer[i] == NULL) continue;
+		Gdiplus::Bitmap *bmp = Gdiplus::Bitmap::FromHBITMAP(_capture_buffer[i], NULL);
+		if (bmp == NULL) continue;
+		CString path;
+		path.Format("%scapture_%04d.png", dir.GetString(), (int)i);
+		CStringW wpath(path);
+		bmp->Save(wpath, &png, NULL);
+		delete bmp;
+	}
+}
+
+// Reload persisted captures into the buffer on startup.
+void COpenScrapeView::LoadCapturesFromDisk()
+{
+	ClearCaptureBuffer();
+	CString dir = CaptureDir();
+	// Collect + sort the capture files so they load in saved order.
+	std::vector<CString> files;
+	WIN32_FIND_DATAA fd;
+	HANDLE h = FindFirstFileA(dir + "capture_*.png", &fd);
+	if (h != INVALID_HANDLE_VALUE) {
+		do { files.push_back(CString(fd.cFileName)); } while (FindNextFileA(h, &fd));
+		FindClose(h);
+	}
+	std::sort(files.begin(), files.end(), [](const CString &a, const CString &b) { return a.Compare(b) < 0; });
+	for (size_t i = 0; i < files.size(); ++i) {
+		CStringW wpath(dir + files[i]);
+		Gdiplus::Bitmap *img = Gdiplus::Bitmap::FromFile(wpath);
+		if (img == NULL) continue;
+		if (img->GetLastStatus() != Gdiplus::Ok) { delete img; continue; }
+		HBITMAP hbm = NULL;
+		img->GetHBITMAP(Gdiplus::Color(0, 0, 0), &hbm);
+		int w = (int)img->GetWidth(), ht = (int)img->GetHeight();
+		delete img;
+		if (hbm != NULL) {
+			_capture_buffer.push_back(hbm);
+			_capture_sizes.push_back(CSize(w, ht));
+		}
+	}
+	_capture_index = -1;   // don't override the live frame until the user navigates
 }
 
 // Toolbar "Clear screenshots": drop the whole capture buffer and repaint.

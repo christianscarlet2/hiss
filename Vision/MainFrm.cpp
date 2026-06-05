@@ -162,6 +162,19 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct)
 		TRACE0("Failed to create status bar\n");
 		return -1;      // fail to create
 	}
+	// "i/N" current capture index, reserved between the back/next arrows.
+	{
+		int backIdx = m_wndToolBar.CommandToIndex(ID_AUTO_CAPTURE_BACK);
+		if (backIdx >= 0) {
+			int sepIdx = backIdx + 1;   // the SEPARATOR placed after BACK in the resource
+			m_wndToolBar.SetButtonInfo(sepIdx, IDC_CAPTURE_INDEX, TBBS_SEPARATOR, 40);
+			CRect rc;
+			m_wndToolBar.GetItemRect(sepIdx, &rc);
+			m_CaptureIndex.Create("-/-", WS_CHILD | WS_VISIBLE | SS_CENTER | SS_CENTERIMAGE,
+				rc, &m_wndToolBar, IDC_CAPTURE_INDEX);
+		}
+	}
+
 	// Non-clickable blue "(N)" captured-screenshot count, placed just after the last
 	// toolbar button (the auto-capture Clear button).
 	{
@@ -561,12 +574,20 @@ void CMainFrame::RestoreSessionFromDb()
 	if (!reconnected) {
 		AutoConnectToTablemapTitleText();
 	}
+
+	// Restore the persisted auto-capture screenshots from the previous run.
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	if (pView != NULL) pView->LoadCapturesFromDisk();
 }
 
 // Persist the current session (called on exit): the loaded tablemap name and the
 // title of the window we are attached to, into the hiss DB "settings" table.
 void CMainFrame::SaveSessionToDb()
 {
+	// Persist the auto-capture screenshots to disk (independent of the DB).
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	if (pView != NULL) pView->SaveCapturesToDisk();
+
 	if (p_tablemap_db == NULL) {
 		return;
 	}
@@ -849,6 +870,16 @@ void CMainFrame::OnUpdateAutoCapture(CCmdUI *pCmdUI)
 		CString s; s.Format("(%d)", pView ? pView->CaptureCount() : 0);
 		CString cur; m_CaptureCount.GetWindowText(cur);
 		if (cur != s) { m_CaptureCount.SetWindowText(s); m_CaptureCount.Invalidate(FALSE); }
+	}
+	// Refresh the "i/N" current-capture index between the arrows.
+	if (m_CaptureIndex.GetSafeHwnd() != NULL) {
+		int total = pView ? pView->CaptureCount() : 0;
+		int idx = pView ? pView->CaptureIndex() : -1;
+		CString s;
+		if (total <= 0) s = "-/-";
+		else s.Format("%d/%d", (idx < 0 ? 0 : idx + 1), total);
+		CString cur; m_CaptureIndex.GetWindowText(cur);
+		if (cur != s) { m_CaptureIndex.SetWindowText(s); m_CaptureIndex.Invalidate(FALSE); }
 	}
 }
 void CMainFrame::OnAutoCaptureBack()

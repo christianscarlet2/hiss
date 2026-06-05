@@ -948,6 +948,15 @@ BEGIN
     LTEXT           "Bulk Tesseract OCR and image hashing/detection run on an in-process pool of worker threads. Total workers = CPUs x workers per CPU, split across running Hiss instances. Shared with Vision and the trainer.",IDC_STATIC,4,58,226,40
 END
 
+IDD_SAPREFS25 DIALOGEX 0, 0, 237, 213
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_SYSMENU
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "Field types that use decimal splitting (shared with Vision and the trainer):",IDC_STATIC,4,8,226,16
+    LISTBOX         IDC_DECIMAL_FIELDS_LIST,4,28,228,150,LBS_MULTIPLESEL | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP | WS_BORDER
+    LTEXT           "Selected numeric fields are OCR'd as two halves around the decimal point and recombined. Applies to all three apps.",IDC_STATIC,4,184,228,24
+END
+
 
 /////////////////////////////////////////////////////////////////////////////
 //

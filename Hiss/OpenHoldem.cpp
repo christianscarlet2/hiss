@@ -231,6 +231,8 @@ void COpenHoldemApp::FinishInitialization() {
     m_pMainWnd->ShowWindow(SW_MINIMIZE);
 	}
 	m_pMainWnd->UpdateWindow();
+	// Restore this instance's saved window size/position (per-instance, shared DB).
+	((CMainFrame *)m_pMainWnd)->RestoreWindowPlacementFromDb();
 	// call DragAcceptFiles only if there's a suffix
 	// In an SDI app, this should occur after ProcessShellCommand
 	// Enable drag/drop open

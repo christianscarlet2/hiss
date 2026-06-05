@@ -57,11 +57,13 @@
 #define ID_INDICATOR_GENERAL_HINT       189
 #define IDD_SAPREFS23                   190
 #define IDD_SAPREFS24                   191
+#define IDD_SAPREFS25                   192
 #define IDC_OCR_MODEL0                  1427
 #define IDC_OCR_BROWSE0                 1428
 #define IDC_OCR_MODEL1                  1429
 #define IDC_PW_NUM_CPUS                 1435
 #define IDC_PW_WORKERS_PER_CPU          1436
+#define IDC_DECIMAL_FIELDS_LIST         1437
 #define IDC_OCR_BROWSE1                 1430
 #define IDC_NEW                         1006
 #define IDC_DELETE                      1007
@@ -570,9 +572,9 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        192
+#define _APS_NEXT_RESOURCE_VALUE        193
 #define _APS_NEXT_COMMAND_VALUE         33001
-#define _APS_NEXT_CONTROL_VALUE         1437
+#define _APS_NEXT_CONTROL_VALUE         1438
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

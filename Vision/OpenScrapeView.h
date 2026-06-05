@@ -161,6 +161,14 @@ public:
 	void NavigateCapture(int delta);
 	void ClearCaptures();
 	void OnAutoCaptureIntervalChanged(int interval_ms);
+	// Force the card-result overlay cache to recompute on the next paint (call after
+	// the tablemap's images/hashes/regions change, e.g. Create Image / Create Hash).
+	void InvalidateCardResults() { _card_results_bmp = NULL; }
+	// 0-based index of the currently-displayed buffered capture (-1 if none).
+	int CaptureIndex() const { return _capture_index; }
+	// Persist / restore the capture buffer across runs (PNGs under vision_captures\).
+	void SaveCapturesToDisk();
+	void LoadCapturesFromDisk();
 private:
 	bool                 _auto_capture;
 	int                  _capture_index;

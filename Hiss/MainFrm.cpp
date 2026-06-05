@@ -43,6 +43,7 @@
 #include "CSymbolEngineReplayFrameController.h"
 #include "CScraper.h"
 #include "CSessionCounter.h"
+#include "..\CTablemap\CTablemapDB.h"
 #include "CSymbolEngineUserchair.h"
 #include "CSymbolEngineTableLimits.h"
 #include "..\CTransform\CTransform.h"
@@ -69,6 +70,7 @@
 #include "DialogSAPrefs22.h"
 #include "DialogSAPrefs23.h"
 #include "DialogSAPrefs24.h"
+#include "DialogSAPrefs25.h"
 #include "DialogScraperOutput.h"
 #include "inlines/eval.h"
 #include "OpenHoldem.h"
@@ -527,6 +529,7 @@ void CMainFrame::OnEditPreferences() {
 	CDlgSAPrefs22 page22;
 	CDlgSAPrefs23 page23;
 	CDlgSAPrefs24 page24;
+	CDlgSAPrefs25 page25;
 
 	// add pages
 	dlg.AddPage(page14, "Auto-Connector");
@@ -535,6 +538,7 @@ void CMainFrame::OnEditPreferences() {
 	dlg.AddPage(page10, "Chat");
 	dlg.AddPage(page17, "Configuration Check");
 	dlg.AddPage(page20, "Debugging");
+	dlg.AddPage(page25, "Decimal Splitting");
 	dlg.AddPage(page3,  "DLL Extension");
 	dlg.AddPage(page15, "GUI");
 	dlg.AddPage(page19, "Handhistory Generator");
@@ -569,6 +573,28 @@ void CMainFrame::OnEditPreferences() {
 	}
 }
 
+// DB field for this instance's window placement: its CSessionCounter id, so multiple
+// concurrently-open instances each get their own saved size/position.
+static CString HissWindowField() {
+	int id = (p_sessioncounter != NULL) ? p_sessioncounter->session_id() : 0;
+	CString f; f.Format("%d", id);
+	return f;
+}
+
+// Restore this instance's saved main-window size/position (if any, and still on a
+// visible monitor). Called on startup after the window exists.
+void CMainFrame::RestoreWindowPlacementFromDb() {
+	if (p_tablemap_db == NULL) return;
+	CString v = p_tablemap_db->GetSettingString("hiss_window", HissWindowField());
+	if (v.IsEmpty()) return;
+	int x = 0, y = 0, w = 0, h = 0;
+	if (sscanf_s(v.GetString(), "%d,%d,%d,%d", &x, &y, &w, &h) != 4) return;
+	if (w < 80 || h < 60) return;
+	RECT r = { x, y, x + w, y + h };
+	if (MonitorFromRect(&r, MONITOR_DEFAULTTONULL) == NULL) return;   // off-screen -> ignore
+	SetWindowPos(NULL, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
 BOOL CMainFrame::DestroyWindow() {
 	// Remember the connected table window's position+size (shared DB) BEFORE the
 	// threads stop / we disconnect, so the next launch restores it instead of forcing
@@ -580,9 +606,18 @@ BOOL CMainFrame::DestroyWindow() {
   PMainframe()->KillTimers();
 	// Save window position
   WINDOWPLACEMENT wp;
-	GetWindowPlacement(&wp); 		
-	Preferences()->SetValue(k_prefs_main_x, wp.rcNormalPosition.left); 		
+	GetWindowPlacement(&wp);
+	Preferences()->SetValue(k_prefs_main_x, wp.rcNormalPosition.left);
  	Preferences()->SetValue(k_prefs_main_y, wp.rcNormalPosition.top);
+	// Also save this instance's full size+position to the shared DB, keyed by
+	// session id, so each of several open instances restores its own window.
+	if (p_tablemap_db != NULL) {
+		CString v;
+		v.Format("%d,%d,%d,%d", wp.rcNormalPosition.left, wp.rcNormalPosition.top,
+			wp.rcNormalPosition.right - wp.rcNormalPosition.left,
+			wp.rcNormalPosition.bottom - wp.rcNormalPosition.top);
+		p_tablemap_db->SetSettingString("hiss_window", HissWindowField(), v);
+	}
   write_log(Preferences()->debug_gui(), "[GUI] Going to delete the GUI\n");
   write_log(Preferences()->debug_gui(), "[GUI] this = [%i]\n", this);
   // All OK here

@@ -58,6 +58,9 @@ public:
 	virtual BOOL PreCreateWindow(CREATESTRUCT& cs);
 	virtual ~CMainFrame();
 	virtual BOOL DestroyWindow();
+	// Per-instance main-window placement, keyed by CSessionCounter id, in the shared
+	// hiss DB ("hiss_window"/<id>). Each running instance keeps its own size/position.
+	void RestoreWindowPlacementFromDb();
 	CString	_exec_filename;
 public:
 	// public accessors

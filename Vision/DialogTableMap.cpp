@@ -5307,6 +5307,9 @@ void CDlgTableMap::OnBnClickedCreateImage()
 		if (child_node)
 			m_TableMapTree.SelectItem(child_node);
 
+		// The image set changed: refresh the table-view detection overlay cache.
+		if (COpenScrapeView::GetView() != NULL)
+			COpenScrapeView::GetView()->InvalidateCardResults();
 		//Invalidate(false);
 		pDoc->SetModifiedFlag(true);
 	}
@@ -7333,6 +7336,8 @@ void CDlgTableMap::CreateHashesOfAllImages(int hash_type)
 	if (pDoc != NULL && added > 0) {
 		pDoc->SetModifiedFlag(true);
 	}
+	if (added > 0 && COpenScrapeView::GetView() != NULL)
+		COpenScrapeView::GetView()->InvalidateCardResults();
 	CString message;
 	message.Format("Created %d image hash records for position %d.", added, hash_type);
 	if (!errors.IsEmpty()) {
@@ -7411,6 +7416,9 @@ void CDlgTableMap::CreateHash(int hash_type)
 		if (child_node)
 			m_TableMapTree.SelectItem(child_node);
 
+		// The hash set changed: refresh the table-view detection overlay cache.
+		if (COpenScrapeView::GetView() != NULL)
+			COpenScrapeView::GetView()->InvalidateCardResults();
 		//Invalidate(false);
 		pDoc->SetModifiedFlag(true);
 
