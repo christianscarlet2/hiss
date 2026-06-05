@@ -49,6 +49,8 @@ public:
 	CDlgTableMap	*m_TableMapDlg;
 	class CDlgSettings *m_SettingsDlg;   // modeless settings dialog (NULL when closed)
 
+	ULONG_PTR		m_gdiplusToken;      // GDI+ (semi-transparent card-result overlays)
+
 	virtual int ExitInstance();
 };
 

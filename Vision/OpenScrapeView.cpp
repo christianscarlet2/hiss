@@ -21,6 +21,8 @@
 #include "DialogEdit.h"
 #include "DecimalSplit.h"
 #include "../CTablemap/CTablemapDB.h"
+#include "../CTransform/CTransform.h"
+#include <gdiplus.h>
 #include <ctype.h>
 
 #ifdef _DEBUG
@@ -133,6 +135,7 @@ COpenScrapeView::COpenScrapeView()
 
 	_decimal_fields_loaded = false;
 	_decimal_cached_bmp = NULL;
+	_card_results_bmp = NULL;
 
 	dragging = false;
 	dragged_region = "";
@@ -1294,6 +1297,133 @@ void COpenScrapeView::DrawMagnifierPreview(CDC *pDC)
 	DeleteDC(hdcScreen);
 }
 
+// --- Live card-result overlays --------------------------------------------------
+
+// The card rank/suit/community regions we annotate with their detected value:
+//   c0cardface0 .. c0cardface4   (community cards)
+//   p<0-8>cardface<0-1>rank      (player card ranks)
+//   p<0-8>cardface<0-1>suit      (player card suits)
+bool COpenScrapeView::IsCardResultRegion(const CString &name)
+{
+	if (name.GetLength() == 11 && name.Left(10) == "c0cardface") {
+		TCHAR d = name[10];
+		return (d >= '0' && d <= '4');
+	}
+	if (name.GetLength() == 15 && name[0] == 'p'
+		&& name[1] >= '0' && name[1] <= '8'
+		&& name.Mid(2, 8) == "cardface"
+		&& (name[10] == '0' || name[10] == '1')) {
+		CString kind = name.Mid(11);
+		return (kind == "rank" || kind == "suit");
+	}
+	return false;
+}
+
+// Run the region's transform against the current table bitmap and return the text.
+CString COpenScrapeView::ScrapeRegionResult(RMapCI r_iter)
+{
+	CString result;
+	COpenScrapeDoc* pDoc = GetDocument();
+	if (pDoc == NULL || pDoc->attached_bitmap == NULL) {
+		return result;
+	}
+	int w = (int)r_iter->second.right - (int)r_iter->second.left + 1;
+	int h = (int)r_iter->second.bottom - (int)r_iter->second.top + 1;
+	if (w <= 0 || h <= 0) {
+		return result;
+	}
+
+	HDC hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL);
+	HDC hdcOrig = CreateCompatibleDC(hdcScreen);
+	HBITMAP oldOrig = (HBITMAP)SelectObject(hdcOrig, pDoc->attached_bitmap);
+
+	HDC hdcRegion = CreateCompatibleDC(hdcScreen);
+	HBITMAP bmpRegion = CreateCompatibleBitmap(hdcScreen, w, h);
+	HBITMAP oldRegion = (HBITMAP)SelectObject(hdcRegion, bmpRegion);
+
+	BitBlt(hdcRegion, 0, 0, w, h, hdcOrig,
+		r_iter->second.left, r_iter->second.top, SRCCOPY);
+
+	CTransform trans;
+	trans.DoTransform(r_iter, hdcRegion, &result);
+
+	SelectObject(hdcRegion, oldRegion);
+	DeleteObject(bmpRegion);
+	DeleteDC(hdcRegion);
+	SelectObject(hdcOrig, oldOrig);
+	DeleteDC(hdcOrig);
+	DeleteDC(hdcScreen);
+	return result;
+}
+
+// Recompute the cached results only when the captured frame changes (the image
+// compares are too costly to repeat on every repaint). Mirrors the decimal-line cache.
+void COpenScrapeView::RefreshCardResultsIfNeeded(COpenScrapeDoc *pDoc)
+{
+	if (pDoc == NULL || p_tablemap == NULL) {
+		return;
+	}
+	if (pDoc->attached_bitmap == _card_results_bmp) {
+		return;   // same frame -> cache still valid
+	}
+	_card_results_bmp = pDoc->attached_bitmap;
+	_card_results.clear();
+	if (pDoc->attached_bitmap == NULL) {
+		return;
+	}
+	for (RMapCI r_iter = p_tablemap->r$()->begin(); r_iter != p_tablemap->r$()->end(); ++r_iter) {
+		if (IsCardResultRegion(r_iter->second.name)) {
+			_card_results[r_iter->second.name] = ScrapeRegionResult(r_iter);
+		}
+	}
+}
+
+// Draw the detected value inside the region box at reduced opacity, with suit letters
+// rendered as pip symbols (h hearts, d diamonds, c clubs, s spades).
+void COpenScrapeView::DrawCardResultOverlay(CDC *pDC, RMapCI r_iter)
+{
+	std::map<CString, CString>::const_iterator it = _card_results.find(r_iter->second.name);
+	if (it == _card_results.end() || it->second.IsEmpty()) {
+		return;   // nothing detected -> nothing to show
+	}
+	const CString &result = it->second;
+
+	CStringW disp;
+	bool sawRed = false, sawBlack = false;
+	for (int i = 0; i < result.GetLength(); ++i) {
+		switch (result[i]) {
+			case 'h': disp += L"\x2665"; sawRed = true; break;    // heart
+			case 'd': disp += L"\x2666"; sawRed = true; break;    // diamond
+			case 'c': disp += L"\x2663"; sawBlack = true; break;  // club
+			case 's': disp += L"\x2660"; sawBlack = true; break;  // spade
+			default:  disp += (WCHAR)result[i]; break;            // rank / other
+		}
+	}
+	COLORREF color = sawRed ? RGB(220, 0, 0)
+		: sawBlack ? RGB(0, 0, 0)
+		: RGB(0, 60, 220);   // rank-only: neutral blue
+
+	int rw = (int)r_iter->second.right - (int)r_iter->second.left;
+	int rh = (int)r_iter->second.bottom - (int)r_iter->second.top;
+	int fpx = rh + 3;
+	if (fpx < 9)  fpx = 9;
+	if (fpx > 24) fpx = 24;
+
+	Gdiplus::Graphics g(pDC->GetSafeHdc());
+	g.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAlias);
+	Gdiplus::FontFamily ff(L"Arial");
+	Gdiplus::Font font(&ff, (Gdiplus::REAL)fpx, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+	Gdiplus::RectF box((Gdiplus::REAL)r_iter->second.left, (Gdiplus::REAL)r_iter->second.top,
+		(Gdiplus::REAL)(rw + 1), (Gdiplus::REAL)(rh + 1));
+	Gdiplus::StringFormat fmt;
+	fmt.SetAlignment(Gdiplus::StringAlignmentCenter);
+	fmt.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+
+	// Reduced opacity so the region pixels remain visible through the glyph.
+	Gdiplus::SolidBrush fg(Gdiplus::Color(150, GetRValue(color), GetGValue(color), GetBValue(color)));
+	g.DrawString(disp, -1, &font, box, &fmt, &fg);
+}
+
 // COpenScrapeView drawing
 
 void COpenScrapeView::OnDraw(CDC* pDC)
@@ -1346,6 +1476,8 @@ void COpenScrapeView::OnDraw(CDC* pDC)
 	// has been entered (training mode is turned off again).
 	if (!_training_mode)
 	{
+	// Refresh the cached card rank/suit/community detections for this frame.
+	RefreshCardResultsIfNeeded(pDoc);
 	// Draw all region rectangles
 	for (RMapCI r_iter=p_tablemap->r$()->begin(); r_iter!=p_tablemap->r$()->end(); r_iter++)
 	{
@@ -1411,6 +1543,11 @@ void COpenScrapeView::OnDraw(CDC* pDC)
 
 			pDC->SelectObject(oldpen);
 			pDC->SelectObject(oldbrush);
+		}
+
+		// Overlay the currently-detected value for card rank/suit/community regions.
+		if (IsCardResultRegion(r_iter->second.name)) {
+			DrawCardResultOverlay(pDC, r_iter);
 		}
 	}
 

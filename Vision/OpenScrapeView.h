@@ -155,6 +155,17 @@ private:
 	bool RegionUsesDecimalSplit(const CString &name);
 	void DrawDecimalSplitLines(CDC *pDC);
 
+	// Live result overlays for card rank/suit/community regions: shows the currently
+	// detected value inside each region box (semi-transparent, suit letters drawn as
+	// pip symbols). Cached per captured frame so the image-compares only re-run when
+	// the table bitmap changes.
+	std::map<CString, CString> _card_results;          // region name -> detected text
+	HBITMAP                    _card_results_bmp;       // frame the cache was computed for
+	static bool IsCardResultRegion(const CString &name);
+	CString ScrapeRegionResult(RMapCI r_iter);
+	void RefreshCardResultsIfNeeded(COpenScrapeDoc *pDoc);
+	void DrawCardResultOverlay(CDC *pDC, RMapCI r_iter);
+
 public:
 	bool		drawing_rect, drawing_started;
 	bool		drawing_rect2;   // drawing the optional second rectangle

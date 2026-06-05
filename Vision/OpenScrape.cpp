@@ -17,6 +17,8 @@
 #include "stdafx.h"
 #include <afxadv.h>
 #include <psapi.h>
+#include <gdiplus.h>
+#pragma comment(lib, "gdiplus.lib")
 
 #include "OpenScrape.h"
 #include "MainFrm.h"
@@ -132,6 +134,10 @@ BOOL COpenScrapeApp::InitInstance()
 	HANDLE		hProcess;
 	DWORD		curprocid, aProcesses[1024], cbNeeded, cProcesses;
 	char		sCurProcessName[MAX_PATH], sProcessName[MAX_PATH];
+
+	// GDI+ (used for the semi-transparent card-result overlays on the table view).
+	Gdiplus::GdiplusStartupInput gdiplusStartupInput;
+	Gdiplus::GdiplusStartup(&m_gdiplusToken, &gdiplusStartupInput, NULL);
 
 	// Classes
 	if (!p_tablemap)  p_tablemap = new CTablemap;
@@ -306,11 +312,13 @@ int COpenScrapeApp::ExitInstance()
 		delete p_tablemap_db;
 		p_tablemap_db = NULL;
 	}
-	if (m_TableMapDlg) 
-	{ 
+	if (m_TableMapDlg)
+	{
 		delete m_TableMapDlg;
 		m_TableMapDlg = NULL;
 	}
+
+	Gdiplus::GdiplusShutdown(m_gdiplusToken);
 
 	return CWinApp::ExitInstance();
 }
