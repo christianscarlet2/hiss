@@ -2202,6 +2202,17 @@ Mat CDlgTableMap::prepareImage(Mat img_orig, bool binarize, int threshold, bool 
 		addWeighted(img_resized, 1.0 + sharpen_amount, blurred, -sharpen_amount, 0, img_resized);
 	}
 
+	// For the grayscale (non-binarized) LSTM text path, adaptively boost contrast so FADED
+	// names (faint text barely above the background) become legible. CLAHE enhances local
+	// contrast without blowing out already-bright text. Skipped for the binarize path
+	// (balances) which is handled by thresholding.
+	if (!binarize && !img_resized.empty() && img_resized.type() == CV_8UC1) {
+		try {
+			cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(2.5, Size(8, 8));
+			clahe->apply(img_resized, img_resized);
+		} catch (const cv::Exception&) {}
+	}
+
 	if (binarize) {
 		img_resized = binarize_array_opencv(img_resized, threshold);
 		// Separate characters that sit too close so OCR can tell them apart.

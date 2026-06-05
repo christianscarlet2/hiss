@@ -594,10 +594,20 @@ Mat CAutoOcr::prepareImage(Mat img_orig, const SAutoOcrSettings &settings, bool 
 		basewidth = static_cast<int>(static_cast<float>(img_orig.cols) * wpercent);
 	}
 	cvtColor(img_orig, img_resized, COLOR_BGR2GRAY);
-	// The upscale is enhancement: skip it when "no preprocessing" is set.
-	// (Sharpen and cropping were removed from the pipeline.)
-	if (!settings.no_preprocess) {
+	// The upscale is enhancement: skip it when "no preprocessing" is set -- EXCEPT for the
+	// grayscale LSTM text path (!binarize), which always upscales to match Vision so the
+	// model sees adequately-sized glyphs.
+	if (!settings.no_preprocess || !binarize) {
 		resize(img_resized, img_resized, Size(basewidth, hsize), INTER_LANCZOS4);
+	}
+
+	// Grayscale LSTM text path: adaptively boost contrast so FADED names (faint text barely
+	// above the background) become legible. Matches Vision. Skipped for the binarize path.
+	if (!binarize && !img_resized.empty() && img_resized.type() == CV_8UC1) {
+		try {
+			cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(2.5, Size(8, 8));
+			clahe->apply(img_resized, img_resized);
+		} catch (const cv::Exception&) {}
 	}
 
 	// Threshold binarization ALWAYS applies (independent of "no preprocessing").
