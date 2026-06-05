@@ -1403,24 +1403,42 @@ void COpenScrapeView::DrawCardResultOverlay(CDC *pDC, RMapCI r_iter)
 		: sawBlack ? RGB(0, 0, 0)
 		: RGB(0, 60, 220);   // rank-only: neutral blue
 
-	int rw = (int)r_iter->second.right - (int)r_iter->second.left;
 	int rh = (int)r_iter->second.bottom - (int)r_iter->second.top;
-	int fpx = rh + 3;
-	if (fpx < 9)  fpx = 9;
-	if (fpx > 24) fpx = 24;
+	int fpx = (int)(rh * 1.6) + 5;   // magnified a bit
+	if (fpx < 13) fpx = 13;
+	if (fpx > 30) fpx = 30;
 
 	Gdiplus::Graphics g(pDC->GetSafeHdc());
 	g.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAlias);
 	Gdiplus::FontFamily ff(L"Arial");
 	Gdiplus::Font font(&ff, (Gdiplus::REAL)fpx, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-	Gdiplus::RectF box((Gdiplus::REAL)r_iter->second.left, (Gdiplus::REAL)r_iter->second.top,
-		(Gdiplus::REAL)(rw + 1), (Gdiplus::REAL)(rh + 1));
+
+	// Size a label box to the text, then float it just ABOVE the region (or below it
+	// if there is no room above), centred horizontally on the region.
+	Gdiplus::RectF measured;
+	g.MeasureString(disp, -1, &font, Gdiplus::PointF(0, 0), &measured);
+	const Gdiplus::REAL padX = 4.0f, padY = 2.0f, gap = 3.0f;
+	Gdiplus::REAL boxW = measured.Width + padX * 2;
+	Gdiplus::REAL boxH = measured.Height + padY * 2;
+	Gdiplus::REAL cx = (Gdiplus::REAL)((int)r_iter->second.left + (int)r_iter->second.right) / 2.0f;
+	Gdiplus::REAL boxX = cx - boxW / 2.0f;
+	Gdiplus::REAL boxY = (Gdiplus::REAL)r_iter->second.top - boxH - gap;
+	if (boxX < 0) boxX = 0;
+	if (boxY < 0) {
+		boxY = (Gdiplus::REAL)r_iter->second.bottom + gap;   // no room above -> below
+	}
+	Gdiplus::RectF box(boxX, boxY, boxW, boxH);
+
+	// Solid, easy-to-read background + thin border; full-opacity coloured glyph.
+	Gdiplus::SolidBrush bg(Gdiplus::Color(245, 250, 250, 245));
+	g.FillRectangle(&bg, box);
+	Gdiplus::Pen border(Gdiplus::Color(220, 40, 40, 40), 1.0f);
+	g.DrawRectangle(&border, boxX, boxY, boxW, boxH);
+
 	Gdiplus::StringFormat fmt;
 	fmt.SetAlignment(Gdiplus::StringAlignmentCenter);
 	fmt.SetLineAlignment(Gdiplus::StringAlignmentCenter);
-
-	// Reduced opacity so the region pixels remain visible through the glyph.
-	Gdiplus::SolidBrush fg(Gdiplus::Color(150, GetRValue(color), GetGValue(color), GetBValue(color)));
+	Gdiplus::SolidBrush fg(Gdiplus::Color(255, GetRValue(color), GetGValue(color), GetBValue(color)));
 	g.DrawString(disp, -1, &font, box, &fmt, &fg);
 }
 
