@@ -25,6 +25,37 @@
 #include <gdiplus.h>
 #include <ctype.h>
 
+#define AUTO_CAPTURE_TIMER 0xA100
+
+// Reads the auto-card-capture poll interval (ms) from the shared settings, default 2000.
+static int AutoCaptureIntervalMs() {
+	int ms = 2000;
+	if (p_tablemap_db != NULL) {
+		CString v = p_tablemap_db->GetSettingString("auto_card_capture", "interval_ms");
+		if (!v.IsEmpty()) ms = atoi(v);
+	}
+	if (ms < 250) ms = 250;
+	return ms;
+}
+
+// Duplicates an HBITMAP into a fresh independent bitmap (for the capture buffer).
+static HBITMAP DuplicateHBitmap(HBITMAP src, int w, int h) {
+	if (src == NULL || w <= 0 || h <= 0) return NULL;
+	HDC screen = CreateDC("DISPLAY", NULL, NULL, NULL);
+	HDC sdc = CreateCompatibleDC(screen);
+	HDC ddc = CreateCompatibleDC(screen);
+	HBITMAP dst = CreateCompatibleBitmap(screen, w, h);
+	HBITMAP os = (HBITMAP)SelectObject(sdc, src);
+	HBITMAP od = (HBITMAP)SelectObject(ddc, dst);
+	BitBlt(ddc, 0, 0, w, h, sdc, 0, 0, SRCCOPY);
+	SelectObject(sdc, os);
+	SelectObject(ddc, od);
+	DeleteDC(sdc);
+	DeleteDC(ddc);
+	DeleteDC(screen);
+	return dst;
+}
+
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
@@ -106,6 +137,7 @@ BEGIN_MESSAGE_MAP(COpenScrapeView, CView)
 	ON_WM_MOUSEMOVE()
 	ON_WM_SETCURSOR()
 	ON_WM_KEYDOWN()
+	ON_WM_TIMER()
 	ON_COMMAND(ID_EDIT_UNDO, &COpenScrapeView::OnEditUndo)
 	ON_COMMAND(ID_EDIT_REDO, &COpenScrapeView::OnEditRedo)
 	ON_UPDATE_COMMAND_UI(ID_EDIT_UNDO, &COpenScrapeView::OnUpdateEditUndo)
@@ -136,6 +168,8 @@ COpenScrapeView::COpenScrapeView()
 	_decimal_fields_loaded = false;
 	_decimal_cached_bmp = NULL;
 	_card_results_bmp = NULL;
+	_auto_capture = false;
+	_capture_index = -1;
 
 	dragging = false;
 	dragged_region = "";
@@ -158,6 +192,7 @@ COpenScrapeView::COpenScrapeView()
 
 COpenScrapeView::~COpenScrapeView()
 {
+	ClearCaptureBuffer();
 }
 
 BOOL COpenScrapeView::PreCreateWindow(CREATESTRUCT& cs)
@@ -1465,6 +1500,136 @@ void COpenScrapeView::DrawCardResultOverlay(CDC *pDC, RMapCI r_iter)
 
 	Gdiplus::SolidBrush fg(Gdiplus::Color(255, GetRValue(color), GetGValue(color), GetBValue(color)));
 	g.DrawString(disp, -1, &font, box, &fmt, &fg);
+}
+
+// --- Auto card capture ---------------------------------------------------------
+
+void COpenScrapeView::ToggleAutoCapture()
+{
+	_auto_capture = !_auto_capture;
+	if (_auto_capture) {
+		SetTimer(AUTO_CAPTURE_TIMER, AutoCaptureIntervalMs(), NULL);
+		AutoCaptureTick();   // grab one immediately
+	} else {
+		KillTimer(AUTO_CAPTURE_TIMER);
+	}
+	if (theApp.m_pMainWnd) theApp.m_pMainWnd->Invalidate(FALSE);   // refresh the toolbar check
+}
+
+void COpenScrapeView::OnAutoCaptureIntervalChanged(int interval_ms)
+{
+	if (_auto_capture) {
+		if (interval_ms < 250) interval_ms = 250;
+		SetTimer(AUTO_CAPTURE_TIMER, interval_ms, NULL);
+	}
+}
+
+void COpenScrapeView::OnTimer(UINT_PTR nIDEvent)
+{
+	if (nIDEvent == AUTO_CAPTURE_TIMER) {
+		AutoCaptureTick();
+		return;
+	}
+	CView::OnTimer(nIDEvent);
+}
+
+// True when opponent card ranks/suits are detected (any of p0-p8 EXCEPT the hero p3),
+// or when all five community cards are present.
+bool COpenScrapeView::CardCaptureConditionMet()
+{
+	bool player_hit = false;
+	int community = 0;
+	for (std::map<CString, CString>::const_iterator it = _card_results.begin(); it != _card_results.end(); ++it) {
+		if (it->second.IsEmpty()) continue;
+		const CString &n = it->first;
+		if (n.GetLength() == 11 && n.Left(10) == "c0cardface") {
+			++community;                       // c0cardface0..4
+		} else if (n.GetLength() == 15 && n[0] == 'p' && n[1] != '3'
+				&& n[1] >= '0' && n[1] <= '8' && n.Mid(2, 8) == "cardface") {
+			player_hit = true;                 // p<0-8except3>cardface<0/1>{rank|suit}
+		}
+	}
+	return player_hit || (community >= 5);
+}
+
+void COpenScrapeView::AutoCaptureTick()
+{
+	COpenScrapeDoc *pDoc = GetDocument();
+	CMainFrame *mf = (CMainFrame *)AfxGetMainWnd();
+	if (pDoc == NULL || mf == NULL) return;
+	if (pDoc->attached_hwnd == NULL || !::IsWindow(pDoc->attached_hwnd)) return;
+
+	mf->SaveBmpPbits();                       // fresh frame -> attached_bitmap
+	if (pDoc->attached_bitmap == NULL) return;
+
+	RefreshCardResultsIfNeeded(pDoc);         // run card detection on the new frame (~slow)
+
+	if (CardCaptureConditionMet()) {
+		int w = pDoc->attached_rect.right - pDoc->attached_rect.left;
+		int h = pDoc->attached_rect.bottom - pDoc->attached_rect.top;
+		HBITMAP copy = DuplicateHBitmap(pDoc->attached_bitmap, w, h);
+		if (copy != NULL) {
+			const size_t kMaxBuffer = 400;
+			if (_capture_buffer.size() >= kMaxBuffer) {
+				if (_capture_buffer.front()) DeleteObject(_capture_buffer.front());
+				_capture_buffer.erase(_capture_buffer.begin());
+				_capture_sizes.erase(_capture_sizes.begin());
+			}
+			_capture_buffer.push_back(copy);
+			_capture_sizes.push_back(CSize(w, h));
+			_capture_index = (int)_capture_buffer.size() - 1;
+		}
+	}
+	mf->ForceRedraw();                        // show this frame in the Table View every poll
+}
+
+void COpenScrapeView::NavigateCapture(int delta)
+{
+	if (_capture_buffer.empty()) return;
+	int n = (int)_capture_buffer.size();
+	if (_capture_index < 0) _capture_index = (delta >= 0) ? 0 : n - 1;
+	else _capture_index += delta;
+	if (_capture_index < 0) _capture_index = 0;
+	if (_capture_index >= n) _capture_index = n - 1;
+
+	COpenScrapeDoc *pDoc = GetDocument();
+	if (pDoc == NULL) return;
+	int w = _capture_sizes[_capture_index].cx;
+	int h = _capture_sizes[_capture_index].cy;
+	HBITMAP copy = DuplicateHBitmap(_capture_buffer[_capture_index], w, h);
+	if (copy == NULL) return;
+
+	if (pDoc->attached_bitmap) DeleteObject(pDoc->attached_bitmap);
+	pDoc->attached_bitmap = copy;
+	pDoc->attached_rect.left = 0;
+	pDoc->attached_rect.top = 0;
+	pDoc->attached_rect.right = w;
+	pDoc->attached_rect.bottom = h;
+	RefreshWholeApp();
+}
+
+// Reload detection for the current frame and repaint everything (per the spec, the
+// whole app is refreshed when a buffered screenshot is loaded).
+void COpenScrapeView::RefreshWholeApp()
+{
+	COpenScrapeDoc *pDoc = GetDocument();
+	if (pDoc) RefreshCardResultsIfNeeded(pDoc);
+	if (theApp.m_TableMapDlg) {
+		theApp.m_TableMapDlg->update_display();
+		theApp.m_TableMapDlg->Invalidate(FALSE);
+	}
+	CMainFrame *mf = (CMainFrame *)AfxGetMainWnd();
+	if (mf) mf->ForceRedraw();
+	Invalidate(FALSE);
+}
+
+void COpenScrapeView::ClearCaptureBuffer()
+{
+	for (size_t i = 0; i < _capture_buffer.size(); ++i)
+		if (_capture_buffer[i]) DeleteObject(_capture_buffer[i]);
+	_capture_buffer.clear();
+	_capture_sizes.clear();
+	_capture_index = -1;
 }
 
 // COpenScrapeView drawing

@@ -167,7 +167,19 @@ BOOL CDlgSettings::OnInitDialog()
 	m_groups.AddString("AutoOcr0");
 	m_groups.AddString("AutoOcr1");
 	m_groups.AddString("Advanced");
+	m_groups.AddString("Auto Card Capture");
 	m_groups.SetCurSel(0);
+
+	// Auto card capture: detection poll interval (ms), default 2000 (~one frame).
+	{
+		int interval = 2000;
+		if (p_tablemap_db != NULL) {
+			CString v = p_tablemap_db->GetSettingString("auto_card_capture", "interval_ms");
+			if (!v.IsEmpty()) interval = atoi(v);
+		}
+		if (interval < 250) interval = 250;
+		SetDlgItemInt(IDC_SET_ACC_INTERVAL, interval, FALSE);
+	}
 
 	m_threshold_spin.SetRange(0, 300);
 	m_threshold_spin.SetBuddy(&m_threshold);
@@ -299,6 +311,7 @@ void CDlgSettings::ShowPage(int index)
 		IDC_SET_ORIG_LEFT, IDC_SET_ORIG_RIGHT, IDC_SET_RESULT_LBL, IDC_SET_RESULT,
 		IDC_SET_RESULT_LR_LBL, IDC_SET_RESULT_LEFT, IDC_SET_RESULT_RIGHT };
 	int advanced[] = { IDC_SET_ADVANCED_TEXT };
+	int autocap[] = { IDC_SET_ACC_TEXT, IDC_SET_ACC_LBL, IDC_SET_ACC_INTERVAL };
 
 	const int *show = general; int show_n = sizeof(general) / sizeof(int);
 	CString title = "General";
@@ -306,6 +319,7 @@ void CDlgSettings::ShowPage(int index)
 	else if (index == 2) { show = autoocr; show_n = sizeof(autoocr) / sizeof(int); title = "AutoOcr0"; }
 	else if (index == 3) { show = autoocr; show_n = sizeof(autoocr) / sizeof(int); title = "AutoOcr1"; }
 	else if (index == 4) { show = advanced;show_n = sizeof(advanced)/ sizeof(int); title = "Advanced"; }
+	else if (index == 5) { show = autocap; show_n = sizeof(autocap)/ sizeof(int);  title = "Auto Card Capture"; }
 
 	int all[] = { IDC_SET_GENERAL_TEXT, IDC_SET_FIELDS_DECLBL, IDC_LST_DECIMAL_FIELDS,
 		IDC_SET_SCRAPE_LBL, IDC_LST_SCRAPE_FIELDS,
@@ -315,7 +329,8 @@ void CDlgSettings::ShowPage(int index)
 		IDC_CHK_NO_CHARSPACING, IDC_CHK_LIVE_POLL, IDC_SET_LIVE_HINT, IDC_SET_ORIG_LBL,
 		IDC_SET_ORIG_VIEW, IDC_SET_OCR_LBL, IDC_SET_OCR_VIEW, IDC_SET_SPLIT_LBL,
 		IDC_SET_ORIG_LEFT, IDC_SET_ORIG_RIGHT, IDC_SET_RESULT_LBL, IDC_SET_RESULT,
-		IDC_SET_RESULT_LR_LBL, IDC_SET_RESULT_LEFT, IDC_SET_RESULT_RIGHT, IDC_SET_ADVANCED_TEXT };
+		IDC_SET_RESULT_LR_LBL, IDC_SET_RESULT_LEFT, IDC_SET_RESULT_RIGHT, IDC_SET_ADVANCED_TEXT,
+		IDC_SET_ACC_TEXT, IDC_SET_ACC_LBL, IDC_SET_ACC_INTERVAL };
 	for (int i = 0; i < (int)(sizeof(all) / sizeof(int)); ++i) {
 		CWnd *w = GetDlgItem(all[i]); if (w) w->ShowWindow(SW_HIDE);
 	}
@@ -477,6 +492,18 @@ void CDlgSettings::OnOK()
 	if (m_current_group == 2 || m_current_group == 3) SaveGroup(m_current_group);
 	SaveDecimalFields();
 	SaveScrapeFields();
+	// Persist the auto-capture poll interval.
+	if (p_tablemap_db != NULL) {
+		BOOL ok = FALSE;
+		int interval = (int)GetDlgItemInt(IDC_SET_ACC_INTERVAL, &ok, FALSE);
+		if (ok) {
+			if (interval < 250) interval = 250;
+			CString v; v.Format("%d", interval);
+			p_tablemap_db->SetSettingString("auto_card_capture", "interval_ms", v);
+			COpenScrapeView *pView = COpenScrapeView::GetView();
+			if (pView != NULL) pView->OnAutoCaptureIntervalChanged(interval);
+		}
+	}
 	KillTimer(SETTINGS_POLL_TIMER);
 	DestroyWindow();
 }

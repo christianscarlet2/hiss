@@ -52,6 +52,7 @@ protected: // create from serialization only
 	afx_msg void OnRButtonDown(UINT nFlags, CPoint point);
 	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
 	afx_msg void OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags);
+	afx_msg void OnTimer(UINT_PTR nIDEvent);
 	afx_msg void OnEditUndo();
 	afx_msg void OnEditRedo();
 	afx_msg void OnUpdateEditUndo(CCmdUI *pCmdUI);
@@ -149,6 +150,25 @@ public:
 	// Decimal-split overlay: a red line where the decimal separator sits, for
 	// regions whose field type is configured for decimal splitting (settings).
 	void ReloadDecimalFields() { _decimal_fields_loaded = false; }
+
+	// --- Auto card capture -----------------------------------------------------
+	// AUTO toolbar toggle: on a timer, grab the connected window, run card detection,
+	// and buffer the frame whenever opponent ranks/suits (excluding hero p3) are seen
+	// or all 5 community cards are present. The back/next arrows scrub the buffer.
+	void ToggleAutoCapture();
+	bool IsAutoCapture() const { return _auto_capture; }
+	bool HasCaptures() const { return !_capture_buffer.empty(); }
+	void NavigateCapture(int delta);
+	void OnAutoCaptureIntervalChanged(int interval_ms);
+private:
+	bool                 _auto_capture;
+	int                  _capture_index;
+	std::vector<HBITMAP> _capture_buffer;     // copies of frames that matched
+	std::vector<CSize>   _capture_sizes;      // pixel size of each buffered frame
+	void AutoCaptureTick();
+	bool CardCaptureConditionMet();
+	void RefreshWholeApp();
+	void ClearCaptureBuffer();
 private:
 	std::vector<CString> _decimal_fields;          // field-type substrings from settings
 	bool                 _decimal_fields_loaded;

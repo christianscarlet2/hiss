@@ -60,6 +60,12 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
 	ON_COMMAND(ID_MAIN_TOOLBAR_TRAINING, &CMainFrame::OnTrainingData)
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_TRAINING, &CMainFrame::OnTrainingData)
 	ON_UPDATE_COMMAND_UI(ID_MAIN_TOOLBAR_TRAINING, &CMainFrame::OnUpdateTrainingData)
+	ON_COMMAND(ID_AUTO_CAPTURE, &CMainFrame::OnAutoCapture)
+	ON_UPDATE_COMMAND_UI(ID_AUTO_CAPTURE, &CMainFrame::OnUpdateAutoCapture)
+	ON_COMMAND(ID_AUTO_CAPTURE_BACK, &CMainFrame::OnAutoCaptureBack)
+	ON_COMMAND(ID_AUTO_CAPTURE_NEXT, &CMainFrame::OnAutoCaptureNext)
+	ON_UPDATE_COMMAND_UI(ID_AUTO_CAPTURE_BACK, &CMainFrame::OnUpdateAutoCaptureNav)
+	ON_UPDATE_COMMAND_UI(ID_AUTO_CAPTURE_NEXT, &CMainFrame::OnUpdateAutoCaptureNav)
 	ON_COMMAND(ID_TOOLS_CLONEREGIONS, &CMainFrame::OnToolsCloneRegions)
 	ON_COMMAND(ID_TOOLS_SHIFTREGIONS, &CMainFrame::OnToolsShiftRegions)
 
@@ -794,6 +800,33 @@ void CMainFrame::ResizeWindow(COpenScrapeDoc *pDoc)
 	// Set the frame so the view's client area exactly matches the captured screenshot.
 	theApp.m_pMainWnd->SetWindowPos(NULL, 0, 0, frame_size.cx, frame_size.cy, SWP_NOMOVE | SWP_NOZORDER);
 	DockTableMapWindow(false);
+}
+
+// --- Auto card capture toolbar buttons (delegate to the view, which owns the loop) -
+void CMainFrame::OnAutoCapture()
+{
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	if (pView) pView->ToggleAutoCapture();
+}
+void CMainFrame::OnUpdateAutoCapture(CCmdUI *pCmdUI)
+{
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	pCmdUI->SetCheck((pView && pView->IsAutoCapture()) ? 1 : 0);
+}
+void CMainFrame::OnAutoCaptureBack()
+{
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	if (pView) pView->NavigateCapture(-1);
+}
+void CMainFrame::OnAutoCaptureNext()
+{
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	if (pView) pView->NavigateCapture(+1);
+}
+void CMainFrame::OnUpdateAutoCaptureNav(CCmdUI *pCmdUI)
+{
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	pCmdUI->Enable(pView && pView->HasCaptures());
 }
 
 void CMainFrame::OnViewRefresh()

@@ -47,7 +47,11 @@ class CMainFrame : public CFrameWnd {
 	afx_msg void OnUpdateEditDuplicateregion(CCmdUI *pCmdUI);
 	afx_msg void OnUpdateGroupregionsBytype(CCmdUI *pCmdUI);
 	afx_msg void OnUpdateGroupregionsByname(CCmdUI *pCmdUI);
-	void SaveBmpPbits(void);
+	afx_msg void OnAutoCapture();
+	afx_msg void OnUpdateAutoCapture(CCmdUI *pCmdUI);
+	afx_msg void OnAutoCaptureBack();
+	afx_msg void OnAutoCaptureNext();
+	afx_msg void OnUpdateAutoCaptureNav(CCmdUI *pCmdUI);
 	DECLARE_MESSAGE_MAP()
 
 	CStatusBar	m_wndStatusBar;
@@ -60,12 +64,15 @@ class CMainFrame : public CFrameWnd {
 	// and save both on exit.
 	void RestoreSessionFromDb();
 	void SaveSessionToDb();
+	// Capture the connected window into the document bitmap (public so the auto-card-
+	// capture loop in the view can grab a fresh frame), and force a full redraw.
+	void SaveBmpPbits(void);
+	void ForceRedraw();
 	virtual BOOL PreCreateWindow(CREATESTRUCT& cs);
 	virtual ~CMainFrame();
  private:
 	bool CreateToolbar();
 	bool CreateStatusBar();
-	void ForceRedraw();
 	void AttachToTableCandidate(const STableList &candidate);
 	bool TableCandidateMatchesTitleText(const STableList &candidate);
 	void ResizeWindow(COpenScrapeDoc *pDoc);

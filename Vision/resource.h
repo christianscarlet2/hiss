@@ -167,6 +167,9 @@
 #define ID_MAIN_TOOLBAR_PREV            32785
 #define ID_MAIN_TOOLBAR_NEXT            32786
 #define ID_MAIN_TOOLBAR_TRAINING        32796
+#define ID_AUTO_CAPTURE                 32801
+#define ID_AUTO_CAPTURE_BACK            32802
+#define ID_AUTO_CAPTURE_NEXT            32803
 #define ID_VIEW_PREV                    32787
 #define ID_VIEW_NEXT                    32788
 #define ID_TOOLS_CLONEREGIONS           32789
@@ -222,11 +225,14 @@
 #define IDC_LST_SCRAPE_FIELDS           1235
 #define IDC_SET_SCRAPE_LBL              1236
 #define IDC_LOCKED_LABEL                1255
+#define IDC_SET_ACC_TEXT                1256
+#define IDC_SET_ACC_LBL                 1257
+#define IDC_SET_ACC_INTERVAL            1258
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        154
-#define _APS_NEXT_COMMAND_VALUE         32800
-#define _APS_NEXT_CONTROL_VALUE         1256
+#define _APS_NEXT_COMMAND_VALUE         32804
+#define _APS_NEXT_CONTROL_VALUE         1259
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
