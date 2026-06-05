@@ -251,6 +251,7 @@ BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_BN_CLICKED(IDC_CREATE_FONTS, &CTrainerDlg::OnBnClickedCreateFonts)
 	ON_BN_CLICKED(IDC_GEN_SAMPLES, &CTrainerDlg::OnGenerateSamples)
 	ON_COMMAND(ID_TOOLS_GEN_SAMPLES, &CTrainerDlg::OnGenerateSamples)
+	ON_COMMAND(ID_TOOLS_GEN_BALANCES, &CTrainerDlg::OnGenerateBalanceSamples)
 	ON_COMMAND(ID_TOOLS_SETTINGS, &CTrainerDlg::OnToolsSettings)
 	ON_MESSAGE(WM_TRAINER_CLEAR_TRAINING, &CTrainerDlg::OnClearTraining)
 	ON_WM_TIMER()
@@ -1060,6 +1061,12 @@ void CTrainerDlg::OnBnClickedCreateFonts()
 void CTrainerDlg::OnGenerateSamples()
 {
 	T2I_GenerateInteractive(this);
+}
+
+// Tools menu: synthesize balance-number images (0-1000, 0/1/2 decimals) into training\.
+void CTrainerDlg::OnGenerateBalanceSamples()
+{
+	T2I_GenerateBalancesInteractive(this);
 }
 
 // Tools > Settings...: edit the text2image.exe path + PT4 connection.

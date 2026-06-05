@@ -42,6 +42,7 @@
 #define IDR_TRAINER_MENU                133
 #define ID_TOOLS_SETTINGS              32771
 #define ID_TOOLS_GEN_SAMPLES          32772
+#define ID_TOOLS_GEN_BALANCES         32773
 #define IDC_GEN_SAMPLES                 1032
 #define IDC_T2I_PATH                    1033
 #define IDC_T2I_BROWSE                  1034
@@ -65,7 +66,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        134
-#define _APS_NEXT_COMMAND_VALUE         32773
+#define _APS_NEXT_COMMAND_VALUE         32774
 #define _APS_NEXT_CONTROL_VALUE         1051
 #define _APS_NEXT_SYMED_VALUE           101
 #endif

@@ -73,6 +73,7 @@ BEGIN
     BEGIN
         MENUITEM "&Settings...",                 ID_TOOLS_SETTINGS
         MENUITEM "&Generate Username Samples...", ID_TOOLS_GEN_SAMPLES
+        MENUITEM "Generate &Balance Samples...",  ID_TOOLS_GEN_BALANCES
     END
 END
 

@@ -14,5 +14,10 @@
 void T2I_OpenSettings(CWnd *parent);
 
 // Ask "how many samples?", then run generation behind a modal progress dialog (with a
-// progress bar + Cancel). Reports setup errors via a message box.
-void T2I_GenerateInteractive(CWnd *parent);
+// progress bar + Cancel). Reports setup errors via a message box. Both generators
+// distribute the work across the shared parallel worker pool.
+void T2I_GenerateInteractive(CWnd *parent);          // PT4 player-name samples
+
+// Same flow, but synthesises balance numbers (0-1000, with 0/1/2 decimal places) instead
+// of pulling names from PT4. Shows an explanatory prompt before starting.
+void T2I_GenerateBalancesInteractive(CWnd *parent);

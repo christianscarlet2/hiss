@@ -56,6 +56,7 @@ protected:
 	afx_msg void OnBnClickedOpenTable();
 	afx_msg void OnBnClickedCreateFonts();
 	afx_msg void OnGenerateSamples();    // "Generate Username Samples" button / Tools menu
+	afx_msg void OnGenerateBalanceSamples(); // Tools > Generate Balance Samples...
 	afx_msg void OnToolsSettings();      // Tools > Settings...
 	afx_msg LRESULT OnClearTraining(WPARAM wParam, LPARAM lParam);
 	afx_msg void OnTimer(UINT_PTR nIDEvent);

@@ -5,10 +5,27 @@
 #include "TrainerMessages.h"
 
 #include "libpq-fe.h"
+#include "..\Shared\ParallelWorkerPool.h"   // distributed sample generation
 #include <vector>
 #include <string>
 
 using namespace cv;
+
+// What a generation run produces: PT4 player names, or synthetic balance numbers.
+enum GenKind { GEN_NAMES = 0, GEN_BALANCES = 1 };
+
+// A random balance string: an integer 0..1000 with 0, 1, or 2 decimal places.
+//   e.g. "523", "523.4", "523.42", "0.07", "1000"
+static CStringA RandomBalance()
+{
+	int whole = rand() % 1001;              // 0..1000
+	int places = rand() % 3;                // 0, 1 or 2 decimals
+	CStringA s;
+	if (places == 0)      s.Format("%d", whole);
+	else if (places == 1) s.Format("%d.%d", whole, rand() % 10);
+	else                  s.Format("%d.%02d", whole, rand() % 100);
+	return s;
+}
 
 // ============================ settings (persisted) ===========================
 // Stored in the hiss `settings` table under key 'text2image' (reusing TrainerDB).
@@ -252,41 +269,51 @@ static int ComputeStartIndex(const CString &train_dir)
 	return hi + 1;
 }
 
-// Render one username via text2image, recolour (green-on-dark), size to ~`target_h`px,
-// and write sample_NNNN.png + sample_NNNN.gt.txt. `next_index` is advanced past any
-// names that already exist (so concurrently-created files never clash).
-static bool GenerateOne(const ST2ISettings &s, const CString &train_dir, const CString &fonts_dir,
-	const CString &tmp_dir, const CStringA &name, const CStringA &font_desc, const int fg[3],
-	const Vec3b &border_color, int target_h, int *next_index)
+// One sample's parameters, all chosen on the (single) driver thread so rand() stays
+// serial; the worker threads only do the deterministic text2image + image work.
+struct GenJob {
+	CStringA text;          // the line to render (name or balance)
+	CStringA font;          // text2image --font description
+	int fr, fg, fb;         // foreground (text) colour
+	int ptsize;             // text2image point size (size variance)
+	int bt, bb, bl, br;     // per-side border px (~4px positional variance)
+	int target_h;           // resized text line height
+	int index;              // sample_NNNN (pre-assigned, unique => no clash)
+};
+
+// Render one line via text2image, recolour over the table's darkest background, size to
+// ~target_h, add the (varied) border, and write sample_NNNN.png + sample_NNNN.gt.txt.
+// Thread-safe: every input is fixed and the temp files are keyed by the sample index, so
+// many of these can run concurrently on the worker pool.
+static bool GenerateOneAt(const ST2ISettings &s, const CString &train_dir, const CString &fonts_dir,
+	const CString &tmp_dir, const Vec3b &border_color, const GenJob &j)
 {
-	const CString in_txt = tmp_dir + "\\in.txt";
-	const CString base   = tmp_dir + "\\s";
+	CString tag; tag.Format("%d", j.index);
+	const CString in_txt = tmp_dir + "\\in_" + tag + ".txt";
+	const CString base   = tmp_dir + "\\s_" + tag;
 	const CString tif    = base + ".tif";
 	const CString box    = base + ".box";
 
-	// Write the line of text (UTF-8 bytes as-is, no newline).
 	{
 		FILE *f = NULL;
 		if (fopen_s(&f, CStringA(in_txt).GetString(), "wb") != 0 || f == NULL) return false;
-		if (name.GetLength() > 0) fwrite(name.GetString(), 1, name.GetLength(), f);
+		if (j.text.GetLength() > 0) fwrite(j.text.GetString(), 1, j.text.GetLength(), f);
 		fclose(f);
 	}
-	// Clear stale output so a failed render can't be mistaken for this sample.
 	DeleteFile(tif); DeleteFile(box);
 
-	const int pt = 20 + (rand() % 11);   // 20..30
 	CString cmd;
 	cmd.Format("\"%s\" --text=\"%s\" --outputbase=\"%s\" --font=\"%s\" --fonts_dir=\"%s\" "
 		"--fontconfig_tmpdir=\"%s\" --ptsize=%d --xsize=1800 --ysize=200 --margin=12 "
 		"--degrade_image=false --rotate_image=false",
 		s.exe_path.GetString(), in_txt.GetString(), base.GetString(),
-		CString(font_desc).GetString(), fonts_dir.GetString(), tmp_dir.GetString(), pt);
+		CString(j.font).GetString(), fonts_dir.GetString(), tmp_dir.GetString(), j.ptsize);
 	DWORD code = 0;
-	if (!RunProcess(cmd, 20000, NULL, &code)) return false;
-	if (GetFileAttributes(tif) == INVALID_FILE_ATTRIBUTES) return false;
+	if (!RunProcess(cmd, 20000, NULL, &code)) { DeleteFile(in_txt); return false; }
+	if (GetFileAttributes(tif) == INVALID_FILE_ATTRIBUTES) { DeleteFile(in_txt); return false; }
 
 	Mat gray = imread(std::string(CStringA(tif).GetString()), IMREAD_GRAYSCALE);
-	if (gray.empty()) return false;
+	if (gray.empty()) { DeleteFile(in_txt); return false; }
 
 	// Ink bounding box (text is dark on white; <200 keeps anti-aliased edges).
 	int minx = gray.cols, miny = gray.rows, maxx = -1, maxy = -1;
@@ -299,60 +326,57 @@ static bool GenerateOne(const ST2ISettings &s, const CString &train_dir, const C
 			}
 		}
 	}
-	if (maxx < 0) return false;   // blank render
-	const int pad = 2;
-	minx = ClampI(minx - pad, 0, gray.cols - 1);
-	miny = ClampI(miny - pad, 0, gray.rows - 1);
-	maxx = ClampI(maxx + pad, 0, gray.cols - 1);
-	maxy = ClampI(maxy + pad, 0, gray.rows - 1);
-	Mat crop = gray(Rect(minx, miny, maxx - minx + 1, maxy - miny + 1));
-
-	// Recolour: dark background, chosen green foreground; ink coverage = (255-gray)/255.
-	const int bgR = 18, bgG = 20, bgB = 18;
-	Mat colored(crop.rows, crop.cols, CV_8UC3);
-	for (int y = 0; y < crop.rows; ++y) {
-		const uchar *gp = crop.ptr<uchar>(y);
-		Vec3b *op = colored.ptr<Vec3b>(y);
-		for (int x = 0; x < crop.cols; ++x) {
-			double a = (255.0 - gp[x]) / 255.0;
-			int B = ClampI((int)(bgB + (fg[2] - bgB) * a + 0.5), 0, 255);
-			int G = ClampI((int)(bgG + (fg[1] - bgG) * a + 0.5), 0, 255);
-			int R = ClampI((int)(bgR + (fg[0] - bgR) * a + 0.5), 0, 255);
-			op[x] = Vec3b((uchar)B, (uchar)G, (uchar)R);
-		}
-	}
-
-	// Size to match the existing training samples (line height ~14-15px).
-	int new_w = (int)((double)colored.cols * target_h / colored.rows + 0.5);
-	if (new_w < 1) new_w = 1;
-	Mat sized;
-	resize(colored, sized, Size(new_w, target_h), 0, 0, INTER_AREA);
-
-	// Add a 4px border using the darkest colour sampled from an existing training image,
-	// extending the width/height a little.
+	bool ok_img = true;
+	if (maxx < 0) ok_img = false;   // blank render
 	Mat final_img;
-	copyMakeBorder(sized, final_img, 4, 4, 4, 4, BORDER_CONSTANT,
-		Scalar(border_color[0], border_color[1], border_color[2]));
+	if (ok_img) {
+		const int pad = 2;
+		minx = ClampI(minx - pad, 0, gray.cols - 1);
+		miny = ClampI(miny - pad, 0, gray.rows - 1);
+		maxx = ClampI(maxx + pad, 0, gray.cols - 1);
+		maxy = ClampI(maxy + pad, 0, gray.rows - 1);
+		Mat crop = gray(Rect(minx, miny, maxx - minx + 1, maxy - miny + 1));
 
-	// Next free sample_NNNN (re-checked so concurrently-added files never clash).
-	CString png_path, txt_path, base_name;
-	for (;;) {
-		base_name.Format("sample_%04d", *next_index);
-		png_path = train_dir + base_name + ".png";
-		txt_path = train_dir + base_name + ".gt.txt";
-		if (GetFileAttributes(png_path) == INVALID_FILE_ATTRIBUTES
-			&& GetFileAttributes(txt_path) == INVALID_FILE_ATTRIBUTES) break;
-		(*next_index)++;
+		const int bgR = 18, bgG = 20, bgB = 18;
+		Mat colored(crop.rows, crop.cols, CV_8UC3);
+		for (int y = 0; y < crop.rows; ++y) {
+			const uchar *gp = crop.ptr<uchar>(y);
+			Vec3b *op = colored.ptr<Vec3b>(y);
+			for (int x = 0; x < crop.cols; ++x) {
+				double a = (255.0 - gp[x]) / 255.0;
+				int B = ClampI((int)(bgB + (j.fb - bgB) * a + 0.5), 0, 255);
+				int G = ClampI((int)(bgG + (j.fg - bgG) * a + 0.5), 0, 255);
+				int R = ClampI((int)(bgR + (j.fr - bgR) * a + 0.5), 0, 255);
+				op[x] = Vec3b((uchar)B, (uchar)G, (uchar)R);
+			}
+		}
+
+		int new_w = (int)((double)colored.cols * j.target_h / colored.rows + 0.5);
+		if (new_w < 1) new_w = 1;
+		Mat sized;
+		resize(colored, sized, Size(new_w, j.target_h), 0, 0, INTER_AREA);
+
+		// Border = the table's darkest colour, with a small per-side variance (~4px) so
+		// the text isn't pinned to the same offset in every sample.
+		copyMakeBorder(sized, final_img, j.bt, j.bb, j.bl, j.br, BORDER_CONSTANT,
+			Scalar(border_color[0], border_color[1], border_color[2]));
 	}
+
+	// Clean up this job's temp files regardless.
+	DeleteFile(in_txt); DeleteFile(tif); DeleteFile(box);
+	if (!ok_img) return false;
+
+	CString base_name; base_name.Format("sample_%04d", j.index);
+	const CString png_path = train_dir + base_name + ".png";
+	const CString txt_path = train_dir + base_name + ".gt.txt";
 	if (!imwrite(std::string(CStringA(png_path).GetString()), final_img)) return false;
 	{
 		FILE *f = NULL;
 		if (fopen_s(&f, CStringA(txt_path).GetString(), "wb") != 0 || f == NULL) return false;
-		if (name.GetLength() > 0) fwrite(name.GetString(), 1, name.GetLength(), f);
+		if (j.text.GetLength() > 0) fwrite(j.text.GetString(), 1, j.text.GetLength(), f);
 		fputc('\r', f); fputc('\n', f);   // match existing gt.txt (UTF-8, CRLF, no BOM)
 		fclose(f);
 	}
-	(*next_index)++;
 	return true;
 }
 
@@ -361,6 +385,7 @@ static bool GenerateOne(const ST2ISettings &s, const CString &train_dir, const C
 struct T2IJob {
 	HWND notify;
 	int count;
+	int kind;            // GEN_NAMES or GEN_BALANCES
 	ST2ISettings settings;
 	volatile LONG cancel;
 	int generated;
@@ -378,6 +403,8 @@ static DWORD WINAPI T2IWorker(LPVOID param)
 	CreateDirectory(train_dir, NULL);
 	CreateDirectory(tmp_dir, NULL);
 
+	// ListFonts also warms text2image's font cache once (serially), so the parallel
+	// jobs below never race building it.
 	std::vector<CStringA> fonts;
 	ListFonts(job->settings, fonts_dir, tmp_dir, &fonts);
 	if (fonts.empty()) {
@@ -387,10 +414,17 @@ static DWORD WINAPI T2IWorker(LPVOID param)
 		return 0;
 	}
 
-	std::vector<CStringA> names; CStringA nerr;
-	if (!FetchNames(job->settings, job->count, &names, &nerr)) {
-		PostMessage(job->notify, WM_TRAINER_T2I_DONE, 0, (LPARAM) new CStringA(nerr));
-		return 0;
+	// Build the list of strings to render.
+	std::vector<CStringA> texts;
+	if (job->kind == GEN_BALANCES) {
+		for (int i = 0; i < job->count; ++i) texts.push_back(RandomBalance());
+	} else {
+		std::vector<CStringA> names; CStringA nerr;
+		if (!FetchNames(job->settings, job->count, &names, &nerr)) {
+			PostMessage(job->notify, WM_TRAINER_T2I_DONE, 0, (LPARAM) new CStringA(nerr));
+			return 0;
+		}
+		for (int i = 0; i < job->count; ++i) texts.push_back(names[i % names.size()]);
 	}
 
 	// Border colour = darkest pixel from an existing training PNG (the real captured
@@ -404,19 +438,47 @@ static DWORD WINAPI T2IWorker(LPVOID param)
 	}
 
 	int fg[2][3]; LoadColours(fg);
-	int next_index = ComputeStartIndex(train_dir);
-	int made = 0;
+	const int start_index = ComputeStartIndex(train_dir);
+	const int count = job->count;
 
-	for (int i = 0; i < job->count; ++i) {
-		if (job->cancel) break;
-		const CStringA &name = names[i % names.size()];
-		const CStringA &font = fonts[rand() % (int)fonts.size()];
-		const int *fgc = fg[rand() % 2];
-		const int th = 14 + (rand() % 2);   // 14 or 15 px tall
-		if (GenerateOne(job->settings, train_dir, fonts_dir, tmp_dir, name, font, fgc, border_color, th, &next_index))
-			++made;
-		PostMessage(job->notify, WM_TRAINER_T2I_PROGRESS, (WPARAM)(i + 1), (LPARAM)job->count);
+	// Distribute the work across the shared parallel worker pool (sized from the same
+	// "Parallel Workers" settings Hiss/Vision use). Each sample is an independent
+	// text2image + image job, so this finishes much faster than the old serial loop.
+	int cpus = 0, wpc = 1;
+	CString cset = TrainerDB_GetSetting("parallel_workers", "num_cpus");
+	CString wset = TrainerDB_GetSetting("parallel_workers", "workers_per_cpu");
+	if (!cset.IsEmpty()) cpus = atoi(CStringA(cset).GetString());
+	if (!wset.IsEmpty()) wpc  = atoi(CStringA(wset).GetString());
+	int workers = ParallelWorkerCount(cpus, wpc);
+	ParallelWorkerPool pool;
+	pool.Start(workers);
+
+	volatile LONG done = 0, made = 0;
+	for (int i = 0; i < count; ++i) {
+		GenJob g;
+		g.text = texts[i];
+		g.font = fonts[rand() % (int)fonts.size()];
+		const int *fc = fg[rand() % 2];
+		g.fr = fc[0]; g.fg = fc[1]; g.fb = fc[2];
+		g.ptsize  = 20 + (rand() % 11);    // 20..30  (size variance)
+		g.bt = 2 + (rand() % 5);           // 2..6 per side  (~4px positional variance)
+		g.bb = 2 + (rand() % 5);
+		g.bl = 2 + (rand() % 5);
+		g.br = 2 + (rand() % 5);
+		g.target_h = 14 + (rand() % 2);    // 14 or 15 px tall
+		g.index = start_index + i;         // unique => parallel jobs never clash
+		ST2ISettings s = job->settings;
+		pool.Submit([job, g, s, train_dir, fonts_dir, tmp_dir, border_color, count, &done, &made]() {
+			if (!job->cancel) {
+				if (GenerateOneAt(s, train_dir, fonts_dir, tmp_dir, border_color, g))
+					InterlockedIncrement(&made);
+			}
+			LONG d = InterlockedIncrement(&done);
+			PostMessage(job->notify, WM_TRAINER_T2I_PROGRESS, (WPARAM)d, (LPARAM)count);
+		});
 	}
+	while (done < count) Sleep(30);   // wait for every job (cancel still drains the queue)
+	pool.Stop();                      // joins all worker threads before locals go out of scope
 
 	job->generated = made;
 	PostMessage(job->notify, WM_TRAINER_T2I_DONE, (WPARAM)made, (LPARAM)NULL);
@@ -543,9 +605,10 @@ protected:
 // ---- progress (runs the worker thread) ----
 class CT2IProgressDlg : public CDialog {
 public:
-	CT2IProgressDlg(int count, const ST2ISettings &s, CWnd *p)
+	CT2IProgressDlg(int count, int kind, const ST2ISettings &s, CWnd *p)
 		: CDialog(IDD_T2I_PROGRESS, p), m_thread(NULL), m_had_error(false) {
-		m_job.notify = NULL; m_job.count = count; m_job.settings = s; m_job.cancel = 0; m_job.generated = 0;
+		m_job.notify = NULL; m_job.count = count; m_job.kind = kind; m_job.settings = s;
+		m_job.cancel = 0; m_job.generated = 0;
 	}
 	enum { IDD = IDD_T2I_PROGRESS };
 	int Generated() const { return m_job.generated; }
@@ -636,11 +699,61 @@ void T2I_GenerateInteractive(CWnd *parent)
 	CGenCountDlg cd(parent);
 	if (cd.DoModal() != IDOK) return;
 
-	CT2IProgressDlg pd(cd.m_count, s, parent);
+	CT2IProgressDlg pd(cd.m_count, GEN_NAMES, s, parent);
 	pd.DoModal();
 	if (!pd.HadError()) {
 		CString msg;
 		msg.Format("Generated %d username sample(s) into training\\.", pd.Generated());
+		AfxMessageBox(msg, MB_OK | MB_ICONINFORMATION);
+	}
+}
+
+void T2I_GenerateBalancesInteractive(CWnd *parent)
+{
+	ST2ISettings s = LoadSettings();
+	if (GetFileAttributes(s.exe_path) == INVALID_FILE_ATTRIBUTES) {
+		AfxMessageBox("text2image.exe was not found.\nSet its path in Tools > Settings...",
+			MB_OK | MB_ICONWARNING);
+		return;
+	}
+	// We need an existing training sample to (a) sample the background colour from and (b)
+	// match the existing sample size/format. If there is none, tell the user exactly which
+	// two files tesstrain expects.
+	if (!HasTrainingPng(ExeDir() + "training\\")) {
+		AfxMessageBox(
+			"No training samples were found in the training\\ folder.\n\n"
+			"Create at least one sample manually (the pair of files tesstrain expects),\n"
+			"for example:\n"
+			"    training\\sample_0001.png      (a cropped balance image)\n"
+			"    training\\sample_0001.gt.txt   (its exact text, e.g. \"100.50\")\n\n"
+			"Then run this tool again. The generator copies that sample's background\n"
+			"colour and size for the images it creates.",
+			MB_OK | MB_ICONWARNING);
+		return;
+	}
+	CGenCountDlg cd(parent);
+	if (cd.DoModal() != IDOK) return;
+
+	// Explain exactly what is about to happen before kicking off the run.
+	CString info;
+	info.Format(
+		"About to generate %d balance sample(s) into the training\\ folder:\n\n"
+		"  - Values: numbers 0-1000 with 0, 1, or 2 decimal places (e.g. 100, 80.8, 84.36)\n"
+		"  - Fonts: every font in training\\fonts (chosen at random per sample)\n"
+		"  - Rendered with text2image.exe, with ~4px of positional variance\n"
+		"  - Text colour: the Create Font tool's colours; background: the darkest colour\n"
+		"    from your first training sample\n"
+		"  - Files continue numbering after the last existing sample_NNNN\n"
+		"  - Work is distributed across the Parallel Workers (Hiss settings) to finish faster\n\n"
+		"Proceed?",
+		cd.m_count);
+	if (AfxMessageBox(info, MB_OKCANCEL | MB_ICONINFORMATION) != IDOK) return;
+
+	CT2IProgressDlg pd(cd.m_count, GEN_BALANCES, s, parent);
+	pd.DoModal();
+	if (!pd.HadError()) {
+		CString msg;
+		msg.Format("Generated %d balance sample(s) into training\\.", pd.Generated());
 		AfxMessageBox(msg, MB_OK | MB_ICONINFORMATION);
 	}
 }
