@@ -1739,7 +1739,11 @@ void COpenScrapeView::NavigateCapture(int delta)
 void COpenScrapeView::RefreshWholeApp()
 {
 	COpenScrapeDoc *pDoc = GetDocument();
+	// Force the card-result (GDI+) overlays to recompute for the current frame even
+	// if the bitmap handle is unchanged (e.g. the Refresh button on the same frame).
+	InvalidateCardResults();
 	if (pDoc) RefreshCardResultsIfNeeded(pDoc);
+	// Recompute the dialog's Result field + all region displays for the current frame.
 	if (theApp.m_TableMapDlg) {
 		theApp.m_TableMapDlg->update_display();
 		theApp.m_TableMapDlg->Invalidate(FALSE);
@@ -1845,13 +1849,11 @@ void COpenScrapeView::LoadCapturesFromDisk()
 	_capture_index = -1;   // don't override the live frame until the user navigates
 }
 
-// Toolbar "Refresh detection": re-run card detection on the current frame.
+// Toolbar "Refresh detection": re-run detection + every field/overlay on the current
+// frame (same full refresh used when navigating screenshots).
 void COpenScrapeView::RefreshCurrentScreenshot()
 {
-	InvalidateCardResults();   // force RefreshCardResultsIfNeeded to recompute
-	CMainFrame *mf = (CMainFrame *)AfxGetMainWnd();
-	if (mf) mf->ForceRedraw();
-	Invalidate(FALSE);
+	RefreshWholeApp();
 }
 
 // Toolbar "Clear screenshots": drop the whole capture buffer and repaint.
