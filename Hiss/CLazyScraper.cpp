@@ -83,8 +83,10 @@ void CLazyScraper::DoScrape() {
     return;
 	}
   _is_identical_scrape = false;
+	// Optional: OCR all AutoOcr regions in parallel up-front (no-op unless enabled).
+	p_scraper->PreOcrParallel();
 	p_scraper->ScrapeLimits();
-	if (NeedDealerChair()) { 
+	if (NeedDealerChair()) {
 		p_scraper->ScrapeDealer();
 	}
 	if (NeedUsersCards())	{

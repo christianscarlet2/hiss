@@ -45,8 +45,35 @@ using namespace std;
 #include "MainFrm.h"
 #include "OpenHoldem.h"
 #include "..\Shared\WindowCapture.h"
+#include "..\Shared\ParallelWorkerPool.h"
+#include "..\CTablemap\CTablemapDB.h"
+#include <tlhelp32.h>
 
 CScraper *p_scraper = NULL;
+
+// --- Optional parallel OCR (gated; default OFF) --------------------------------
+static ParallelWorkerPool g_ocr_pool;
+static int g_ocr_pool_size = 0;
+static std::vector<CAutoOcr*> g_ocr_engines;
+
+static bool HissParallelOcrEnabled() {
+	if (p_tablemap_db == NULL) return false;
+	CString v = p_tablemap_db->GetSettingString("parallel_workers", "hiss_ocr");
+	return (!v.IsEmpty() && atoi(v.GetString()) != 0);
+}
+
+// Count running Hiss.exe processes, to split workers across instances.
+static int CountHissInstances() {
+	int n = 0;
+	HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if (snap == INVALID_HANDLE_VALUE) return 1;
+	PROCESSENTRY32 pe; pe.dwSize = sizeof(pe);
+	if (Process32First(snap, &pe)) {
+		do { if (_stricmp(pe.szExeFile, "Hiss.exe") == 0) ++n; } while (Process32Next(snap, &pe));
+	}
+	CloseHandle(snap);
+	return (n < 1) ? 1 : n;
+}
 
 #define __HDC_HEADER 		HBITMAP		old_bitmap = NULL; \
 	HDC				hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL); \
@@ -163,14 +190,18 @@ bool CScraper::EvaluateRegion(CString name, CString *result) {
     }
 		old_bitmap = (HBITMAP) SelectObject(hdcCompatible, r_iter->second.cur_bmp);
 		if (r_iter->second.transform[0] == 'A') {
-			int w = r_iter->second.right - r_iter->second.left + 1;
-			int h = r_iter->second.bottom - r_iter->second.top + 1;
-			Mat input(h, w, CV_8UC4);
-			BITMAPINFOHEADER bi = { sizeof(bi), w, -h, 1, 32, BI_RGB };
-			GetDIBits(hdcCompatible, r_iter->second.cur_bmp, 0, h, input.data, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
-			//imshow("Output", input);
-			//waitKey();
-			*result = AutoOcr()->get_ocr_result(input, r_iter).GetString();
+			// Use the parallel pre-pass result if one was computed this cycle.
+			std::map<CString, CString>::const_iterator cached = _ocr_cache.find(name);
+			if (cached != _ocr_cache.end()) {
+				*result = cached->second;
+			} else {
+				int w = r_iter->second.right - r_iter->second.left + 1;
+				int h = r_iter->second.bottom - r_iter->second.top + 1;
+				Mat input(h, w, CV_8UC4);
+				BITMAPINFOHEADER bi = { sizeof(bi), w, -h, 1, 32, BI_RGB };
+				GetDIBits(hdcCompatible, r_iter->second.cur_bmp, 0, h, input.data, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
+				*result = AutoOcr()->get_ocr_result(input, r_iter).GetString();
+			}
 		}
 		else
 			trans.DoTransform(r_iter, hdcCompatible, result);
@@ -200,6 +231,94 @@ void CScraper::EvaluateTrueFalseRegion(bool *result, const CString name) {
       *result = false;
     }
 	}
+}
+
+// Optional parallel OCR pre-pass: OCR every AutoOcr ("A") region across worker
+// threads up-front into _ocr_cache (read by EvaluateRegion). OFF by default; the
+// default path is unchanged. Runs on the heartbeat thread; GDI capture is serial
+// here, only the (CPU-bound) Tesseract recognition is parallelised, each job using
+// its own independent CAutoOcr engine.
+void CScraper::PreOcrParallel() {
+	_ocr_cache.clear();
+	if (!HissParallelOcrEnabled() || p_tablemap == NULL) return;
+
+	// Size the worker pool + engine pool from settings, split across Hiss instances.
+	int cpus = 0, wpc = 1;
+	if (p_tablemap_db != NULL) {
+		CString c = p_tablemap_db->GetSettingString("parallel_workers", "num_cpus");
+		CString w = p_tablemap_db->GetSettingString("parallel_workers", "workers_per_cpu");
+		if (!c.IsEmpty()) cpus = atoi(c.GetString());
+		if (!w.IsEmpty()) wpc = atoi(w.GetString());
+	}
+	int want = ParallelWorkerCountForInstances(cpus, wpc, CountHissInstances());
+	if (want != g_ocr_pool_size) {
+		g_ocr_pool.Start(want);
+		for (size_t i = 0; i < g_ocr_engines.size(); ++i) delete g_ocr_engines[i];
+		g_ocr_engines.clear();
+		for (int i = 0; i < want; ++i) {
+			CAutoOcr *e = new CAutoOcr();
+			e->LoadModelSettings();
+			g_ocr_engines.push_back(e);
+		}
+		g_ocr_pool_size = want;
+	}
+	if (g_ocr_engines.empty()) return;
+
+	// Capture each "A" region's pixels (serial GDI on this thread).
+	HDC screen = CreateDC("DISPLAY", NULL, NULL, NULL);
+	std::vector<RMapCI> regs;
+	std::vector<Mat> mats;
+	for (RMapCI it = p_tablemap->r$()->begin(); it != p_tablemap->r$()->end(); ++it) {
+		if (it->second.transform.IsEmpty() || it->second.transform.GetAt(0) != 'A') continue;
+		int rw = it->second.right - it->second.left + 1;
+		int rh = it->second.bottom - it->second.top + 1;
+		if (rw <= 0 || rh <= 0 || it->second.cur_bmp == NULL) continue;
+		ProcessRegion(it);   // capture the region into its cur_bmp from the window snapshot
+		HDC mdc = CreateCompatibleDC(screen);
+		HBITMAP ob = (HBITMAP)SelectObject(mdc, it->second.cur_bmp);
+		Mat input(rh, rw, CV_8UC4);
+		BITMAPINFOHEADER bi = { sizeof(bi), rw, -rh, 1, 32, BI_RGB };
+		GetDIBits(mdc, it->second.cur_bmp, 0, rh, input.data, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
+		SelectObject(mdc, ob);
+		DeleteDC(mdc);
+		regs.push_back(it);
+		mats.push_back(input.clone());
+	}
+	DeleteDC(screen);
+	if (regs.empty()) return;
+
+	// Parallel recognition: each job borrows a free engine from the pool.
+	CRITICAL_SECTION rcs, ecs;
+	InitializeCriticalSection(&rcs);
+	InitializeCriticalSection(&ecs);
+	std::vector<CAutoOcr*> avail = g_ocr_engines;
+	std::map<CString, CString> *cache = &_ocr_cache;
+	HANDLE done = CreateEvent(NULL, TRUE, FALSE, NULL);
+	volatile LONG remaining = (LONG)regs.size();
+	for (size_t i = 0; i < regs.size(); ++i) {
+		RMapCI reg = regs[i];
+		Mat mat = mats[i];
+		CString name = reg->second.name;
+		g_ocr_pool.Submit([reg, mat, name, &rcs, &ecs, &avail, &remaining, done, cache]() {
+			CAutoOcr *eng = NULL;
+			EnterCriticalSection(&ecs);
+			if (!avail.empty()) { eng = avail.back(); avail.pop_back(); }
+			LeaveCriticalSection(&ecs);
+			CString r;
+			if (eng != NULL) r = eng->get_ocr_result(mat, reg);
+			EnterCriticalSection(&ecs);
+			if (eng != NULL) avail.push_back(eng);
+			LeaveCriticalSection(&ecs);
+			EnterCriticalSection(&rcs);
+			(*cache)[name] = r;
+			LeaveCriticalSection(&rcs);
+			if (InterlockedDecrement(&remaining) == 0) SetEvent(done);
+		});
+	}
+	WaitForSingleObject(done, 30000);
+	CloseHandle(done);
+	DeleteCriticalSection(&rcs);
+	DeleteCriticalSection(&ecs);
 }
 
 void CScraper::ScrapeButtons(CString area_name, CString needed_buttons) {

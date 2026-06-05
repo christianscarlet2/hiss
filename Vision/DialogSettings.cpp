@@ -196,6 +196,12 @@ BOOL CDlgSettings::OnInitDialog()
 		if (wpc <= 0) wpc = 1;
 		SetDlgItemInt(IDC_SET_PW_CPUS, cpus, FALSE);
 		SetDlgItemInt(IDC_SET_PW_WPC, wpc, FALSE);
+		bool hiss_ocr = false;
+		if (p_tablemap_db != NULL) {
+			CString h = p_tablemap_db->GetSettingString("parallel_workers", "hiss_ocr");
+			hiss_ocr = (!h.IsEmpty() && atoi(h) != 0);
+		}
+		CheckDlgButton(IDC_SET_PW_HISS_OCR, hiss_ocr ? BST_CHECKED : BST_UNCHECKED);
 	}
 
 	m_threshold_spin.SetRange(0, 300);
@@ -329,7 +335,7 @@ void CDlgSettings::ShowPage(int index)
 		IDC_SET_RESULT_LR_LBL, IDC_SET_RESULT_LEFT, IDC_SET_RESULT_RIGHT };
 	int advanced[] = { IDC_SET_ADVANCED_TEXT };
 	int autocap[] = { IDC_SET_ACC_TEXT, IDC_SET_ACC_LBL, IDC_SET_ACC_INTERVAL };
-	int workers[] = { IDC_SET_PW_TEXT, IDC_SET_PW_CPUS_LBL, IDC_SET_PW_CPUS, IDC_SET_PW_WPC_LBL, IDC_SET_PW_WPC };
+	int workers[] = { IDC_SET_PW_TEXT, IDC_SET_PW_CPUS_LBL, IDC_SET_PW_CPUS, IDC_SET_PW_WPC_LBL, IDC_SET_PW_WPC, IDC_SET_PW_HISS_OCR };
 
 	const int *show = general; int show_n = sizeof(general) / sizeof(int);
 	CString title = "General";
@@ -350,7 +356,7 @@ void CDlgSettings::ShowPage(int index)
 		IDC_SET_ORIG_LEFT, IDC_SET_ORIG_RIGHT, IDC_SET_RESULT_LBL, IDC_SET_RESULT,
 		IDC_SET_RESULT_LR_LBL, IDC_SET_RESULT_LEFT, IDC_SET_RESULT_RIGHT, IDC_SET_ADVANCED_TEXT,
 		IDC_SET_ACC_TEXT, IDC_SET_ACC_LBL, IDC_SET_ACC_INTERVAL,
-		IDC_SET_PW_TEXT, IDC_SET_PW_CPUS_LBL, IDC_SET_PW_CPUS, IDC_SET_PW_WPC_LBL, IDC_SET_PW_WPC };
+		IDC_SET_PW_TEXT, IDC_SET_PW_CPUS_LBL, IDC_SET_PW_CPUS, IDC_SET_PW_WPC_LBL, IDC_SET_PW_WPC, IDC_SET_PW_HISS_OCR };
 	for (int i = 0; i < (int)(sizeof(all) / sizeof(int)); ++i) {
 		CWnd *w = GetDlgItem(all[i]); if (w) w->ShowWindow(SW_HIDE);
 	}
@@ -535,6 +541,8 @@ void CDlgSettings::OnOK()
 			CString v; v.Format("%d", wpc);
 			p_tablemap_db->SetSettingString("parallel_workers", "workers_per_cpu", v);
 		}
+		p_tablemap_db->SetSettingString("parallel_workers", "hiss_ocr",
+			IsDlgButtonChecked(IDC_SET_PW_HISS_OCR) == BST_CHECKED ? "1" : "0");
 	}
 	KillTimer(SETTINGS_POLL_TIMER);
 	DestroyWindow();

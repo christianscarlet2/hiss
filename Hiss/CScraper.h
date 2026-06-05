@@ -49,6 +49,10 @@ class CScraper : public CSpaceOptimizedGlobalObject {
   // region map is rebuilt (ClearTablemap discards them).
   void CreateBitmaps(void);
   void DeleteBitmaps(void);
+  // Optional parallel OCR pre-pass (OFF by default; "parallel_workers"/"hiss_ocr").
+  // When enabled it OCRs all AutoOcr ("A") regions across worker threads up-front
+  // into _ocr_cache, which EvaluateRegion then reads instead of OCRing serially.
+  void PreOcrParallel();
  protected:
 	bool IsIdenticalScrape();
  protected:
@@ -110,6 +114,8 @@ class CScraper : public CSpaceOptimizedGlobalObject {
  private:
 	HBITMAP			_entire_window_last;
 	HBITMAP			_entire_window_cur;
+	// Parallel-OCR pre-pass results for this scrape cycle (region name -> text).
+	std::map<CString, CString> _ocr_cache;
 };
 
 extern CScraper *p_scraper;

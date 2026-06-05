@@ -93,6 +93,11 @@ private:
 	bool        _api2_initialized;
 	bool        _api_init_failed;
 	bool        _models_loaded;
+	// The two Tesseract engines. These were file-scope globals; moving them to
+	// instance members lets several independent CAutoOcr engines run on parallel
+	// worker threads (each owns its own api/api2 and result state).
+	TessBaseAPI *api;
+	TessBaseAPI *api2;
 	CString     _model_a0;
 	CString     _model_a1;
 	CString     _current_model;   // model currently loaded into api/api2

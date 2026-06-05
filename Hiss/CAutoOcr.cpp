@@ -51,8 +51,8 @@ CAutoOcr *AutoOcr() {
 
 // Declare DNN-Recognizer
 //TextRecognitionModel recognizer;
-TessBaseAPI* api = NULL;
-TessBaseAPI* api2 = NULL;
+// (api / api2 are now CAutoOcr instance members, not globals, so independent
+//  engines can run on parallel worker threads.)
 
 static CString TakeTessUtf8Text(char *text)
 {
@@ -153,6 +153,8 @@ static bool SafeResultIteratorNext(ResultIterator *ri, PageIteratorLevel level)
 // Constructor and destructor
 //
 CAutoOcr::CAutoOcr() :
+	api(NULL),
+	api2(NULL),
 	_api_initialized(false),
 	_api2_initialized(false),
 	_api_init_failed(false),
