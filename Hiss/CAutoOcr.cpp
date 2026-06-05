@@ -863,6 +863,10 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast, SAutoOc
 	// regions (player names, often light text on a dark table) use Otsu auto-thresholding,
 	// which reads correctly regardless of brightness/polarity. Matches Vision.
 	settings.auto_threshold = !is_balance;
+	// tessdata_best / LSTM models read GRAYSCALE far better than a binarized image
+	// (binarizing thin light-on-dark name text produced digit noise). So only balances
+	// (custom model tuned on binarized input) are binarized; text regions feed grayscale.
+	bool do_binarize = is_balance;
 	// NOTE: the whitelist is no longer sent to Tesseract (it recognises better
 	// unconstrained); it is only used to SCRUB the output. So we always keep it set and
 	// the old "no whitelist" option no longer suppresses it -- matching Vision, which
@@ -898,10 +902,10 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast, SAutoOc
 			left = PadDarkestSides(left, true, false);
 			right = PadDarkestSides(right, false, true);
 			ResultString = ""; ResultString2 = "";
-			Mat left_proc = prepareImage(left, settings, true, tablemap_threshold);
+			Mat left_proc = prepareImage(left, settings, do_binarize, tablemap_threshold);
 			CString left_text = ResultString;
 			ResultString = ""; ResultString2 = "";
-			Mat right_proc = prepareImage(right, settings, true, tablemap_threshold);
+			Mat right_proc = prepareImage(right, settings, do_binarize, tablemap_threshold);
 			CString right_text = ResultString;
 			left_text.Trim(); right_text.Trim();
 			ocr_result = left_text + "." + right_text;
@@ -919,8 +923,8 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast, SAutoOc
 	}
 
 	if (!did_decimal) {
-		img_resized = prepareImage(img_orig, settings, true, tablemap_threshold);
-		img_resized2 = prepareImage(img_orig, settings, true, tablemap_threshold, true);
+		img_resized = prepareImage(img_orig, settings, do_binarize, tablemap_threshold);
+		img_resized2 = prepareImage(img_orig, settings, do_binarize, tablemap_threshold, true);
 		if (!img_resized.empty()) {
 			img_resized.convertTo(img_resized, CV_8UC3);
 			cvtColor(img_resized, img_resized, COLOR_GRAY2BGR);

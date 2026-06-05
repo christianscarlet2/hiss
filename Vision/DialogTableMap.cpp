@@ -2339,12 +2339,21 @@ static CString ScrubToWhitelist(const CString &s, const CString &whitelist) {
 	return out;
 }
 
+// Write the most recent Tesseract input image to disk (for "Debug this field").
+void CDlgTableMap::SaveLastOcrInput(const CString &path) {
+	if (m_last_ocr_input.empty()) return;
+	try { cv::imwrite((const char *)path, m_last_ocr_input); }
+	catch (...) {}
+}
+
 void CDlgTableMap::process_ocr(Mat img_orig, bool fast, bool second_pass) {
 	if (!m_TableMapTree.GetSelectedItem())
 		return;
 
 	CString active_whitelist = m_ocr_char_whitelist.IsEmpty()
 		? CString(kTesseractCharWhitelist) : m_ocr_char_whitelist;
+
+	m_last_ocr_input = img_orig.clone();   // exact image Tesseract sees (for the debug dump)
 
 	tesseract::PageSegMode page_seg_mode = static_cast<tesseract::PageSegMode>(SelectedTesseractPageSegMode());
 	api->SetPageSegMode(page_seg_mode);
@@ -2434,13 +2443,14 @@ CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast,
 	m_ocr_char_whitelist = is_balance ? CString("0123456789.") : CString(kTesseractCharWhitelist);
 	m_ocr_auto_threshold = !is_balance;
 
-	if (transform == "AutoOcr0") {
-		img_resized = prepareImage(img_orig, true, threshold);
-		img_resized2 = prepareImage(img_orig, true, threshold, true);
-	}
-	if (transform == "AutoOcr1") {
-		img_resized = prepareImage(img_orig, true, threshold);
-		img_resized2 = prepareImage(img_orig, true, threshold, true);
+	// tessdata_best / LSTM models read GRAYSCALE far better than a binarized image --
+	// binarizing thin light-on-dark name text is what made it come out as digit noise.
+	// So only balance regions (custom model tuned on binarized input) get binarized; text
+	// regions (player names) are fed the upscaled grayscale directly.
+	bool binarize_for_ocr = is_balance;
+	if (transform == "AutoOcr0" || transform == "AutoOcr1") {
+		img_resized = prepareImage(img_orig, binarize_for_ocr, threshold);
+		img_resized2 = prepareImage(img_orig, binarize_for_ocr, threshold, true);
 	}
 
 	vector<CString> result_list;

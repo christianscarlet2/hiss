@@ -207,6 +207,11 @@ private:
 	int threshold, match_mode;
 	CString m_ocr_char_whitelist;	// scrub set for the region being OCR'd
 	bool m_ocr_auto_threshold;		// true => Otsu auto-threshold (non-balance/text regions)
+	Mat m_last_ocr_input;			// exact image last handed to Tesseract (for debug dump)
+ public:
+	// Write the most recent Tesseract input image to a file (for "Debug this field").
+	void SaveLastOcrInput(const CString &path);
+ protected:
 	bool proceed_scroll = true;
 	std::vector<ImageProcessingPreset> m_ImageProcessingPresets;
 
