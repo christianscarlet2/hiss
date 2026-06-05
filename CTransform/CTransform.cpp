@@ -206,12 +206,6 @@ int CTransform::ITypeTransform(RMapCI region, const HDC hdc, CString *text)
 		return ERR_NOTHING_TO_SCRAPE;
 	}
 
-	// Acceptance gate: the best image is only accepted as a match if fewer than this many
-	// of its pixels differ (beyond the per-pixel tolerance below) from the scraped region.
-	// Lower == tighter fit. 20% of the available pixels. (If the real card isn't in the
-	// set, the nearest image will exceed this and we report "no image match".)
-	args.ThresholdPixels = (unsigned int) ((width * height * 0.20) + 0.5);
-
 	// Get pixels
 	// Populate BITMAPINFOHEADER
 	hbm = (HBITMAP) GetCurrentObject(hdc, OBJ_BITMAP);
@@ -239,18 +233,11 @@ int CTransform::ITypeTransform(RMapCI region, const HDC hdc, CString *text)
 		}
 	}
 
-	// Scan through ALL i$ records (of the right size) and keep the best match by DIRECT
-	// pixel difference (nearest-neighbour), NOT the Yee perceptual metric.
-	//
-	// The Yee/pdiff metric is built for photographic perceptual difference (luminance
-	// adaptation, CSF, masking) and ranks tiny clean card glyphs badly -- it would report
-	// e.g. "3d" as having fewer failed pixels than "Qd" even though Qd is far closer pixel
-	// for pixel. So we score each candidate by: (1) the number of pixels that differ by
-	// more than a small tolerance (primary), and (2) the summed absolute channel
-	// difference (tiebreak). The pixel-closest image wins; a byte-identical one ends early.
-	const unsigned int kPixelDiffTolerance = 150;   // |dR|+|dG|+|dB| above this => "differs"
-	smallest_pix_diff = 0xffffffff;                 // fewest differing pixels (primary)
-	unsigned int best_total_diff = 0xffffffff;      // summed abs channel diff (tiebreak)
+	// Scan ALL same-size i$ records and keep the pixel-closest one (nearest-neighbour by
+	// the summed absolute channel difference). NOT the Yee perceptual metric, which is
+	// built for photographic difference and ranks tiny clean card glyphs badly (it would
+	// report e.g. "3d" closer than "Qd").
+	unsigned int best_total_diff = 0xffffffff;   // summed |dR|+|dG|+|dB| over the region
 	int dim = width * height;
 	for (IMapCI i_iter=p_tablemap->i$()->begin(); i_iter!=p_tablemap->i$()->end(); i_iter++)
 	{
@@ -259,33 +246,32 @@ int CTransform::ITypeTransform(RMapCI region, const HDC hdc, CString *text)
 			continue;
 		RGBAImage *imgB = i_iter->second.image;
 
-		unsigned int failed = 0;     // pixels differing by more than the tolerance
-		unsigned int total = 0;      // summed absolute channel difference
+		unsigned int total = 0;
 		for (int k = 0; k < dim; k++) {
 			int dr = (int)args.ImgA->Get_Red(k)   - (int)imgB->Get_Red(k);
 			int dg = (int)args.ImgA->Get_Green(k) - (int)imgB->Get_Green(k);
 			int db = (int)args.ImgA->Get_Blue(k)  - (int)imgB->Get_Blue(k);
-			unsigned int d = (unsigned int)((dr < 0 ? -dr : dr)
-				+ (dg < 0 ? -dg : dg) + (db < 0 ? -db : db));
-			total += d;
-			if (d > kPixelDiffTolerance) failed++;
+			total += (unsigned int)((dr < 0 ? -dr : dr) + (dg < 0 ? -dg : dg) + (db < 0 ? -db : db));
 		}
-
-		if (failed < smallest_pix_diff
-			|| (failed == smallest_pix_diff && total < best_total_diff))
-		{
+		if (total < best_total_diff) {
 			best_match = i_iter;
-			smallest_pix_diff = failed;
 			best_total_diff = total;
-			if (failed == 0 && total == 0) break;   // byte-identical: definitive
+			if (total == 0) break;   // byte-identical: definitive
 		}
 	}
 
 	// ImgB was never owned by args here; make sure its destructor won't touch it.
 	args.ImgB = NULL;
 
-	// return the i$ record text, if the smallest pixel difference is less than the threshold
-	if (smallest_pix_diff<args.ThresholdPixels)
+	// Acceptance: take the winner only if its AVERAGE per-channel difference is below this.
+	// This is resolution-independent (a 10x10 suit and a 22x39 rank are judged the same
+	// way) and separates a present card (typically avg-diff < ~60) from a blank / card-back
+	// / transition frame (typically > ~120). The previous "% of pixels over a fixed
+	// tolerance" gate was far too strict on small regions -- it rejected a correct "s" suit
+	// whose avg-diff was only 26. Higher value == looser fit.
+	const double kAcceptAvgChannelDiff = 90.0;   // 0..255
+	double avg = (dim > 0) ? (double)best_total_diff / (double)(dim * 3) : 1e9;
+	if (best_match != p_tablemap->i$()->end() && avg < kAcceptAvgChannelDiff)
 	{
 		*text = best_match->second.name.GetString();
 		retval = ERR_GOOD_SCRAPE_GENERAL;
