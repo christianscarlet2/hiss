@@ -1413,11 +1413,16 @@ void COpenScrapeView::DrawCardResultOverlay(CDC *pDC, RMapCI r_iter)
 	Gdiplus::FontFamily ff(L"Arial");
 	Gdiplus::Font font(&ff, (Gdiplus::REAL)fpx, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
 
-	// Size a label box to the text, then float it just ABOVE the region (or below it
-	// if there is no room above), centred horizontally on the region.
+	// Measure with the SAME format we draw with (and NoClip/NoWrap) so the glyph is
+	// never cut off by a too-tight box.
+	Gdiplus::StringFormat fmt;
+	fmt.SetAlignment(Gdiplus::StringAlignmentCenter);
+	fmt.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+	fmt.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap | Gdiplus::StringFormatFlagsNoClip);
+
 	Gdiplus::RectF measured;
-	g.MeasureString(disp, -1, &font, Gdiplus::PointF(0, 0), &measured);
-	const Gdiplus::REAL padX = 4.0f, padY = 2.0f, gap = 3.0f;
+	g.MeasureString(disp, -1, &font, Gdiplus::RectF(0, 0, 1000, 1000), &fmt, &measured);
+	const Gdiplus::REAL padX = 6.0f, padY = 3.0f, gap = 3.0f;
 	Gdiplus::REAL boxW = measured.Width + padX * 2;
 	Gdiplus::REAL boxH = measured.Height + padY * 2;
 	CRect client;
@@ -1445,15 +1450,13 @@ void COpenScrapeView::DrawCardResultOverlay(CDC *pDC, RMapCI r_iter)
 
 	Gdiplus::RectF box(boxX, boxY, boxW, boxH);
 
-	// Solid, easy-to-read background + thin border; full-opacity coloured glyph.
-	Gdiplus::SolidBrush bg(Gdiplus::Color(245, 250, 250, 245));
+	// Translucent background so the card/table underneath stays visible; thin border;
+	// full-opacity coloured glyph for legibility.
+	Gdiplus::SolidBrush bg(Gdiplus::Color(105, 250, 250, 245));
 	g.FillRectangle(&bg, box);
-	Gdiplus::Pen border(Gdiplus::Color(220, 40, 40, 40), 1.0f);
+	Gdiplus::Pen border(Gdiplus::Color(150, 40, 40, 40), 1.0f);
 	g.DrawRectangle(&border, boxX, boxY, boxW, boxH);
 
-	Gdiplus::StringFormat fmt;
-	fmt.SetAlignment(Gdiplus::StringAlignmentCenter);
-	fmt.SetLineAlignment(Gdiplus::StringAlignmentCenter);
 	Gdiplus::SolidBrush fg(Gdiplus::Color(255, GetRValue(color), GetGValue(color), GetBValue(color)));
 	g.DrawString(disp, -1, &font, box, &fmt, &fg);
 }
