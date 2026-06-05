@@ -1456,60 +1456,19 @@ void COpenScrapeView::RefreshCardResultsIfNeeded(COpenScrapeDoc *pDoc)
 		return;
 	}
 
-	// Gather the card regions to detect this frame.
-	std::vector<RMapCI> regions;
+	// Detect each card region SERIALLY on the UI thread.
+	//
+	// This used to fan out across the parallel worker pool, but that path crashed with
+	// heap corruption (a worker faulted inside an ntdll heap routine writing through a
+	// trashed free-list pointer) -- the recompute triggered after editing the tablemap
+	// would race/corrupt the shared heap. Card detection over the card regions is a fast
+	// direct-pixel compare now, so running it serially is plenty quick AND memory-safe.
+	// (The heavy Hiss OCR parallelism is a separate pool and is unaffected.)
 	for (RMapCI r_iter = p_tablemap->r$()->begin(); r_iter != p_tablemap->r$()->end(); ++r_iter) {
-		if (IsCardResultRegion(r_iter->second.name)) regions.push_back(r_iter);
+		if (IsCardResultRegion(r_iter->second.name)) {
+			_card_results[r_iter->second.name] = ScrapeRegionResult(r_iter);
+		}
 	}
-	if (regions.empty()) return;
-
-	EnsureWorkerPool();
-
-	// The pdiff metric lazily initialises a few function-statics on first use; warm
-	// them once on the UI thread so concurrent first calls don't race. Also the
-	// serial path for single-worker setups.
-	static bool s_metric_warmed = false;
-	if (g_card_pool.ThreadCount() <= 1 || !s_metric_warmed) {
-		for (size_t i = 0; i < regions.size(); ++i)
-			_card_results[regions[i]->second.name] = ScrapeRegionResult(regions[i]);
-		s_metric_warmed = true;
-		return;
-	}
-
-	// Parallel path: extract each region's pixels on this (UI) thread, then run the
-	// transform/compare on worker threads (each job owns its own bitmap + DCs). Wait
-	// for all to finish so the result set is complete when we return.
-	CRITICAL_SECTION cs;
-	InitializeCriticalSection(&cs);
-	std::map<CString, CString> *results = &_card_results;
-	HANDLE done = CreateEvent(NULL, TRUE, FALSE, NULL);
-	volatile LONG remaining = 0;
-	int submitted = 0;
-
-	for (size_t i = 0; i < regions.size(); ++i) {
-		RMapCI reg = regions[i];
-		int w = (int)reg->second.right - (int)reg->second.left + 1;
-		int h = (int)reg->second.bottom - (int)reg->second.top + 1;
-		HBITMAP bmp = ExtractRegionBitmap(pDoc->attached_bitmap, reg->second.left, reg->second.top, w, h);
-		if (bmp == NULL) continue;
-		CString name = reg->second.name;
-		InterlockedIncrement(&remaining);
-		++submitted;
-		g_card_pool.Submit([reg, bmp, name, &cs, results, &remaining, done]() {
-			CString r = TransformRegionBitmap(reg, bmp);
-			DeleteObject(bmp);
-			EnterCriticalSection(&cs);
-			(*results)[name] = r;
-			LeaveCriticalSection(&cs);
-			if (InterlockedDecrement(&remaining) == 0) SetEvent(done);
-		});
-	}
-
-	if (submitted > 0) {
-		WaitForSingleObject(done, 15000);   // join (generous timeout safety net)
-	}
-	CloseHandle(done);
-	DeleteCriticalSection(&cs);
 }
 
 // (Re)size the detection worker pool from the shared "Parallel Workers" settings,

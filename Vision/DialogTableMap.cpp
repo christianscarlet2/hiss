@@ -5276,6 +5276,21 @@ void CDlgTableMap::OnBnClickedCreateImage()
 			new_image.height = sel_region->second.bottom - sel_region->second.top + 1;
 		}
 
+		// Guard against overrunning new_image.pixel[MAX_HASH_WIDTH*MAX_HASH_HEIGHT]:
+		// a region larger than the image limits would write past that fixed array (and
+		// then clobber the adjacent 'image' pointer -> heap corruption). Image regions
+		// are matched at the same limits anyway (see ITypeTransform).
+		if (new_image.width > MAX_IMAGE_WIDTH || new_image.height > MAX_IMAGE_HEIGHT
+			|| new_image.width * new_image.height > MAX_HASH_WIDTH * MAX_HASH_HEIGHT)
+		{
+			CString msg;
+			msg.Format("Region is too large for an image record (%d x %d). "
+				"The maximum is %d x %d.", new_image.width, new_image.height,
+				MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT);
+			MessageBox(msg, "ERROR", MB_OK | MB_ICONERROR);
+			return;
+		}
+
 		// Allocate space for "RGBAImage"
 		text = new_image.name + ".ppm";
 		new_image.image = new RGBAImage(new_image.width, new_image.height, text.GetString());
