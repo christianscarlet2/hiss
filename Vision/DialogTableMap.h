@@ -213,6 +213,9 @@ private:
 	// (Re)load the configured AutoOcr0/AutoOcr1 model for `transform` into api/api2,
 	// re-Initialising only when the model actually changes. Returns false on failure.
 	bool EnsureOcrModel(const CString &transform);
+	// True if the region's field type is in the shared decimal_split_fields list (so its
+	// value is OCR'd as two halves split at the decimal separator and re-joined with '.').
+	bool RegionUsesDecimalSplit(const CString &name);
 	Mat m_last_ocr_input;			// exact image last handed to Tesseract (for debug dump)
  public:
 	// Write the most recent Tesseract input image to a file (for "Debug this field").

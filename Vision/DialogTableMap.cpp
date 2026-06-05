@@ -42,6 +42,7 @@
 
 #include "..\CTablemap\CTablemap.h"
 #include "..\CTablemap\CTablemapDB.h"   // p_tablemap_db (shared OCR-model settings)
+#include "DecimalSplit.h"               // FindDecimalSplitX (balance decimal-split OCR)
 #include "..\Hiss\NumericalFunctions.h"
 #include "..\Shared\WindowCapture.h"
 
@@ -2503,6 +2504,39 @@ void CDlgTableMap::OnTimer(UINT_PTR nIDEvent) {
 	CDialog::OnTimer(nIDEvent);
 }
 
+// True if the region's field type matches the shared decimal_split_fields list.
+bool CDlgTableMap::RegionUsesDecimalSplit(const CString &name) {
+	if (p_tablemap_db == NULL) return false;
+	std::vector<CString> fields;
+	p_tablemap_db->GetSettingArray("decimal_split_fields", "fields", &fields);
+	CString lower = name; lower.MakeLower();
+	for (size_t i = 0; i < fields.size(); ++i) {
+		CString f = fields[i]; f.MakeLower(); f.Trim();
+		if (!f.IsEmpty() && lower.Find(f) != -1) return true;
+	}
+	return false;
+}
+
+// Pad a decimal half with 2px of its own darkest colour on the outer edge (matches Hiss),
+// so each half OCRs with a small background-coloured margin.
+static Mat PadDarkestSidesV(const Mat &bgr, bool left, bool right) {
+	if (bgr.empty() || bgr.type() != CV_8UC3) return bgr;
+	Vec3b dark(0, 0, 0);
+	double min_lum = 1e30;
+	for (int y = 0; y < bgr.rows; ++y) {
+		const Vec3b *row = bgr.ptr<Vec3b>(y);
+		for (int x = 0; x < bgr.cols; ++x) {
+			const Vec3b &p = row[x];
+			double lum = 0.114 * p[0] + 0.587 * p[1] + 0.299 * p[2];
+			if (lum < min_lum) { min_lum = lum; dark = p; }
+		}
+	}
+	Mat out;
+	copyMakeBorder(bgr, out, 0, 0, left ? 2 : 0, right ? 2 : 0,
+		BORDER_CONSTANT, Scalar(dark[0], dark[1], dark[2]));
+	return out;
+}
+
 CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast, CString region_name) {
 	// Return string value from image. "" when OCR failed
 	Mat img_resized, img_resized2;
@@ -2527,15 +2561,45 @@ CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast,
 	// So only balance regions (custom model tuned on binarized input) get binarized; text
 	// regions (player names) are fed the upscaled grayscale directly.
 	bool binarize_for_ocr = is_balance;
+	bool did_decimal = false;
+	CString decimal_result;
 	if (transform == "AutoOcr0" || transform == "AutoOcr1") {
 		EnsureOcrModel(transform);   // use the model configured for this transform (live)
-		img_resized = prepareImage(img_orig, binarize_for_ocr, threshold);
-		img_resized2 = prepareImage(img_orig, binarize_for_ocr, threshold, true);
+
+		// Decimal splitting (preferred for balances/bets/...): split the image at the
+		// decimal separator, OCR each half independently, and re-join with '.'. Whole-image
+		// OCR often drops or misreads the point (e.g. "50.28" -> "5028", "84.36" -> "84 36").
+		if (RegionUsesDecimalSplit(region_name) && img_orig.type() == CV_8UC3
+				&& img_orig.cols >= 3 && img_orig.rows >= 3) {
+			int sx = FindDecimalSplitX(img_orig.data, img_orig.cols, img_orig.rows, (int)img_orig.step);
+			if (sx > 0 && sx < img_orig.cols) {
+				Mat left = img_orig(Rect(0, 0, sx, img_orig.rows)).clone();
+				Mat right = img_orig(Rect(sx, 0, img_orig.cols - sx, img_orig.rows)).clone();
+				left = PadDarkestSidesV(left, true, false);
+				right = PadDarkestSidesV(right, false, true);
+				ResultString = ResultString2 = "";
+				prepareImage(left, binarize_for_ocr, threshold);
+				CString left_text = ResultString; left_text.Trim();
+				ResultString = ResultString2 = "";
+				prepareImage(right, binarize_for_ocr, threshold);
+				CString right_text = ResultString; right_text.Trim();
+				decimal_result = left_text + "." + right_text;
+				did_decimal = true;
+			}
+		}
+		if (!did_decimal) {
+			img_resized = prepareImage(img_orig, binarize_for_ocr, threshold);
+			img_resized2 = prepareImage(img_orig, binarize_for_ocr, threshold, true);
+		}
 	}
 
 	vector<CString> result_list;
 	CString ocr_result, ocr_result2;
-	if (m_UseCrop.GetCheck() == true) {
+	if (did_decimal) {
+		ocr_result = decimal_result;
+		ocr_result2 = "";
+	}
+	else if (m_UseCrop.GetCheck() == true) {
 		for (auto& element : ResultBoxes) {
 			if (element.first == bestRect) {
 				ocr_result = element.second;
