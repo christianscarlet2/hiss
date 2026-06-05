@@ -937,6 +937,17 @@ BEGIN
     LTEXT           "Pick the Tesseract .traineddata model for each AutoOcr engine. The full path is stored; leave blank to use the default ""my_model"" in the tessdata folder.",IDC_STATIC,4,86,226,32
 END
 
+IDD_SAPREFS24 DIALOGEX 0, 0, 237, 213
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_SYSMENU
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "Number of CPUs:",IDC_STATIC,4,12,90,8
+    EDITTEXT        IDC_PW_NUM_CPUS,100,10,50,14,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "Workers per CPU:",IDC_STATIC,4,34,90,8
+    EDITTEXT        IDC_PW_WORKERS_PER_CPU,100,32,50,14,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "Bulk Tesseract OCR and image hashing/detection run on an in-process pool of worker threads. Total workers = CPUs x workers per CPU, split across running Hiss instances. Shared with Vision and the trainer.",IDC_STATIC,4,58,226,40
+END
+
 
 /////////////////////////////////////////////////////////////////////////////
 //

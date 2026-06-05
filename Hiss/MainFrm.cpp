@@ -68,6 +68,7 @@
 #include "DialogSAPrefs21.h"
 #include "DialogSAPrefs22.h"
 #include "DialogSAPrefs23.h"
+#include "DialogSAPrefs24.h"
 #include "DialogScraperOutput.h"
 #include "inlines/eval.h"
 #include "OpenHoldem.h"
@@ -525,6 +526,7 @@ void CMainFrame::OnEditPreferences() {
 	CDlgSAPrefs21 page21;
 	CDlgSAPrefs22 page22;
 	CDlgSAPrefs23 page23;
+	CDlgSAPrefs24 page24;
 
 	// add pages
 	dlg.AddPage(page14, "Auto-Connector");
@@ -538,6 +540,7 @@ void CMainFrame::OnEditPreferences() {
 	dlg.AddPage(page19, "Handhistory Generator");
 	dlg.AddPage(page11, "Logging");
 	dlg.AddPage(page23, "OCR");
+	dlg.AddPage(page24, "Parallel Workers");
 	dlg.AddPage(page6,  "Poker Tracker v4");
 	dlg.AddPage(page22, "Popup Blocker");
 	dlg.AddPage(page16, "Rebuy");
@@ -552,7 +555,7 @@ void CMainFrame::OnEditPreferences() {
 	//dlg.AddPage(dlg4, "Page 4", &page3);
 
 	// the prefs dialog title
-	dlg.SetTitle("OpenHoldem Preferences");
+	dlg.SetTitle("Hiss Preferences");
 
 	// text drawn on the right side of the shaded
 	// page label. this does not change when the

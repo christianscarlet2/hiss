@@ -103,6 +103,7 @@
     <ClCompile Include="DialogSAPrefs21.cpp" />
     <ClCompile Include="DialogSAPrefs22.cpp" />
     <ClCompile Include="DialogSAPrefs23.cpp" />
+    <ClCompile Include="DialogSAPrefs24.cpp" />
     <ClCompile Include="DialogSAPrefs3.cpp" />
     <ClCompile Include="DialogSAPrefs4.cpp" />
     <ClCompile Include="DialogSAPrefs6.cpp" />
@@ -384,6 +385,7 @@
     <ClInclude Include="DialogSAPrefs21.h" />
     <ClInclude Include="DialogSAPrefs22.h" />
     <ClInclude Include="DialogSAPrefs23.h" />
+    <ClInclude Include="DialogSAPrefs24.h" />
     <ClInclude Include="DialogSAPrefs3.h" />
     <ClInclude Include="DialogSAPrefs4.h" />
     <ClInclude Include="DialogSAPrefs6.h" />
