@@ -206,8 +206,10 @@ int CTransform::ITypeTransform(RMapCI region, const HDC hdc, CString *text)
 		return ERR_NOTHING_TO_SCRAPE;
 	}
 
-	// Set threshhold to 65% of available pixels
-	args.ThresholdPixels = (unsigned int) ((width * height * 0.65) + 0.5);
+	// Acceptance gate: the best image is only accepted as a match if fewer than this
+	// many of its pixels failed the perceptual comparison. Lower == tighter fit (the
+	// stored image must match the region more closely). 20% of the available pixels.
+	args.ThresholdPixels = (unsigned int) ((width * height * 0.20) + 0.5);
 
 	// Get pixels
 	// Populate BITMAPINFOHEADER
