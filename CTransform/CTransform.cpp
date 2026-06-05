@@ -206,9 +206,10 @@ int CTransform::ITypeTransform(RMapCI region, const HDC hdc, CString *text)
 		return ERR_NOTHING_TO_SCRAPE;
 	}
 
-	// Acceptance gate: the best image is only accepted as a match if fewer than this
-	// many of its pixels failed the perceptual comparison. Lower == tighter fit (the
-	// stored image must match the region more closely). 20% of the available pixels.
+	// Acceptance gate: the best image is only accepted as a match if fewer than this many
+	// of its pixels differ (beyond the per-pixel tolerance below) from the scraped region.
+	// Lower == tighter fit. 20% of the available pixels. (If the real card isn't in the
+	// set, the nearest image will exceed this and we report "no image match".)
 	args.ThresholdPixels = (unsigned int) ((width * height * 0.20) + 0.5);
 
 	// Get pixels
@@ -238,58 +239,49 @@ int CTransform::ITypeTransform(RMapCI region, const HDC hdc, CString *text)
 		}
 	}
 
-	// Scan through ALL i$ records (of the right size) and keep the best match.
+	// Scan through ALL i$ records (of the right size) and keep the best match by DIRECT
+	// pixel difference (nearest-neighbour), NOT the Yee perceptual metric.
 	//
-	// The perceptual (Yee) failed-pixel count is the primary score, but several
-	// different card images can each score 0 ("perceptually indistinguishable"), so we
-	// must NOT stop at the first image that scores 0 -- doing so returned whichever such
-	// image came first in the map (e.g. "9d" for a freshly-created "Qd" region). Instead
-	// we evaluate every image and break ties with an exact per-channel pixel difference,
-	// so the genuinely closest image wins. Only a byte-identical image short-circuits.
-	smallest_pix_diff = 0xffffffff;
-	unsigned int best_exact_diff = 0xffffffff;
+	// The Yee/pdiff metric is built for photographic perceptual difference (luminance
+	// adaptation, CSF, masking) and ranks tiny clean card glyphs badly -- it would report
+	// e.g. "3d" as having fewer failed pixels than "Qd" even though Qd is far closer pixel
+	// for pixel. So we score each candidate by: (1) the number of pixels that differ by
+	// more than a small tolerance (primary), and (2) the summed absolute channel
+	// difference (tiebreak). The pixel-closest image wins; a byte-identical one ends early.
+	const unsigned int kPixelDiffTolerance = 150;   // |dR|+|dG|+|dB| above this => "differs"
+	smallest_pix_diff = 0xffffffff;                 // fewest differing pixels (primary)
+	unsigned int best_total_diff = 0xffffffff;      // summed abs channel diff (tiebreak)
+	int dim = width * height;
 	for (IMapCI i_iter=p_tablemap->i$()->begin(); i_iter!=p_tablemap->i$()->end(); i_iter++)
 	{
-		if (i_iter->second.width == width && i_iter->second.height == height
-			&& i_iter->second.image != NULL)
+		if (i_iter->second.width != width || i_iter->second.height != height
+			|| i_iter->second.image == NULL)
+			continue;
+		RGBAImage *imgB = i_iter->second.image;
+
+		unsigned int failed = 0;     // pixels differing by more than the tolerance
+		unsigned int total = 0;      // summed absolute channel difference
+		for (int k = 0; k < dim; k++) {
+			int dr = (int)args.ImgA->Get_Red(k)   - (int)imgB->Get_Red(k);
+			int dg = (int)args.ImgA->Get_Green(k) - (int)imgB->Get_Green(k);
+			int db = (int)args.ImgA->Get_Blue(k)  - (int)imgB->Get_Blue(k);
+			unsigned int d = (unsigned int)((dr < 0 ? -dr : dr)
+				+ (dg < 0 ? -dg : dg) + (db < 0 ? -db : db));
+			total += d;
+			if (d > kPixelDiffTolerance) failed++;
+		}
+
+		if (failed < smallest_pix_diff
+			|| (failed == smallest_pix_diff && total < best_total_diff))
 		{
-			RGBAImage *imgB = i_iter->second.image;
-
-			// Exact per-channel (RGB) difference between the scraped region and this image.
-			unsigned int exact_diff = 0;
-			int dim = width * height;
-			for (int k = 0; k < dim; k++) {
-				int dr = (int)args.ImgA->Get_Red(k)   - (int)imgB->Get_Red(k);
-				int dg = (int)args.ImgA->Get_Green(k) - (int)imgB->Get_Green(k);
-				int db = (int)args.ImgA->Get_Blue(k)  - (int)imgB->Get_Blue(k);
-				exact_diff += (unsigned int)((dr < 0 ? -dr : dr)
-					+ (dg < 0 ? -dg : dg) + (db < 0 ? -db : db));
-			}
-
-			if (exact_diff == 0)
-			{
-				// Byte-identical: unambiguously the right image, stop scanning.
-				best_match = i_iter;
-				smallest_pix_diff = 0;
-				best_exact_diff = 0;
-				break;
-			}
-
-			// Perceptual comparison.
-			args.ImgB = imgB;
-			result = Yee_Compare(args);
-
-			if (args.PixelsFailed < smallest_pix_diff
-				|| (args.PixelsFailed == smallest_pix_diff && exact_diff < best_exact_diff))
-			{
-				best_match = i_iter;
-				smallest_pix_diff = args.PixelsFailed;
-				best_exact_diff = exact_diff;
-			}
+			best_match = i_iter;
+			smallest_pix_diff = failed;
+			best_total_diff = total;
+			if (failed == 0 && total == 0) break;   // byte-identical: definitive
 		}
 	}
 
-	// Null ImgB so it is not deleted when args calls its destructor
+	// ImgB was never owned by args here; make sure its destructor won't touch it.
 	args.ImgB = NULL;
 
 	// return the i$ record text, if the smallest pixel difference is less than the threshold
