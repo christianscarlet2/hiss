@@ -1512,6 +1512,14 @@ void COpenScrapeView::OnDraw(CDC* pDC)
 	{
 	// Refresh the cached card rank/suit/community detections for this frame.
 	RefreshCardResultsIfNeeded(pDoc);
+	// Draw the card-result overlays FIRST, so every region's bounding box is drawn on
+	// top of them (overlays sit underneath the boxes).
+	for (RMapCI r_iter=p_tablemap->r$()->begin(); r_iter!=p_tablemap->r$()->end(); r_iter++)
+	{
+		if (IsCardResultRegion(r_iter->second.name)) {
+			DrawCardResultOverlay(pDC, r_iter);
+		}
+	}
 	// Draw all region rectangles
 	for (RMapCI r_iter=p_tablemap->r$()->begin(); r_iter!=p_tablemap->r$()->end(); r_iter++)
 	{
@@ -1577,11 +1585,6 @@ void COpenScrapeView::OnDraw(CDC* pDC)
 
 			pDC->SelectObject(oldpen);
 			pDC->SelectObject(oldbrush);
-		}
-
-		// Overlay the currently-detected value for card rank/suit/community regions.
-		if (IsCardResultRegion(r_iter->second.name)) {
-			DrawCardResultOverlay(pDC, r_iter);
 		}
 	}
 
