@@ -236,28 +236,53 @@ int CTransform::ITypeTransform(RMapCI region, const HDC hdc, CString *text)
 		}
 	}
 
-	// scan through all i$ records and find the one that has the smallest pixel difference
+	// Scan through ALL i$ records (of the right size) and keep the best match.
+	//
+	// The perceptual (Yee) failed-pixel count is the primary score, but several
+	// different card images can each score 0 ("perceptually indistinguishable"), so we
+	// must NOT stop at the first image that scores 0 -- doing so returned whichever such
+	// image came first in the map (e.g. "9d" for a freshly-created "Qd" region). Instead
+	// we evaluate every image and break ties with an exact per-channel pixel difference,
+	// so the genuinely closest image wins. Only a byte-identical image short-circuits.
 	smallest_pix_diff = 0xffffffff;
+	unsigned int best_exact_diff = 0xffffffff;
 	for (IMapCI i_iter=p_tablemap->i$()->begin(); i_iter!=p_tablemap->i$()->end(); i_iter++)
-	{	
-		if (i_iter->second.width == width && i_iter->second.height == height)
+	{
+		if (i_iter->second.width == width && i_iter->second.height == height
+			&& i_iter->second.image != NULL)
 		{
-			// point ImgB to i$ record that was populated on table map load
-			args.ImgB = i_iter->second.image;
+			RGBAImage *imgB = i_iter->second.image;
 
-			// Compare the two images
-			result = Yee_Compare(args);
-			if (args.PixelsFailed==0)
+			// Exact per-channel (RGB) difference between the scraped region and this image.
+			unsigned int exact_diff = 0;
+			int dim = width * height;
+			for (int k = 0; k < dim; k++) {
+				int dr = (int)args.ImgA->Get_Red(k)   - (int)imgB->Get_Red(k);
+				int dg = (int)args.ImgA->Get_Green(k) - (int)imgB->Get_Green(k);
+				int db = (int)args.ImgA->Get_Blue(k)  - (int)imgB->Get_Blue(k);
+				exact_diff += (unsigned int)((dr < 0 ? -dr : dr)
+					+ (dg < 0 ? -dg : dg) + (db < 0 ? -db : db));
+			}
+
+			if (exact_diff == 0)
 			{
+				// Byte-identical: unambiguously the right image, stop scanning.
 				best_match = i_iter;
 				smallest_pix_diff = 0;
+				best_exact_diff = 0;
 				break;
 			}
 
-			if (args.PixelsFailed < smallest_pix_diff)
+			// Perceptual comparison.
+			args.ImgB = imgB;
+			result = Yee_Compare(args);
+
+			if (args.PixelsFailed < smallest_pix_diff
+				|| (args.PixelsFailed == smallest_pix_diff && exact_diff < best_exact_diff))
 			{
 				best_match = i_iter;
 				smallest_pix_diff = args.PixelsFailed;
+				best_exact_diff = exact_diff;
 			}
 		}
 	}
