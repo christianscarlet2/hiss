@@ -166,8 +166,10 @@ private:
 	int                  _capture_index;
 	std::vector<HBITMAP> _capture_buffer;     // copies of frames that matched
 	std::vector<CSize>   _capture_sizes;      // pixel size of each buffered frame
+	CString              _last_capture_sig;   // detected-values signature of the last STORED frame
 	void AutoCaptureTick();
 	bool CardCaptureConditionMet();
+	CString CaptureSignature();               // signature of the current card results
 	void RefreshWholeApp();
 	void ClearCaptureBuffer();
 private:

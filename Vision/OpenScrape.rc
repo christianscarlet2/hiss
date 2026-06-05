@@ -410,7 +410,7 @@ BEGIN
     LTEXT           "Field types to scrape (shared with the trainer):",IDC_SET_SCRAPE_LBL,95,144,260,9
     LISTBOX         IDC_LST_SCRAPE_FIELDS,95,155,270,150,LBS_MULTIPLESEL | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP | WS_BORDER
     LTEXT           "No advanced settings yet.",IDC_SET_ADVANCED_TEXT,95,25,275,170
-    LTEXT           "Auto card capture grabs a screenshot whenever opponent card ranks/suits (excluding the hero, p3) are detected, or all 5 community cards are present. Card detection is slow (~2s/frame), so set how often it polls below.",IDC_SET_ACC_TEXT,95,25,275,60
+    LTEXT           "Auto card capture grabs a screenshot whenever any player card ranks/suits (p0-p8) are detected, or all 5 community cards are present. Card detection is slow (~2s/frame), so set how often it polls below.",IDC_SET_ACC_TEXT,95,25,275,60
     LTEXT           "Detection poll interval (ms):",IDC_SET_ACC_LBL,95,92,150,9
     EDITTEXT        IDC_SET_ACC_INTERVAL,248,90,60,14,ES_AUTOHSCROLL | ES_NUMBER
     LTEXT           "Bulk Tesseract OCR and image hashing/detection run on an in-process pool of worker threads. Total workers = CPUs x workers per CPU, split across running app instances.",IDC_SET_PW_TEXT,95,25,275,40
@@ -795,7 +795,7 @@ STRINGTABLE
 BEGIN
     ID_MAIN_TOOLBAR_GREENCIRCLE "Capture top-level window\nCapture window"
     ID_MAIN_TOOLBAR_REFRESH "Refresh captured window\nRefresh"
-    ID_AUTO_CAPTURE "Toggle AUTO card capture: buffer a screenshot whenever opponent ranks/suits (not hero p3) or all 5 community cards are detected\nAuto Capture"
+    ID_AUTO_CAPTURE "Toggle AUTO card capture: buffer a screenshot whenever any player ranks/suits (p0-p8) or all 5 community cards are detected\nAuto Capture"
     ID_AUTO_CAPTURE_BACK "Previous captured screenshot\nPrev capture"
     ID_AUTO_CAPTURE_NEXT "Next captured screenshot\nNext capture"
     ID_AUTO_CAPTURE_CLEAR "Clear all captured screenshots\nClear captures"

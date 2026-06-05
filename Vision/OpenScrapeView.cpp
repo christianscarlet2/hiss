@@ -1643,8 +1643,19 @@ void COpenScrapeView::OnTimer(UINT_PTR nIDEvent)
 	CView::OnTimer(nIDEvent);
 }
 
-// True when opponent card ranks/suits are detected (any of p0-p8 EXCEPT the hero p3),
-// or when all five community cards are present.
+// A stable signature of the current detected card values, so identical situations
+// aren't stored twice in a row.
+CString COpenScrapeView::CaptureSignature()
+{
+	CString sig;
+	for (std::map<CString, CString>::const_iterator it = _card_results.begin(); it != _card_results.end(); ++it) {
+		sig += it->first; sig += "="; sig += it->second; sig += ";";
+	}
+	return sig;
+}
+
+// True when any player card ranks/suits are detected (p0-p8), or when all five
+// community cards are present.
 bool COpenScrapeView::CardCaptureConditionMet()
 {
 	bool player_hit = false;
@@ -1654,9 +1665,9 @@ bool COpenScrapeView::CardCaptureConditionMet()
 		const CString &n = it->first;
 		if (n.GetLength() == 11 && n.Left(10) == "c0cardface") {
 			++community;                       // c0cardface0..4
-		} else if (n.GetLength() == 15 && n[0] == 'p' && n[1] != '3'
+		} else if (n.GetLength() == 15 && n[0] == 'p'
 				&& n[1] >= '0' && n[1] <= '8' && n.Mid(2, 8) == "cardface") {
-			player_hit = true;                 // p<0-8except3>cardface<0/1>{rank|suit}
+			player_hit = true;                 // p<0-8>cardface<0/1>{rank|suit}
 		}
 	}
 	return player_hit || (community >= 5);
@@ -1674,7 +1685,10 @@ void COpenScrapeView::AutoCaptureTick()
 
 	RefreshCardResultsIfNeeded(pDoc);         // run card detection on the new frame (~slow)
 
-	if (CardCaptureConditionMet()) {
+	// Only buffer when the trigger is met AND the detected values changed since the
+	// last stored frame (don't pile up screenshots of the same situation).
+	if (CardCaptureConditionMet() && CaptureSignature() != _last_capture_sig) {
+		_last_capture_sig = CaptureSignature();
 		int w = pDoc->attached_rect.right - pDoc->attached_rect.left;
 		int h = pDoc->attached_rect.bottom - pDoc->attached_rect.top;
 		HBITMAP copy = DuplicateHBitmap(pDoc->attached_bitmap, w, h);
@@ -1740,6 +1754,7 @@ void COpenScrapeView::ClearCaptureBuffer()
 	_capture_buffer.clear();
 	_capture_sizes.clear();
 	_capture_index = -1;
+	_last_capture_sig = "";   // allow re-capturing a situation after a clear
 }
 
 // Toolbar "Clear screenshots": drop the whole capture buffer and repaint.
