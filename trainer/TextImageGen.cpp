@@ -14,8 +14,9 @@ using namespace cv;
 // What a generation run produces: PT4 player names, or synthetic balance numbers.
 enum GenKind { GEN_NAMES = 0, GEN_BALANCES = 1 };
 
-// A random balance string: an integer 0..1000 with 0, 1, or 2 decimal places.
-//   e.g. "523", "523.4", "523.42", "0.07", "1000"
+// A random balance string: an integer 0..1000 with 0, 1, or 2 decimal places, with the
+// " BB" unit suffix appended (matches how balances appear on the table).
+//   e.g. "523 BB", "523.4 BB", "523.42 BB", "0.07 BB", "1000 BB"
 static CStringA RandomBalance()
 {
 	int whole = rand() % 1001;              // 0..1000
@@ -24,6 +25,7 @@ static CStringA RandomBalance()
 	if (places == 0)      s.Format("%d", whole);
 	else if (places == 1) s.Format("%d.%d", whole, rand() % 10);
 	else                  s.Format("%d.%02d", whole, rand() % 100);
+	s += " BB";
 	return s;
 }
 
