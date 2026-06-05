@@ -2470,12 +2470,26 @@ static void SplitModelSpec(const CString &spec, CString *dir, CString *lang) {
 bool CDlgTableMap::EnsureOcrModel(const CString &transform) {
 	CString key = (transform == "AutoOcr1") ? CString("autoocr1") : CString("autoocr0");
 	CString spec = (p_tablemap_db != NULL) ? p_tablemap_db->GetSettingString(key, "model") : CString("");
-	if (spec.IsEmpty()) spec = "my_model";   // fall back to the bundled model
-	if (spec == m_current_ocr_model) return true;   // already loaded
+	spec.Trim();
+	// A .checkpoint is a TRAINING artifact, not an OCR-able model. Trying to Init() one
+	// fails and leaves the Tesseract API uninitialised -> the next Recognize() crashes.
+	// Fall back to the bundled model (matches the trainer's behaviour).
+	if (spec.IsEmpty() || spec.Right(11).CompareNoCase(".checkpoint") == 0) {
+		spec = "my_model";
+	}
+	if (spec == m_current_ocr_model) return true;   // already loaded and working
 	CString dir, lang;
 	SplitModelSpec(spec, &dir, &lang);
-	if (api->Init(CStringA(dir).GetString(), CStringA(lang).GetString()) == -1) return false;
-	if (api2->Init(CStringA(dir).GetString(), CStringA(lang).GetString()) == -1) return false;
+	bool ok = (api->Init(CStringA(dir).GetString(), CStringA(lang).GetString()) == 0)
+		&& (api2->Init(CStringA(dir).GetString(), CStringA(lang).GetString()) == 0);
+	if (!ok) {
+		// Requested model failed to load. NEVER leave the API broken (that crashes OCR):
+		// restore the bundled model so api/api2 stay valid.
+		bool fb = (api->Init("tessdata", "my_model") == 0)
+			&& (api2->Init("tessdata", "my_model") == 0);
+		m_current_ocr_model = fb ? CString("my_model") : CString("");
+		return fb;
+	}
 	m_current_ocr_model = spec;
 	return true;
 }
@@ -2563,9 +2577,7 @@ CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast,
 	bool binarize_for_ocr = is_balance;
 	bool did_decimal = false;
 	CString decimal_result;
-	if (transform == "AutoOcr0" || transform == "AutoOcr1") {
-		EnsureOcrModel(transform);   // use the model configured for this transform (live)
-
+	if ((transform == "AutoOcr0" || transform == "AutoOcr1") && EnsureOcrModel(transform)) {
 		// Decimal splitting (preferred for balances/bets/...): split the image at the
 		// decimal separator, OCR each half independently, and re-join with '.'. Whole-image
 		// OCR often drops or misreads the point (e.g. "50.28" -> "5028", "84.36" -> "84 36").
