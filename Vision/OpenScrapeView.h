@@ -122,6 +122,8 @@ public:
 	void SetSelectedGroupColor(int color_index);
 	CString GroupNameForRegion(CString name);
 	bool IsGroupLocked(CString group_name);
+	// True if the region belongs to a group whose lock flag is set.
+	bool IsRegionInLockedGroup(CString name);
 	void SetGroupLocked(CString group_name, bool locked);
 	void MoveRegionBy(CString name, int dx, int dy);
 	void MoveRegionBy(CString name, int dx, int dy, bool record_undo);

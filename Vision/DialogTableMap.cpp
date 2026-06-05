@@ -240,6 +240,7 @@ void CDlgTableMap::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_GREEN_AVG, m_GreenAvg);
 	DDX_Control(pDX, IDC_BLUE_AVG, m_BlueAvg);
 	DDX_Control(pDX, IDC_PICKER, m_Picker);
+	DDX_Control(pDX, IDC_LOCKED_LABEL, m_LockedLabel);
 	DDX_Control(pDX, IDC_ALPHA2, m_Alpha2);
 	DDX_Control(pDX, IDC_RED2, m_Red2);
 	DDX_Control(pDX, IDC_GREEN2, m_Green2);
@@ -324,6 +325,7 @@ void CDlgTableMap::DoDataExchange(CDataExchange* pDX)
 BEGIN_MESSAGE_MAP(CDlgTableMap, CDialog)
 	ON_NOTIFY(TVN_SELCHANGED, IDC_TABLEMAP_TREE, &CDlgTableMap::OnTvnSelchangedTablemapTree)
 	ON_WM_PAINT()
+	ON_WM_CTLCOLOR()
 	ON_CBN_SELCHANGE(IDC_TRANSFORM, &CDlgTableMap::OnRegionChange)
 	ON_EN_KILLFOCUS(IDC_ALPHA, &CDlgTableMap::OnRegionChange)
 	ON_EN_KILLFOCUS(IDC_RED, &CDlgTableMap::OnRegionChange)
@@ -1494,6 +1496,53 @@ void CDlgTableMap::OnRegionChange()
 	pDoc->SetModifiedFlag(true);
 }
 
+// Draw the "REGION LOCKED" static in red.
+HBRUSH CDlgTableMap::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
+{
+	HBRUSH hbr = CDialog::OnCtlColor(pDC, pWnd, nCtlColor);
+	if (pWnd != NULL && pWnd->GetSafeHwnd() == m_LockedLabel.GetSafeHwnd()) {
+		pDC->SetTextColor(RGB(220, 0, 0));
+		pDC->SetBkMode(TRANSPARENT);
+	}
+	return hbr;
+}
+
+// When the selected region belongs to a locked group, disable its geometry edits
+// (nudge buttons, the rectangle fields/spins, and the optional 2nd-rectangle fields)
+// and show the red lock indicator. Otherwise just hide the indicator.
+void CDlgTableMap::ApplyGroupLockState(const CString &region_name)
+{
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	bool locked = (pView != NULL) && pView->IsRegionInLockedGroup(region_name);
+
+	m_LockedLabel.ShowWindow(locked ? SW_SHOW : SW_HIDE);
+	if (!locked) {
+		return;
+	}
+
+	// Rectangle 1
+	m_Left.EnableWindow(false);   m_Top.EnableWindow(false);
+	m_Right.EnableWindow(false);  m_Bottom.EnableWindow(false);
+	m_LeftSpin.EnableWindow(false);   m_TopSpin.EnableWindow(false);
+	m_RightSpin.EnableWindow(false);  m_BottomSpin.EnableWindow(false);
+	m_DrawRect.EnableWindow(false);
+
+	// Rectangle 2
+	m_Left2.EnableWindow(false);   m_Top2.EnableWindow(false);
+	m_Right2.EnableWindow(false);  m_Bottom2.EnableWindow(false);
+	m_DrawRect2.EnableWindow(false);
+	m_Rect2Enable.EnableWindow(false);
+
+	// Nudge
+	m_NudgeTaller.EnableWindow(false);   m_NudgeShorter.EnableWindow(false);
+	m_NudgeWider.EnableWindow(false);    m_NudgeNarrower.EnableWindow(false);
+	m_NudgeBigger.EnableWindow(false);   m_NudgeSmaller.EnableWindow(false);
+	m_NudgeUpLeft.EnableWindow(false);   m_NudgeUp.EnableWindow(false);
+	m_NudgeUpRight.EnableWindow(false);  m_NudgeRight.EnableWindow(false);
+	m_NudgeDownRight.EnableWindow(false); m_NudgeDown.EnableWindow(false);
+	m_NudgeDownLeft.EnableWindow(false);  m_NudgeLeft.EnableWindow(false);
+}
+
 void CDlgTableMap::OnZoomChange()
 {
 	theApp.m_pMainWnd->Invalidate(false);
@@ -1871,6 +1920,14 @@ void CDlgTableMap::update_display(void)
 		{
 			m_Delete.EnableWindow(true);
 		}
+	}
+
+	// If the selected region belongs to a locked group, grey-out its geometry edits
+	// and show the red lock indicator (no-op / hidden for everything else).
+	if (type_text == "Regions") {
+		ApplyGroupLockState(sel_text);
+	} else {
+		m_LockedLabel.ShowWindow(SW_HIDE);
 	}
 
 	// Re-enable triggering of OnChange messages

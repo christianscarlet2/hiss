@@ -435,6 +435,12 @@ bool COpenScrapeView::IsGroupLocked(CString group_name)
 	return (g != region_groups.end()) && g->second.locked;
 }
 
+bool COpenScrapeView::IsRegionInLockedGroup(CString name)
+{
+	CString group = GroupNameForRegion(name);
+	return !group.IsEmpty() && IsGroupLocked(group);
+}
+
 // Set/clear a group's locked flag and persist it (osgroup<N>locked symbol -> DB
 // on the next tablemap save).
 void COpenScrapeView::SetGroupLocked(CString group_name, bool locked)
@@ -2465,6 +2471,11 @@ void COpenScrapeView::OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags)
 
 		if (r_iter != p_tablemap->r$()->end())
 		{
+			// A region in a locked group can't be moved or resized from the keyboard.
+			if (IsRegionInLockedGroup(r_iter->second.name)) {
+				CView::OnKeyDown(nChar, nRepCnt, nFlags);
+				return;
+			}
 			// check what key combinations are down
 			bool shiftKeyDown = GetKeyState(VK_SHIFT)>>7;
 			bool sizeChangeKeyDown = GetKeyState(VK_CONTROL)>>7;

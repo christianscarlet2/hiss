@@ -44,6 +44,10 @@ protected:
 	virtual void OnOK();
 	virtual void OnCancel();
 	afx_msg void OnPaint();
+	afx_msg HBRUSH OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor);
+	// When the selected region is in a locked group, grey-out its geometry edits
+	// (nudge / rectangle / rectangle-2) and show the red "REGION LOCKED" label.
+	void ApplyGroupLockState(const CString &region_name);
 	afx_msg void OnVScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar);
 	afx_msg BOOL OnMouseWheel(UINT nFlags, short zDelta, CPoint pt);
 	afx_msg void OnRegionChange();
@@ -141,6 +145,7 @@ protected:
 
 	CStatic				m_BitmapFrame, m_MatFrame;
 	CStickyButton		m_Picker;
+	CStatic				m_LockedLabel;   // red "REGION LOCKED" indicator
 	// Optional second/third colour cubes for the "Color" transform.
 	CStickyButton		m_Picker2, m_Picker3;
 	CButton				m_Color2Enable, m_Color3Enable;

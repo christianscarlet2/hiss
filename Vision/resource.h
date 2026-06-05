@@ -221,11 +221,12 @@
 // 
 #define IDC_LST_SCRAPE_FIELDS           1235
 #define IDC_SET_SCRAPE_LBL              1236
+#define IDC_LOCKED_LABEL                1255
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        154
 #define _APS_NEXT_COMMAND_VALUE         32800
-#define _APS_NEXT_CONTROL_VALUE         1255
+#define _APS_NEXT_CONTROL_VALUE         1256
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
