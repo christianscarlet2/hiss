@@ -247,6 +247,8 @@ public:
 	void GroupRegions(void);
 	void UngroupRegions(void);
 	void UpdateDisplayOfAllRegions();
+	// Current text shown in the Result field (for the "Debug this field" dump).
+	CString GetResultText() { CString s; if (::IsWindow(m_Result.GetSafeHwnd())) m_Result.GetWindowText(s); return s; }
 	HTREEITEM GetTypeNode(CString type);
 	HTREEITEM FindItem(CString s, HTREEITEM start);
 	void CaptureColorPresetPoint(CPoint point);

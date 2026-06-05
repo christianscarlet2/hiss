@@ -1894,6 +1894,285 @@ void COpenScrapeView::RefreshCurrentScreenshot()
 	RefreshWholeApp();
 }
 
+// ===== "Debug this field" support =========================================
+
+static CString DebugTimeStamp()
+{
+	SYSTEMTIME st;
+	GetLocalTime(&st);
+	CString ts;
+	ts.Format("%04d%02d%02d_%02d%02d%02d",
+		st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+	return ts;
+}
+
+// Strip characters that aren't valid in a Windows path segment.
+static CString SanitizeForPath(const CString &in)
+{
+	CString out;
+	for (int i = 0; i < in.GetLength(); ++i) {
+		TCHAR c = in[i];
+		out += (strchr("\\/:*?\"<>|", (char)c) != NULL || c < 32) ? '_' : c;
+	}
+	if (out.IsEmpty()) out = "region";
+	return out;
+}
+
+static bool SaveHBITMAPToPng(HBITMAP hbm, const CString &path)
+{
+	if (hbm == NULL) return false;
+	CLSID png;
+	if (PngEncoderClsid(&png) < 0) return false;
+	Gdiplus::Bitmap *bmp = Gdiplus::Bitmap::FromHBITMAP(hbm, NULL);
+	if (bmp == NULL) return false;
+	CStringW wpath(path);
+	bool ok = (bmp->Save(wpath, &png, NULL) == Gdiplus::Ok);
+	delete bmp;
+	return ok;
+}
+
+// Save a stored tablemap RGBAImage (ABGR data) as a PNG.
+static bool SaveRGBAImageToPng(RGBAImage *img, const CString &path)
+{
+	if (img == NULL) return false;
+	CLSID png;
+	if (PngEncoderClsid(&png) < 0) return false;
+	int w = img->Get_Width(), h = img->Get_Height();
+	if (w <= 0 || h <= 0) return false;
+	Gdiplus::Bitmap bmp(w, h, PixelFormat32bppARGB);
+	for (int y = 0; y < h; ++y) {
+		for (int x = 0; x < w; ++x) {
+			unsigned int i = x + y * w;
+			bmp.SetPixel(x, y, Gdiplus::Color(
+				img->Get_Alpha(i), img->Get_Red(i), img->Get_Green(i), img->Get_Blue(i)));
+		}
+	}
+	CStringW wpath(path);
+	return (bmp.Save(wpath, &png, NULL) == Gdiplus::Ok);
+}
+
+// Build an RGBAImage from a region-sized HBITMAP (same pixel layout the I-transform uses).
+static RGBAImage *RegionRGBAFromHBITMAP(HBITMAP hbm, int w, int h)
+{
+	if (hbm == NULL || w <= 0 || h <= 0) return NULL;
+	HDC screen = CreateDC("DISPLAY", NULL, NULL, NULL);
+	HDC dc = CreateCompatibleDC(screen);
+	HBITMAP old = (HBITMAP)SelectObject(dc, hbm);
+	BITMAPINFO *bmi = (BITMAPINFO *)::HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
+		sizeof(BITMAPINFOHEADER) + 1024);
+	RGBAImage *img = NULL;
+	if (bmi != NULL) {
+		bmi->bmiHeader.biSize = sizeof(bmi->bmiHeader);
+		bmi->bmiHeader.biBitCount = 0;
+		::GetDIBits(dc, hbm, 0, 0, NULL, bmi, DIB_RGB_COLORS);
+		bmi->bmiHeader.biHeight = -bmi->bmiHeader.biHeight;
+		BYTE *pBits = new BYTE[bmi->bmiHeader.biSizeImage];
+		::GetDIBits(dc, hbm, 0, h, pBits, bmi, DIB_RGB_COLORS);
+		img = new RGBAImage(w, h, "scraped");
+		for (int y = 0; y < h; ++y) {
+			for (int x = 0; x < w; ++x) {
+				BYTE a = pBits[y*w*4 + x*4 + 3];
+				BYTE r = pBits[y*w*4 + x*4 + 2];
+				BYTE g = pBits[y*w*4 + x*4 + 1];
+				BYTE b = pBits[y*w*4 + x*4 + 0];
+				img->Set(r, g, b, a, x + y * w);
+			}
+		}
+		delete[] pBits;
+		HeapFree(GetProcessHeap(), NULL, bmi);
+	}
+	SelectObject(dc, old);
+	DeleteDC(dc);
+	DeleteDC(screen);
+	return img;
+}
+
+static CString ColorToText(COLORREF c)
+{
+	// Stored internally as ABGR: (A<<24)|(B<<16)|(G<<8)|R.
+	int r = c & 0xFF, g = (c >> 8) & 0xFF, b = (c >> 16) & 0xFF, a = (c >> 24) & 0xFF;
+	CString s;
+	s.Format("#%02X%02X%02X (R=%d G=%d B=%d A=%d, raw=0x%08X)", r, g, b, r, g, b, a, (unsigned)c);
+	return s;
+}
+
+// Right-click "Debug this field": write a complete diagnostic dump for one region.
+void COpenScrapeView::DebugRegionToFolder(const CString &region_name)
+{
+	COpenScrapeDoc *pDoc = GetDocument();
+	if (pDoc == NULL || pDoc->attached_bitmap == NULL || p_tablemap == NULL) {
+		AfxMessageBox("Debug this field: capture/select a table first (no current image).");
+		return;
+	}
+	RMapCI r_iter = p_tablemap->r$()->find(region_name);
+	if (r_iter == p_tablemap->r$()->end()) {
+		AfxMessageBox("Debug this field: region '" + region_name + "' not found.");
+		return;
+	}
+	int left = (int)r_iter->second.left, top = (int)r_iter->second.top;
+	int right = (int)r_iter->second.right, bottom = (int)r_iter->second.bottom;
+	int w = right - left + 1, h = bottom - top + 1;
+	if (w <= 0 || h <= 0) {
+		AfxMessageBox("Debug this field: region has an invalid size.");
+		return;
+	}
+
+	// Create <appdir>\debug\<region>_<timestamp>\.
+	char module[MAX_PATH] = { 0 };
+	GetModuleFileNameA(NULL, module, MAX_PATH);
+	CString appdir(module);
+	int slash = appdir.ReverseFind('\\');
+	if (slash >= 0) appdir = appdir.Left(slash);
+	CString folder;
+	folder.Format("%s\\debug\\%s_%s\\", appdir.GetString(),
+		SanitizeForPath(region_name).GetString(), DebugTimeStamp().GetString());
+	SHCreateDirectoryExA(NULL, folder, NULL);
+
+	CString transform = r_iter->second.transform;
+	CString result = (theApp.m_TableMapDlg != NULL) ? theApp.m_TableMapDlg->GetResultText() : CString("");
+
+	// 1) The scraped region image + 2) the whole current table screenshot.
+	HBITMAP scraped = ExtractRegionBitmap(pDoc->attached_bitmap, left, top, w, h);
+	SaveHBITMAPToPng(scraped, folder + "scraped.png");
+	SaveHBITMAPToPng(pDoc->attached_bitmap, folder + "table.png");
+
+	// 3) Everything else -> info.txt.
+	CString info;
+	CString line;
+	info += "=== Vision \"Debug this field\" ===\r\n";
+	line.Format("Timestamp     : %s\r\n", DebugTimeStamp().GetString());       info += line;
+	line.Format("Tablemap      : %s\r\n", pDoc->m_tm_name.IsEmpty() ? "(unsaved/none)" : pDoc->m_tm_name.GetString()); info += line;
+	line.Format("Region        : %s\r\n", region_name.GetString());            info += line;
+	line.Format("Transform     : %s\r\n", transform.GetString());              info += line;
+	line.Format("RESULT field  : %s\r\n", result.GetString());                 info += line;
+	info += "\r\n--- Geometry ---\r\n";
+	line.Format("Rect 1        : left=%d top=%d right=%d bottom=%d  (%dx%d)\r\n",
+		left, top, right, bottom, w, h);                                       info += line;
+	line.Format("Rect 2        : %s  left=%u top=%u right=%u bottom=%u\r\n",
+		r_iter->second.rect2_enabled ? "ENABLED" : "disabled",
+		r_iter->second.left2, r_iter->second.top2, r_iter->second.right2, r_iter->second.bottom2); info += line;
+
+	info += "\r\n--- Colour settings ---\r\n";
+	line.Format("Colour 1      : %s\r\n", ColorToText(r_iter->second.color).GetString());   info += line;
+	line.Format("Colour 2      : %s  %s\r\n", r_iter->second.color2_enabled ? "[ON]" : "[off]",
+		ColorToText(r_iter->second.color2).GetString());                       info += line;
+	line.Format("Colour 3      : %s  %s\r\n", r_iter->second.color3_enabled ? "[ON]" : "[off]",
+		ColorToText(r_iter->second.color3).GetString());                       info += line;
+	line.Format("Radius/Tol.   : %d\r\n", r_iter->second.radius);              info += line;
+
+	info += "\r\n--- OCR / image-processing settings ---\r\n";
+	line.Format("Use default   : %s\r\n", r_iter->second.use_default ? "yes" : "no");        info += line;
+	line.Format("Threshold     : %d\r\n", r_iter->second.threshold);          info += line;
+	line.Format("Sharpen %%     : %d\r\n", r_iter->second.sharpen);            info += line;
+	line.Format("Use cropping  : %s\r\n", r_iter->second.use_cropping ? "yes" : "no");        info += line;
+	line.Format("Crop size     : %d\r\n", r_iter->second.crop_size);          info += line;
+	line.Format("Match mode    : %d (Tesseract page-seg; -1=default)\r\n", r_iter->second.match_mode); info += line;
+
+	// AutoOcr language/model paths (shared hiss settings).
+	info += "\r\n--- AutoOCR models (shared settings) ---\r\n";
+	if (p_tablemap_db != NULL) {
+		CString m0 = p_tablemap_db->GetSettingString("autoocr0", "model");
+		CString m1 = p_tablemap_db->GetSettingString("autoocr1", "model");
+		line.Format("AutoOcr0      : %s\r\n", m0.IsEmpty() ? "(not set)" : m0.GetString()); info += line;
+		line.Format("AutoOcr1      : %s\r\n", m1.IsEmpty() ? "(not set)" : m1.GetString()); info += line;
+	} else {
+		info += "(database not available)\r\n";
+	}
+
+	char t0 = transform.IsEmpty() ? 'N' : (char)transform[0];
+
+	// 4) Hash details for H-transform regions.
+	if (t0 == 'H') {
+		int hash_type = 0;
+		if (transform.GetLength() > 1) hash_type = transform[1] - '0';
+		// Compute the hash from the scraped region pixels (same code path as detection).
+		HDC screen = CreateDC("DISPLAY", NULL, NULL, NULL);
+		HDC dc = CreateCompatibleDC(screen);
+		HBITMAP oldb = (HBITMAP)SelectObject(dc, scraped);
+		CTransform trans;
+		uint32_t hv = trans.ComputeRegionHash(r_iter, dc, hash_type);
+		SelectObject(dc, oldb);
+		DeleteDC(dc);
+		DeleteDC(screen);
+		info += "\r\n--- Hash ---\r\n";
+		line.Format("Hash group    : %d\r\n", hash_type);                      info += line;
+		line.Format("Scraped hash  : 0x%08X\r\n", hv);                         info += line;
+		HMap *hm = p_tablemap->h$(hash_type);
+		if (hm != NULL) {
+			HMapCI hit = hm->find(hv);
+			line.Format("Hash match    : %s\r\n",
+				(hit != hm->end()) ? hit->second.name.GetString() : "(no stored hash matches)"); info += line;
+			info += "Stored hashes in this group:\r\n";
+			for (HMapCI it = hm->begin(); it != hm->end(); ++it) {
+				line.Format("    0x%08X  %s%s\r\n", it->first, it->second.name.GetString(),
+					(it->first == hv) ? "   <== MATCH" : "");                  info += line;
+			}
+		}
+	}
+
+	// 4b) Image-transform candidates, ranked by exact pixel difference, with images saved.
+	if (t0 == 'I') {
+		info += "\r\n--- Image-transform candidates (same size, ranked by exact RGB diff) ---\r\n";
+		RGBAImage *scr = RegionRGBAFromHBITMAP(scraped, w, h);
+		struct Cand { CString name; double diff; RGBAImage *img; };
+		std::vector<Cand> cands;
+		for (IMapCI i_iter = p_tablemap->i$()->begin(); i_iter != p_tablemap->i$()->end(); ++i_iter) {
+			if (i_iter->second.width != w || i_iter->second.height != h || i_iter->second.image == NULL) continue;
+			double diff = -1.0;
+			if (scr != NULL) {
+				unsigned long sum = 0;
+				int dim = w * h;
+				for (int k = 0; k < dim; ++k) {
+					int dr = (int)scr->Get_Red(k)   - (int)i_iter->second.image->Get_Red(k);
+					int dg = (int)scr->Get_Green(k) - (int)i_iter->second.image->Get_Green(k);
+					int db = (int)scr->Get_Blue(k)  - (int)i_iter->second.image->Get_Blue(k);
+					sum += (unsigned long)((dr<0?-dr:dr) + (dg<0?-dg:dg) + (db<0?-db:db));
+				}
+				diff = (double)sum / (double)(dim * 3);   // avg abs channel diff (0..255)
+			}
+			Cand c; c.name = i_iter->second.name; c.diff = diff; c.img = i_iter->second.image;
+			cands.push_back(c);
+		}
+		std::sort(cands.begin(), cands.end(), [](const Cand &a, const Cand &b) { return a.diff < b.diff; });
+		line.Format("%d candidate image(s) of size %dx%d.\r\n", (int)cands.size(), w, h); info += line;
+		for (size_t i = 0; i < cands.size(); ++i) {
+			line.Format("    #%2d  avg-diff=%7.3f  %s%s\r\n", (int)i + 1, cands[i].diff,
+				cands[i].name.GetString(), (cands[i].name == result) ? "   <== RESULT" : "");
+			info += line;
+		}
+		// Save the matched image + the top few candidate images for visual comparison.
+		CString cdir = folder + "candidates\\";
+		SHCreateDirectoryExA(NULL, cdir, NULL);
+		for (size_t i = 0; i < cands.size() && i < 8; ++i) {
+			CString p;
+			p.Format("%s%02d_%s.png", cdir.GetString(), (int)i + 1, SanitizeForPath(cands[i].name).GetString());
+			SaveRGBAImageToPng(cands[i].img, p);
+		}
+		if (!result.IsEmpty()) {
+			for (size_t i = 0; i < cands.size(); ++i) {
+				if (cands[i].name == result) {
+					SaveRGBAImageToPng(cands[i].img, folder + "matched_" + SanitizeForPath(result) + ".png");
+					break;
+				}
+			}
+		}
+		if (scr != NULL) delete scr;
+	}
+
+	// Write info.txt.
+	FILE *f = NULL;
+	fopen_s(&f, folder + "info.txt", "wb");
+	if (f != NULL) {
+		CStringA infoA(info);
+		fwrite((const char *)infoA, 1, infoA.GetLength(), f);
+		fclose(f);
+	}
+
+	if (scraped != NULL) DeleteObject(scraped);
+
+	AfxMessageBox("Debug written to:\r\n" + folder);
+}
+
 // Toolbar "Clear screenshots": drop the whole capture buffer and repaint.
 void COpenScrapeView::ClearCaptures()
 {
@@ -2566,6 +2845,8 @@ void COpenScrapeView::OnRButtonDown(UINT nFlags, CPoint point)
 		CMenu menu;
 		menu.CreatePopupMenu();
 		const UINT kDeleteRegionMenuId = 51001;
+		const UINT kDebugFieldMenuId = 51006;
+		menu.AppendMenu(MF_STRING, kDebugFieldMenuId, "Debug this field");
 		menu.AppendMenu(MF_STRING, kDeleteRegionMenuId, "Delete");
 
 		CPoint screen_point = point;
@@ -2573,7 +2854,10 @@ void COpenScrapeView::OnRButtonDown(UINT nFlags, CPoint point)
 		UINT command = menu.TrackPopupMenu(TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
 			screen_point.x, screen_point.y, this);
 
-		if (command == kDeleteRegionMenuId) {
+		if (command == kDebugFieldMenuId) {
+			DebugRegionToFolder(region_name);
+		}
+		else if (command == kDeleteRegionMenuId) {
 			CString message;
 			message.Format("Delete region: %s?", region_name);
 			if (AfxMessageBox(message, MB_YESNO) == IDYES && p_tablemap->r$_erase(region_name)) {
@@ -2598,7 +2882,9 @@ void COpenScrapeView::OnRButtonDown(UINT nFlags, CPoint point)
 	const UINT kDeleteRegionMenuId = 51001;
 	const UINT kUngroupRegionMenuId = 51002;
 	const UINT kToggleLockGroupMenuId = 51005;
+	const UINT kDebugFieldMenuId = 51006;
 	bool group_locked = IsGroupLocked(group_name);
+	menu.AppendMenu(MF_STRING, kDebugFieldMenuId, "Debug this field");
 	menu.AppendMenu(MF_STRING, kToggleLockGroupMenuId, group_locked ? "Unlock group" : "Lock group");
 	menu.AppendMenu(MF_STRING, kDeleteRegionMenuId, "Delete");
 	menu.AppendMenu(MF_STRING, kUngroupRegionMenuId, "Ungroup this item");
@@ -2608,7 +2894,10 @@ void COpenScrapeView::OnRButtonDown(UINT nFlags, CPoint point)
 	UINT command = menu.TrackPopupMenu(TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
 		screen_point.x, screen_point.y, this);
 
-	if (command == kToggleLockGroupMenuId) {
+	if (command == kDebugFieldMenuId) {
+		DebugRegionToFolder(region_name);
+	}
+	else if (command == kToggleLockGroupMenuId) {
 		SetGroupLocked(group_name, !group_locked);
 		theApp.m_TableMapDlg->update_tree("Groups");
 	}

@@ -426,8 +426,62 @@ int CTransform::HTypeTransform(RMapCI region, const HDC hdc, CString *text)
 	return retval;
 }
 
+// Debug-only: compute the hash value HTypeTransform would derive for this region's
+// current pixels and hash_type, without doing the h$ lookup. Kept in lock-step with the
+// hashing in HTypeTransform so the reported value matches what detection actually uses.
+uint32_t CTransform::ComputeRegionHash(RMapCI region, const HDC hdc, int hash_type)
+{
+	if (hash_type < 0 || hash_type >= k_max_number_of_hash_groups_in_tablemap) return 0;
+	int width  = region->second.right - region->second.left + 1;
+	int height = region->second.bottom - region->second.top + 1;
+	if (width <= 0 || height <= 0 || width > MAX_HASH_WIDTH || height > MAX_HASH_HEIGHT) {
+		return 0;
+	}
+	uint32_t pix[MAX_HASH_WIDTH*MAX_HASH_HEIGHT] = {0};
+	BITMAPINFO *bmi = (BITMAPINFO *) ::HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
+		sizeof(BITMAPINFOHEADER) + 1024);
+	if (bmi == NULL) return 0;
+	HBITMAP hbm = (HBITMAP) GetCurrentObject(hdc, OBJ_BITMAP);
+	bmi->bmiHeader.biSize = sizeof(bmi->bmiHeader);
+	bmi->bmiHeader.biBitCount = 0;
+	::GetDIBits(hdc, hbm, 0, 0, NULL, bmi, DIB_RGB_COLORS);
+	bmi->bmiHeader.biHeight = -bmi->bmiHeader.biHeight;
+	BYTE *pBits = new BYTE[bmi->bmiHeader.biSizeImage];
+	::GetDIBits(hdc, hbm, 0, height, pBits, bmi, DIB_RGB_COLORS);
 
-int CTransform::TTypeTransform(RMapCI region, const HDC hdc, CString *text, CString *separation, 
+	uint32_t hash = 0;
+	if (hash_type == 0) {
+		for (int y = 0; y < height; y++) {
+			for (int x = 0; x < width; x++) {
+				BYTE red   = pBits[y*width*4 + x*4 + 2];
+				BYTE green = pBits[y*width*4 + x*4 + 1];
+				BYTE blue  = pBits[y*width*4 + x*4 + 0];
+				pix[y*width + x] = (blue<<16) + (green<<8) + red;
+			}
+		}
+		hash = hashword(&pix[0], width * height, HASH_SEED_0);
+	} else {
+		int pixcount = 0;
+		for (PMapCI p_iter=p_tablemap->p$(hash_type)->begin(); p_iter!=p_tablemap->p$(hash_type)->end(); p_iter++) {
+			int x = p_iter->second.x, y = p_iter->second.y;
+			if (x < width && y < height) {
+				BYTE red   = pBits[y*width*4 + x*4 + 2];
+				BYTE green = pBits[y*width*4 + x*4 + 1];
+				BYTE blue  = pBits[y*width*4 + x*4 + 0];
+				pix[pixcount++] = (blue<<16) + (green<<8) + red;
+			}
+		}
+		if (hash_type==1) hash = hashword(&pix[0], pixcount, HASH_SEED_1);
+		if (hash_type==2) hash = hashword(&pix[0], pixcount, HASH_SEED_2);
+		if (hash_type==3) hash = hashword(&pix[0], pixcount, HASH_SEED_3);
+	}
+	HeapFree(GetProcessHeap(), NULL, bmi);
+	delete []pBits;
+	return hash;
+}
+
+
+int CTransform::TTypeTransform(RMapCI region, const HDC hdc, CString *text, CString *separation,
 									 bool background[], bool (*character)[MAX_CHAR_HEIGHT])
 {
 	int					x = 0, y = 0;

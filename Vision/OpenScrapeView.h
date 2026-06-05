@@ -166,6 +166,10 @@ public:
 	void InvalidateCardResults() { _card_results_bmp = NULL; }
 	// Re-run card detection on the currently displayed frame and repaint.
 	void RefreshCurrentScreenshot();
+	// "Debug this field" (region right-click): dump the scraped region image, the current
+	// table screenshot, the matched/candidate transform images, the computed hash, and all
+	// transform/OCR/colour settings + result to <appdir>\debug\<region>_<timestamp>\.
+	void DebugRegionToFolder(const CString &region_name);
 	// 0-based index of the currently-displayed buffered capture (-1 if none).
 	int CaptureIndex() const { return _capture_index; }
 	// Persist / restore the capture buffer across runs (PNGs under vision_captures\).

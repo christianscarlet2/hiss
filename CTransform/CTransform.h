@@ -54,7 +54,11 @@ class CTransform
               bool background[],
               bool (*character)[MAX_CHAR_HEIGHT]);
  public:
-  bool IsInARGBColorCube(const int center_a, const int center_r, const int center_g, const int center_b, 
+  // Debug helper: compute the image-hash value the H-transform would produce for this
+  // region+hash_type from the pixels currently selected into hdc (no h$ lookup). Mirrors
+  // HTypeTransform's hashing exactly so the reported value matches detection. 0 on error.
+  uint32_t ComputeRegionHash(RMapCI region, const HDC hdc, int hash_type);
+  bool IsInARGBColorCube(const int center_a, const int center_r, const int center_g, const int center_b,
 								 const int radius, const int pix_a, const int pix_r, const int pix_g, const int pix_b);
 	bool IsInRGBColorCube(const int center_r, const int center_g, const int center_b, 
 								const int radius, const int pix_r, const int pix_g, const int pix_b);
