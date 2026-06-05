@@ -159,6 +159,7 @@ public:
 	bool IsAutoCapture() const { return _auto_capture; }
 	bool HasCaptures() const { return !_capture_buffer.empty(); }
 	void NavigateCapture(int delta);
+	void ClearCaptures();
 	void OnAutoCaptureIntervalChanged(int interval_ms);
 private:
 	bool                 _auto_capture;
@@ -186,7 +187,11 @@ private:
 	static bool IsCardResultRegion(const CString &name);
 	CString ScrapeRegionResult(RMapCI r_iter);
 	void RefreshCardResultsIfNeeded(COpenScrapeDoc *pDoc);
+	void EnsureWorkerPool();      // (re)size the detection pool from settings
 	void DrawCardResultOverlay(CDC *pDC, RMapCI r_iter);
+public:
+	int CaptureCount() const { return (int)_capture_buffer.size(); }
+private:
 
 public:
 	bool		drawing_rect, drawing_started;

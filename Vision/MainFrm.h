@@ -19,6 +19,14 @@
 
 #define		BLINKER_TIMER				1
 
+// Small read-only static that paints its text in blue (used for the toolbar's
+// "(N)" captured-screenshot count).
+class CBlueStatic : public CStatic {
+protected:
+	afx_msg void OnPaint();
+	DECLARE_MESSAGE_MAP()
+};
+
 class CMainFrame : public CFrameWnd {
  public:
 	LRESULT OnHotKey(WPARAM wParam, LPARAM lParam);
@@ -51,11 +59,13 @@ class CMainFrame : public CFrameWnd {
 	afx_msg void OnUpdateAutoCapture(CCmdUI *pCmdUI);
 	afx_msg void OnAutoCaptureBack();
 	afx_msg void OnAutoCaptureNext();
+	afx_msg void OnAutoCaptureClear();
 	afx_msg void OnUpdateAutoCaptureNav(CCmdUI *pCmdUI);
 	DECLARE_MESSAGE_MAP()
 
 	CStatusBar	m_wndStatusBar;
 	CToolBar		m_wndToolBar;
+	CBlueStatic	m_CaptureCount;   // blue "(N)" captured-screenshot count on the toolbar
  public:
 	virtual BOOL DestroyWindow();
 	afx_msg void OnViewConnecttowindow();

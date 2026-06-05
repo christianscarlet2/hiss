@@ -22,8 +22,49 @@
 #include "DecimalSplit.h"
 #include "../CTablemap/CTablemapDB.h"
 #include "../CTransform/CTransform.h"
+#include "../Shared/ParallelWorkerPool.h"
 #include <gdiplus.h>
 #include <ctype.h>
+
+// Shared in-process worker pool for parallel card detection (sized from the
+// "Parallel Workers" settings, split across running Vision instances).
+static ParallelWorkerPool g_card_pool;
+static int g_card_pool_size = 0;
+
+// Copy one region's pixels out of the source frame into its own small bitmap.
+// MUST run on the UI thread (a source HBITMAP can be selected into one DC only).
+static HBITMAP ExtractRegionBitmap(HBITMAP src, int left, int top, int w, int h) {
+	if (src == NULL || w <= 0 || h <= 0) return NULL;
+	HDC screen = CreateDC("DISPLAY", NULL, NULL, NULL);
+	HDC sdc = CreateCompatibleDC(screen);
+	HDC ddc = CreateCompatibleDC(screen);
+	HBITMAP dst = CreateCompatibleBitmap(screen, w, h);
+	HBITMAP os = (HBITMAP)SelectObject(sdc, src);
+	HBITMAP od = (HBITMAP)SelectObject(ddc, dst);
+	BitBlt(ddc, 0, 0, w, h, sdc, left, top, SRCCOPY);
+	SelectObject(sdc, os);
+	SelectObject(ddc, od);
+	DeleteDC(sdc);
+	DeleteDC(ddc);
+	DeleteDC(screen);
+	return dst;
+}
+
+// Worker-thread side: run the region's transform on its private bitmap. Each job
+// owns its DC + bitmap (no shared GDI); only read-only p_tablemap data is shared.
+static CString TransformRegionBitmap(RMapCI region, HBITMAP region_bmp) {
+	CString result;
+	if (region_bmp == NULL) return result;
+	HDC screen = CreateDC("DISPLAY", NULL, NULL, NULL);
+	HDC dc = CreateCompatibleDC(screen);
+	HBITMAP old = (HBITMAP)SelectObject(dc, region_bmp);
+	CTransform trans;
+	trans.DoTransform(region, dc, &result);
+	SelectObject(dc, old);
+	DeleteDC(dc);
+	DeleteDC(screen);
+	return result;
+}
 
 #define AUTO_CAPTURE_TIMER 0xA100
 
@@ -1412,10 +1453,79 @@ void COpenScrapeView::RefreshCardResultsIfNeeded(COpenScrapeDoc *pDoc)
 	if (pDoc->attached_bitmap == NULL) {
 		return;
 	}
+
+	// Gather the card regions to detect this frame.
+	std::vector<RMapCI> regions;
 	for (RMapCI r_iter = p_tablemap->r$()->begin(); r_iter != p_tablemap->r$()->end(); ++r_iter) {
-		if (IsCardResultRegion(r_iter->second.name)) {
-			_card_results[r_iter->second.name] = ScrapeRegionResult(r_iter);
-		}
+		if (IsCardResultRegion(r_iter->second.name)) regions.push_back(r_iter);
+	}
+	if (regions.empty()) return;
+
+	EnsureWorkerPool();
+
+	// The pdiff metric lazily initialises a few function-statics on first use; warm
+	// them once on the UI thread so concurrent first calls don't race. Also the
+	// serial path for single-worker setups.
+	static bool s_metric_warmed = false;
+	if (g_card_pool.ThreadCount() <= 1 || !s_metric_warmed) {
+		for (size_t i = 0; i < regions.size(); ++i)
+			_card_results[regions[i]->second.name] = ScrapeRegionResult(regions[i]);
+		s_metric_warmed = true;
+		return;
+	}
+
+	// Parallel path: extract each region's pixels on this (UI) thread, then run the
+	// transform/compare on worker threads (each job owns its own bitmap + DCs). Wait
+	// for all to finish so the result set is complete when we return.
+	CRITICAL_SECTION cs;
+	InitializeCriticalSection(&cs);
+	std::map<CString, CString> *results = &_card_results;
+	HANDLE done = CreateEvent(NULL, TRUE, FALSE, NULL);
+	volatile LONG remaining = 0;
+	int submitted = 0;
+
+	for (size_t i = 0; i < regions.size(); ++i) {
+		RMapCI reg = regions[i];
+		int w = (int)reg->second.right - (int)reg->second.left + 1;
+		int h = (int)reg->second.bottom - (int)reg->second.top + 1;
+		HBITMAP bmp = ExtractRegionBitmap(pDoc->attached_bitmap, reg->second.left, reg->second.top, w, h);
+		if (bmp == NULL) continue;
+		CString name = reg->second.name;
+		InterlockedIncrement(&remaining);
+		++submitted;
+		g_card_pool.Submit([reg, bmp, name, &cs, results, &remaining, done]() {
+			CString r = TransformRegionBitmap(reg, bmp);
+			DeleteObject(bmp);
+			EnterCriticalSection(&cs);
+			(*results)[name] = r;
+			LeaveCriticalSection(&cs);
+			if (InterlockedDecrement(&remaining) == 0) SetEvent(done);
+		});
+	}
+
+	if (submitted > 0) {
+		WaitForSingleObject(done, 15000);   // join (generous timeout safety net)
+	}
+	CloseHandle(done);
+	DeleteCriticalSection(&cs);
+}
+
+// (Re)size the detection worker pool from the shared "Parallel Workers" settings,
+// split across running Vision instances (theApp.sessionnum) to avoid oversubscription.
+void COpenScrapeView::EnsureWorkerPool()
+{
+	int cpus = 0, wpc = 1;
+	if (p_tablemap_db != NULL) {
+		CString c = p_tablemap_db->GetSettingString("parallel_workers", "num_cpus");
+		CString w = p_tablemap_db->GetSettingString("parallel_workers", "workers_per_cpu");
+		if (!c.IsEmpty()) cpus = atoi(c);
+		if (!w.IsEmpty()) wpc = atoi(w);
+	}
+	int instances = (theApp.sessionnum > 0) ? theApp.sessionnum : 1;
+	int want = ParallelWorkerCountForInstances(cpus, wpc, instances);
+	if (want != g_card_pool_size) {
+		g_card_pool.Start(want);
+		g_card_pool_size = want;
 	}
 }
 
@@ -1630,6 +1740,15 @@ void COpenScrapeView::ClearCaptureBuffer()
 	_capture_buffer.clear();
 	_capture_sizes.clear();
 	_capture_index = -1;
+}
+
+// Toolbar "Clear screenshots": drop the whole capture buffer and repaint.
+void COpenScrapeView::ClearCaptures()
+{
+	ClearCaptureBuffer();
+	CMainFrame *mf = (CMainFrame *)AfxGetMainWnd();
+	if (mf) mf->ForceRedraw();
+	if (theApp.m_pMainWnd) theApp.m_pMainWnd->Invalidate(FALSE);   // refresh toolbar count/state
 }
 
 // COpenScrapeView drawing

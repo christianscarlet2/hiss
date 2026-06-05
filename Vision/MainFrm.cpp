@@ -64,8 +64,10 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
 	ON_UPDATE_COMMAND_UI(ID_AUTO_CAPTURE, &CMainFrame::OnUpdateAutoCapture)
 	ON_COMMAND(ID_AUTO_CAPTURE_BACK, &CMainFrame::OnAutoCaptureBack)
 	ON_COMMAND(ID_AUTO_CAPTURE_NEXT, &CMainFrame::OnAutoCaptureNext)
+	ON_COMMAND(ID_AUTO_CAPTURE_CLEAR, &CMainFrame::OnAutoCaptureClear)
 	ON_UPDATE_COMMAND_UI(ID_AUTO_CAPTURE_BACK, &CMainFrame::OnUpdateAutoCaptureNav)
 	ON_UPDATE_COMMAND_UI(ID_AUTO_CAPTURE_NEXT, &CMainFrame::OnUpdateAutoCaptureNav)
+	ON_UPDATE_COMMAND_UI(ID_AUTO_CAPTURE_CLEAR, &CMainFrame::OnUpdateAutoCaptureNav)
 	ON_COMMAND(ID_TOOLS_CLONEREGIONS, &CMainFrame::OnToolsCloneRegions)
 	ON_COMMAND(ID_TOOLS_SHIFTREGIONS, &CMainFrame::OnToolsShiftRegions)
 
@@ -160,6 +162,18 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct)
 		TRACE0("Failed to create status bar\n");
 		return -1;      // fail to create
 	}
+	// Non-clickable blue "(N)" captured-screenshot count, placed just after the last
+	// toolbar button (the auto-capture Clear button).
+	{
+		CToolBarCtrl &tb = m_wndToolBar.GetToolBarCtrl();
+		int n = tb.GetButtonCount();
+		CRect last(0, 0, 0, 0);
+		if (n > 0) tb.GetItemRect(n - 1, &last);
+		CRect rc(last.right + 6, last.top + 1, last.right + 60, last.bottom - 1);
+		m_CaptureCount.Create("(0)", WS_CHILD | WS_VISIBLE | SS_NOTIFY,
+			rc, &m_wndToolBar, IDC_CAPTURE_COUNT);
+	}
+
 	// Start timer that blinks selected region
 	SetTimer(BLINKER_TIMER, 500, 0);
 	return 0;
@@ -802,6 +816,24 @@ void CMainFrame::ResizeWindow(COpenScrapeDoc *pDoc)
 	DockTableMapWindow(false);
 }
 
+// Blue read-only "(N)" count painted on the toolbar.
+BEGIN_MESSAGE_MAP(CBlueStatic, CStatic)
+	ON_WM_PAINT()
+END_MESSAGE_MAP()
+
+void CBlueStatic::OnPaint()
+{
+	CPaintDC dc(this);
+	CRect rc; GetClientRect(&rc);
+	dc.FillSolidRect(&rc, ::GetSysColor(COLOR_BTNFACE));   // blend with the toolbar
+	CString s; GetWindowText(s);
+	dc.SetBkMode(TRANSPARENT);
+	dc.SetTextColor(RGB(0, 0, 210));                       // blue
+	CFont *old = dc.SelectObject(CFont::FromHandle((HFONT)::GetStockObject(DEFAULT_GUI_FONT)));
+	dc.DrawText(s, &rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+	dc.SelectObject(old);
+}
+
 // --- Auto card capture toolbar buttons (delegate to the view, which owns the loop) -
 void CMainFrame::OnAutoCapture()
 {
@@ -812,6 +844,12 @@ void CMainFrame::OnUpdateAutoCapture(CCmdUI *pCmdUI)
 {
 	COpenScrapeView *pView = COpenScrapeView::GetView();
 	pCmdUI->SetCheck((pView && pView->IsAutoCapture()) ? 1 : 0);
+	// Refresh the blue "(N)" captured-screenshot count (idle hook).
+	if (m_CaptureCount.GetSafeHwnd() != NULL) {
+		CString s; s.Format("(%d)", pView ? pView->CaptureCount() : 0);
+		CString cur; m_CaptureCount.GetWindowText(cur);
+		if (cur != s) { m_CaptureCount.SetWindowText(s); m_CaptureCount.Invalidate(FALSE); }
+	}
 }
 void CMainFrame::OnAutoCaptureBack()
 {
@@ -822,6 +860,11 @@ void CMainFrame::OnAutoCaptureNext()
 {
 	COpenScrapeView *pView = COpenScrapeView::GetView();
 	if (pView) pView->NavigateCapture(+1);
+}
+void CMainFrame::OnAutoCaptureClear()
+{
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	if (pView) pView->ClearCaptures();
 }
 void CMainFrame::OnUpdateAutoCaptureNav(CCmdUI *pCmdUI)
 {

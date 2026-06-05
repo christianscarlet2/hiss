@@ -25,8 +25,8 @@ if ($bg -lt 0) { $bg = 7 }
 if ($fg -lt 0) { $fg = 0 }
 
 $oldRow = ((($width*4 + 31) -band -32) / 8)      # 72
-$newW = 192
-$newRow = ((($newW*4 + 31) -band -32) / 8)       # 96
+$newW = 208                                       # 13 glyphs (9 orig + AUTO/back/next/clear)
+$newRow = ((($newW*4 + 31) -band -32) / 8)
 
 # Decode original into a [y][x] index grid (file rows are bottom-up).
 $grid = New-Object 'int[,]' $height, $newW
@@ -70,6 +70,14 @@ for ($iy = 3; $iy -le 13; $iy++) {
   for ($rx = $xL; $rx -le 12; $rx++) { SetPx (160 + $rx) $iy $fg }   # back  (tip left)
   $xR = 12 - $d
   for ($rx = 4; $rx -le $xR; $rx++) { SetPx (176 + $rx) $iy $fg }    # next  (tip right)
+}
+
+# Clear (X) in cell x=192 -- two diagonals, 2px thick.
+for ($i = 0; $i -le 8; $i++) {
+  SetPx (192 + 4 + $i) (4 + $i) $fg
+  SetPx (192 + 5 + $i) (4 + $i) $fg
+  SetPx (192 + 12 - $i) (4 + $i) $fg
+  SetPx (192 + 11 - $i) (4 + $i) $fg
 }
 
 # Re-encode pixel rows (bottom-up, 4bpp packed, padded to newRow).

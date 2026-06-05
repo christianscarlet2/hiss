@@ -101,6 +101,7 @@ BEGIN
     BUTTON      ID_AUTO_CAPTURE
     BUTTON      ID_AUTO_CAPTURE_BACK
     BUTTON      ID_AUTO_CAPTURE_NEXT
+    BUTTON      ID_AUTO_CAPTURE_CLEAR
 END
 
 
@@ -797,6 +798,7 @@ BEGIN
     ID_AUTO_CAPTURE "Toggle AUTO card capture: buffer a screenshot whenever opponent ranks/suits (not hero p3) or all 5 community cards are detected\nAuto Capture"
     ID_AUTO_CAPTURE_BACK "Previous captured screenshot\nPrev capture"
     ID_AUTO_CAPTURE_NEXT "Next captured screenshot\nNext capture"
+    ID_AUTO_CAPTURE_CLEAR "Clear all captured screenshots\nClear captures"
 END
 
 STRINGTABLE

@@ -170,6 +170,7 @@
 #define ID_AUTO_CAPTURE                 32801
 #define ID_AUTO_CAPTURE_BACK            32802
 #define ID_AUTO_CAPTURE_NEXT            32803
+#define ID_AUTO_CAPTURE_CLEAR           32804
 #define ID_VIEW_PREV                    32787
 #define ID_VIEW_NEXT                    32788
 #define ID_TOOLS_CLONEREGIONS           32789
@@ -233,11 +234,12 @@
 #define IDC_SET_PW_CPUS                 1261
 #define IDC_SET_PW_WPC_LBL              1262
 #define IDC_SET_PW_WPC                  1263
+#define IDC_CAPTURE_COUNT               1264
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        154
-#define _APS_NEXT_COMMAND_VALUE         32804
-#define _APS_NEXT_CONTROL_VALUE         1264
+#define _APS_NEXT_COMMAND_VALUE         32805
+#define _APS_NEXT_CONTROL_VALUE         1265
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
