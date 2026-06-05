@@ -27,6 +27,7 @@
 #include <shlobj.h>
 #include <algorithm>
 #include <ctype.h>
+#include <memory>
 
 // Shared in-process worker pool for parallel card detection (sized from the
 // "Parallel Workers" settings, split across running Vision instances).
@@ -1456,18 +1457,83 @@ void COpenScrapeView::RefreshCardResultsIfNeeded(COpenScrapeDoc *pDoc)
 		return;
 	}
 
-	// Detect each card region SERIALLY on the UI thread.
-	//
-	// This used to fan out across the parallel worker pool, but that path crashed with
-	// heap corruption (a worker faulted inside an ntdll heap routine writing through a
-	// trashed free-list pointer) -- the recompute triggered after editing the tablemap
-	// would race/corrupt the shared heap. Card detection over the card regions is a fast
-	// direct-pixel compare now, so running it serially is plenty quick AND memory-safe.
-	// (The heavy Hiss OCR parallelism is a separate pool and is unaffected.)
+	// Gather the card regions to detect this frame.
+	std::vector<RMapCI> regions;
 	for (RMapCI r_iter = p_tablemap->r$()->begin(); r_iter != p_tablemap->r$()->end(); ++r_iter) {
-		if (IsCardResultRegion(r_iter->second.name)) {
-			_card_results[r_iter->second.name] = ScrapeRegionResult(r_iter);
-		}
+		if (IsCardResultRegion(r_iter->second.name)) regions.push_back(r_iter);
+	}
+	if (regions.empty()) return;
+
+	EnsureWorkerPool();
+
+	// Serial fallback (single worker, or if the completion event can't be created).
+	if (g_card_pool.ThreadCount() <= 1) {
+		for (size_t i = 0; i < regions.size(); ++i)
+			_card_results[regions[i]->second.name] = ScrapeRegionResult(regions[i]);
+		return;
+	}
+
+	// Parallel detection, carefully isolated to avoid the heap corruption the earlier
+	// version hit:
+	//   * Each region's pixels are extracted into a PRIVATE bitmap here on the UI thread
+	//     (a source HBITMAP may be selected into only one DC at a time).
+	//   * Each job owns its bitmap + DCs and writes ONLY its own result slot -- no shared
+	//     container, no lock, no cross-thread std::map insert.
+	//   * The sync state (event + counter + result slots) lives in a shared_ptr captured
+	//     by every job AND held here, so it can never be freed while a worker still uses
+	//     it. (The old code freed the event/critical-section on a wait-timeout and could
+	//     be used-after-free.)
+	//   * Results are copied into _card_results on the UI thread only AFTER the barrier,
+	//     and only if every job finished -- never while a straggler might still write.
+	struct Batch {
+		HANDLE done;
+		volatile LONG remaining;
+		std::vector<CString> names;
+		std::vector<CString> results;
+		Batch(int n) : done(CreateEvent(NULL, TRUE, FALSE, NULL)), remaining(n),
+			names(n), results(n) {}
+		~Batch() { if (done != NULL) CloseHandle(done); }
+		void OneDone() { if (InterlockedDecrement(&remaining) == 0 && done) SetEvent(done); }
+	};
+	std::shared_ptr<Batch> batch = std::make_shared<Batch>((int)regions.size());
+	if (batch->done == NULL) {   // event creation failed -> serial fallback
+		for (size_t i = 0; i < regions.size(); ++i)
+			_card_results[regions[i]->second.name] = ScrapeRegionResult(regions[i]);
+		return;
+	}
+
+	int submitted = 0;
+	for (size_t i = 0; i < regions.size(); ++i) {
+		RMapCI reg = regions[i];
+		batch->names[i] = reg->second.name;   // copied on the UI thread
+		int w = (int)reg->second.right - (int)reg->second.left + 1;
+		int h = (int)reg->second.bottom - (int)reg->second.top + 1;
+		HBITMAP bmp = ExtractRegionBitmap(pDoc->attached_bitmap, reg->second.left, reg->second.top, w, h);
+		if (bmp == NULL) { batch->OneDone(); continue; }   // account for the skipped slot
+		int idx = (int)i;
+		++submitted;
+		g_card_pool.Submit([batch, reg, bmp, idx]() {
+			batch->results[idx] = TransformRegionBitmap(reg, bmp);
+			DeleteObject(bmp);
+			batch->OneDone();
+		});
+	}
+
+	// Barrier. `remaining` started at regions.size() and is decremented exactly once per
+	// region (here for skips, on a worker for jobs), so it reaches 0 only after the last
+	// region is accounted for -> no premature signal.
+	bool complete = (submitted == 0);
+	if (submitted > 0) {
+		complete = (WaitForSingleObject(batch->done, 10000) == WAIT_OBJECT_0);
+	}
+	if (complete) {
+		for (size_t i = 0; i < batch->names.size(); ++i)
+			_card_results[batch->names[i]] = batch->results[i];
+	} else {
+		// Timed out (very unlikely). Don't read slots a straggler may still be writing;
+		// drop the cache so it recomputes next frame. `batch` stays alive via the jobs'
+		// shared_ptr refs until they finish, so nothing is used-after-free.
+		_card_results_bmp = NULL;
 	}
 }
 
