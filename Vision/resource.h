@@ -228,11 +228,16 @@
 #define IDC_SET_ACC_TEXT                1256
 #define IDC_SET_ACC_LBL                 1257
 #define IDC_SET_ACC_INTERVAL            1258
+#define IDC_SET_PW_TEXT                 1259
+#define IDC_SET_PW_CPUS_LBL             1260
+#define IDC_SET_PW_CPUS                 1261
+#define IDC_SET_PW_WPC_LBL              1262
+#define IDC_SET_PW_WPC                  1263
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        154
 #define _APS_NEXT_COMMAND_VALUE         32804
-#define _APS_NEXT_CONTROL_VALUE         1259
+#define _APS_NEXT_CONTROL_VALUE         1264
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

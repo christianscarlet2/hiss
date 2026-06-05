@@ -19,6 +19,7 @@
 #include "DecimalSplit.h"
 #include "../CTablemap/CTablemap.h"
 #include "../CTablemap/CTablemapDB.h"
+#include "../Shared/ParallelWorkerPool.h"
 
 using namespace cv;
 
@@ -168,6 +169,7 @@ BOOL CDlgSettings::OnInitDialog()
 	m_groups.AddString("AutoOcr1");
 	m_groups.AddString("Advanced");
 	m_groups.AddString("Auto Card Capture");
+	m_groups.AddString("Parallel Workers");
 	m_groups.SetCurSel(0);
 
 	// Auto card capture: detection poll interval (ms), default 2000 (~one frame).
@@ -179,6 +181,21 @@ BOOL CDlgSettings::OnInitDialog()
 		}
 		if (interval < 250) interval = 250;
 		SetDlgItemInt(IDC_SET_ACC_INTERVAL, interval, FALSE);
+	}
+
+	// Parallel workers: CPUs x workers-per-CPU (default = hardware concurrency x 1).
+	{
+		int cpus = 0, wpc = 1;
+		if (p_tablemap_db != NULL) {
+			CString c = p_tablemap_db->GetSettingString("parallel_workers", "num_cpus");
+			CString w = p_tablemap_db->GetSettingString("parallel_workers", "workers_per_cpu");
+			if (!c.IsEmpty()) cpus = atoi(c);
+			if (!w.IsEmpty()) wpc = atoi(w);
+		}
+		if (cpus <= 0) cpus = ParallelDefaultCpuCount();
+		if (wpc <= 0) wpc = 1;
+		SetDlgItemInt(IDC_SET_PW_CPUS, cpus, FALSE);
+		SetDlgItemInt(IDC_SET_PW_WPC, wpc, FALSE);
 	}
 
 	m_threshold_spin.SetRange(0, 300);
@@ -312,6 +329,7 @@ void CDlgSettings::ShowPage(int index)
 		IDC_SET_RESULT_LR_LBL, IDC_SET_RESULT_LEFT, IDC_SET_RESULT_RIGHT };
 	int advanced[] = { IDC_SET_ADVANCED_TEXT };
 	int autocap[] = { IDC_SET_ACC_TEXT, IDC_SET_ACC_LBL, IDC_SET_ACC_INTERVAL };
+	int workers[] = { IDC_SET_PW_TEXT, IDC_SET_PW_CPUS_LBL, IDC_SET_PW_CPUS, IDC_SET_PW_WPC_LBL, IDC_SET_PW_WPC };
 
 	const int *show = general; int show_n = sizeof(general) / sizeof(int);
 	CString title = "General";
@@ -320,6 +338,7 @@ void CDlgSettings::ShowPage(int index)
 	else if (index == 3) { show = autoocr; show_n = sizeof(autoocr) / sizeof(int); title = "AutoOcr1"; }
 	else if (index == 4) { show = advanced;show_n = sizeof(advanced)/ sizeof(int); title = "Advanced"; }
 	else if (index == 5) { show = autocap; show_n = sizeof(autocap)/ sizeof(int);  title = "Auto Card Capture"; }
+	else if (index == 6) { show = workers; show_n = sizeof(workers)/ sizeof(int);  title = "Parallel Workers"; }
 
 	int all[] = { IDC_SET_GENERAL_TEXT, IDC_SET_FIELDS_DECLBL, IDC_LST_DECIMAL_FIELDS,
 		IDC_SET_SCRAPE_LBL, IDC_LST_SCRAPE_FIELDS,
@@ -330,7 +349,8 @@ void CDlgSettings::ShowPage(int index)
 		IDC_SET_ORIG_VIEW, IDC_SET_OCR_LBL, IDC_SET_OCR_VIEW, IDC_SET_SPLIT_LBL,
 		IDC_SET_ORIG_LEFT, IDC_SET_ORIG_RIGHT, IDC_SET_RESULT_LBL, IDC_SET_RESULT,
 		IDC_SET_RESULT_LR_LBL, IDC_SET_RESULT_LEFT, IDC_SET_RESULT_RIGHT, IDC_SET_ADVANCED_TEXT,
-		IDC_SET_ACC_TEXT, IDC_SET_ACC_LBL, IDC_SET_ACC_INTERVAL };
+		IDC_SET_ACC_TEXT, IDC_SET_ACC_LBL, IDC_SET_ACC_INTERVAL,
+		IDC_SET_PW_TEXT, IDC_SET_PW_CPUS_LBL, IDC_SET_PW_CPUS, IDC_SET_PW_WPC_LBL, IDC_SET_PW_WPC };
 	for (int i = 0; i < (int)(sizeof(all) / sizeof(int)); ++i) {
 		CWnd *w = GetDlgItem(all[i]); if (w) w->ShowWindow(SW_HIDE);
 	}
@@ -502,6 +522,18 @@ void CDlgSettings::OnOK()
 			p_tablemap_db->SetSettingString("auto_card_capture", "interval_ms", v);
 			COpenScrapeView *pView = COpenScrapeView::GetView();
 			if (pView != NULL) pView->OnAutoCaptureIntervalChanged(interval);
+		}
+		// Parallel workers (CPUs x workers-per-CPU).
+		BOOL okc = FALSE, okw = FALSE;
+		int cpus = (int)GetDlgItemInt(IDC_SET_PW_CPUS, &okc, FALSE);
+		int wpc = (int)GetDlgItemInt(IDC_SET_PW_WPC, &okw, FALSE);
+		if (okc && cpus > 0) {
+			CString v; v.Format("%d", cpus);
+			p_tablemap_db->SetSettingString("parallel_workers", "num_cpus", v);
+		}
+		if (okw && wpc > 0) {
+			CString v; v.Format("%d", wpc);
+			p_tablemap_db->SetSettingString("parallel_workers", "workers_per_cpu", v);
 		}
 	}
 	KillTimer(SETTINGS_POLL_TIMER);

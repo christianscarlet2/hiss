@@ -412,6 +412,11 @@ BEGIN
     LTEXT           "Auto card capture grabs a screenshot whenever opponent card ranks/suits (excluding the hero, p3) are detected, or all 5 community cards are present. Card detection is slow (~2s/frame), so set how often it polls below.",IDC_SET_ACC_TEXT,95,25,275,60
     LTEXT           "Detection poll interval (ms):",IDC_SET_ACC_LBL,95,92,150,9
     EDITTEXT        IDC_SET_ACC_INTERVAL,248,90,60,14,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "Bulk Tesseract OCR and image hashing/detection run on an in-process pool of worker threads. Total workers = CPUs x workers per CPU, split across running app instances.",IDC_SET_PW_TEXT,95,25,275,40
+    LTEXT           "Number of CPUs:",IDC_SET_PW_CPUS_LBL,95,72,150,9
+    EDITTEXT        IDC_SET_PW_CPUS,248,70,60,14,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "Workers per CPU:",IDC_SET_PW_WPC_LBL,95,92,150,9
+    EDITTEXT        IDC_SET_PW_WPC,248,90,60,14,ES_AUTOHSCROLL | ES_NUMBER
     LTEXT           "Model:",IDC_SET_MODEL_LBL,95,24,40,9
     EDITTEXT        IDC_EDIT_A0_MODEL,95,34,210,12,ES_AUTOHSCROLL | ES_READONLY
     PUSHBUTTON      "Browse...",IDC_BTN_A0_BROWSE,310,33,55,14
