@@ -97,7 +97,7 @@ body {
 }
 
 .card.back {
-  background: #ffffff;   /* white card edge shows as a border around the red */
+  background: #000000;   /* dark card edge */
   position: relative;
   padding: 0;
 }
@@ -108,13 +108,13 @@ body {
   left: 2px;
   right: 2px;
   bottom: 2px;
-  background: #c0142b;            /* red back */
-  border: 1px solid #ffffff;     /* thin white frame around the red */
+  /* dark, ominous centre glow */
+  background: radial-gradient(circle at 50% 42%, #14210f 0%, #060606 78%);
+  border: 1px solid #2e7d32;     /* subtle green frame */
   border-radius: 2px;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: space-around;
+  justify-content: center;
   box-sizing: border-box;
   overflow: hidden;
 }

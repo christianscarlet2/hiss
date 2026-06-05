@@ -18,6 +18,32 @@
 #include "libpq-fe.h"
 
 #pragma comment(lib, "comctl32.lib")
+// Opt into Common-Controls v6 so buttons can show an image list (icon + text).
+#pragma comment(linker, "\"/manifestdependency:type='win32' "             \
+  "name='Microsoft.Windows.Common-Controls' version='6.0.0.0' "            \
+  "processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+
+// Custom icons (snake = Hiss, illuminati eye = Vision, barbell = trainer,
+// rubber duck = this toolbar). Loaded from the source res/ folders at runtime.
+static const char kDuckIcoPath[]    = "C:\\www\\openholdembot_old\\DeveloperToolbar\\res\\devtoolbar.ico";
+static const char kSnakeIcoPath[]   = "C:\\www\\openholdembot_old\\Hiss\\res\\OpenHoldem.ico";
+static const char kEyeIcoPath[]     = "C:\\www\\openholdembot_old\\Vision\\res\\OpenScrape.ico";
+static const char kBarbellIcoPath[] = "C:\\www\\openholdembot_old\\trainer\\res\\trainer.ico";
+
+// Put a small icon (kept with the button's text) on a button via its image list.
+static void SetButtonIcon(HWND button, const char *ico_path) {
+  if (button == NULL) return;
+  HICON icon = (HICON)LoadImageA(NULL, ico_path, IMAGE_ICON, 18, 18, LR_LOADFROMFILE);
+  if (icon == NULL) return;
+  HIMAGELIST himl = ImageList_Create(18, 18, ILC_COLOR32 | ILC_MASK, 1, 1);
+  ImageList_AddIcon(himl, icon);
+  BUTTON_IMAGELIST bil = {0};
+  bil.himl = himl;
+  bil.margin.left = 4; bil.margin.right = 4;
+  bil.uAlign = BUTTON_IMAGELIST_ALIGN_LEFT;
+  SendMessage(button, BCM_SETIMAGELIST, 0, (LPARAM)&bil);
+  DestroyIcon(icon);
+}
 
 #define IDC_WIDTH_EDIT 1001
 #define IDC_HEIGHT_EDIT 1002
@@ -1336,6 +1362,11 @@ static void CreateChildControls(HWND hwnd) {
     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
     126, 154, 220, 28, hwnd, (HMENU)IDC_REC_SCRCPY_BUTTON, g_instance, NULL);
 
+  // App icons on the launch buttons.
+  SetButtonIcon(g_open_openholdem_button, kSnakeIcoPath);   // Hiss
+  SetButtonIcon(g_open_openscrape_button, kEyeIcoPath);     // Vision
+  SetButtonIcon(g_open_trainer_button,    kBarbellIcoPath); // trainer
+
   g_build_progress = CreateWindowEx(0, PROGRESS_CLASS, "",
     WS_CHILD | WS_VISIBLE,
     16, 194, 330, 18, hwnd, (HMENU)IDC_BUILD_PROGRESS, g_instance, NULL);
@@ -1474,18 +1505,22 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show_command) {
 
   INITCOMMONCONTROLSEX common_controls = {0};
   common_controls.dwSize = sizeof(common_controls);
-  common_controls.dwICC = ICC_PROGRESS_CLASS;
+  common_controls.dwICC = ICC_PROGRESS_CLASS | ICC_STANDARD_CLASSES;
   InitCommonControlsEx(&common_controls);
+
+  // Rubber-duck app icon (debugging mascot) loaded from the source res/ folder.
+  HICON duck_big = (HICON)LoadImageA(NULL, kDuckIcoPath, IMAGE_ICON, 32, 32, LR_LOADFROMFILE);
+  HICON duck_small = (HICON)LoadImageA(NULL, kDuckIcoPath, IMAGE_ICON, 16, 16, LR_LOADFROMFILE);
 
   WNDCLASSEX window_class = {0};
   window_class.cbSize = sizeof(window_class);
   window_class.lpfnWndProc = WindowProc;
   window_class.hInstance = instance;
-  window_class.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+  window_class.hIcon = duck_big ? duck_big : LoadIcon(NULL, IDI_APPLICATION);
   window_class.hCursor = LoadCursor(NULL, IDC_ARROW);
   window_class.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
   window_class.lpszClassName = kWindowClassName;
-  window_class.hIconSm = LoadIcon(NULL, IDI_APPLICATION);
+  window_class.hIconSm = duck_small ? duck_small : LoadIcon(NULL, IDI_APPLICATION);
 
   if (!RegisterClassEx(&window_class)) {
     return 1;
