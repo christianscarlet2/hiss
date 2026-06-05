@@ -160,7 +160,7 @@ CAutoOcr::CAutoOcr() :
 	_api_init_failed(false),
 	_models_loaded(false),
 	_thr_a0(kDefaultAutoOcrThreshold), _thr_a1(kDefaultAutoOcrThreshold),
-	_mode_a0((int)tesseract::PSM_SINGLE_COLUMN), _mode_a1((int)tesseract::PSM_SINGLE_COLUMN),
+	_mode_a0((int)tesseract::PSM_SINGLE_LINE), _mode_a1((int)tesseract::PSM_SINGLE_LINE),
 	_nopre_a0(false), _nopre_a1(false),
 	_nowl_a0(false), _nowl_a1(false),
 	_nocs_a0(false), _nocs_a1(false) {
@@ -172,7 +172,7 @@ void CAutoOcr::LoadModelSettings() {
 	_model_a0 = "my_model";
 	_model_a1 = "my_model";
 	_thr_a0 = _thr_a1 = kDefaultAutoOcrThreshold;
-	_mode_a0 = _mode_a1 = (int)tesseract::PSM_SINGLE_COLUMN;
+	_mode_a0 = _mode_a1 = (int)tesseract::PSM_SINGLE_LINE;   // single-line for AutoOcr
 	_nopre_a0 = _nopre_a1 = false;
 	_nowl_a0 = _nowl_a1 = false;
 	_nocs_a0 = _nocs_a1 = false;
@@ -321,6 +321,23 @@ Mat CAutoOcr::binarize_array_opencv(Mat image, int threshold) {
 	cvtColor(img, img, COLOR_BGR2GRAY);
 	Mat thresh, blur;
 	cv::threshold(img, thresh, threshold, 255, THRESH_BINARY_INV); // 100 threshold
+
+	// Auto-recover a badly-chosen manual threshold (matches Vision). On a light-on-dark
+	// region (e.g. a player name on a dark background) a fixed threshold can merge text and
+	// background into a near all-black/all-white image, destroying the text -- OCR then
+	// returns digit-like noise. If the result is degenerate BUT the source clearly has
+	// contrast, fall back to Otsu's automatic threshold. Well-tuned regions stay as-is.
+	{
+		int total = thresh.rows * thresh.cols;
+		int white = countNonZero(thresh);
+		double ink_ratio = (total > 0) ? (double)white / (double)total : 0.0;
+		double minv = 0.0, maxv = 0.0;
+		cv::minMaxLoc(img, &minv, &maxv);
+		if ((ink_ratio < 0.02 || ink_ratio > 0.98) && (maxv - minv) > 60.0) {
+			cv::threshold(img, thresh, 0, 255, THRESH_BINARY_INV | THRESH_OTSU);
+		}
+	}
+
 	float kernel_data[9] = { 1, 2, 1, 2, 4, 2, 1, 2, 1 };
 	Mat kernel = Mat(1, 1, CV_32F, kernel_data);
 	cv::filter2D(thresh, blur, -1, kernel);
@@ -493,7 +510,19 @@ bool CAutoOcr::TryColorPresetSettings(Mat img_orig, RMapCI region, SAutoOcrSetti
 static const int kOcrScaleUpFactor = 3;
 static const int kOcrCharSpacingPx = 6;   // on the upscaled image
 static const char *kGeneralWhitelist =
-	"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._";
+	"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-?";
+
+// Keep only characters in the active whitelist. Tesseract recognises text more accurately
+// WITHOUT a forced tessedit_char_whitelist, so (matching Vision) we run it unconstrained
+// and scrub its output here instead. An empty whitelist means "keep everything".
+static CString ScrubToWhitelist(const CString &s, const CString &whitelist) {
+	if (whitelist.IsEmpty()) return s;
+	CString out;
+	for (int i = 0; i < s.GetLength(); ++i) {
+		if (whitelist.Find(s[i]) != -1) out += s[i];
+	}
+	return out;
+}
 
 // Widen the gaps between characters on a binarized image so glyphs that sit too
 // close (e.g. "17.71") get separated before OCR. Builds a vertical projection
@@ -690,15 +719,10 @@ void CAutoOcr::process_ocr(Mat img_orig, const SAutoOcrSettings &settings, bool 
 	api2->SetPageSegMode(page_seg_mode);
 	api->SetVariable("user_defined_dpi", "300");
 	api2->SetVariable("user_defined_dpi", "300");
-	if (!settings.whitelist.IsEmpty()) {
-		api->SetVariable("tessedit_char_whitelist", settings.whitelist.GetString());
-		api2->SetVariable("tessedit_char_whitelist", settings.whitelist.GetString());
-	}
-	else {
-		// Clear any whitelist left over from a previous balance region.
-		api->SetVariable("tessedit_char_whitelist", "");
-		api2->SetVariable("tessedit_char_whitelist", "");
-	}
+	// No tessedit_char_whitelist: Tesseract is more accurate unconstrained; we scrub the
+	// output against settings.whitelist afterwards (matches Vision).
+	api->SetVariable("tessedit_char_whitelist", "");
+	api2->SetVariable("tessedit_char_whitelist", "");
 	if (!SafeTessSetImageAndRecognize(api, img_orig)) {
 		_api_init_failed = true;
 		return;
@@ -727,7 +751,7 @@ void CAutoOcr::process_ocr(Mat img_orig, const SAutoOcrSettings &settings, bool 
 					_api_init_failed = true;
 					return;
 				}
-				CString word = TakeTessUtf8Text(SafeTessGetUTF8Text(api2));
+				CString word = ScrubToWhitelist(TakeTessUtf8Text(SafeTessGetUTF8Text(api2)), settings.whitelist);
 				pair<Rect, CString> matchPair({ x1, y1, x2 - x1, y2 - y1 }, word);
 				if (second_pass)
 					ResultBoxes2.push_back(matchPair);
@@ -738,9 +762,9 @@ void CAutoOcr::process_ocr(Mat img_orig, const SAutoOcrSettings &settings, bool 
 	}
 	else {
 		if (second_pass)
-			ResultString2 = TakeTessUtf8Text(SafeTessGetUTF8Text(api));
+			ResultString2 = ScrubToWhitelist(TakeTessUtf8Text(SafeTessGetUTF8Text(api)), settings.whitelist);
 		else
-			ResultString = TakeTessUtf8Text(SafeTessGetUTF8Text(api));
+			ResultString = ScrubToWhitelist(TakeTessUtf8Text(SafeTessGetUTF8Text(api)), settings.whitelist);
 	}
 }
 
@@ -840,9 +864,10 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast, SAutoOc
 		settings.whitelist = "0123456789.";
 	else
 		settings.whitelist = kGeneralWhitelist;
-	if (isA1 ? _nowl_a1 : _nowl_a0) {
-		settings.whitelist = "";
-	}
+	// NOTE: the whitelist is no longer sent to Tesseract (it recognises better
+	// unconstrained); it is only used to SCRUB the output. So we always keep it set and
+	// the old "no whitelist" option no longer suppresses it -- matching Vision, which
+	// always scrubs. (_nowl_a0/_nowl_a1 are still read but intentionally unused here.)
 	TryColorPresetSettings(img_orig, region, &settings);
 	settings.use_cropping = false;   // never crop, even if a colour preset set it
 	tablemap_threshold = settings.threshold;
