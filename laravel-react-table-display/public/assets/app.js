@@ -35,11 +35,21 @@ function CardView(props) {
   var value = props.value || '';
   var isBack = value === 'BACK' || value === 'CARD_BACK' || value === '??';
   if (isBack) {
-    // Face-down card: a red back framed in white, with two snakes (no rank text).
+    // Face-down card: a red back framed in white, with two intertwined snakes (SVG).
     return e('div', { className: 'card back' },
       e('div', { className: 'back-inner' },
-        e('span', { className: 'back-snake top' }, '🐍'),
-        e('span', { className: 'back-snake bottom' }, '🐍')
+        e('svg', { className: 'back-art', viewBox: '0 0 40 80', preserveAspectRatio: 'none' },
+          e('g', { fill: 'none', stroke: '#ffffff', strokeWidth: 2.4, strokeLinecap: 'round', strokeLinejoin: 'round' },
+            e('path', { d: 'M13 11 C27 20 5 33 20 42 C33 50 11 63 22 71' }),
+            e('path', { d: 'M27 11 C13 20 35 33 20 42 C7 50 29 63 18 71' })
+          ),
+          e('circle', { cx: 13, cy: 10, r: 3.2, fill: '#ffffff' }),
+          e('circle', { cx: 27, cy: 10, r: 3.2, fill: '#ffffff' }),
+          e('circle', { cx: 12, cy: 9.3, r: 0.8, fill: '#c0142b' }),
+          e('circle', { cx: 28, cy: 9.3, r: 0.8, fill: '#c0142b' }),
+          // little tongues flicking up from each head
+          e('path', { d: 'M13 7 l0 -4 M27 7 l0 -4', stroke: '#ffffff', strokeWidth: 1, strokeLinecap: 'round' })
+        )
       )
     );
   }

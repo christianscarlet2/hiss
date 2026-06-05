@@ -119,13 +119,10 @@ body {
   overflow: hidden;
 }
 
-.card.back .back-snake {
-  font-size: 15px;
-  line-height: 1;
-}
-
-.card.back .back-snake.bottom {
-  transform: rotate(180deg);   /* mirrored, like a real card back */
+.card.back .back-art {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .card.red {
