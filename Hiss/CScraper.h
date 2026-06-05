@@ -45,9 +45,11 @@ class CScraper : public CSpaceOptimizedGlobalObject {
   void EvaluateTrueFalseRegion(bool *result, const CString name);
  public:
   bool IsCommonAnimation();
+  // Public so a live DB tablemap-reload can re-allocate per-region bitmaps after the
+  // region map is rebuilt (ClearTablemap discards them).
+  void CreateBitmaps(void);
+  void DeleteBitmaps(void);
  protected:
-	void CreateBitmaps(void);
-	void DeleteBitmaps(void);
 	bool IsIdenticalScrape();
  protected:
 	void ScrapeDealer();

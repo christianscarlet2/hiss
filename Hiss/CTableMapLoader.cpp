@@ -18,6 +18,7 @@
 #include "CAutoOcr.h"
 #include "CFileSystemMonitor.h"
 #include "CHeartbeatThread.h"
+#include "CScraper.h"
 #include "DialogScraperOutput.h"
 
 #include "CTablemapCompletenessChecker.h"
@@ -239,12 +240,22 @@ void CTableMapLoader::ReloadConnectedTablemapIfSettingsChanged() {
   // Reload the connected map's regions/transforms under the heartbeat lock so we
   // never swap the tablemap out mid-scrape. Then re-read the OCR settings (CAutoOcr
   // otherwise caches them once per session).
+  //
+  // IMPORTANT: LoadTablemapFromDB calls ClearTablemap(), which discards every region
+  // (and thus the scraper's per-region GDI bitmaps cur_bmp/last_bmp that CreateBitmaps
+  // allocated at connect). The rebuilt regions have NULL bitmaps, so we must free the
+  // old ones first and re-allocate after the reload, or the next scrape dereferences
+  // NULL HBITMAPs and crashes. All done inside the lock so no scrape runs in between.
   if (p_heartbeat_thread != NULL) {
     EnterCriticalSection(&p_heartbeat_thread->cs_update_in_progress);
+    if (p_scraper != NULL) p_scraper->DeleteBitmaps();
     p_tablemap_db->LoadTablemapFromDB(name, p_tablemap);
+    if (p_scraper != NULL) p_scraper->CreateBitmaps();
     LeaveCriticalSection(&p_heartbeat_thread->cs_update_in_progress);
   } else {
+    if (p_scraper != NULL) p_scraper->DeleteBitmaps();
     p_tablemap_db->LoadTablemapFromDB(name, p_tablemap);
+    if (p_scraper != NULL) p_scraper->CreateBitmaps();
   }
   AutoOcr()->LoadModelSettings();
   // Refresh the Scraper Output dialog's region list if it is open.

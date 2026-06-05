@@ -186,12 +186,19 @@ void CDlgScraperOutput::ReloadFromDatabase() {
 	if (name.IsEmpty()) {
 		return;
 	}
+	// LoadTablemapFromDB clears the region map, discarding the scraper's per-region
+	// GDI bitmaps; free + re-create them around the reload (under the lock) so the next
+	// scrape doesn't dereference NULL HBITMAPs and crash.
 	if (p_heartbeat_thread != NULL) {
 		EnterCriticalSection(&p_heartbeat_thread->cs_update_in_progress);
+		if (p_scraper != NULL) p_scraper->DeleteBitmaps();
 		p_tablemap_db->LoadTablemapFromDB(name, p_tablemap);
+		if (p_scraper != NULL) p_scraper->CreateBitmaps();
 		LeaveCriticalSection(&p_heartbeat_thread->cs_update_in_progress);
 	} else {
+		if (p_scraper != NULL) p_scraper->DeleteBitmaps();
 		p_tablemap_db->LoadTablemapFromDB(name, p_tablemap);
+		if (p_scraper != NULL) p_scraper->CreateBitmaps();
 	}
 	// Re-read the per-transform OCR settings + decimal-split list (CAutoOcr caches them
 	// once per session otherwise).
