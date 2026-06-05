@@ -97,8 +97,35 @@ body {
 }
 
 .card.back {
-  background: #3b73b9;
-  color: #fff;
+  background: #ffffff;   /* white card edge shows as a border around the red */
+  position: relative;
+  padding: 0;
+}
+
+.card.back .back-inner {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  right: 2px;
+  bottom: 2px;
+  background: #c0142b;            /* red back */
+  border: 1px solid #ffffff;     /* thin white frame around the red */
+  border-radius: 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-around;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.card.back .back-snake {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.card.back .back-snake.bottom {
+  transform: rotate(180deg);   /* mirrored, like a real card back */
 }
 
 .card.red {

@@ -442,6 +442,17 @@ CStringA CChatTerminalServer::JsonEscape(CString value)
 	return escaped;
 }
 
+// Encode a card for the table-state JSON. Face-down cards become "BACK" (so the UI
+// can draw a card back) and empty slots become "" — ToString() alone returns garbage
+// rank text (e.g. "9", "T") for the special CARD_BACK value.
+static CString CardToken(Card *c)
+{
+	if (c == NULL) return "";
+	if (c->IsCardBack()) return "BACK";
+	if (c->IsNoCard()) return "";
+	return c->ToString();
+}
+
 CStringA CChatTerminalServer::BuildTableStateJson(void)
 {
 	int nchairs = p_tablemap == NULL ? 10 : p_tablemap->nchairs();
@@ -462,7 +473,7 @@ CStringA CChatTerminalServer::BuildTableStateJson(void)
 	json += "\"commonCards\":[";
 	for (int i = 0; i < kNumberOfCommunityCards; ++i) {
 		if (i > 0) json += ",";
-		CString card = p_table_state == NULL ? "" : p_table_state->CommonCards(i)->ToString();
+		CString card = p_table_state == NULL ? "" : CardToken(p_table_state->CommonCards(i));
 		json.AppendFormat("\"%s\"", JsonEscape(card).GetString());
 	}
 	json += "],\"players\":[";
@@ -504,7 +515,7 @@ CStringA CChatTerminalServer::BuildTableStateJson(void)
 			pt_samples);
 		for (int card_index = 0; card_index < kMaxNumberOfCardsPerPlayer; ++card_index) {
 			if (card_index > 0) json += ",";
-			CString card = player == NULL ? "" : player->hole_cards(card_index)->ToString();
+			CString card = player == NULL ? "" : CardToken(player->hole_cards(card_index));
 			json.AppendFormat("\"%s\"", JsonEscape(card).GetString());
 		}
 		json += "],\"hud\":[";

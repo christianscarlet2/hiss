@@ -33,10 +33,19 @@ function thousands(value) {
 
 function CardView(props) {
   var value = props.value || '';
-  var text = value && value !== 'NC' ? value : '';
   var isBack = value === 'BACK' || value === 'CARD_BACK' || value === '??';
+  if (isBack) {
+    // Face-down card: a red back framed in white, with two snakes (no rank text).
+    return e('div', { className: 'card back' },
+      e('div', { className: 'back-inner' },
+        e('span', { className: 'back-snake top' }, '🐍'),
+        e('span', { className: 'back-snake bottom' }, '🐍')
+      )
+    );
+  }
+  var text = value && value !== 'NC' ? value : '';
   var red = /[hd]$/i.test(text);
-  return e('div', { className: 'card ' + (!text ? 'empty ' : '') + (isBack ? 'back ' : '') + (red ? 'red' : '') }, isBack ? '*' : text);
+  return e('div', { className: 'card ' + (!text ? 'empty ' : '') + (red ? 'red' : '') }, text);
 }
 
 function Player(props) {
