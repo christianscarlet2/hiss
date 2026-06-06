@@ -1,8 +1,14 @@
 :root {
   color-scheme: dark;
-  font-family: Segoe UI, Arial, sans-serif;
-  background: #202327;
-  color: #f6f7f8;
+  --ink: #f3f5f7;
+  --muted: #9aa3ac;
+  --scarlet: #d11f33;
+  --scarlet-glow: rgba(209, 31, 51, .55);
+  --green: #1ea85a;
+  --gold: #e8c466;
+  font-family: "Segoe UI", system-ui, Arial, sans-serif;
+  background: #050607;
+  color: var(--ink);
 }
 
 * {
@@ -18,89 +24,171 @@ body {
   min-height: 100vh;
   display: grid;
   grid-template-rows: auto 1fr;
-  background: #202327;
+  background:
+    radial-gradient(120% 90% at 50% -10%, #1b1f23 0%, #0a0c0e 55%, #040506 100%);
 }
 
+/* ---- top bar -------------------------------------------------------------- */
 .topbar {
-  height: 44px;
+  height: 46px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 14px;
-  border-bottom: 1px solid #3a3f45;
-  background: #292d32;
+  padding: 0 16px;
+  border-bottom: 1px solid #23272c;
+  background: linear-gradient(180deg, #16191d 0%, #0d0f12 100%);
+  box-shadow: 0 1px 0 #000, 0 6px 18px rgba(0, 0, 0, .45);
 }
 
 .title {
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: .4px;
+  color: #eef1f4;
+  text-shadow: 0 1px 2px #000;
+}
+
+.title::before {
+  content: "\265B";   /* a small crown/queen glyph as a mark */
+  margin-right: 8px;
+  color: var(--scarlet);
+  text-shadow: 0 0 8px var(--scarlet-glow);
 }
 
 .meta {
   display: flex;
-  gap: 14px;
-  color: #cfd5db;
+  gap: 16px;
+  color: var(--muted);
   font-size: 13px;
 }
 
+.meta span {
+  font-variant-numeric: tabular-nums;
+}
+
+.status {
+  color: #8b9298;
+  font-size: 12px;
+}
+
+/* ---- table + felt --------------------------------------------------------- */
 .table {
   position: relative;
-  margin: 16px;
-  border: 1px solid #4b5158;
-  background: #808080;
-  min-height: calc(100vh - 76px);
+  /* A fixed-proportion table area that always fits the viewport (centred, letterboxed)
+     so the elliptical layout keeps its shape and nothing is ever cut off. */
+  align-self: center;
+  justify-self: center;
+  width: min(calc(100vw - 24px), calc((100vh - 72px) * 1.62));
+  aspect-ratio: 1.62 / 1;
+  max-height: calc(100vh - 72px);
+  border-radius: 18px;
+  border: 1px solid #1b1e22;
   overflow: hidden;
+  background:
+    radial-gradient(140% 120% at 50% 45%, #15181b 0%, #0a0c0e 55%, #030405 100%);
+  box-shadow: inset 0 0 120px rgba(0, 0, 0, .7), 0 24px 60px rgba(0, 0, 0, .6);
 }
 
 .felt {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 55%;
-  height: 36%;
+  width: 86%;
+  height: 70%;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  background: #6f747a;
-  border: 2px solid #52575d;
+  /* green felt: brighter centre falling to a dark rim */
+  background:
+    radial-gradient(ellipse at 50% 42%,
+      #28a866 0%, #137a42 42%, #0a512c 72%, #063a20 100%);
+  /* stacked rails: thin scarlet trim, dark padded rail, drop shadow + felt vignette */
+  border: 12px solid #0c0a08;
+  box-shadow:
+    0 0 0 2px rgba(209, 31, 51, .35),
+    0 0 0 14px #1b140c,
+    0 0 0 16px #0a0806,
+    inset 0 0 90px rgba(0, 0, 0, .55),
+    inset 0 6px 30px rgba(255, 255, 255, .06),
+    0 30px 70px rgba(0, 0, 0, .65);
 }
 
+.felt-logo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 64%;
+  max-width: 470px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  opacity: .82;
+  z-index: 0;
+}
+
+.felt-logo svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* embroidered branding: bone "thread" (gradient fill set inline) on the felt */
+.seal-top {
+  font-family: Cinzel, "Trajan Pro", Georgia, "Times New Roman", serif;
+  font-weight: 700;
+  font-size: 31px;
+  letter-spacing: 3px;
+}
+
+.seal-bot {
+  font-family: Cinzel, "Trajan Pro", Georgia, "Times New Roman", serif;
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 9px;
+}
+
+/* ---- centre (community cards + pot) --------------------------------------- */
 .center {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
   display: grid;
-  gap: 8px;
+  gap: 12px;
   justify-items: center;
+  z-index: 3;
 }
 
 .cards {
   display: flex;
-  gap: 4px;
+  gap: 6px;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .5));
 }
 
+/* ---- cards ---------------------------------------------------------------- */
 .card {
-  width: 26px;
-  height: 52px;
+  position: relative;
+  width: 46px;
+  height: 64px;
   display: grid;
   place-items: center;
-  border: 1px solid #111;
-  border-radius: 3px;
+  border: 1px solid #0a0a0a;
+  border-radius: 5px;
   background: #fff;
   color: #111;
-  font-size: 14px;
   font-weight: 700;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, .5), inset 0 0 0 1px rgba(255, 255, 255, .6);
 }
 
 .card.empty {
-  background: #d0d3d6;
-  color: transparent;
+  background: repeating-linear-gradient(45deg, #1a1d20 0 6px, #15181b 6px 12px);
+  border-color: #2a2f34;
+  box-shadow: none;
 }
 
 .card.back {
-  background: #c0142b;
-  border: 1px solid #111;
+  background: #1a0a10;
+  border: 1px solid #3a0d18;
   padding: 0;
   overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .5), inset 0 0 0 1px rgba(209, 31, 51, .35);
 }
 
 .card.back .back-art {
@@ -109,40 +197,137 @@ body {
   height: 100%;
 }
 
-.card.red {
-  color: #d20f26;
+/* real card face: corner index (rank over pip) + large centre pip */
+.card.face {
+  padding: 0;
+  background: linear-gradient(157deg, #ffffff 0%, #eef1f4 60%, #e2e6ea 100%);
 }
 
+.card.face.red {
+  color: #d3132b;
+}
+
+.card.face.black {
+  color: #16191d;
+}
+
+.card .corner {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: .86;
+  font-weight: 800;
+  font-family: "Segoe UI", Arial, sans-serif;
+}
+
+.card .corner.tl {
+  top: 1px;
+  left: 2px;
+}
+
+.card .corner.br {
+  bottom: 1px;
+  right: 2px;
+  transform: rotate(180deg);
+}
+
+.card .corner .rank {
+  font-size: 17px;
+}
+
+.card .corner .suit {
+  font-size: 12px;
+  margin-top: -1px;
+}
+
+.card .pip {
+  position: absolute;
+  left: 50%;
+  top: 54%;
+  transform: translate(-50%, -50%);
+  font-size: 33px;
+  line-height: 1;
+  opacity: .9;
+}
+
+/* hole cards: a touch smaller than the board, kept at regular card proportions */
+.holecards .card {
+  width: 40px;
+  height: 56px;
+  margin-left: -16px;
+}
+
+.holecards .card:first-child {
+  margin-left: 0;
+}
+
+.holecards .card .corner .rank {
+  font-size: 15px;
+}
+
+.holecards .card .corner .suit {
+  font-size: 10px;
+}
+
+.holecards .card .pip {
+  font-size: 28px;
+}
+
+/* ---- pot ------------------------------------------------------------------ */
 .pot {
-  min-width: 92px;
+  min-width: 96px;
   text-align: center;
-  padding: 3px 8px;
-  border: 1px solid #111;
-  background: #c0c0c0;
-  color: #111;
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1px solid #5a4410;
+  background: linear-gradient(180deg, #2a230f 0%, #19140a 100%);
+  color: var(--gold);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: .5px;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 1px #000;
+  box-shadow:
+    inset 0 0 0 1px rgba(232, 196, 102, .25),
+    0 4px 14px rgba(0, 0, 0, .5),
+    0 0 18px rgba(232, 196, 102, .12);
 }
 
+/* ---- players -------------------------------------------------------------- */
 .player {
   position: absolute;
-  width: 128px;
+  width: 132px;
   transform: translate(-50%, -50%);
   text-align: center;
+  z-index: 2;
 }
 
 .seat-ring {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 64px;
-  height: 64px;
+  width: 74px;
+  height: 74px;
   transform: translate(-50%, -50%);
-  border: 2px solid #111;
   border-radius: 50%;
-  background: #c0c0c0;
+  border: 2px solid #2c3137;
+  background:
+    radial-gradient(circle at 50% 38%, #2b3138 0%, #181c20 60%, #0e1114 100%);
+  box-shadow:
+    inset 0 2px 6px rgba(255, 255, 255, .06),
+    inset 0 -6px 14px rgba(0, 0, 0, .6),
+    0 6px 16px rgba(0, 0, 0, .5);
 }
 
 .seat-ring.active {
-  background: #f4d21b;
+  border-color: var(--gold);
+  background:
+    radial-gradient(circle at 50% 38%, #4a3a12 0%, #241a08 70%, #140e05 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(232, 196, 102, .5),
+    0 0 22px rgba(232, 196, 102, .5),
+    0 0 42px rgba(209, 31, 51, .25);
 }
 
 .holecards {
@@ -150,15 +335,8 @@ body {
   display: flex;
   justify-content: center;
   gap: 0;
-  margin-bottom: 6px;
-}
-
-.holecards .card {
-  margin-left: -10px;
-}
-
-.holecards .card:first-child {
-  margin-left: 0;
+  margin-bottom: 8px;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, .55));
 }
 
 .name,
@@ -166,49 +344,87 @@ body {
 .bet {
   position: relative;
   display: inline-block;
-  min-width: 54px;
-  max-width: 118px;
+  min-width: 60px;
+  max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 2px 5px;
-  border: 1px solid #111;
-  background: #fff;
-  color: #111;
+  padding: 3px 9px;
+  border-radius: 7px;
   font-size: 12px;
 }
 
+.name {
+  border: 1px solid #2a2f35;
+  background: linear-gradient(180deg, #20252b 0%, #14181c 100%);
+  color: #e7ebee;
+  font-weight: 600;
+  letter-spacing: .2px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+
 .name.matched {
-  color: #00b000;
-  font-weight: 700;
+  color: #4be38a;
+  border-color: rgba(75, 227, 138, .45);
+  text-shadow: 0 0 8px rgba(75, 227, 138, .4);
 }
 
 .active-dot {
   display: inline-block;
-  width: 5px;
-  height: 5px;
-  margin-right: 4px;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
   vertical-align: middle;
   border-radius: 50%;
-  background: #00d050;
+  background: #2bd46b;
+  box-shadow: 0 0 7px #2bd46b;
 }
 
 .balance {
-  margin-top: 2px;
+  margin-top: 4px;
+  border: 1px solid #34381f;
+  background: linear-gradient(180deg, #1c1d12 0%, #121309 100%);
+  color: var(--gold);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 1px #000;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .45), inset 0 0 0 1px rgba(232, 196, 102, .12);
 }
 
+.bet {
+  position: absolute;
+  left: 50%;
+  top: -30px;
+  transform: translateX(-50%);
+  border: 1px solid #6a5410;
+  background: linear-gradient(180deg, #f4d21b 0%, #d4a90f 100%);
+  color: #1a1305;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .35);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .55), 0 0 14px rgba(244, 210, 27, .25);
+}
+
+.bet::before {
+  content: "\1F4B0";   /* chips */
+  margin-right: 4px;
+  filter: grayscale(.1);
+}
+
+/* ---- HUD ------------------------------------------------------------------ */
 .hud {
   position: relative;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 2px 5px;
-  width: 132px;
+  gap: 2px 6px;
+  width: 136px;
   min-height: 12px;
-  margin-top: 2px;
+  margin-top: 4px;
   font-size: 10px;
   line-height: 12px;
-  text-shadow: 0 1px 1px #111;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px #000;
 }
 
 .hud-samples {
@@ -222,38 +438,83 @@ body {
 }
 
 .hud-stat.important {
-  color: #fff;
+  color: #ffd35a;
 }
 
 .hud-stat.normal {
-  color: #b9bdc2;
+  color: #aab1b8;
 }
 
-.bet {
-  position: absolute;
-  background: #ffff00;
-  left: 50%;
-  top: -28px;
-  transform: translateX(-50%);
-}
-
+/* ---- dealer button -------------------------------------------------------- */
+/* Positioned (via inline left/top %) on the felt, just in front of the seat. */
 .dealer {
   position: absolute;
-  right: 24px;
-  top: 14px;
-  width: 20px;
-  height: 20px;
+  transform: translate(-50%, -50%);
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  border: 1px solid #111;
-  background: #fff;
-  color: #111;
-  font-weight: 700;
-  font-size: 11px;
+  border: 1px solid #b9962f;
+  background: radial-gradient(circle at 50% 35%, #fff 0%, #f0e2b0 55%, #d8be73 100%);
+  color: #1a1305;
+  font-weight: 800;
+  font-size: 12px;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, .6), 0 0 0 2px rgba(0, 0, 0, .25);
+  z-index: 5;
 }
 
-.status {
-  color: #bac2ca;
-  font-size: 12px;
+/* ---- hero (chair 3 = the human, seated bottom-centre) --------------------- */
+.player.hero {
+  width: 156px;
+  z-index: 4;
+}
+
+.player.hero .seat-ring {
+  width: 92px;
+  height: 92px;
+  border-color: var(--scarlet);
+  background: radial-gradient(circle at 50% 38%, #3a1216 0%, #1c0a0c 65%, #100506 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(209, 31, 51, .55),
+    0 0 26px rgba(209, 31, 51, .55),
+    0 0 54px rgba(232, 196, 102, .18);
+}
+
+.player.hero .holecards .card {
+  width: 52px;
+  height: 73px;
+  margin-left: -18px;
+}
+
+.player.hero .holecards .card .corner .rank {
+  font-size: 19px;
+}
+
+.player.hero .holecards .card .corner .suit {
+  font-size: 13px;
+}
+
+.player.hero .holecards .card .pip {
+  font-size: 36px;
+}
+
+.player.hero .name {
+  border-color: var(--scarlet);
+  background: linear-gradient(180deg, #2a1418 0%, #170b0d 100%);
+  color: #ffe9c2;
+  font-weight: 800;
+  letter-spacing: .4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .5), 0 0 16px rgba(209, 31, 51, .3);
+}
+
+.player.hero .name::before {
+  content: "\265B ";   /* crown for the hero */
+  color: var(--gold);
+}
+
+.player.hero .balance {
+  color: #ffe1a0;
+  border-color: rgba(232, 196, 102, .45);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .5), 0 0 14px rgba(232, 196, 102, .18);
 }

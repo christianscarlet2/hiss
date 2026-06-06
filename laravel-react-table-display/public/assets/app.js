@@ -1,17 +1,30 @@
 var useEffect = React.useEffect;
 var useState = React.useState;
 
+// Seats are spread evenly around the felt ellipse (chair 0 at the bottom centre, then
+// distributed by equal angle). cx/cy = .5/.49, semi-axes .45 x .38.
 var pc = [
-  [], [], [[.95,.47],[.05,.47]],
-  [[.95,.47],[.50,.83],[.05,.47]],
-  [[.89,.25],[.89,.69],[.11,.69],[.11,.25]],
-  [[.89,.25],[.89,.69],[.50,.83],[.11,.69],[.11,.25]],
-  [[.72,.11],[.95,.47],[.72,.83],[.28,.83],[.05,.47],[.28,.11]],
-  [[.72,.11],[.95,.47],[.72,.83],[.50,.83],[.28,.83],[.05,.47],[.28,.11]],
-  [[.72,.11],[.89,.25],[.89,.69],[.72,.83],[.28,.83],[.11,.69],[.11,.25],[.28,.11]],
-  [[.72,.11],[.89,.25],[.95,.47],[.89,.69],[.72,.83],[.28,.83],[.11,.69],[.11,.25],[.28,.11]],
-  [[.72,.11],[.85,.21],[.95,.47],[.85,.73],[.72,.83],[.28,.83],[.15,.73],[.05,.47],[.15,.21],[.28,.11]]
+  [], [],
+  [[.5,.85],[.5,.13]],
+  [[.5,.85],[.136,.31],[.864,.31]],
+  [[.5,.85],[.08,.49],[.5,.13],[.92,.49]],
+  [[.5,.85],[.101,.601],[.253,.199],[.747,.199],[.899,.601]],
+  [[.5,.85],[.136,.67],[.136,.31],[.5,.13],[.864,.31],[.864,.67]],
+  [[.5,.85],[.172,.714],[.091,.41],[.318,.166],[.682,.166],[.909,.41],[.828,.714]],
+  [[.5,.85],[.203,.745],[.08,.49],[.203,.235],[.5,.13],[.797,.235],[.92,.49],[.797,.745]],
+  [[.5,.85],[.23,.766],[.086,.553],[.136,.31],[.356,.152],[.644,.152],[.864,.31],[.914,.553],[.77,.766]],
+  [[.5,.85],[.253,.781],[.101,.601],[.101,.379],[.253,.199],[.5,.13],[.747,.199],[.899,.379],[.899,.601],[.747,.781]]
 ];
+
+// The hero (the human/this player) is chair 3; seat it at the bottom centre and keep the
+// other chairs in their rotational order around the ellipse.
+var HERO_CHAIR = 3;
+function seatPos(nchairs, chair) {
+  var ring = pc[nchairs];
+  if (!ring || !ring.length) return [.5, .5];
+  var idx = (((chair - HERO_CHAIR) % nchairs) + nchairs) % nchairs;
+  return ring[idx] || [.5, .5];
+}
 
 function e(type, props) {
   var args = [type, props || {}];
@@ -21,15 +34,83 @@ function e(type, props) {
   return React.createElement.apply(React, args);
 }
 
+// Trimmed number: up to 2 decimals with trailing zeros (and a bare dot) removed,
+// e.g. 100 -> "100", 12.50 -> "12.5", 8.00 -> "8".
 function money(value) {
   value = Number(value || 0);
-  return value.toFixed(2);
+  return value.toFixed(2).replace(/\.?0+$/, '');
+}
+
+// Trimmed number with the big-blind unit appended, e.g. "12.5 BB".
+function bb(value) {
+  return money(value) + ' BB';
 }
 
 function thousands(value) {
   value = Math.max(0, Math.round(Number(value || 0)));
   return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
+
+// "Hiss by Scarlet Beast" felt seal: a glowing occult emblem (inverted pentagram,
+// two hissing serpents with forked tongues, curved branding text) drawn as inline SVG
+// and laid into the felt as a watermark behind the cards.
+var FELT_LOGO_SVG =
+'<svg viewBox="0 0 480 480" xmlns="http://www.w3.org/2000/svg">' +
+  '<defs>' +
+    '<linearGradient id="bone" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0%" stop-color="#f6eed9"/>' +
+      '<stop offset="55%" stop-color="#e4d9bb"/>' +
+      '<stop offset="100%" stop-color="#bfb189"/>' +
+    '</linearGradient>' +
+    '<radialGradient id="vig" cx="50%" cy="50%" r="50%">' +
+      '<stop offset="0%" stop-color="#000" stop-opacity=".30"/>' +
+      '<stop offset="62%" stop-color="#000" stop-opacity=".10"/>' +
+      '<stop offset="100%" stop-color="#000" stop-opacity="0"/>' +
+    '</radialGradient>' +
+    '<filter id="stitch" x="-25%" y="-25%" width="150%" height="150%">' +
+      '<feDropShadow dx="0" dy="1.4" stdDeviation="0.5" flood-color="#1a1207" flood-opacity=".8"/>' +
+    '</filter>' +
+    '<filter id="glow" x="-40%" y="-40%" width="180%" height="180%">' +
+      '<feGaussianBlur stdDeviation="2.1" result="b"/>' +
+      '<feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>' +
+    '</filter>' +
+    '<path id="arcTop" d="M48 240 A192 192 0 0 1 432 240" fill="none"/>' +
+    '<path id="arcBot" d="M58 240 A182 182 0 0 0 422 240" fill="none"/>' +
+  '</defs>' +
+  '<circle cx="240" cy="240" r="224" fill="url(#vig)"/>' +
+  '<g fill="none" stroke="url(#bone)" filter="url(#stitch)">' +
+    '<circle cx="240" cy="240" r="214" stroke-width="2" opacity=".6"/>' +
+    '<circle cx="240" cy="240" r="150" stroke-width="1.2" opacity=".4"/>' +
+  '</g>' +
+  '<circle cx="240" cy="240" r="206" fill="none" stroke="#c0091f" stroke-width="1" opacity=".5"/>' +
+  '<g fill="url(#bone)" filter="url(#stitch)">' +
+    '<path d="M40 240 l8 -8 l8 8 l-8 8 z"/>' +
+    '<path d="M424 240 l8 -8 l8 8 l-8 8 z"/>' +
+  '</g>' +
+  '<text class="seal-top" fill="url(#bone)" stroke="#2a1d10" stroke-width=".6" paint-order="stroke" filter="url(#stitch)">' +
+    '<textPath href="#arcTop" startOffset="50%" text-anchor="middle">HISS · BY · SCARLET BEAST</textPath>' +
+  '</text>' +
+  '<text class="seal-bot" fill="url(#bone)" stroke="#2a1d10" stroke-width=".5" paint-order="stroke" filter="url(#stitch)">' +
+    '<textPath href="#arcBot" startOffset="50%" text-anchor="middle">AS ABOVE · SO BELOW</textPath>' +
+  '</text>' +
+  '<g filter="url(#glow)">' +
+    '<circle cx="240" cy="244" r="92" fill="none" stroke="#e21330" stroke-width="2" opacity=".9"/>' +
+    '<circle cx="240" cy="244" r="86" fill="none" stroke="url(#bone)" stroke-width="1" opacity=".35"/>' +
+    '<polygon points="240,326 191.8,177.7 318,269.3 162,269.3 288.2,177.7" fill="none" stroke="url(#bone)" stroke-width="2.6" stroke-linejoin="round" opacity=".95"/>' +
+  '</g>' +
+  '<g fill="none" stroke="url(#bone)" stroke-width="6" stroke-linecap="round" opacity=".92" filter="url(#glow)">' +
+    '<path d="M228 160 C172 158, 138 200, 142 250 C146 296, 192 320, 232 300"/>' +
+    '<path d="M252 160 C308 158, 342 200, 338 250 C334 296, 288 320, 248 300"/>' +
+  '</g>' +
+  '<g filter="url(#glow)">' +
+    '<circle cx="228" cy="160" r="5" fill="#e9ddbf" stroke="#9a0f1f" stroke-width="1.4"/>' +
+    '<circle cx="252" cy="160" r="5" fill="#e9ddbf" stroke="#9a0f1f" stroke-width="1.4"/>' +
+    '<g stroke="#e21330" stroke-width="2.4" stroke-linecap="round" fill="none">' +
+      '<path d="M227 156 l-6 -12 m6 12 l2 -13"/>' +
+      '<path d="M253 156 l6 -12 m-6 12 l-2 -13"/>' +
+    '</g>' +
+  '</g>' +
+'</svg>';
 
 function CardView(props) {
   var value = props.value || '';
@@ -42,15 +123,36 @@ function CardView(props) {
     );
   }
   var text = value && value !== 'NC' ? value : '';
-  var red = /[hd]$/i.test(text);
-  return e('div', { className: 'card ' + (!text ? 'empty ' : '') + (red ? 'red' : '') }, text);
+  if (!text) {
+    return e('div', { className: 'card empty' });
+  }
+  // Render an actual card face: a corner index (rank over suit pip) plus a large
+  // centre pip, coloured red for hearts/diamonds and black for clubs/spades.
+  var suit = text.slice(-1).toLowerCase();
+  var rank = text.slice(0, -1).toUpperCase();
+  if (rank === 'T') rank = '10';
+  var SUITS = { h: '♥', d: '♦', c: '♣', s: '♠' };
+  var pip = SUITS[suit] || '';
+  var red = (suit === 'h' || suit === 'd');
+  return e('div', { className: 'card face ' + (red ? 'red' : 'black') },
+    e('span', { className: 'corner tl' },
+      e('span', { className: 'rank' }, rank),
+      e('span', { className: 'suit' }, pip)
+    ),
+    e('span', { className: 'pip' }, pip),
+    e('span', { className: 'corner br' },
+      e('span', { className: 'rank' }, rank),
+      e('span', { className: 'suit' }, pip)
+    )
+  );
 }
 
 function Player(props) {
   var player = props.player;
   var nchairs = props.nchairs;
   var maxHoleCards = props.isOmaha ? 4 : 2;
-  var pos = pc[nchairs] && pc[nchairs][player.chair] ? pc[nchairs][player.chair] : [.5, .5];
+  var pos = seatPos(nchairs, player.chair);
+  var isHero = player.chair === HERO_CHAIR;
   var style = { left: (pos[0] * 100) + '%', top: (pos[1] * 100) + '%' };
   var cards = [];
   var rawCards = player.cards || [];
@@ -59,8 +161,8 @@ function Player(props) {
       cards.push(rawCards[i]);
     }
   }
-  return e('div', { className: 'player', style: style },
-    player.bet ? e('div', { className: 'bet' }, money(player.bet)) : null,
+  return e('div', { className: 'player' + (isHero ? ' hero' : ''), style: style },
+    player.bet ? e('div', { className: 'bet' }, bb(player.bet)) : null,
     e('div', { className: 'seat-ring ' + (player.active ? 'active' : '') }),
     e('div', { className: 'holecards' }, cards.map(function (card, index) {
       return e(CardView, { key: index, value: card });
@@ -69,7 +171,7 @@ function Player(props) {
       player.active ? e('span', { className: 'active-dot' }) : null,
       player.name || ('p' + player.chair)
     ),
-    e('div', { className: 'balance' }, player.seated ? money(player.balance) : ('Out (' + money(player.balance) + ')')),
+    e('div', { className: 'balance' }, player.seated ? bb(player.balance) : ('Out (' + bb(player.balance) + ')')),
     (player.samples >= 0 || (player.hud || []).length) ? e('div', { className: 'hud' },
       player.samples >= 0 ? e('span', {
         key: 'samples',
@@ -83,9 +185,18 @@ function Player(props) {
           title: stat.name || stat.abbr
         }, (stat.abbr || '') + ' ' + (stat.value || '-'));
       })
-    ) : null,
-    player.dealer ? e('div', { className: 'dealer' }, 'D') : null
+    ) : null
   );
+}
+
+// Dealer button, positioned on the felt just in front of the seat (a short hop from the
+// chair toward the table centre) so it never sits on top of the player chair.
+function DealerButton(props) {
+  var pos = seatPos(props.nchairs, props.chair);
+  var t = 0.20;   // fraction of the way from the seat toward the centre
+  var x = pos[0] + (0.5 - pos[0]) * t;
+  var y = pos[1] + (0.49 - pos[1]) * t;
+  return e('div', { className: 'dealer', style: { left: (x * 100) + '%', top: (y * 100) + '%' } }, 'D');
 }
 
 function App() {
@@ -131,7 +242,7 @@ function App() {
   var instancePort = window.location.port || '80';
   return e('main', { className: 'app' },
     e('header', { className: 'topbar' },
-      e('div', { className: 'title' }, 'OpenHoldem React Table Display — port ' + instancePort),
+      e('div', { className: 'title' }, 'Hiss React Table Display — port ' + instancePort),
       e('div', { className: 'meta' },
         e('span', null, 'Hand ' + (table.handnumber || '-')),
         e('span', null, 'Blinds ' + money(limits.sblind) + ' / ' + money(limits.bblind)),
@@ -139,15 +250,20 @@ function App() {
       )
     ),
     e('section', { className: 'table' },
-      e('div', { className: 'felt' }),
+      e('div', { className: 'felt' },
+        e('div', { className: 'felt-logo', dangerouslySetInnerHTML: { __html: FELT_LOGO_SVG } })
+      ),
       e('div', { className: 'center' },
         e('div', { className: 'cards' }, (table.commonCards || []).map(function (card, index) {
           return e(CardView, { key: index, value: card });
         })),
-        e('div', { className: 'pot' }, 'Pot ' + money(table.pot))
+        e('div', { className: 'pot' }, 'Pot ' + bb(table.pot))
       ),
       (table.players || []).map(function (player) {
         return e(Player, { key: player.chair, player: player, nchairs: table.nchairs, isOmaha: !!table.isomaha });
+      }),
+      (table.players || []).filter(function (p) { return p.dealer; }).map(function (p) {
+        return e(DealerButton, { key: 'd' + p.chair, chair: p.chair, nchairs: table.nchairs });
       })
     )
   );
