@@ -41,8 +41,17 @@ function money(value) {
   return value.toFixed(2).replace(/\.?0+$/, '');
 }
 
-// Trimmed number with the big-blind unit appended, e.g. "12.5 BB".
+// Current money display unit, set by App each render. In "usd" mode, values (which the
+// bot reports in big blinds) are multiplied by the big-blind size to get a dollar amount.
+var DISPLAY = { unit: 'bb', bb: 0 };
+
+// Format a big-blind value for display: "12.5 BB", or "$25" when the dollar unit is active
+// (double-click any balance/pot/bet to toggle). Trailing zeros are trimmed either way.
 function bb(value) {
+  value = Number(value || 0);
+  if (DISPLAY.unit === 'usd') {
+    return '$' + money(value * DISPLAY.bb);
+  }
   return money(value) + ' BB';
 }
 
@@ -88,7 +97,7 @@ var FELT_LOGO_SVG =
     '<path d="M424 240 l8 -8 l8 8 l-8 8 z"/>' +
   '</g>' +
   '<text class="seal-top" fill="url(#bone)" stroke="#2a1d10" stroke-width=".6" paint-order="stroke" filter="url(#stitch)">' +
-    '<textPath href="#arcTop" startOffset="50%" text-anchor="middle">HISS · BY · SCARLET BEAST</textPath>' +
+    '<textPath href="#arcTop" startOffset="50%" text-anchor="middle">⛧ NON · SERVIAM ⛧</textPath>' +
   '</text>' +
   '<text class="seal-bot" fill="url(#bone)" stroke="#2a1d10" stroke-width=".5" paint-order="stroke" filter="url(#stitch)">' +
     '<textPath href="#arcBot" startOffset="50%" text-anchor="middle">AS ABOVE · SO BELOW</textPath>' +
@@ -161,8 +170,9 @@ function Player(props) {
       cards.push(rawCards[i]);
     }
   }
+  var toggleUnit = props.onToggleUnit;
   return e('div', { className: 'player' + (isHero ? ' hero' : ''), style: style },
-    player.bet ? e('div', { className: 'bet' }, bb(player.bet)) : null,
+    player.bet ? e('div', { className: 'bet', onDoubleClick: toggleUnit, title: 'Double-click to toggle BB / $' }, bb(player.bet)) : null,
     e('div', { className: 'seat-ring ' + (player.active ? 'active' : '') }),
     e('div', { className: 'holecards' }, cards.map(function (card, index) {
       return e(CardView, { key: index, value: card });
@@ -171,7 +181,8 @@ function Player(props) {
       player.active ? e('span', { className: 'active-dot' }) : null,
       player.name || ('p' + player.chair)
     ),
-    e('div', { className: 'balance' }, player.seated ? bb(player.balance) : ('Out (' + bb(player.balance) + ')')),
+    e('div', { className: 'balance', onDoubleClick: toggleUnit, title: 'Double-click to toggle BB / $' },
+      player.seated ? bb(player.balance) : ('Out (' + bb(player.balance) + ')')),
     (player.samples >= 0 || (player.hud || []).length) ? e('div', { className: 'hud' },
       player.samples >= 0 ? e('span', {
         key: 'samples',
@@ -193,7 +204,7 @@ function Player(props) {
 // chair toward the table centre) so it never sits on top of the player chair.
 function DealerButton(props) {
   var pos = seatPos(props.nchairs, props.chair);
-  var t = 0.20;   // fraction of the way from the seat toward the centre
+  var t = 0.26;   // fraction of the way from the seat toward the centre
   var x = pos[0] + (0.5 - pos[0]) * t;
   var y = pos[1] + (0.49 - pos[1]) * t;
   return e('div', { className: 'dealer', style: { left: (x * 100) + '%', top: (y * 100) + '%' } }, 'D');
@@ -206,6 +217,12 @@ function App() {
   var errorPair = useState('');
   var error = errorPair[0];
   var setError = errorPair[1];
+  var unitPair = useState('bb');
+  var unit = unitPair[0];
+  var setUnit = unitPair[1];
+  var toggleUnit = function () {
+    setUnit(function (u) { return u === 'bb' ? 'usd' : 'bb'; });
+  };
 
   useEffect(function () {
     var alive = true;
@@ -240,6 +257,9 @@ function App() {
   var table = state || { nchairs: 10, players: [], commonCards: [], limits: {}, pot: 0, handnumber: '' };
   var limits = table.limits || {};
   var instancePort = window.location.port || '80';
+  // Drive the money formatter: in "usd" mode amounts are big blinds x the big-blind size.
+  DISPLAY.unit = unit;
+  DISPLAY.bb = Number(limits.bblind || 0);
   return e('main', { className: 'app' },
     e('header', { className: 'topbar' },
       e('div', { className: 'title' }, 'Hiss React Table Display — port ' + instancePort),
@@ -251,7 +271,8 @@ function App() {
     ),
     e('section', { className: 'table' },
       e('div', { className: 'felt' },
-        e('div', { className: 'felt-logo', dangerouslySetInnerHTML: { __html: FELT_LOGO_SVG } })
+        e('div', { className: 'felt-logo', dangerouslySetInnerHTML: { __html: FELT_LOGO_SVG } }),
+        e('div', { className: 'felt-script' }, 'Hiss by Scarlet Beast')
       ),
       e('div', { className: 'center' },
         e('div', { className: 'cards' }, (table.commonCards || []).map(function (card, index) {
