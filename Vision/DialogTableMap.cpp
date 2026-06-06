@@ -1526,33 +1526,36 @@ void CDlgTableMap::ApplyGroupLockState(const CString &region_name)
 {
 	COpenScrapeView *pView = COpenScrapeView::GetView();
 	bool locked = (pView != NULL) && pView->IsRegionInLockedGroup(region_name);
+	const BOOL en = locked ? FALSE : TRUE;   // re-enable when the group is unlocked
 
 	m_LockedLabel.ShowWindow(locked ? SW_SHOW : SW_HIDE);
-	if (!locked) {
-		return;
+
+	// Rectangle 1 coordinates + their spin arrows, the draw button and all nudge buttons
+	// are editable for a selected region unless its group is locked -- so follow the lock
+	// state in BOTH directions (the old code disabled on lock but never re-enabled).
+	m_Left.EnableWindow(en);   m_Top.EnableWindow(en);
+	m_Right.EnableWindow(en);  m_Bottom.EnableWindow(en);
+	m_LeftSpin.EnableWindow(en);   m_TopSpin.EnableWindow(en);
+	m_RightSpin.EnableWindow(en);  m_BottomSpin.EnableWindow(en);
+	m_DrawRect.EnableWindow(en);
+
+	m_NudgeTaller.EnableWindow(en);   m_NudgeShorter.EnableWindow(en);
+	m_NudgeWider.EnableWindow(en);    m_NudgeNarrower.EnableWindow(en);
+	m_NudgeBigger.EnableWindow(en);   m_NudgeSmaller.EnableWindow(en);
+	m_NudgeUpLeft.EnableWindow(en);   m_NudgeUp.EnableWindow(en);
+	m_NudgeUpRight.EnableWindow(en);  m_NudgeRight.EnableWindow(en);
+	m_NudgeDownRight.EnableWindow(en); m_NudgeDown.EnableWindow(en);
+	m_NudgeDownLeft.EnableWindow(en);  m_NudgeLeft.EnableWindow(en);
+
+	// Rectangle 2 controls have their OWN enable rules (transform == Color, rect2 on),
+	// already applied by update_r$_display just before this call. Only force them OFF when
+	// the group is locked; when unlocked leave them exactly as update_r$_display set them.
+	if (locked) {
+		m_Left2.EnableWindow(FALSE);   m_Top2.EnableWindow(FALSE);
+		m_Right2.EnableWindow(FALSE);  m_Bottom2.EnableWindow(FALSE);
+		m_DrawRect2.EnableWindow(FALSE);
+		m_Rect2Enable.EnableWindow(FALSE);
 	}
-
-	// Rectangle 1
-	m_Left.EnableWindow(false);   m_Top.EnableWindow(false);
-	m_Right.EnableWindow(false);  m_Bottom.EnableWindow(false);
-	m_LeftSpin.EnableWindow(false);   m_TopSpin.EnableWindow(false);
-	m_RightSpin.EnableWindow(false);  m_BottomSpin.EnableWindow(false);
-	m_DrawRect.EnableWindow(false);
-
-	// Rectangle 2
-	m_Left2.EnableWindow(false);   m_Top2.EnableWindow(false);
-	m_Right2.EnableWindow(false);  m_Bottom2.EnableWindow(false);
-	m_DrawRect2.EnableWindow(false);
-	m_Rect2Enable.EnableWindow(false);
-
-	// Nudge
-	m_NudgeTaller.EnableWindow(false);   m_NudgeShorter.EnableWindow(false);
-	m_NudgeWider.EnableWindow(false);    m_NudgeNarrower.EnableWindow(false);
-	m_NudgeBigger.EnableWindow(false);   m_NudgeSmaller.EnableWindow(false);
-	m_NudgeUpLeft.EnableWindow(false);   m_NudgeUp.EnableWindow(false);
-	m_NudgeUpRight.EnableWindow(false);  m_NudgeRight.EnableWindow(false);
-	m_NudgeDownRight.EnableWindow(false); m_NudgeDown.EnableWindow(false);
-	m_NudgeDownLeft.EnableWindow(false);  m_NudgeLeft.EnableWindow(false);
 }
 
 void CDlgTableMap::OnZoomChange()

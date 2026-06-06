@@ -2881,6 +2881,7 @@ void COpenScrapeView::OnRButtonDown(UINT nFlags, CPoint point)
 			if (command == kToggleLockGroupMenuId) {
 				SetGroupLocked(empty_group_name, !group_locked);
 				theApp.m_TableMapDlg->update_tree("Groups");
+				theApp.m_TableMapDlg->update_display();   // re-enable/disable the geometry controls
 			}
 			else if (command == kDeleteAllInGroupMenuId) {
 				CString message;
@@ -2970,6 +2971,7 @@ void COpenScrapeView::OnRButtonDown(UINT nFlags, CPoint point)
 	else if (command == kToggleLockGroupMenuId) {
 		SetGroupLocked(group_name, !group_locked);
 		theApp.m_TableMapDlg->update_tree("Groups");
+		theApp.m_TableMapDlg->update_display();   // re-enable/disable the geometry controls
 	}
 	else if (command == kDeleteRegionMenuId) {
 		CString message;
