@@ -192,8 +192,13 @@ int CReactTableWindow::OnCreate(LPCREATESTRUCT lpCreateStruct)
 			}).Get());
 
 	if (FAILED(hr)) {
-		MessageBox("Unable to initialize Microsoft Edge WebView2.", "Hiss React Table Display", MB_OK | MB_ICONERROR);
+		MessageBox("Unable to initialize Microsoft Edge WebView2.", "Hiss:", MB_OK | MB_ICONERROR);
 	}
+
+	// Force the frame to recalculate now so the standard caption is dropped as the window
+	// opens (WM_NCCALCSIZE then claims the whole window as client).
+	SetWindowPos(NULL, 0, 0, 0, 0,
+		SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 	return 0;
 }
 
@@ -323,7 +328,9 @@ BOOL CReactTableWindow::OnEraseBkgnd(CDC *pDC)
 BOOL CReactTableWindow::OnNcActivate(BOOL bActive)
 {
 	InvalidateChrome();
-	return TRUE;   // skip the default caption repaint (we have none)
+	// Passing lParam = -1 to DefWindowProc tells it NOT to repaint the (removed) caption,
+	// which otherwise flashes the standard title bar back in on focus changes.
+	return (BOOL)DefWindowProc(WM_NCACTIVATE, (WPARAM)bActive, (LPARAM)-1);
 }
 
 // Mirror the main Hiss window's caption (it changes dynamically); repaint only when it does.
