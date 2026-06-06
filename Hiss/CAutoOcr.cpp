@@ -164,6 +164,7 @@ CAutoOcr::CAutoOcr() :
 		_thr[i]   = kDefaultAutoOcrThreshold;
 		_mode[i]  = (int)tesseract::PSM_SINGLE_LINE;
 		_nopre[i] = _nowl[i] = _nocs[i] = false;
+		_dcorr[i] = false;
 	}
 }
 
@@ -184,6 +185,7 @@ void CAutoOcr::LoadModelSettings() {
 		_thr[i]   = kDefaultAutoOcrThreshold;
 		_mode[i]  = (int)tesseract::PSM_SINGLE_LINE;   // single-line for AutoOcr
 		_nopre[i] = _nowl[i] = _nocs[i] = false;
+		_dcorr[i] = false;
 	}
 	_decimal_fields.clear();
 	if (p_tablemap_db != NULL) {
@@ -201,6 +203,7 @@ void CAutoOcr::LoadModelSettings() {
 			_nopre[g] = (p_tablemap_db->GetSettingString(keys[g], "no_preprocess") == "1");
 			_nowl[g]  = (p_tablemap_db->GetSettingString(keys[g], "no_whitelist") == "1");
 			_nocs[g]  = (p_tablemap_db->GetSettingString(keys[g], "no_char_spacing") == "1");
+			_dcorr[g] = (p_tablemap_db->GetSettingString(keys[g], "decimal_correct") == "1");
 		}
 	}
 	_models_loaded = true;
@@ -966,6 +969,18 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast, SAutoOc
 	if (CString(region->first).MakeLower().Find("balance") != -1) {
 		ocr_result = StripBalanceUnitSuffix(ocr_result);
 		ocr_result2 = StripBalanceUnitSuffix(ocr_result2);
+	}
+
+	// Post-processing decimal correction (per-engine option autoocr{N}.decimal_correct):
+	// when whole-image OCR dropped the decimal point, locate it in the image and re-insert
+	// it. No-op when the result already contains a '.' (e.g. decimal-split produced one).
+	if (_dcorr[ai] && img_orig.type() == CV_8UC3 && img_orig.cols >= 3 && img_orig.rows >= 3) {
+		ocr_result = ApplyDecimalCorrection(std::string(CStringA(ocr_result)),
+			img_orig.data, img_orig.cols, img_orig.rows, (int)img_orig.step).c_str();
+		if (!ocr_result2.IsEmpty()) {
+			ocr_result2 = ApplyDecimalCorrection(std::string(CStringA(ocr_result2)),
+				img_orig.data, img_orig.cols, img_orig.rows, (int)img_orig.step).c_str();
+		}
 	}
 
 	if (ocr_result != "")

@@ -17,6 +17,7 @@ struct STrainerOcrSettings {
 	bool    no_whitelist;    // do not restrict recognized characters at all
 	bool    use_decimal_split; // split the image at the decimal, OCR each half, join with "."
 	int     decimal_split_margin_pct; // extra trim each side of the decimal, as % of its width
+	bool    use_decimal_correct; // post-process: re-insert a dropped '.' detected in the image
 };
 
 STrainerOcrSettings DefaultOcrSettings();

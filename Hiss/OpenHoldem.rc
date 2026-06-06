@@ -931,13 +931,16 @@ BEGIN
     LTEXT           "AutoOcr0 model (.traineddata):",IDC_STATIC,4,10,160,8
     EDITTEXT        IDC_OCR_MODEL0,4,22,170,14,ES_AUTOHSCROLL
     PUSHBUTTON      "Browse...",IDC_OCR_BROWSE0,178,22,52,14
-    LTEXT           "AutoOcr1 model (.traineddata):",IDC_STATIC,4,48,160,8
-    EDITTEXT        IDC_OCR_MODEL1,4,60,170,14,ES_AUTOHSCROLL
-    PUSHBUTTON      "Browse...",IDC_OCR_BROWSE1,178,60,52,14
-    LTEXT           "AutoOcr2 model (.traineddata):",IDC_STATIC,4,86,160,8
-    EDITTEXT        IDC_OCR_MODEL2,4,98,170,14,ES_AUTOHSCROLL
-    PUSHBUTTON      "Browse...",IDC_OCR_BROWSE2,178,98,52,14
-    LTEXT           "Pick the Tesseract .traineddata model for each AutoOcr engine. The full path is stored; leave blank to use the default ""my_model"" in the tessdata folder.",IDC_STATIC,4,122,226,32
+    CONTROL         "Decimal correction (re-insert a dropped decimal point)",IDC_OCR_DCORR0,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,38,226,10
+    LTEXT           "AutoOcr1 model (.traineddata):",IDC_STATIC,4,56,160,8
+    EDITTEXT        IDC_OCR_MODEL1,4,68,170,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Browse...",IDC_OCR_BROWSE1,178,68,52,14
+    CONTROL         "Decimal correction (re-insert a dropped decimal point)",IDC_OCR_DCORR1,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,84,226,10
+    LTEXT           "AutoOcr2 model (.traineddata):",IDC_STATIC,4,102,160,8
+    EDITTEXT        IDC_OCR_MODEL2,4,114,170,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Browse...",IDC_OCR_BROWSE2,178,114,52,14
+    CONTROL         "Decimal correction (re-insert a dropped decimal point)",IDC_OCR_DCORR2,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,130,226,10
+    LTEXT           "Pick the Tesseract .traineddata model for each AutoOcr engine. The full path is stored; leave blank to use the default ""my_model"" in the tessdata folder. ""Decimal correction"" re-inserts a decimal point (1-2 places) detected in the image when OCR drops it.",IDC_STATIC,4,148,226,44
 END
 
 IDD_SAPREFS24 DIALOGEX 0, 0, 237, 213

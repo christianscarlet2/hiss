@@ -259,6 +259,7 @@ void CDlgSettings::LoadGroup(int group)
 	bool nopre = (p_tablemap_db->GetSettingString(key, "no_preprocess") == "1");
 	bool nowl  = (p_tablemap_db->GetSettingString(key, "no_whitelist") == "1");
 	bool nocs  = (p_tablemap_db->GetSettingString(key, "no_char_spacing") == "1");
+	bool dcorr = (p_tablemap_db->GetSettingString(key, "decimal_correct") == "1");
 
 	m_model.SetWindowText(model.IsEmpty() ? CString(kDefaultModelPath) : model);
 	m_threshold.SetWindowText(thr.IsEmpty() ? CString("150") : thr);
@@ -268,6 +269,7 @@ void CDlgSettings::LoadGroup(int group)
 	CheckDlgButton(IDC_CHK_NO_PREPROCESS, nopre ? BST_CHECKED : BST_UNCHECKED);
 	CheckDlgButton(IDC_CHK_NO_WHITELIST, nowl ? BST_CHECKED : BST_UNCHECKED);
 	CheckDlgButton(IDC_CHK_NO_CHARSPACING, nocs ? BST_CHECKED : BST_UNCHECKED);
+	CheckDlgButton(IDC_CHK_DECIMAL_CORRECT, dcorr ? BST_CHECKED : BST_UNCHECKED);
 	UpdateCharSpacingEnable();
 }
 
@@ -290,6 +292,8 @@ void CDlgSettings::SaveGroup(int group)
 		IsDlgButtonChecked(IDC_CHK_NO_WHITELIST) == BST_CHECKED ? "1" : "0");
 	p_tablemap_db->SetSettingString(key, "no_char_spacing",
 		IsDlgButtonChecked(IDC_CHK_NO_CHARSPACING) == BST_CHECKED ? "1" : "0");
+	p_tablemap_db->SetSettingString(key, "decimal_correct",
+		IsDlgButtonChecked(IDC_CHK_DECIMAL_CORRECT) == BST_CHECKED ? "1" : "0");
 }
 
 // Character spacing is moot when preprocessing is off (the upscale/spacing step
@@ -331,7 +335,7 @@ void CDlgSettings::ShowPage(int index)
 	int autoocr[]  = { IDC_SET_MODEL_LBL, IDC_EDIT_A0_MODEL, IDC_BTN_A0_BROWSE,
 		IDC_SET_THRESHOLD_LBL, IDC_SET_THRESHOLD, IDC_SET_THRESHOLD_SPIN,
 		IDC_SET_MODE_LBL, IDC_SET_MODE, IDC_CHK_NO_PREPROCESS, IDC_CHK_NO_WHITELIST,
-		IDC_CHK_NO_CHARSPACING, IDC_CHK_LIVE_POLL, IDC_SET_LIVE_HINT, IDC_SET_ORIG_LBL,
+		IDC_CHK_NO_CHARSPACING, IDC_CHK_DECIMAL_CORRECT, IDC_CHK_LIVE_POLL, IDC_SET_LIVE_HINT, IDC_SET_ORIG_LBL,
 		IDC_SET_ORIG_VIEW, IDC_SET_OCR_LBL, IDC_SET_OCR_VIEW, IDC_SET_SPLIT_LBL,
 		IDC_SET_ORIG_LEFT, IDC_SET_ORIG_RIGHT, IDC_SET_RESULT_LBL, IDC_SET_RESULT,
 		IDC_SET_RESULT_LR_LBL, IDC_SET_RESULT_LEFT, IDC_SET_RESULT_RIGHT };
@@ -354,7 +358,7 @@ void CDlgSettings::ShowPage(int index)
 		IDC_SET_MODEL_LBL, IDC_EDIT_A0_MODEL, IDC_BTN_A0_BROWSE,
 		IDC_SET_THRESHOLD_LBL, IDC_SET_THRESHOLD, IDC_SET_THRESHOLD_SPIN,
 		IDC_SET_MODE_LBL, IDC_SET_MODE, IDC_CHK_NO_PREPROCESS, IDC_CHK_NO_WHITELIST,
-		IDC_CHK_NO_CHARSPACING, IDC_CHK_LIVE_POLL, IDC_SET_LIVE_HINT, IDC_SET_ORIG_LBL,
+		IDC_CHK_NO_CHARSPACING, IDC_CHK_DECIMAL_CORRECT, IDC_CHK_LIVE_POLL, IDC_SET_LIVE_HINT, IDC_SET_ORIG_LBL,
 		IDC_SET_ORIG_VIEW, IDC_SET_OCR_LBL, IDC_SET_OCR_VIEW, IDC_SET_SPLIT_LBL,
 		IDC_SET_ORIG_LEFT, IDC_SET_ORIG_RIGHT, IDC_SET_RESULT_LBL, IDC_SET_RESULT,
 		IDC_SET_RESULT_LR_LBL, IDC_SET_RESULT_LEFT, IDC_SET_RESULT_RIGHT, IDC_SET_ADVANCED_TEXT,
@@ -480,6 +484,7 @@ void CDlgSettings::RunPreview()
 	s.transform = (m_current_group == 7) ? "AutoOcr2" : (m_current_group == 3) ? "AutoOcr1" : "AutoOcr0";
 	bool decimal = RegionUsesDecimalSplit(name);
 	s.use_decimal_split = decimal;
+	s.use_decimal_correct = (IsDlgButtonChecked(IDC_CHK_DECIMAL_CORRECT) == BST_CHECKED);
 
 	Mat preview; CString text; int conf = 0;
 	m_ocr.Run(crop, s, name, &preview, &text, &conf);

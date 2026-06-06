@@ -245,6 +245,7 @@ BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_EN_CHANGE(IDC_CHAR_SPACING, &CTrainerDlg::OnChangeCharSpacing)
 	ON_BN_CLICKED(IDC_NO_PREPROCESS, &CTrainerDlg::OnBnClickedNoPreprocess)
 	ON_BN_CLICKED(IDC_NO_WHITELIST, &CTrainerDlg::OnBnClickedNoWhitelist)
+	ON_BN_CLICKED(IDC_DECIMAL_CORRECT, &CTrainerDlg::OnBnClickedDecimalCorrect)
 	ON_BN_CLICKED(IDC_IGNORE_BAD, &CTrainerDlg::OnBnClickedIgnoreBad)
 	ON_BN_CLICKED(IDC_CONNECT, &CTrainerDlg::OnBnClickedConnect)
 	ON_MESSAGE(WM_TRAINER_SET_CAPTURE, &CTrainerDlg::OnSetCapture)
@@ -330,6 +331,7 @@ BOOL CTrainerDlg::OnInitDialog()
 	m_splitMarginSpin.SetBuddy(&m_splitMargin);
 	CheckDlgButton(IDC_NO_PREPROCESS, BST_UNCHECKED);
 	CheckDlgButton(IDC_NO_WHITELIST, BST_UNCHECKED);
+	CheckDlgButton(IDC_DECIMAL_CORRECT, BST_UNCHECKED);
 	CheckDlgButton(IDC_USE_DECIMAL_SPLIT, BST_UNCHECKED);
 
 	// Restore the OCR settings the user had on last exit (overrides defaults).
@@ -621,6 +623,7 @@ void CTrainerDlg::OnSelchangeMatchMode()   { UpdatePreview(); PersistOcrSettings
 void CTrainerDlg::OnChangeCharSpacing()    { UpdatePreview(); PersistOcrSettingsToDb(); }
 void CTrainerDlg::OnBnClickedNoPreprocess(){ UpdatePreview(); PersistOcrSettingsToDb(); }
 void CTrainerDlg::OnBnClickedNoWhitelist() { UpdatePreview(); PersistOcrSettingsToDb(); }
+void CTrainerDlg::OnBnClickedDecimalCorrect(){ UpdatePreview(); PersistOcrSettingsToDb(); }
 
 // Write the current Image-Processing controls to the shared settings DB (the same
 // place Hiss/Vision read from): per-transform fields under autoocr0/autoocr1, plus the
@@ -643,6 +646,8 @@ void CTrainerDlg::PersistOcrSettingsToDb()
 		(IsDlgButtonChecked(IDC_NO_PREPROCESS) == BST_CHECKED) ? "1" : "0");
 	TrainerDB_SetSetting(key, "no_whitelist",
 		(IsDlgButtonChecked(IDC_NO_WHITELIST) == BST_CHECKED) ? "1" : "0");
+	TrainerDB_SetSetting(key, "decimal_correct",
+		(IsDlgButtonChecked(IDC_DECIMAL_CORRECT) == BST_CHECKED) ? "1" : "0");
 
 	// Hiss has only an on/off "no char spacing" bit (its spacing amount is a fixed
 	// constant); map it from whether the trainer's spacing value is 0. Also store the
@@ -680,6 +685,8 @@ void CTrainerDlg::LoadOcrSettingsFromDb(const CString &key)
 	if (!nopre.IsEmpty()) CheckDlgButton(IDC_NO_PREPROCESS, nopre == "1" ? BST_CHECKED : BST_UNCHECKED);
 	CString nowl = TrainerDB_GetSetting(key, "no_whitelist");
 	if (!nowl.IsEmpty()) CheckDlgButton(IDC_NO_WHITELIST, nowl == "1" ? BST_CHECKED : BST_UNCHECKED);
+	CString dcorr = TrainerDB_GetSetting(key, "decimal_correct");
+	if (!dcorr.IsEmpty()) CheckDlgButton(IDC_DECIMAL_CORRECT, dcorr == "1" ? BST_CHECKED : BST_UNCHECKED);
 
 	// Prefer the stored spacing value; else fall back to the on/off bit.
 	CString csv = TrainerDB_GetSetting(key, "char_spacing");
@@ -836,6 +843,7 @@ void CTrainerDlg::SaveOcrSettings()
 	m_charSpacing.GetWindowText(t); RegWriteString("ocr_char_spacing", t);
 	RegWriteString("ocr_no_preprocess", (IsDlgButtonChecked(IDC_NO_PREPROCESS) == BST_CHECKED) ? "1" : "0");
 	RegWriteString("ocr_no_whitelist", (IsDlgButtonChecked(IDC_NO_WHITELIST) == BST_CHECKED) ? "1" : "0");
+	RegWriteString("ocr_decimal_correct", (IsDlgButtonChecked(IDC_DECIMAL_CORRECT) == BST_CHECKED) ? "1" : "0");
 	RegWriteString("ocr_decimal_split", (IsDlgButtonChecked(IDC_USE_DECIMAL_SPLIT) == BST_CHECKED) ? "1" : "0");
 	m_splitMargin.GetWindowText(t); RegWriteString("ocr_split_margin", t);
 }
@@ -863,6 +871,8 @@ void CTrainerDlg::LoadOcrSettings()
 	if (!v.IsEmpty()) CheckDlgButton(IDC_NO_PREPROCESS, v == "1" ? BST_CHECKED : BST_UNCHECKED);
 	v = RegReadString("ocr_no_whitelist");
 	if (!v.IsEmpty()) CheckDlgButton(IDC_NO_WHITELIST, v == "1" ? BST_CHECKED : BST_UNCHECKED);
+	v = RegReadString("ocr_decimal_correct");
+	if (!v.IsEmpty()) CheckDlgButton(IDC_DECIMAL_CORRECT, v == "1" ? BST_CHECKED : BST_UNCHECKED);
 	v = RegReadString("ocr_decimal_split");
 	if (!v.IsEmpty()) CheckDlgButton(IDC_USE_DECIMAL_SPLIT, v == "1" ? BST_CHECKED : BST_UNCHECKED);
 	v = RegReadString("ocr_split_margin");
@@ -886,7 +896,7 @@ void CTrainerDlg::EnableOcrControls(bool on)
 	const int ids[] = {
 		IDC_TRANSFORM, IDC_THRESHOLD, IDC_THRESHOLD_SPIN, IDC_MATCH_MODE,
 		IDC_CHAR_SPACING, IDC_CHAR_SPACING_SPIN, IDC_NO_PREPROCESS, IDC_NO_WHITELIST,
-		IDC_USE_DECIMAL_SPLIT, IDC_SPLIT_MARGIN, IDC_SPLIT_MARGIN_SPIN,
+		IDC_DECIMAL_CORRECT, IDC_USE_DECIMAL_SPLIT, IDC_SPLIT_MARGIN, IDC_SPLIT_MARGIN_SPIN,
 		IDC_SELECT_MODEL, IDC_SELECT_MODEL1, IDC_SELECT_MODEL2
 	};
 	for (int i = 0; i < (int)(sizeof(ids) / sizeof(ids[0])); ++i) {
@@ -1155,6 +1165,7 @@ STrainerOcrSettings CTrainerDlg::ReadSettings()
 	s.no_preprocess = (IsDlgButtonChecked(IDC_NO_PREPROCESS) == BST_CHECKED);
 	s.no_whitelist = (IsDlgButtonChecked(IDC_NO_WHITELIST) == BST_CHECKED);
 	s.use_decimal_split = (IsDlgButtonChecked(IDC_USE_DECIMAL_SPLIT) == BST_CHECKED);
+	s.use_decimal_correct = (IsDlgButtonChecked(IDC_DECIMAL_CORRECT) == BST_CHECKED);
 	m_splitMargin.GetWindowText(t); s.decimal_split_margin_pct = atoi(t);
 	return s;
 }

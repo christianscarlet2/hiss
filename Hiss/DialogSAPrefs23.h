@@ -39,6 +39,7 @@ protected:
 
 	enum { IDD = IDD_SAPREFS23 };
 	CEdit m_model0, m_model1, m_model2;
+	CButton m_dcorr0, m_dcorr1, m_dcorr2;
 
 	void BrowseForModel(CEdit *target);
 

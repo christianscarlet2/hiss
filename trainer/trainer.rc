@@ -44,6 +44,7 @@ BEGIN
     CONTROL         "No preprocessing",IDC_NO_PREPROCESS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,127,90,10
     CONTROL         "Disable whitelist",IDC_NO_WHITELIST,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,108,127,82,10
     CONTROL         "Use decimal splitting",IDC_USE_DECIMAL_SPLIT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,196,127,110,10
+    CONTROL         "Decimal correction (re-insert dropped '.')",IDC_DECIMAL_CORRECT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,14,139,180,10
 
     GROUPBOX        "Scraped Region (OCR input \x96 hover to zoom 4x)",IDC_STATIC,7,150,346,58
     CONTROL         "",IDC_SCRAPE_PREVIEW,"Static",SS_BLACKFRAME,14,162,332,40

@@ -109,6 +109,7 @@ private:
 	bool        _nopre[kNumAutoOcr];  // skip resize/char-spacing enhancement
 	bool        _nowl[kNumAutoOcr];   // disable the char whitelist
 	bool        _nocs[kNumAutoOcr];   // disable only the character-spacing step
+	bool        _dcorr[kNumAutoOcr];  // post-process decimal correction (re-insert a dropped '.')
 	// Map a transform code ("A0"/"A1"/"A2") to an engine index 0..kNumAutoOcr-1.
 	static int  AutoOcrIndex(const CString &transform);
 	std::vector<CString> _decimal_fields;   // field types that use decimal splitting (Vision Settings > Fields)

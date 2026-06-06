@@ -2659,6 +2659,24 @@ CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast,
 		ocr_result2 = StripBalanceUnitSuffix(ocr_result2);
 	}
 
+	// Post-processing decimal correction (per-engine option autoocr{N}.decimal_correct):
+	// when whole-image OCR dropped the decimal point, locate it in the image and re-insert
+	// it (1-2 places from the right). No-op when the result already has a '.'.
+	if ((transform == "AutoOcr0" || transform == "AutoOcr1" || transform == "AutoOcr2")
+			&& p_tablemap_db != NULL
+			&& img_orig.type() == CV_8UC3 && img_orig.cols >= 3 && img_orig.rows >= 3) {
+		CString dckey = (transform == "AutoOcr2") ? CString("autoocr2")
+			: (transform == "AutoOcr1") ? CString("autoocr1") : CString("autoocr0");
+		if (p_tablemap_db->GetSettingString(dckey, "decimal_correct") == "1") {
+			ocr_result = ApplyDecimalCorrection(std::string(CStringA(ocr_result)),
+				img_orig.data, img_orig.cols, img_orig.rows, (int)img_orig.step).c_str();
+			if (!ocr_result2.IsEmpty()) {
+				ocr_result2 = ApplyDecimalCorrection(std::string(CStringA(ocr_result2)),
+					img_orig.data, img_orig.cols, img_orig.rows, (int)img_orig.step).c_str();
+			}
+		}
+	}
+
 	if (ocr_result != "")
 		result_list.push_back(ocr_result);
 	if (ocr_result2 != "")

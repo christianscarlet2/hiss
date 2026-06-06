@@ -31,6 +31,7 @@ STrainerOcrSettings DefaultOcrSettings()
 	s.no_whitelist = false;
 	s.use_decimal_split = false;
 	s.decimal_split_margin_pct = 10;
+	s.use_decimal_correct = false;
 	return s;
 }
 
@@ -69,6 +70,85 @@ static CString StripBlacklistChars(CString s)
 		s.Remove(*p);
 	}
 	return s;
+}
+
+// Post-processing decimal correction. Locate the decimal dot in the crop and count the
+// digit glyphs to its right (stopping at the first wide gap, e.g. before a trailing " BB"),
+// returning the number of decimal places (1 or 2) or 0. Mirrors Vision/DecimalSplit.cpp's
+// DetectDecimalPlaces; kept local so the trainer needn't pull in Vision's PCH.
+static int TrainerDetectDecimalPlaces(const Mat &bgr)
+{
+	if (bgr.empty() || bgr.type() != CV_8UC3 || bgr.cols < 3 || bgr.rows < 3) return 0;
+	Mat gray; cvtColor(bgr, gray, COLOR_BGR2GRAY);
+	Mat th; threshold(gray, th, 0, 255, THRESH_BINARY | THRESH_OTSU);
+	if (countNonZero(th) > (int)(th.total() / 2)) bitwise_not(th, th);
+
+	Mat labels, stats, centroids;
+	int n = connectedComponentsWithStats(th, labels, stats, centroids, 8, CV_32S);
+	struct Comp { int x, y, w, h; };
+	std::vector<Comp> comps; int max_h = 0;
+	for (int i = 1; i < n; i++) {
+		int w = stats.at<int>(i, CC_STAT_WIDTH);
+		int h = stats.at<int>(i, CC_STAT_HEIGHT);
+		int a = stats.at<int>(i, CC_STAT_AREA);
+		if (a >= 2 && w >= 1 && h >= 1) {
+			Comp c; c.x = stats.at<int>(i, CC_STAT_LEFT); c.y = stats.at<int>(i, CC_STAT_TOP);
+			c.w = w; c.h = h; comps.push_back(c); if (h > max_h) max_h = h;
+		}
+	}
+	if (comps.size() < 2 || max_h < 3) return 0;
+
+	int baseline = 0, cap_top = gray.rows;
+	for (size_t i = 0; i < comps.size(); i++)
+		if (comps[i].h >= 0.6 * max_h) {
+			if (comps[i].y + comps[i].h > baseline) baseline = comps[i].y + comps[i].h;
+			if (comps[i].y < cap_top) cap_top = comps[i].y;
+		}
+	double band = (baseline - cap_top) > 1 ? (baseline - cap_top) : 1;
+
+	int dot_cx = -1;
+	for (size_t i = 0; i < comps.size(); i++) {
+		const Comp &c = comps[i];
+		double cy = c.y + c.h / 2.0, ar = c.w / (double)c.h;
+		bool is_short = c.h <= 0.55 * band, narrow = c.w <= 0.70 * band,
+			low = cy >= cap_top + 0.45 * band, onbase = (c.y + c.h) >= baseline - 0.30 * band,
+			squarish = ar >= 0.4 && ar <= 2.5;
+		if (is_short && narrow && low && onbase && squarish) {
+			int cx = c.x + c.w / 2; if (cx > dot_cx) dot_cx = cx;
+		}
+	}
+	if (dot_cx < 0) return 0;
+
+	std::vector<Comp> tall;
+	for (size_t i = 0; i < comps.size(); i++) if (comps[i].h >= 0.5 * max_h) tall.push_back(comps[i]);
+	std::sort(tall.begin(), tall.end(), [](const Comp &a, const Comp &b) { return a.x < b.x; });
+	std::vector<int> widths; for (size_t i = 0; i < tall.size(); i++) widths.push_back(tall[i].w);
+	std::sort(widths.begin(), widths.end());
+	int med_w = widths.empty() ? 1 : widths[widths.size() / 2];
+	double gap_thresh = 0.9 * med_w;
+
+	int count = 0, prev_right = -1; bool started = false;
+	for (size_t i = 0; i < tall.size(); i++) {
+		int cx = tall[i].x + tall[i].w / 2;
+		if (cx <= dot_cx) continue;
+		if (!started) { count = 1; prev_right = tall[i].x + tall[i].w; started = true; continue; }
+		int gap = tall[i].x - prev_right;
+		if (gap > gap_thresh) break;
+		count++; prev_right = tall[i].x + tall[i].w;
+	}
+	return (count == 1 || count == 2) ? count : 0;
+}
+
+// Insert a '.' into `result` (which has none) at the detected number of places from the
+// right, padding a leading zero when needed ("7" -> "0.07"). No-op when no decimal found.
+static CString TrainerApplyDecimalCorrection(CString result, const Mat &bgr)
+{
+	if (result.Find('.') != -1) return result;
+	int places = TrainerDetectDecimalPlaces(bgr);
+	if (places != 1 && places != 2) return result;
+	while (result.GetLength() <= places) result = "0" + result;
+	int len = result.GetLength();
+	return result.Left(len - places) + "." + result.Mid(len - places);
 }
 
 CTrainerOcr::CTrainerOcr()
@@ -503,6 +583,13 @@ void CTrainerOcr::Run(const Mat &crop_bgr, const STrainerOcrSettings &settings,
 	if (CString(region_name).MakeLower().Find("balance") != -1) {
 		ocr_result = StripBalanceUnitSuffix(ocr_result);
 		ocr_result2 = StripBalanceUnitSuffix(ocr_result2);
+	}
+
+	// Post-processing decimal correction (per-engine autoocr{N}.decimal_correct): re-insert
+	// a decimal point detected in the image when whole-image OCR dropped it.
+	if (_s.use_decimal_correct) {
+		ocr_result = TrainerApplyDecimalCorrection(ocr_result, crop_bgr);
+		ocr_result2 = TrainerApplyDecimalCorrection(ocr_result2, crop_bgr);
 	}
 
 	CString final_text;
