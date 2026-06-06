@@ -898,13 +898,17 @@ void CTrainerDlg::ApplyRegionTransform(int idx)
 	else if (tr.CompareNoCase("A1") == 0) autoIndex = 1;
 
 	if (autoIndex < 0) {
-		EnableOcrControls(false);
+		// This region isn't AutoOcr0/AutoOcr1, but the AutoOcr settings are GLOBAL
+		// per-transform (autoocr0/autoocr1 in the shared DB), not per-region -- so keep
+		// them editable. The Transform combo stays on the currently-selected AutoOcr
+		// engine; just note that this particular region won't be OCR'd with them.
+		EnableOcrControls(true);
 		CString msg;
-		msg.Format("Region '%s' uses transform '%s', not AutoOcr0/AutoOcr1 \x96 OCR settings are disabled for this region.",
+		msg.Format("Region '%s' uses transform '%s' (not AutoOcr) \x96 it isn't OCR'd, but the AutoOcr0/AutoOcr1 settings stay editable.",
 			_regions[idx].name.GetString(),
 			_regions[idx].transform.IsEmpty() ? CString("(none)").GetString() : _regions[idx].transform.GetString());
 		SetStatus(msg);
-		UpdatePreview();   // still show the scraped image (no editable OCR settings)
+		UpdatePreview();   // still show the scraped image
 		return;
 	}
 
