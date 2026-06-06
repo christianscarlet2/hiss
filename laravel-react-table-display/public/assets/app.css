@@ -25,17 +25,30 @@ body {
   display: grid;
   grid-template-rows: auto 1fr;
   background:
-    radial-gradient(120% 90% at 50% -10%, #1b1f23 0%, #0a0c0e 55%, #040506 100%);
+    radial-gradient(120% 90% at 50% -10%, #120709 0%, #07090a 55%, #020203 100%);
+}
+
+/* red Matrix rain, behind everything, filling the black area around the table */
+.matrix-rain {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+  pointer-events: none;
+  opacity: .5;
 }
 
 /* ---- top bar -------------------------------------------------------------- */
 .topbar {
+  position: relative;
+  z-index: 2;
   height: 46px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  border-bottom: 1px solid #23272c;
+  border-bottom: 1px solid #2a1416;
   background: linear-gradient(180deg, #16191d 0%, #0d0f12 100%);
   box-shadow: 0 1px 0 #000, 0 6px 18px rgba(0, 0, 0, .45);
 }
@@ -73,13 +86,15 @@ body {
 /* ---- table + felt --------------------------------------------------------- */
 .table {
   position: relative;
+  z-index: 2;
   /* A fixed-proportion table area that always fits the viewport (centred, letterboxed)
-     so the elliptical layout keeps its shape and nothing is ever cut off. */
+     so the elliptical layout keeps its shape and nothing is ever cut off. Sized large
+     (taller 3:2 ratio, slim margins) so seats/cards don't crowd the centre. */
   align-self: center;
   justify-self: center;
-  width: min(calc(100vw - 24px), calc((100vh - 72px) * 1.62));
-  aspect-ratio: 1.62 / 1;
-  max-height: calc(100vh - 72px);
+  width: min(calc(100vw - 12px), calc((100vh - 58px) * 1.5));
+  aspect-ratio: 1.5 / 1;
+  max-height: calc(100vh - 58px);
   border-radius: 18px;
   border: 1px solid #1b1e22;
   overflow: hidden;
@@ -115,11 +130,11 @@ body {
   position: absolute;
   left: 50%;
   top: 52%;
-  width: 52%;
-  max-width: 380px;
+  width: 50%;
+  max-width: 360px;
   transform: translate(-50%, -50%);
   pointer-events: none;
-  opacity: .55;
+  opacity: .42;
   z-index: 0;
 }
 
@@ -152,6 +167,25 @@ body {
     drop-shadow(0 2px 2px rgba(0, 0, 0, .6))
     drop-shadow(0 0 14px rgba(209, 31, 51, .55))
     drop-shadow(0 0 30px rgba(209, 31, 51, .3));
+}
+
+/* the serpent beneath the cursive brand */
+.felt-snake {
+  position: absolute;
+  left: 50%;
+  top: 26%;
+  width: 60%;
+  max-width: 480px;
+  transform: translate(-50%, -50%) rotate(-1deg);
+  z-index: 2;
+  pointer-events: none;
+  opacity: .92;
+}
+
+.felt-snake svg {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 /* embroidered branding: bone "thread" (gradient fill set inline) on the felt */

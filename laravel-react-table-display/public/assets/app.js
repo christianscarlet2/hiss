@@ -1,5 +1,6 @@
 var useEffect = React.useEffect;
 var useState = React.useState;
+var useRef = React.useRef;
 
 // Seats are spread evenly around the felt ellipse (chair 0 at the bottom centre, then
 // distributed by equal angle). cx/cy = .5/.49, semi-axes .45 x .38.
@@ -121,6 +122,35 @@ var FELT_LOGO_SVG =
   '</g>' +
 '</svg>';
 
+// A long sinuous serpent drawn under the cursive brand: green scaled body, little horns,
+// glowing red eyes and a forked scarlet tongue.
+var SNAKE_SVG =
+'<svg viewBox="0 0 740 150" xmlns="http://www.w3.org/2000/svg">' +
+  '<defs>' +
+    '<linearGradient id="snakeBody" x1="0" y1="0" x2="1" y2="0">' +
+      '<stop offset="0%" stop-color="#0a4d2a"/>' +
+      '<stop offset="45%" stop-color="#1f9a52"/>' +
+      '<stop offset="100%" stop-color="#0e6e3c"/>' +
+    '</linearGradient>' +
+    '<filter id="snakeShadow" x="-20%" y="-50%" width="140%" height="200%">' +
+      '<feDropShadow dx="0" dy="2" stdDeviation="2.2" flood-color="#000" flood-opacity=".55"/>' +
+    '</filter>' +
+    '<filter id="eyeGlow" x="-200%" y="-200%" width="500%" height="500%">' +
+      '<feGaussianBlur stdDeviation="1.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>' +
+    '</filter>' +
+  '</defs>' +
+  '<path d="M26 80 C120 14,200 138,300 76 C386 24,470 134,560 74 C612 40,656 104,690 70" fill="none" stroke="url(#snakeBody)" stroke-width="17" stroke-linecap="round" filter="url(#snakeShadow)"/>' +
+  '<path d="M26 80 C120 14,200 138,300 76 C386 24,470 134,560 74 C612 40,656 104,690 70" fill="none" stroke="#e7dcbb" stroke-width="3" stroke-linecap="round" stroke-dasharray="2 12" opacity=".45"/>' +
+  '<path d="M676 58 Q712 54 724 70 Q712 86 676 82 Q690 70 676 58 z" fill="url(#snakeBody)" stroke="#0a4324" stroke-width="1.5" filter="url(#snakeShadow)"/>' +
+  '<g stroke="#0a4324" stroke-width="3" stroke-linecap="round" fill="none">' +
+    '<path d="M684 58 l-8 -16"/><path d="M696 57 l-1 -18"/>' +
+  '</g>' +
+  '<g filter="url(#eyeGlow)"><circle cx="694" cy="65" r="3.4" fill="#ff2b2b"/><circle cx="704" cy="68" r="3" fill="#ff2b2b"/></g>' +
+  '<g stroke="#e21330" stroke-width="2.6" stroke-linecap="round" fill="none" filter="url(#snakeShadow)">' +
+    '<path d="M722 70 l22 -6 M722 70 l22 8 M722 70 l16 1"/>' +
+  '</g>' +
+'</svg>';
+
 function CardView(props) {
   var value = props.value || '';
   var isBack = value === 'BACK' || value === 'CARD_BACK' || value === '??';
@@ -210,6 +240,52 @@ function DealerButton(props) {
   return e('div', { className: 'dealer', style: { left: (x * 100) + '%', top: (y * 100) + '%' } }, 'D');
 }
 
+// Red "Matrix" digital rain, painted on a full-window canvas behind the table so it shows
+// through the black area around the felt.
+function MatrixRain() {
+  var ref = useRef(null);
+  useEffect(function () {
+    var canvas = ref.current;
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    var chars = '01アツニ蛇HISSCARLETBEAST☠⛧666$';
+    var fontSize = 16;
+    var W, H, drops;
+    function resize() {
+      W = canvas.width = window.innerWidth;
+      H = canvas.height = window.innerHeight;
+      var cols = Math.max(1, Math.floor(W / fontSize));
+      drops = [];
+      for (var i = 0; i < cols; i++) drops[i] = Math.floor(Math.random() * -50);
+    }
+    resize();
+    window.addEventListener('resize', resize);
+    var raf, last = 0;
+    function frame(ts) {
+      raf = requestAnimationFrame(frame);
+      if (ts - last < 55) return;   // ~18 fps, gentle
+      last = ts;
+      ctx.fillStyle = 'rgba(3,4,5,0.10)';     // fade the trails
+      ctx.fillRect(0, 0, W, H);
+      ctx.font = fontSize + 'px monospace';
+      for (var i = 0; i < drops.length; i++) {
+        var ch = chars.charAt(Math.floor(Math.random() * chars.length));
+        var x = i * fontSize, y = drops[i] * fontSize;
+        ctx.fillStyle = (Math.random() > 0.972) ? '#ffd2d2' : '#b21422';   // bright heads, dark-red tail
+        ctx.fillText(ch, x, y);
+        if (y > H && Math.random() > 0.975) drops[i] = 0;
+        drops[i] += 1;
+      }
+    }
+    raf = requestAnimationFrame(frame);
+    return function () {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', resize);
+    };
+  }, []);
+  return e('canvas', { className: 'matrix-rain', ref: ref });
+}
+
 function App() {
   var statePair = useState(null);
   var state = statePair[0];
@@ -261,6 +337,7 @@ function App() {
   DISPLAY.unit = unit;
   DISPLAY.bb = Number(limits.bblind || 0);
   return e('main', { className: 'app' },
+    e(MatrixRain),
     e('header', { className: 'topbar' },
       e('div', { className: 'title' }, 'Hiss React Table Display — port ' + instancePort),
       e('div', { className: 'meta' },
@@ -272,16 +349,17 @@ function App() {
     e('section', { className: 'table' },
       e('div', { className: 'felt' },
         e('div', { className: 'felt-logo', dangerouslySetInnerHTML: { __html: FELT_LOGO_SVG } }),
-        e('div', { className: 'felt-script' }, 'Hiss by Scarlet Beast')
+        e('div', { className: 'felt-script' }, 'Hiss by Scarlet Beast'),
+        e('div', { className: 'felt-snake', dangerouslySetInnerHTML: { __html: SNAKE_SVG } })
       ),
       e('div', { className: 'center' },
         e('div', { className: 'cards' }, (table.commonCards || []).map(function (card, index) {
           return e(CardView, { key: index, value: card });
         })),
-        e('div', { className: 'pot' }, 'Pot ' + bb(table.pot))
+        e('div', { className: 'pot', onDoubleClick: toggleUnit, title: 'Double-click to toggle BB / $' }, 'Pot ' + bb(table.pot))
       ),
       (table.players || []).map(function (player) {
-        return e(Player, { key: player.chair, player: player, nchairs: table.nchairs, isOmaha: !!table.isomaha });
+        return e(Player, { key: player.chair, player: player, nchairs: table.nchairs, isOmaha: !!table.isomaha, onToggleUnit: toggleUnit });
       }),
       (table.players || []).filter(function (p) { return p.dealer; }).map(function (p) {
         return e(DealerButton, { key: 'd' + p.chair, chair: p.chair, nchairs: table.nchairs });
