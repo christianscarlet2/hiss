@@ -282,12 +282,34 @@ void CTrainerServer::HandleClient(SOCKET client)
 			TrainerDB_SetSettingArray("scrape_fields", "fields", fields);
 			if (g_trainer_main_hwnd != NULL) ::PostMessage(g_trainer_main_hwnd, WM_TRAINER_RELOAD_REGIONS, 0, 0);
 		}
-		bool bal = false, nam = false;
+		bool bal = false, nam = false, bet = false;
 		for (size_t i = 0; i < fields.size(); ++i) {
-			if (fields[i] == "balance") bal = true; else if (fields[i] == "name") nam = true;
+			if (fields[i] == "balance") bal = true;
+			else if (fields[i] == "name") nam = true;
+			else if (fields[i] == "bet") bet = true;
 		}
 		CStringA body;
-		body.Format("{\"ok\":true,\"balance\":%s,\"name\":%s}", bal ? "true" : "false", nam ? "true" : "false");
+		body.Format("{\"ok\":true,\"balance\":%s,\"name\":%s,\"bet\":%s}",
+			bal ? "true" : "false", nam ? "true" : "false", bet ? "true" : "false");
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	// API: "No OCR prefill" toggle for the Sample Gen tool. When on, the capture
+	// loop adds rows with empty text (no OCR prepopulation) and keeps blank/empty
+	// captures instead of skipping them. Stored in the shared DB so the capture
+	// loop (TrainerDlg::CaptureTick) can read it.
+	if (path.CompareNoCase("/api/noprefill") == 0) {
+		CStringA on = UrlDecode(QueryValue(query, "on"));
+		if (!on.IsEmpty()) {
+			bool want = (on == "1" || on.CompareNoCase("true") == 0);
+			TrainerDB_SetSetting("sample_gen", "no_prefill", want ? CString("1") : CString("0"));
+		}
+		CString cur = TrainerDB_GetSetting("sample_gen", "no_prefill");
+		bool is_on = (cur == "1");
+		CStringA body;
+		body.Format("{\"ok\":true,\"on\":%s}", is_on ? "true" : "false");
 		CStringA response = Response(body, "application/json; charset=utf-8");
 		send(client, response.GetString(), response.GetLength(), 0);
 		return;

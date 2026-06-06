@@ -1528,6 +1528,9 @@ void CTrainerDlg::CaptureTick()
 		int mode = (p_sample_store != NULL) ? p_sample_store->TransformMode() : TRAINER_MODE_AUTOOCR;
 		int index = (p_sample_store != NULL) ? p_sample_store->TransformIndex() : 0;
 		bool ignore_bad = (IsDlgButtonChecked(IDC_IGNORE_BAD) == BST_CHECKED);
+		// "No OCR prefill" (Sample Gen tool): add rows with empty text and keep
+		// blank/empty captures instead of skipping them, for manual labeling.
+		bool no_prefill = (TrainerDB_GetSetting("sample_gen", "no_prefill") == "1");
 		STrainerOcrSettings settings = ReadSettings();
 		for (size_t i = 0; i < _regions.size(); ++i) {
 			if (!_regions[i].enabled) {
@@ -1565,12 +1568,16 @@ void CTrainerDlg::CaptureTick()
 				_ocr.Run(bgr, rs, _regions[i].name, &ocr_preview, &text, &conf);
 			}
 
-			if (text.IsEmpty()) {
-				continue;   // nothing recognized with the current transform
+			if (!no_prefill) {
+				if (text.IsEmpty()) {
+					continue;   // nothing recognized with the current transform
+				}
+				if (mode == TRAINER_MODE_AUTOOCR && ignore_bad && conf < kMinOcrConfidence) {
+					continue;
+				}
 			}
-			if (mode == TRAINER_MODE_AUTOOCR && ignore_bad && conf < kMinOcrConfidence) {
-				continue;
-			}
+			// With "No OCR prefill" the row is added blank for manual labeling.
+			CStringA guess = no_prefill ? CStringA("") : CStringA(text);
 
 			std::vector<unsigned char> png, png_transformed;
 			std::vector<int> params;
@@ -1588,7 +1595,7 @@ void CTrainerDlg::CaptureTick()
 				imencode(".png", ocr_preview, png_transformed, params);
 			}
 			if (p_sample_store != NULL) {
-				p_sample_store->Add(CStringA(_regions[i].name), png, png_transformed, CStringA(text),
+				p_sample_store->Add(CStringA(_regions[i].name), png, png_transformed, guess,
 					cur, w, h, (unsigned long)_regions[i].color, _regions[i].radius);
 			}
 		}

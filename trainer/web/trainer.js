@@ -346,10 +346,12 @@
   // Font Creation tool via the DB).
   var scrapeBalances = document.getElementById('scrapeBalances');
   var scrapeNames = document.getElementById('scrapeNames');
+  var scrapeBets = document.getElementById('scrapeBets');
   function applyScrapeState(data) {
     if (!data) return;
     if (scrapeBalances) scrapeBalances.checked = !!data.balance;
     if (scrapeNames) scrapeNames.checked = !!data.name;
+    if (scrapeBets) scrapeBets.checked = !!data.bet;
   }
   function loadScrapeFields() {
     api('GET', '/api/scrapefields', function (status, data) { if (status === 200) applyScrapeState(data); });
@@ -360,14 +362,30 @@
   }
   if (scrapeBalances) scrapeBalances.addEventListener('change', function () { toggleScrapeField('balance', scrapeBalances.checked); });
   if (scrapeNames) scrapeNames.addEventListener('change', function () { toggleScrapeField('name', scrapeNames.checked); });
+  if (scrapeBets) scrapeBets.addEventListener('change', function () { toggleScrapeField('bet', scrapeBets.checked); });
   loadScrapeFields();
+
+  // "No OCR prefill": when on, captured rows are added with EMPTY text (no OCR
+  // prepopulation) and blank/empty captures are kept as rows instead of being
+  // skipped. Auto-dedup is also suppressed so those empty rows survive. The flag
+  // lives in the DB (read by the capture loop in the trainer).
+  var noPrefill = document.getElementById('noPrefill');
+  function loadNoPrefill() {
+    api('GET', '/api/noprefill', function (status, data) {
+      if (status === 200 && data && noPrefill) noPrefill.checked = !!data.on;
+    });
+  }
+  if (noPrefill) noPrefill.addEventListener('change', function () {
+    api('POST', '/api/noprefill?on=' + (noPrefill.checked ? 1 : 0), function () {});
+  });
+  loadNoPrefill();
 
   loadFontInfo();
   pollCapture();
   refresh();
   // Each poll: optionally auto-remove duplicate samples first, then re-sync.
   setInterval(function () {
-    if (autoDedup && autoDedup.checked) {
+    if (autoDedup && autoDedup.checked && !(noPrefill && noPrefill.checked)) {
       api('POST', '/api/samples/dedup', function () { refresh(); pollCapture(); });
     } else {
       refresh();
