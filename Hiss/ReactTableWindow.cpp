@@ -121,7 +121,9 @@ BOOL CReactTableWindow::Create(CWnd *owner, unsigned short port)
 		WS_EX_TOOLWINDOW,
 		class_name,
 		"Hiss:",
-		WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+		// No WS_CAPTION: we draw our own title bar. WS_THICKFRAME keeps it sizable and
+		// keeps the DWM shadow; the remaining frame is trimmed in WM_NCCALCSIZE.
+		(WS_OVERLAPPEDWINDOW & ~WS_CAPTION) | WS_VISIBLE,
 		CW_USEDEFAULT,
 		CW_USEDEFAULT,
 		kReactTableWidth,
@@ -310,12 +312,15 @@ BOOL CReactTableWindow::OnNcActivate(BOOL bActive)
 void CReactTableWindow::OnTimer(UINT_PTR nIDEvent)
 {
 	if (nIDEvent == kTitleSyncTimer) {
-		CString current = "Hiss:";
+		CString current;
 		if (_owner != NULL && ::IsWindow(_owner->GetSafeHwnd())) {
 			_owner->GetWindowText(current);
 		}
+		current.Trim();
 		if (current.IsEmpty()) {
 			current = "Hiss:";
+		} else if (current.Find("Hiss") < 0) {
+			current = "Hiss: " + current;   // always keep the brand prefix
 		}
 		if (current != _title) {
 			_title = current;
