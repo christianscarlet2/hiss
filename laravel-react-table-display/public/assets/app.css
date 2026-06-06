@@ -162,22 +162,21 @@ body {
   font-weight: 700;
   font-size: clamp(26px, 4.4vw, 62px);
   letter-spacing: 1px;
-  color: rgba(18, 9, 4, 0.82);          /* charred scorch */
+  color: rgba(22, 11, 5, 0.55);         /* charred scorch (softened ~70%) */
   text-shadow:
-    0 -1px 1px rgba(0, 0, 0, 0.55),      /* dark recessed top edge */
-    0 1px 0 rgba(120, 92, 40, 0.30),     /* warm singed rim below (pressed-in) */
-    0 0 7px rgba(70, 26, 10, 0.55),      /* scorch halo */
-    0 0 16px rgba(120, 40, 14, 0.30);
+    0 -1px 1px rgba(0, 0, 0, 0.17),      /* dark recessed top edge */
+    0 1px 0 rgba(120, 92, 40, 0.10),     /* warm singed rim below (pressed-in) */
+    0 0 6px rgba(70, 26, 10, 0.17),      /* scorch halo */
+    0 0 14px rgba(120, 40, 14, 0.10);
 }
 
 /* the word "Hiss" branded in deep scarlet (still burned-looking) */
 .felt-script .hiss {
-  color: #7c0d15;
+  color: #8a1622;
   text-shadow:
-    0 -1px 1px rgba(0, 0, 0, 0.6),
-    0 1px 0 rgba(150, 70, 40, 0.30),
-    0 0 9px rgba(150, 18, 30, 0.6),
-    0 0 20px rgba(150, 18, 30, 0.35);
+    0 -1px 1px rgba(0, 0, 0, 0.2),
+    0 0 8px rgba(150, 18, 30, 0.22),
+    0 0 18px rgba(150, 18, 30, 0.12);
 }
 
 /* a blurred, irregular scorched patch burned into the felt behind the brand */
@@ -191,6 +190,7 @@ body {
   transform: translate(-50%, -50%);
   z-index: -1;
   pointer-events: none;
+  opacity: .3;                 /* burn scar dialed down ~70% */
   border-radius: 50%;
   filter: blur(7px);
   background:
@@ -211,6 +211,7 @@ body {
   transform: translate(-50%, -50%);
   z-index: -1;
   pointer-events: none;
+  opacity: .3;                 /* char specks dialed down ~70% */
   background:
     radial-gradient(circle 3px at 9% 28%, rgba(8, 3, 1, .65), transparent),
     radial-gradient(circle 2px at 19% 78%, rgba(8, 3, 1, .55), transparent),
@@ -604,22 +605,34 @@ body {
   z-index: 4;
 }
 
+/* The hero ring is drawn as the hole-cards' own centred backdrop so it is ALWAYS centred
+   on the cards (the absolutely-positioned .seat-ring couldn't be reliably aligned). */
 .player.hero .seat-ring {
-  /* big enough to contain the larger hero cards (2 x 52w overlapped, 73 tall) and centred
-     on them (card centre is ~37px down from the box top) */
+  display: none;
+}
+
+.player.hero .holecards {
+  position: relative;
+  z-index: 0;
+  margin-bottom: 22px;
+}
+
+.player.hero .holecards::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
   width: 118px;
   height: 118px;
-  top: 37px;
-  border-color: var(--scarlet);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 2px solid var(--scarlet);
   background: radial-gradient(circle at 50% 38%, #3a1216 0%, #1c0a0c 65%, #100506 100%);
   box-shadow:
     inset 0 0 0 1px rgba(209, 31, 51, .55),
     0 0 26px rgba(209, 31, 51, .55),
     0 0 54px rgba(232, 196, 102, .18);
-}
-
-.player.hero .holecards {
-  margin-bottom: 22px;
+  z-index: -1;
 }
 
 .player.hero .holecards .card {
