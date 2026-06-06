@@ -68,6 +68,7 @@ BEGIN_MESSAGE_MAP(CReactTableWindow, CWnd)
 	ON_WM_MOUSELEAVE()
 	ON_WM_GETMINMAXINFO()
 	ON_WM_NCACTIVATE()
+	ON_WM_TIMER()
 END_MESSAGE_MAP()
 
 CReactTableWindow::CReactTableWindow()
@@ -82,7 +83,10 @@ CReactTableWindow::CReactTableWindow()
 	_hot_tool = -1;
 	_tracking_mouse = false;
 	_gdiplus_token = 0;
+	_title = "Hiss:";
 }
+
+static const UINT_PTR kTitleSyncTimer = 0x52544D54;   // refresh the mirrored title
 
 CReactTableWindow::~CReactTableWindow()
 {
@@ -138,6 +142,7 @@ int CReactTableWindow::OnCreate(LPCREATESTRUCT lpCreateStruct)
 
 	GdiplusStartupInput gdiplus_startup_input;
 	GdiplusStartup(&_gdiplus_token, &gdiplus_startup_input, NULL);
+	SetTimer(kTitleSyncTimer, 400, NULL);   // keep the title in sync with the main window
 
 	HWND hwnd = GetSafeHwnd();
 	HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
@@ -301,6 +306,29 @@ BOOL CReactTableWindow::OnNcActivate(BOOL bActive)
 	return TRUE;   // skip the default caption repaint (we have none)
 }
 
+// Mirror the main Hiss window's caption (it changes dynamically); repaint only when it does.
+void CReactTableWindow::OnTimer(UINT_PTR nIDEvent)
+{
+	if (nIDEvent == kTitleSyncTimer) {
+		CString current = "Hiss:";
+		if (_owner != NULL && ::IsWindow(_owner->GetSafeHwnd())) {
+			_owner->GetWindowText(current);
+		}
+		if (current.IsEmpty()) {
+			current = "Hiss:";
+		}
+		if (current != _title) {
+			_title = current;
+			CRect client;
+			GetClientRect(&client);
+			CRect title_strip(0, 0, client.Width(), kTitleBarHeight);
+			InvalidateRect(title_strip, FALSE);
+		}
+		return;
+	}
+	CWnd::OnTimer(nIDEvent);
+}
+
 void CReactTableWindow::GetButtonRect(int index, CRect *rect)
 {
 	CRect client;
@@ -350,13 +378,23 @@ void CReactTableWindow::OnPaint()
 	int width = client.Width();
 	int H = kTitleBarHeight;
 	int chrome = ChromeHeight();
+	if (width <= 0) {
+		return;
+	}
 
-	Graphics g(dc.GetSafeHdc());
+	Graphics screen(dc.GetSafeHdc());
+	// Below the chrome stays dark until the WebView2 covers it (single blit, no flicker).
+	SolidBrush base(Color(255, 14, 16, 20));
+	if (client.Height() > chrome) {
+		screen.FillRectangle(&base, 0, chrome, width, client.Height() - chrome);
+	}
+
+	// Render the whole chrome into an offscreen buffer, then blit it once. This is what
+	// kills the hover flicker (the chrome was previously drawn straight to the window).
+	Bitmap buffer(width, chrome, PixelFormat32bppPARGB);
+	Graphics g(&buffer);
 	g.SetSmoothingMode(SmoothingModeAntiAlias);
 	g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
-
-	SolidBrush base(Color(255, 14, 16, 20));
-	g.FillRectangle(&base, 0, 0, width, client.Height());
 
 	// ---- Row 1: title bar ----
 	LinearGradientBrush bar(Point(0, 0), Point(0, H), Color(255, 28, 31, 37), Color(255, 15, 17, 21));
@@ -374,7 +412,8 @@ void CReactTableWindow::OnPaint()
 	sf_l.SetLineAlignment(StringAlignmentCenter);
 	sf_l.SetFormatFlags(StringFormatFlagsNoWrap);
 	RectF title_rect(28.0f, 0.0f, (REAL)(width - 28 - 3 * kCaptionButtonWidth - 8), (REAL)H);
-	g.DrawString(L"Hiss:", -1, &title_font, title_rect, &sf_l, &title_brush);
+	CStringW wtitle(_title);
+	g.DrawString(wtitle, wtitle.GetLength(), &title_font, title_rect, &sf_l, &title_brush);
 
 	for (int i = 0; i < 3; ++i) {
 		CRect br;
@@ -459,6 +498,8 @@ void CReactTableWindow::OnPaint()
 		RectF rf((REAL)tr.left, (REAL)tr.top, (REAL)tr.Width(), (REAL)tr.Height());
 		g.DrawString(kToolItems[i].glyph, -1, &icon_font, rf, &sf_ic, &gb);
 	}
+
+	screen.DrawImage(&buffer, 0, 0);
 }
 
 void CReactTableWindow::OnLButtonDown(UINT nFlags, CPoint point)

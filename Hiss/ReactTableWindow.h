@@ -29,6 +29,7 @@ protected:
 	afx_msg void OnMouseLeave();
 	afx_msg void OnGetMinMaxInfo(MINMAXINFO *lpMMI);
 	afx_msg BOOL OnNcActivate(BOOL bActive);
+	afx_msg void OnTimer(UINT_PTR nIDEvent);
 
 private:
 	void ResizeBrowser(void);
@@ -55,6 +56,7 @@ private:
 	int _hot_tool;
 	bool _tracking_mouse;
 	ULONG_PTR _gdiplus_token;
+	CString _title;   // mirrors the main window's caption; refreshed by a timer
 };
 
 extern CReactTableWindow *p_react_table_window;
