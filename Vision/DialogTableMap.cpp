@@ -45,6 +45,7 @@
 #include "DecimalSplit.h"               // FindDecimalSplitX (balance decimal-split OCR)
 #include "..\Hiss\NumericalFunctions.h"
 #include "..\Shared\WindowCapture.h"
+#include "..\AutoCrop.h"
 
 
 const char* fontsList = "aAbBcCdDeEfFgGhHiIjJkKlLmMnNoOpPqQrRsStTuUvVwWxXyYzZ0123456789.,_-$";
@@ -209,6 +210,9 @@ CDlgTableMap::CDlgTableMap(CWnd* pParent /*=NULL*/) : CDialog(CDlgTableMap::IDD,
 	picker_cursor = false;
 	picker_cursor2 = false;
 	picker_cursor3 = false;
+	ac_picker_cursor1 = false;
+	ac_picker_cursor2 = false;
+	ac_picker_cursor3 = false;
 	hCurPicker = ::LoadCursor(AfxGetInstanceHandle(), MAKEINTRESOURCE(IDC_PICKERCURSOR));
 	hCurStandard = ::LoadCursor(NULL, IDC_ARROW);
 }
@@ -266,6 +270,28 @@ void CDlgTableMap::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_BOTTOM2, m_Bottom2);
 	DDX_Control(pDX, IDC_RECT2_ENABLE, m_Rect2Enable);
 	DDX_Control(pDX, IDC_DRAWRECT2, m_DrawRect2);
+	DDX_Control(pDX, IDC_AC_ENABLE, m_AcEnable);
+	DDX_Control(pDX, IDC_AC_C1EN, m_AcC1En);
+	DDX_Control(pDX, IDC_AC_A1, m_AcA1);
+	DDX_Control(pDX, IDC_AC_R1, m_AcR1);
+	DDX_Control(pDX, IDC_AC_G1, m_AcG1);
+	DDX_Control(pDX, IDC_AC_B1, m_AcB1);
+	DDX_Control(pDX, IDC_AC_PICK1, m_AcPick1);
+	DDX_Control(pDX, IDC_AC_TOL1, m_AcTol1);
+	DDX_Control(pDX, IDC_AC_C2EN, m_AcC2En);
+	DDX_Control(pDX, IDC_AC_A2, m_AcA2);
+	DDX_Control(pDX, IDC_AC_R2, m_AcR2);
+	DDX_Control(pDX, IDC_AC_G2, m_AcG2);
+	DDX_Control(pDX, IDC_AC_B2, m_AcB2);
+	DDX_Control(pDX, IDC_AC_PICK2, m_AcPick2);
+	DDX_Control(pDX, IDC_AC_TOL2, m_AcTol2);
+	DDX_Control(pDX, IDC_AC_C3EN, m_AcC3En);
+	DDX_Control(pDX, IDC_AC_A3, m_AcA3);
+	DDX_Control(pDX, IDC_AC_R3, m_AcR3);
+	DDX_Control(pDX, IDC_AC_G3, m_AcG3);
+	DDX_Control(pDX, IDC_AC_B3, m_AcB3);
+	DDX_Control(pDX, IDC_AC_PICK3, m_AcPick3);
+	DDX_Control(pDX, IDC_AC_TOL3, m_AcTol3);
 	DDX_Control(pDX, IDC_RADIUS, m_Radius);
 	DDX_Control(pDX, IDC_RESULT, m_Result);
 	DDX_Control(pDX, IDC_NEW, m_New);
@@ -354,6 +380,25 @@ BEGIN_MESSAGE_MAP(CDlgTableMap, CDialog)
 	ON_EN_KILLFOCUS(IDC_RIGHT2, &CDlgTableMap::OnRegionChange)
 	ON_EN_KILLFOCUS(IDC_BOTTOM2, &CDlgTableMap::OnRegionChange)
 	ON_BN_CLICKED(IDC_RECT2_ENABLE, &CDlgTableMap::OnRegionChange)
+	ON_BN_CLICKED(IDC_AC_ENABLE, &CDlgTableMap::OnRegionChange)
+	ON_BN_CLICKED(IDC_AC_C1EN, &CDlgTableMap::OnRegionChange)
+	ON_BN_CLICKED(IDC_AC_C2EN, &CDlgTableMap::OnRegionChange)
+	ON_BN_CLICKED(IDC_AC_C3EN, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_AC_A1, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_AC_R1, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_AC_G1, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_AC_B1, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_AC_TOL1, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_AC_A2, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_AC_R2, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_AC_G2, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_AC_B2, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_AC_TOL2, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_AC_A3, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_AC_R3, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_AC_G3, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_AC_B3, &CDlgTableMap::OnRegionChange)
+	ON_EN_KILLFOCUS(IDC_AC_TOL3, &CDlgTableMap::OnRegionChange)
 	ON_EN_KILLFOCUS(IDC_LEFT, &CDlgTableMap::OnRegionChange)
 	ON_EN_KILLFOCUS(IDC_TOP, &CDlgTableMap::OnRegionChange)
 	ON_EN_KILLFOCUS(IDC_BOTTOM, &CDlgTableMap::OnRegionChange)
@@ -608,6 +653,10 @@ BOOL CDlgTableMap::OnInitDialog()
 	// Second/third-colour eyedroppers share the same bitmap.
 	m_Picker2.SetBitmap(h_picker_bitmap);
 	m_Picker3.SetBitmap(h_picker_bitmap);
+	// Auto Cropper eyedroppers share the same bitmap.
+	m_AcPick1.SetBitmap(h_picker_bitmap);
+	m_AcPick2.SetBitmap(h_picker_bitmap);
+	m_AcPick3.SetBitmap(h_picker_bitmap);
 
 	// Set text on nudge buttons
 	m_NudgeTaller.SetFont(&nudge_font);
@@ -1415,6 +1464,29 @@ void CDlgTableMap::OnRegionChange()
 		m_Bottom2.GetWindowText(text);
 		sel_region->second.bottom2 = strtoul(text.GetString(), NULL, 10);
 		sel_region->second.rect2_enabled = (m_Rect2Enable.GetCheck() == BST_CHECKED);
+
+		// Auto Cropper (3 colours, ABGR packing like the colour cubes; tol is decimal).
+		sel_region->second.autocrop_enabled = (m_AcEnable.GetCheck() == BST_CHECKED);
+		{
+			CString a, r, g, b, tol;
+			m_AcA1.GetWindowText(a); m_AcR1.GetWindowText(r); m_AcG1.GetWindowText(g); m_AcB1.GetWindowText(b);
+			sel_region->second.autocrop_color1 = ((strtoul(a.GetString(), NULL, 16)) << 24) +
+				((strtoul(b.GetString(), NULL, 16)) << 16) + ((strtoul(g.GetString(), NULL, 16)) << 8) + (strtoul(r.GetString(), NULL, 16));
+			m_AcTol1.GetWindowText(tol); sel_region->second.autocrop_tol1 = strtoul(tol.GetString(), NULL, 10);
+			sel_region->second.autocrop_c1_enabled = (m_AcC1En.GetCheck() == BST_CHECKED);
+
+			m_AcA2.GetWindowText(a); m_AcR2.GetWindowText(r); m_AcG2.GetWindowText(g); m_AcB2.GetWindowText(b);
+			sel_region->second.autocrop_color2 = ((strtoul(a.GetString(), NULL, 16)) << 24) +
+				((strtoul(b.GetString(), NULL, 16)) << 16) + ((strtoul(g.GetString(), NULL, 16)) << 8) + (strtoul(r.GetString(), NULL, 16));
+			m_AcTol2.GetWindowText(tol); sel_region->second.autocrop_tol2 = strtoul(tol.GetString(), NULL, 10);
+			sel_region->second.autocrop_c2_enabled = (m_AcC2En.GetCheck() == BST_CHECKED);
+
+			m_AcA3.GetWindowText(a); m_AcR3.GetWindowText(r); m_AcG3.GetWindowText(g); m_AcB3.GetWindowText(b);
+			sel_region->second.autocrop_color3 = ((strtoul(a.GetString(), NULL, 16)) << 24) +
+				((strtoul(b.GetString(), NULL, 16)) << 16) + ((strtoul(g.GetString(), NULL, 16)) << 8) + (strtoul(r.GetString(), NULL, 16));
+			m_AcTol3.GetWindowText(tol); sel_region->second.autocrop_tol3 = strtoul(tol.GetString(), NULL, 10);
+			sel_region->second.autocrop_c3_enabled = (m_AcC3En.GetCheck() == BST_CHECKED);
+		}
 
 		// transform type
 		m_Transform.GetLBText(m_Transform.GetCurSel(), text);
@@ -2612,6 +2684,22 @@ CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast,
 	}
 	m_ocr_no_preprocess = engine_no_preprocess;
 	bool binarize_for_ocr = is_balance && !engine_no_preprocess;
+
+	// Auto Cropper: crop the scrape to the bounding box of pixels matching any enabled
+	// colour cube (applies to every transform). No-op when this region's Auto Cropper
+	// is disabled. Done before the BGR copy so all downstream OCR paths see the crop.
+	if (p_tablemap != NULL && !region_name.IsEmpty()) {
+		RMapCI acr = p_tablemap->r$()->find(region_name.GetString());
+		if (acr != p_tablemap->r$()->end()) {
+			SAutoCropColor accols[3] = {
+				{ acr->second.autocrop_color1, acr->second.autocrop_tol1, acr->second.autocrop_c1_enabled },
+				{ acr->second.autocrop_color2, acr->second.autocrop_tol2, acr->second.autocrop_c2_enabled },
+				{ acr->second.autocrop_color3, acr->second.autocrop_tol3, acr->second.autocrop_c3_enabled },
+			};
+			Mat ac = AutoCropToColors(img_orig, acr->second.autocrop_enabled, accols);
+			if (!ac.empty() && ac.data != img_orig.data) img_orig = ac;
+		}
+	}
 	// The OCR input arrives 4-channel (BGRA) from the table bitmap, but the byte-level decimal
 	// helpers (FindDecimalSplitX / DetectDecimalPlaces) interpret the buffer as 3-channel BGR.
 	// Build a contiguous BGR copy so decimal splitting AND decimal correction work here too
@@ -3777,6 +3865,40 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 	text.Format("%d", sel_region->second.top2);    m_Top2.SetWindowText(text);
 	text.Format("%d", sel_region->second.right2);  m_Right2.SetWindowText(text);
 	text.Format("%d", sel_region->second.bottom2); m_Bottom2.SetWindowText(text);
+
+	// Auto Cropper: applies to EVERY transform method (always enabled when a region
+	// is selected). The master switch gates the 3 colour rows; each colour's "1/2/3"
+	// checkbox gates its A/R/G/B + eyedropper + tolerance.
+	bool ac_on = sel_region->second.autocrop_enabled;
+	m_AcEnable.EnableWindow(true);
+	m_AcEnable.SetCheck(ac_on ? BST_CHECKED : BST_UNCHECKED);
+	m_AcC1En.SetCheck(sel_region->second.autocrop_c1_enabled ? BST_CHECKED : BST_UNCHECKED);
+	m_AcC2En.SetCheck(sel_region->second.autocrop_c2_enabled ? BST_CHECKED : BST_UNCHECKED);
+	m_AcC3En.SetCheck(sel_region->second.autocrop_c3_enabled ? BST_CHECKED : BST_UNCHECKED);
+	m_AcC1En.EnableWindow(ac_on);
+	m_AcC2En.EnableWindow(ac_on);
+	m_AcC3En.EnableWindow(ac_on);
+	bool ac1 = ac_on && sel_region->second.autocrop_c1_enabled;
+	bool ac2 = ac_on && sel_region->second.autocrop_c2_enabled;
+	bool ac3 = ac_on && sel_region->second.autocrop_c3_enabled;
+	m_AcA1.EnableWindow(ac1); m_AcR1.EnableWindow(ac1); m_AcG1.EnableWindow(ac1); m_AcB1.EnableWindow(ac1); m_AcPick1.EnableWindow(ac1); m_AcTol1.EnableWindow(ac1);
+	m_AcA2.EnableWindow(ac2); m_AcR2.EnableWindow(ac2); m_AcG2.EnableWindow(ac2); m_AcB2.EnableWindow(ac2); m_AcPick2.EnableWindow(ac2); m_AcTol2.EnableWindow(ac2);
+	m_AcA3.EnableWindow(ac3); m_AcR3.EnableWindow(ac3); m_AcG3.EnableWindow(ac3); m_AcB3.EnableWindow(ac3); m_AcPick3.EnableWindow(ac3); m_AcTol3.EnableWindow(ac3);
+	text.Format("%02x", (sel_region->second.autocrop_color1 >> 24) & 0xff); m_AcA1.SetWindowText(text);
+	text.Format("%02x", (sel_region->second.autocrop_color1 >> 0) & 0xff);  m_AcR1.SetWindowText(text);
+	text.Format("%02x", (sel_region->second.autocrop_color1 >> 8) & 0xff);  m_AcG1.SetWindowText(text);
+	text.Format("%02x", (sel_region->second.autocrop_color1 >> 16) & 0xff); m_AcB1.SetWindowText(text);
+	text.Format("%d", sel_region->second.autocrop_tol1); m_AcTol1.SetWindowText(text);
+	text.Format("%02x", (sel_region->second.autocrop_color2 >> 24) & 0xff); m_AcA2.SetWindowText(text);
+	text.Format("%02x", (sel_region->second.autocrop_color2 >> 0) & 0xff);  m_AcR2.SetWindowText(text);
+	text.Format("%02x", (sel_region->second.autocrop_color2 >> 8) & 0xff);  m_AcG2.SetWindowText(text);
+	text.Format("%02x", (sel_region->second.autocrop_color2 >> 16) & 0xff); m_AcB2.SetWindowText(text);
+	text.Format("%d", sel_region->second.autocrop_tol2); m_AcTol2.SetWindowText(text);
+	text.Format("%02x", (sel_region->second.autocrop_color3 >> 24) & 0xff); m_AcA3.SetWindowText(text);
+	text.Format("%02x", (sel_region->second.autocrop_color3 >> 0) & 0xff);  m_AcR3.SetWindowText(text);
+	text.Format("%02x", (sel_region->second.autocrop_color3 >> 8) & 0xff);  m_AcG3.SetWindowText(text);
+	text.Format("%02x", (sel_region->second.autocrop_color3 >> 16) & 0xff); m_AcB3.SetWindowText(text);
+	text.Format("%d", sel_region->second.autocrop_tol3); m_AcTol3.SetWindowText(text);
 
 	// avg color fields
 	if (selected_transform == "Color")
@@ -5910,6 +6032,24 @@ LRESULT CDlgTableMap::OnStickyButtonDown(WPARAM wp, LPARAM lp)
 		SetCursor(hCurPicker);
 	}
 
+	else if ((HWND)wp == m_AcPick1.GetSafeHwnd())
+	{
+		ac_picker_cursor1 = true;
+		SetCursor(hCurPicker);
+	}
+
+	else if ((HWND)wp == m_AcPick2.GetSafeHwnd())
+	{
+		ac_picker_cursor2 = true;
+		SetCursor(hCurPicker);
+	}
+
+	else if ((HWND)wp == m_AcPick3.GetSafeHwnd())
+	{
+		ac_picker_cursor3 = true;
+		SetCursor(hCurPicker);
+	}
+
 	return false;
 }
 
@@ -5948,6 +6088,30 @@ LRESULT CDlgTableMap::OnStickyButtonUp(WPARAM wp, LPARAM lp)
 	else if ((HWND)wp == m_Picker3.GetSafeHwnd())
 	{
 		picker_cursor3 = false;
+		SetCursor(hCurStandard);
+		update_display();
+		Invalidate(false);
+	}
+
+	else if ((HWND)wp == m_AcPick1.GetSafeHwnd())
+	{
+		ac_picker_cursor1 = false;
+		SetCursor(hCurStandard);
+		update_display();
+		Invalidate(false);
+	}
+
+	else if ((HWND)wp == m_AcPick2.GetSafeHwnd())
+	{
+		ac_picker_cursor2 = false;
+		SetCursor(hCurStandard);
+		update_display();
+		Invalidate(false);
+	}
+
+	else if ((HWND)wp == m_AcPick3.GetSafeHwnd())
+	{
+		ac_picker_cursor3 = false;
 		SetCursor(hCurStandard);
 		update_display();
 		Invalidate(false);
@@ -6012,6 +6176,31 @@ void CDlgTableMap::OnLButtonDown(UINT nFlags, CPoint point)
 			pDoc->SetModifiedFlag(true);
 
 			m_Picker3.OnBnClicked();
+		}
+		// Auto Cropper eyedroppers: grab into the matching colour slot + enable it
+		// (and the master switch so the pick takes effect immediately).
+		else if ((ac_picker_cursor1 || ac_picker_cursor2 || ac_picker_cursor3) &&
+			point.x >= bmp_rect.left && point.x <= bmp_rect.right &&
+			point.y >= bmp_rect.top && point.y <= bmp_rect.bottom)
+		{
+			COLORREF picked = get_color_under_mouse(&nFlags, &point);
+			sel_region->second.autocrop_enabled = true;
+			if (ac_picker_cursor1) {
+				sel_region->second.autocrop_color1 = picked;
+				sel_region->second.autocrop_c1_enabled = true;
+			} else if (ac_picker_cursor2) {
+				sel_region->second.autocrop_color2 = picked;
+				sel_region->second.autocrop_c2_enabled = true;
+			} else {
+				sel_region->second.autocrop_color3 = picked;
+				sel_region->second.autocrop_c3_enabled = true;
+			}
+			update_display();
+			Invalidate(false);
+			pDoc->SetModifiedFlag(true);
+			if (ac_picker_cursor1) m_AcPick1.OnBnClicked();
+			else if (ac_picker_cursor2) m_AcPick2.OnBnClicked();
+			else m_AcPick3.OnBnClicked();
 		}
 	}
 

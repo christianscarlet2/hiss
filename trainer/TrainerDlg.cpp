@@ -12,6 +12,7 @@
 #include "TrainerMessages.h"
 #include "WindowCapture.h"
 #include "TextImageGen.h"
+#include "../AutoCrop.h"
 #include <shellapi.h>
 
 using namespace cv;
@@ -1304,6 +1305,16 @@ void CTrainerDlg::DebugRegionToFolder(int index)
 	}
 	Mat bgra((int)rh, (int)rw, CV_8UC4, &buf[0]);
 	Mat bgr; cvtColor(bgra, bgr, COLOR_BGRA2BGR);
+	// Auto Cropper: match the capture path so Debug reflects the cropped image.
+	{
+		SAutoCropColor accols[3] = {
+			{ reg.ac_color1, reg.ac_tol1, reg.ac_c1en },
+			{ reg.ac_color2, reg.ac_tol2, reg.ac_c2en },
+			{ reg.ac_color3, reg.ac_tol3, reg.ac_c3en },
+		};
+		Mat ac = AutoCropToColors(bgr, reg.ac_enabled, accols);
+		if (!ac.empty() && ac.data != bgr.data) bgr = ac;
+	}
 
 	// Run OCR exactly as the live preview does so the result + decimal-correction details match.
 	LoadOcrModelForRegion(index);
@@ -1613,6 +1624,23 @@ void CTrainerDlg::CaptureTick()
 
 			if (any_color_filter && !CropMatchesAnyColor(cur, w, h, color_filters)) {
 				continue;   // crop contains none of the enabled target colors
+			}
+
+			// Auto Cropper (shared with Vision/Hiss): crop the BGRA crop to the colour
+			// bounding box so both the stored sample image AND the OCR use the cropped
+			// region. No-op when this region's Auto Cropper is disabled.
+			{
+				Mat bgra_full((int)h, (int)w, CV_8UC4, &cur[0]);
+				SAutoCropColor accols[3] = {
+					{ _regions[i].ac_color1, _regions[i].ac_tol1, _regions[i].ac_c1en },
+					{ _regions[i].ac_color2, _regions[i].ac_tol2, _regions[i].ac_c2en },
+					{ _regions[i].ac_color3, _regions[i].ac_tol3, _regions[i].ac_c3en },
+				};
+				Mat bgra_cropped = AutoCropToColors(bgra_full, _regions[i].ac_enabled, accols);
+				if (!bgra_cropped.empty() && bgra_cropped.data != bgra_full.data) {
+					w = bgra_cropped.cols; h = bgra_cropped.rows;
+					cur.assign(bgra_cropped.data, bgra_cropped.data + (size_t)w * h * 4);
+				}
 			}
 
 			Mat bgra((int)h, (int)w, CV_8UC4, &cur[0]);

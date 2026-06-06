@@ -70,6 +70,14 @@ struct STablemapRegion {
 	unsigned int	bottom2 = 0;
 	bool			rect2_enabled = false;
 	HBITMAP			cur_bmp2 = NULL;   // captured pixels of the second rectangle
+	// Auto Cropper: independent of the transform method. When autocrop_enabled and
+	// at least one colour is on, the scrape is cropped to the bounding box of pixels
+	// matching ANY enabled colour cube (RGB within that colour's own tolerance).
+	// Each colour packs ARGB (alpha high byte) like `color`.
+	bool			autocrop_enabled = false;
+	COLORREF		autocrop_color1 = 0; int autocrop_tol1 = 0; bool autocrop_c1_enabled = false;
+	COLORREF		autocrop_color2 = 0; int autocrop_tol2 = 0; bool autocrop_c2_enabled = false;
+	COLORREF		autocrop_color3 = 0; int autocrop_tol3 = 0; bool autocrop_c3_enabled = false;
 	HBITMAP			cur_bmp;
 	HBITMAP			last_bmp;
 	bool			use_default;

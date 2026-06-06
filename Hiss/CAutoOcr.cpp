@@ -18,6 +18,7 @@
 
 #include "CAutoconnector.h"
 #include "..\Shared\WindowCapture.h"
+#include "..\AutoCrop.h"
 
 
 CAutoOcr *p_auto_ocr = NULL;
@@ -894,6 +895,19 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast, SAutoOc
 	TryColorPresetSettings(img_orig, region, &settings);
 	settings.use_cropping = false;   // never crop, even if a colour preset set it
 	tablemap_threshold = settings.threshold;
+
+	// Auto Cropper: crop the scrape to the bounding box of pixels matching any
+	// enabled colour cube. Done once here so every downstream OCR path (decimal
+	// split AND whole-image) operates on the cropped image. No-op when disabled.
+	{
+		SAutoCropColor accols[3] = {
+			{ region->second.autocrop_color1, region->second.autocrop_tol1, region->second.autocrop_c1_enabled },
+			{ region->second.autocrop_color2, region->second.autocrop_tol2, region->second.autocrop_c2_enabled },
+			{ region->second.autocrop_color3, region->second.autocrop_tol3, region->second.autocrop_c3_enabled },
+		};
+		Mat ac = AutoCropToColors(img_orig, region->second.autocrop_enabled, accols);
+		if (!ac.empty() && ac.data != img_orig.data) img_orig = ac;
+	}
 
 	// The region's transform field (A0/A1/A2) decides which model OCRs it.
 	if (region->second.transform.GetLength() >= 2 && region->second.transform[0] == 'A') {

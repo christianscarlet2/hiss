@@ -152,7 +152,12 @@ bool LoadBalanceRegionsFromDB(const CString &tm_name, std::vector<STrainerRegion
 	}
 	CString sql;
 	sql.Format("SELECT name, rgn_left, rgn_top, rgn_right, rgn_bottom, color, radius,"
-		" COALESCE(transform,'') FROM tm_regions WHERE tablemap_id=%ld", id);
+		" COALESCE(transform,''),"
+		" COALESCE(ac_enabled,false),"
+		" COALESCE(ac_color1,0), COALESCE(ac_tol1,0), COALESCE(ac_c1en,false),"
+		" COALESCE(ac_color2,0), COALESCE(ac_tol2,0), COALESCE(ac_c2en,false),"
+		" COALESCE(ac_color3,0), COALESCE(ac_tol3,0), COALESCE(ac_c3en,false)"
+		" FROM tm_regions WHERE tablemap_id=%ld", id);
 	std::set<CString> enabled;
 	GetEnabledScrapeFields(&enabled);
 	PGresult *res = PQexec(conn, sql.GetString());
@@ -174,6 +179,16 @@ bool LoadBalanceRegionsFromDB(const CString &tm_name, std::vector<STrainerRegion
 			region.color = (COLORREF)strtoul(PQgetvalue(res, i, 5), NULL, 10);
 			region.radius = atol(PQgetvalue(res, i, 6));
 			region.transform = PQgetvalue(res, i, 7);
+			region.ac_enabled = (strcmp(PQgetvalue(res, i, 8), "t") == 0);
+			region.ac_color1 = (COLORREF)strtoul(PQgetvalue(res, i, 9), NULL, 10);
+			region.ac_tol1 = atol(PQgetvalue(res, i, 10));
+			region.ac_c1en = (strcmp(PQgetvalue(res, i, 11), "t") == 0);
+			region.ac_color2 = (COLORREF)strtoul(PQgetvalue(res, i, 12), NULL, 10);
+			region.ac_tol2 = atol(PQgetvalue(res, i, 13));
+			region.ac_c2en = (strcmp(PQgetvalue(res, i, 14), "t") == 0);
+			region.ac_color3 = (COLORREF)strtoul(PQgetvalue(res, i, 15), NULL, 10);
+			region.ac_tol3 = atol(PQgetvalue(res, i, 16));
+			region.ac_c3en = (strcmp(PQgetvalue(res, i, 17), "t") == 0);
 			region.field_type = ftype;
 			region.enabled = (enabled.find(ftype) != enabled.end());
 			out->push_back(region);

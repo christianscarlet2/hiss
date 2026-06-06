@@ -11,6 +11,13 @@ struct STrainerRegion {
 	CString  transform;  // e.g. "Text0".."Text9" / "I" / "N" ...
 	CString  field_type; // "balance" or "name" (the pN<type> suffix), lowercased
 	bool     enabled;    // is this field type in the shared scrape_fields list?
+	// Auto Cropper (shared with Vision/Hiss via tm_regions). When ac_enabled and a
+	// colour is on, the scrape is cropped to the bounding box of pixels matching any
+	// enabled colour cube. Each colour packs ARGB; alpha ignored for matching.
+	bool     ac_enabled = false;
+	COLORREF ac_color1 = 0; int ac_tol1 = 0; bool ac_c1en = false;
+	COLORREF ac_color2 = 0; int ac_tol2 = 0; bool ac_c2en = false;
+	COLORREF ac_color3 = 0; int ac_tol3 = 0; bool ac_c3en = false;
 };
 
 // The set of player field types the trainer scrapes (p0balance..p8balance,

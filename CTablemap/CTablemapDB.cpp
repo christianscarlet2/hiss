@@ -161,6 +161,14 @@ bool CTablemapDB::EnsureSchema() {
 		" color3 BIGINT DEFAULT 0, color3_enabled BOOL DEFAULT false,"
 		" rgn_left2 INT DEFAULT 0, rgn_top2 INT DEFAULT 0, rgn_right2 INT DEFAULT 0,"
 		" rgn_bottom2 INT DEFAULT 0, rect2_enabled BOOL DEFAULT false,"
+		// Auto Cropper: master enable + 3 colours, each with its own tolerance and
+		// enable. When ac_enabled and any colour is on, the scrape is cropped to the
+		// bounding box of pixels matching ANY enabled colour (OR-match). Applies to
+		// every transform method (Vision/Hiss/Trainer).
+		" ac_enabled BOOL DEFAULT false,"
+		" ac_color1 BIGINT DEFAULT 0, ac_tol1 INT DEFAULT 0, ac_c1en BOOL DEFAULT false,"
+		" ac_color2 BIGINT DEFAULT 0, ac_tol2 INT DEFAULT 0, ac_c2en BOOL DEFAULT false,"
+		" ac_color3 BIGINT DEFAULT 0, ac_tol3 INT DEFAULT 0, ac_c3en BOOL DEFAULT false,"
 		" PRIMARY KEY (tablemap_id, name));"
 		// Bring older databases up to date (no-op if the columns already exist).
 		"ALTER TABLE tm_regions ADD COLUMN IF NOT EXISTS color2 BIGINT DEFAULT 0;"
@@ -172,6 +180,16 @@ bool CTablemapDB::EnsureSchema() {
 		"ALTER TABLE tm_regions ADD COLUMN IF NOT EXISTS rgn_right2 INT DEFAULT 0;"
 		"ALTER TABLE tm_regions ADD COLUMN IF NOT EXISTS rgn_bottom2 INT DEFAULT 0;"
 		"ALTER TABLE tm_regions ADD COLUMN IF NOT EXISTS rect2_enabled BOOL DEFAULT false;"
+		"ALTER TABLE tm_regions ADD COLUMN IF NOT EXISTS ac_enabled BOOL DEFAULT false;"
+		"ALTER TABLE tm_regions ADD COLUMN IF NOT EXISTS ac_color1 BIGINT DEFAULT 0;"
+		"ALTER TABLE tm_regions ADD COLUMN IF NOT EXISTS ac_tol1 INT DEFAULT 0;"
+		"ALTER TABLE tm_regions ADD COLUMN IF NOT EXISTS ac_c1en BOOL DEFAULT false;"
+		"ALTER TABLE tm_regions ADD COLUMN IF NOT EXISTS ac_color2 BIGINT DEFAULT 0;"
+		"ALTER TABLE tm_regions ADD COLUMN IF NOT EXISTS ac_tol2 INT DEFAULT 0;"
+		"ALTER TABLE tm_regions ADD COLUMN IF NOT EXISTS ac_c2en BOOL DEFAULT false;"
+		"ALTER TABLE tm_regions ADD COLUMN IF NOT EXISTS ac_color3 BIGINT DEFAULT 0;"
+		"ALTER TABLE tm_regions ADD COLUMN IF NOT EXISTS ac_tol3 INT DEFAULT 0;"
+		"ALTER TABLE tm_regions ADD COLUMN IF NOT EXISTS ac_c3en BOOL DEFAULT false;"
 		"CREATE TABLE IF NOT EXISTS tm_fonts ("
 		" tablemap_id INT REFERENCES tablemaps(id) ON DELETE CASCADE,"
 		" font_group INT, ch TEXT, hexmash TEXT, x_values TEXT,"
@@ -426,7 +444,11 @@ int CTablemapDB::LoadTablemapFromDB(const CString name, CTablemap *tm) {
 		" COALESCE(color2,0), COALESCE(color2_enabled,false),"
 		" COALESCE(color3,0), COALESCE(color3_enabled,false),"
 		" COALESCE(rgn_left2,0), COALESCE(rgn_top2,0), COALESCE(rgn_right2,0),"
-		" COALESCE(rgn_bottom2,0), COALESCE(rect2_enabled,false)"
+		" COALESCE(rgn_bottom2,0), COALESCE(rect2_enabled,false),"
+		" COALESCE(ac_enabled,false),"
+		" COALESCE(ac_color1,0), COALESCE(ac_tol1,0), COALESCE(ac_c1en,false),"
+		" COALESCE(ac_color2,0), COALESCE(ac_tol2,0), COALESCE(ac_c2en,false),"
+		" COALESCE(ac_color3,0), COALESCE(ac_tol3,0), COALESCE(ac_c3en,false)"
 		" FROM tm_regions WHERE tablemap_id=%ld", id);
 	res = PQexec((PGconn *)_conn, sql.GetString());
 	if (PQresultStatus(res) == PGRES_TUPLES_OK) {
@@ -458,6 +480,16 @@ int CTablemapDB::LoadTablemapFromDB(const CString name, CTablemap *tm) {
 			r.right2 = (unsigned int)atol(PQgetvalue(res, i, 20));
 			r.bottom2 = (unsigned int)atol(PQgetvalue(res, i, 21));
 			r.rect2_enabled = (strcmp(PQgetvalue(res, i, 22), "t") == 0);
+			r.autocrop_enabled = (strcmp(PQgetvalue(res, i, 23), "t") == 0);
+			r.autocrop_color1 = (COLORREF)strtoul(PQgetvalue(res, i, 24), 0, 10);
+			r.autocrop_tol1 = atoi(PQgetvalue(res, i, 25));
+			r.autocrop_c1_enabled = (strcmp(PQgetvalue(res, i, 26), "t") == 0);
+			r.autocrop_color2 = (COLORREF)strtoul(PQgetvalue(res, i, 27), 0, 10);
+			r.autocrop_tol2 = atoi(PQgetvalue(res, i, 28));
+			r.autocrop_c2_enabled = (strcmp(PQgetvalue(res, i, 29), "t") == 0);
+			r.autocrop_color3 = (COLORREF)strtoul(PQgetvalue(res, i, 30), 0, 10);
+			r.autocrop_tol3 = atoi(PQgetvalue(res, i, 31));
+			r.autocrop_c3_enabled = (strcmp(PQgetvalue(res, i, 32), "t") == 0);
 			tm->r$_insert(r);
 		}
 	}
@@ -665,8 +697,11 @@ int CTablemapDB::SaveTablemapToDB(const CString name, CTablemap *tm) {
 			sql.Format("INSERT INTO tm_regions (tablemap_id,name,rgn_left,rgn_top,rgn_right,rgn_bottom,"
 				"color,radius,transform,use_default,threshold,use_cropping,crop_size,match_mode,sharpen,"
 				"color2,color2_enabled,color3,color3_enabled,"
-				"rgn_left2,rgn_top2,rgn_right2,rgn_bottom2,rect2_enabled) "
-				"VALUES (%ld,'%s',%u,%u,%u,%u,%lu,%d,'%s',%s,%d,%s,%d,%d,%d,%lu,%s,%lu,%s,%u,%u,%u,%u,%s)",
+				"rgn_left2,rgn_top2,rgn_right2,rgn_bottom2,rect2_enabled,"
+				"ac_enabled,ac_color1,ac_tol1,ac_c1en,ac_color2,ac_tol2,ac_c2en,"
+				"ac_color3,ac_tol3,ac_c3en) "
+				"VALUES (%ld,'%s',%u,%u,%u,%u,%lu,%d,'%s',%s,%d,%s,%d,%d,%d,%lu,%s,%lu,%s,%u,%u,%u,%u,%s,"
+				"%s,%lu,%d,%s,%lu,%d,%s,%lu,%d,%s)",
 				id, EscapeSqlLiteral(g.name).GetString(),
 				g.left, g.top, g.right, g.bottom,
 				(unsigned long)g.color, g.radius, EscapeSqlLiteral(g.transform).GetString(),
@@ -674,7 +709,11 @@ int CTablemapDB::SaveTablemapToDB(const CString name, CTablemap *tm) {
 				g.use_cropping ? "true" : "false", g.crop_size, g.match_mode, g.sharpen,
 				(unsigned long)g.color2, g.color2_enabled ? "true" : "false",
 				(unsigned long)g.color3, g.color3_enabled ? "true" : "false",
-				g.left2, g.top2, g.right2, g.bottom2, g.rect2_enabled ? "true" : "false");
+				g.left2, g.top2, g.right2, g.bottom2, g.rect2_enabled ? "true" : "false",
+				g.autocrop_enabled ? "true" : "false",
+				(unsigned long)g.autocrop_color1, g.autocrop_tol1, g.autocrop_c1_enabled ? "true" : "false",
+				(unsigned long)g.autocrop_color2, g.autocrop_tol2, g.autocrop_c2_enabled ? "true" : "false",
+				(unsigned long)g.autocrop_color3, g.autocrop_tol3, g.autocrop_c3_enabled ? "true" : "false");
 			if (!ExecCommand(sql)) { ExecCommand("ROLLBACK"); return ERR_SYNTAX; }
 		}
 	}

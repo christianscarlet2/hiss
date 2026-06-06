@@ -156,6 +156,12 @@ protected:
 	CEdit				m_Alpha2, m_Red2, m_Green2, m_Blue2;
 	CEdit				m_Alpha3, m_Red3, m_Green3, m_Blue3;
 	CButton				m_Rect2Enable;
+	// Auto Cropper: master enable + 3 colours (enable + A/R/G/B + eyedropper + tolerance).
+	CButton				m_AcEnable, m_AcC1En, m_AcC2En, m_AcC3En;
+	CStickyButton		m_AcPick1, m_AcPick2, m_AcPick3;
+	CEdit				m_AcA1, m_AcR1, m_AcG1, m_AcB1, m_AcTol1;
+	CEdit				m_AcA2, m_AcR2, m_AcG2, m_AcB2, m_AcTol2;
+	CEdit				m_AcA3, m_AcR3, m_AcG3, m_AcB3, m_AcTol3;
 	CButton				m_New, m_Delete, m_Edit, m_CreateImage, m_CreateFont, m_FontPlus, m_FontMinus;
 	CButton				m_CreateGroup, m_GroupBox;
 	CComboBox			m_GroupColor;
@@ -182,6 +188,9 @@ protected:
 	bool				picker_cursor;
 	bool				picker_cursor2;   // eyedropper active for the 2nd colour
 	bool				picker_cursor3;   // eyedropper active for the 3rd colour
+	bool				ac_picker_cursor1;   // eyedropper active for Auto Cropper colour 1
+	bool				ac_picker_cursor2;
+	bool				ac_picker_cursor3;
 	HCURSOR				hCurPicker, hCurStandard;
 	bool				ignore_changes;
 	CEdit			m_status_cards, m_status_fonts;

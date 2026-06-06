@@ -89,6 +89,28 @@
 #define IDC_BOTTOM2                     1252
 #define IDC_RECT2_ENABLE                1253
 #define IDC_DRAWRECT2                   1254
+#define IDC_AC_ENABLE                   1274
+#define IDC_AC_C1EN                     1275
+#define IDC_AC_A1                       1276
+#define IDC_AC_R1                       1277
+#define IDC_AC_G1                       1278
+#define IDC_AC_B1                       1279
+#define IDC_AC_PICK1                    1280
+#define IDC_AC_TOL1                     1281
+#define IDC_AC_C2EN                     1282
+#define IDC_AC_A2                       1283
+#define IDC_AC_R2                       1284
+#define IDC_AC_G2                       1285
+#define IDC_AC_B2                       1286
+#define IDC_AC_PICK2                    1287
+#define IDC_AC_TOL2                     1288
+#define IDC_AC_C3EN                     1289
+#define IDC_AC_A3                       1290
+#define IDC_AC_R3                       1291
+#define IDC_AC_G3                       1292
+#define IDC_AC_B3                       1293
+#define IDC_AC_PICK3                    1294
+#define IDC_AC_TOL3                     1295
 #define IDC_DRAWRECT                    1043
 #define IDC_PARSEBUTTON                 1044
 #define IDC_NUDGE_UP                    1045
@@ -253,7 +275,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        156
 #define _APS_NEXT_COMMAND_VALUE         32808
-#define _APS_NEXT_CONTROL_VALUE         1274
+#define _APS_NEXT_CONTROL_VALUE         1296
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
