@@ -320,9 +320,20 @@ int CSampleStore::DeleteDuplicates()
 	int removed = 0;
 	EnterCriticalSection(&_cs);
 	size_t n = _samples.size();
-	// Build a normalized grayscale signature per sample (decoded once).
+	// Build a normalized grayscale signature per sample (decoded once) plus a
+	// field-type group key (balance/name/bet, from the region name "p<seat><type>").
+	// Dedup only compares samples of the SAME field type, so "Auto Delete Dupes"
+	// works independently for balances, names and bets -- a bet crop is never
+	// removed as a "duplicate" of a similar-looking balance/name crop (and blank
+	// crops across different field types don't collapse into one).
 	std::vector<cv::Mat> sig(n);
+	std::vector<CStringA> group(n);
 	for (size_t i = 0; i < n; ++i) {
+		CStringA r = _samples[i].region; r.MakeLower();
+		int p = 0;
+		if (p < r.GetLength() && r[p] == 'p') ++p;                 // 'p' seat prefix
+		while (p < r.GetLength() && r[p] >= '0' && r[p] <= '9') ++p;  // seat digits
+		group[i] = (p < r.GetLength()) ? r.Mid(p) : r;            // trailing field type
 		if (_samples[i].png.empty()) continue;
 		cv::Mat raw(1, (int)_samples[i].png.size(), CV_8UC1, (void *)&_samples[i].png[0]);
 		cv::Mat img = cv::imdecode(raw, cv::IMREAD_GRAYSCALE);
@@ -335,6 +346,7 @@ int CSampleStore::DeleteDuplicates()
 		if (drop[i] || sig[i].empty()) continue;
 		for (size_t j = i + 1; j < n; ++j) {
 			if (drop[j] || sig[j].empty()) continue;
+			if (group[j] != group[i]) continue;   // only dedup within the same field type
 			cv::Mat diff;
 			cv::absdiff(sig[i], sig[j], diff);
 			double similarity = 1.0 - (cv::mean(diff)[0] / 255.0);
