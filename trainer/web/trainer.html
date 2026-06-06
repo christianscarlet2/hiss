@@ -24,6 +24,53 @@
     <button id="clearTraining" class="danger" tabindex="-1">Clear Training Files</button>
     <button id="saveAll" tabindex="-1">Save All</button>
   </header>
+  <section class="colorbar" id="colorbar">
+    <div class="cfslots">
+      <div class="cf" data-slot="0">
+        <label class="cf-head"><input type="checkbox" class="cf-on"> Color 1</label>
+        <input type="color" class="cf-pick" value="#ffffff" title="Color picker">
+        <span class="cf-fields">
+          <label>A<input type="number" class="cf-a" min="0" max="255" value="255"></label>
+          <label>R<input type="number" class="cf-r" min="0" max="255" value="255"></label>
+          <label>G<input type="number" class="cf-g" min="0" max="255" value="255"></label>
+          <label>B<input type="number" class="cf-b" min="0" max="255" value="255"></label>
+          <label>±<input type="number" class="cf-tol" min="0" max="255" value="30" title="Tolerance per channel"></label>
+        </span>
+        <button class="cf-target" tabindex="-1" title="Make this the slot the magnifier fills">Pick→</button>
+      </div>
+      <div class="cf" data-slot="1">
+        <label class="cf-head"><input type="checkbox" class="cf-on"> Color 2</label>
+        <input type="color" class="cf-pick" value="#ffffff" title="Color picker">
+        <span class="cf-fields">
+          <label>A<input type="number" class="cf-a" min="0" max="255" value="255"></label>
+          <label>R<input type="number" class="cf-r" min="0" max="255" value="255"></label>
+          <label>G<input type="number" class="cf-g" min="0" max="255" value="255"></label>
+          <label>B<input type="number" class="cf-b" min="0" max="255" value="255"></label>
+          <label>±<input type="number" class="cf-tol" min="0" max="255" value="30" title="Tolerance per channel"></label>
+        </span>
+        <button class="cf-target" tabindex="-1" title="Make this the slot the magnifier fills">Pick→</button>
+      </div>
+      <div class="cf" data-slot="2">
+        <label class="cf-head"><input type="checkbox" class="cf-on"> Color 3</label>
+        <input type="color" class="cf-pick" value="#ffffff" title="Color picker">
+        <span class="cf-fields">
+          <label>A<input type="number" class="cf-a" min="0" max="255" value="255"></label>
+          <label>R<input type="number" class="cf-r" min="0" max="255" value="255"></label>
+          <label>G<input type="number" class="cf-g" min="0" max="255" value="255"></label>
+          <label>B<input type="number" class="cf-b" min="0" max="255" value="255"></label>
+          <label>±<input type="number" class="cf-tol" min="0" max="255" value="30" title="Tolerance per channel"></label>
+        </span>
+        <button class="cf-target" tabindex="-1" title="Make this the slot the magnifier fills">Pick→</button>
+      </div>
+    </div>
+    <div class="magbox">
+      <div class="maghdr">
+        <span class="magtitle">Magnifier</span>
+        <span id="magreadout" class="muted">click a row image, then click a pixel</span>
+      </div>
+      <canvas id="magCanvas" width="200" height="60"></canvas>
+    </div>
+  </section>
   <main>
     <table id="samples">
       <thead>

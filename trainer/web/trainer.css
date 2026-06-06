@@ -35,6 +35,40 @@ button.danger { background: #b5443b; }
 button.danger:hover { background: #cf5249; }
 button.warn { background: #b9892f; }
 button.warn:hover { background: #d39e3a; }
+/* Color-filter bar: 3 slots + a magnifier for picking colors off row crops. */
+.colorbar {
+  display: flex; align-items: flex-start; gap: 18px;
+  padding: 8px 14px;
+  background: #181b1f;
+  border-bottom: 1px solid #2c3036;
+  flex-wrap: wrap;
+}
+.cfslots { display: flex; flex-direction: column; gap: 6px; }
+.cf {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 8px; border: 1px solid #2c3036; border-radius: 5px; background: #15181b;
+}
+.cf.active { border-color: #3a82da; box-shadow: 0 0 0 1px #3a82da inset; }
+.cf .cf-head { display: inline-flex; align-items: center; gap: 5px; min-width: 78px; color: #cfd5da; }
+.cf .cf-pick { width: 34px; height: 24px; padding: 0; border: 1px solid #39414a; border-radius: 4px; background: #11151a; cursor: pointer; }
+.cf .cf-fields { display: inline-flex; align-items: center; gap: 6px; color: #9aa3ab; }
+.cf .cf-fields label { display: inline-flex; align-items: center; gap: 3px; }
+.cf input[type="number"] {
+  width: 46px; padding: 3px 4px; font-size: 12px;
+  background: #11151a; color: #e6e9ec; border: 1px solid #39414a; border-radius: 4px;
+}
+.cf .cf-target { padding: 4px 8px; font-size: 12px; background: #4a5159; }
+.cf .cf-target:hover { background: #5a626b; }
+.cf.active .cf-target { background: #3a82da; }
+.magbox { display: flex; flex-direction: column; gap: 4px; }
+.maghdr { display: flex; align-items: baseline; gap: 10px; }
+.magtitle { font-weight: 600; color: #cfd5da; }
+#magCanvas {
+  background: #0c0e10; border: 1px solid #39414a; border-radius: 4px;
+  image-rendering: pixelated; cursor: crosshair; max-width: 420px;
+}
+/* Row crops become clickable to load into the magnifier. */
+td.img img { cursor: zoom-in; }
 main { padding: 10px 14px 40px; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #2c3036; vertical-align: middle; }

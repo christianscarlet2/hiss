@@ -60,6 +60,8 @@
     tdImg.className = 'img';
     var img = document.createElement('img');
     img.src = '/api/sample/image?id=' + s.id;
+    img.title = 'Click to load into the magnifier';
+    img.addEventListener('click', function () { loadMag(s.id); });
     tdImg.appendChild(img);
     tr.appendChild(tdImg);
 
@@ -379,6 +381,166 @@
     api('POST', '/api/noprefill?on=' + (noPrefill.checked ? 1 : 0), function () {});
   });
   loadNoPrefill();
+
+  // ---- Color filters + magnifier --------------------------------------------
+  // Three optional ARGB+tolerance filters. When one or more is enabled, a capture
+  // is only added as a row if its crop contains a pixel matching ANY enabled color
+  // within tolerance (OR). The filter is stored in the DB and applied by the
+  // capture loop in the trainer. The magnifier lets you pick a color off a row's
+  // crop straight into the active slot.
+  var cfEls = [];
+  var slotDivs = document.querySelectorAll('.colorbar .cf');
+  for (var ci = 0; ci < slotDivs.length; ci++) {
+    var d = slotDivs[ci];
+    cfEls.push({
+      div: d,
+      on: d.querySelector('.cf-on'),
+      pick: d.querySelector('.cf-pick'),
+      a: d.querySelector('.cf-a'),
+      r: d.querySelector('.cf-r'),
+      g: d.querySelector('.cf-g'),
+      b: d.querySelector('.cf-b'),
+      tol: d.querySelector('.cf-tol'),
+      target: d.querySelector('.cf-target')
+    });
+  }
+  var activeSlot = 0;
+
+  function clamp255(n) { n = parseInt(n, 10); if (isNaN(n)) n = 0; return n < 0 ? 0 : (n > 255 ? 255 : n); }
+  function hex2(n) { var s = clamp255(n).toString(16); return s.length < 2 ? '0' + s : s; }
+  function rgbToHex(r, g, b) { return '#' + hex2(r) + hex2(g) + hex2(b); }
+  function setActiveSlot(idx) {
+    activeSlot = idx;
+    for (var i = 0; i < cfEls.length; i++) {
+      if (i === idx) cfEls[i].div.classList.add('active'); else cfEls[i].div.classList.remove('active');
+    }
+  }
+  function buildColorCsv() {
+    var parts = [];
+    for (var i = 0; i < cfEls.length; i++) {
+      var e = cfEls[i];
+      parts.push([
+        e.on.checked ? 1 : 0,
+        clamp255(e.a.value), clamp255(e.r.value), clamp255(e.g.value), clamp255(e.b.value),
+        clamp255(e.tol.value)
+      ].join(','));
+    }
+    return parts.join(';');
+  }
+  function saveColors() {
+    api('POST', '/api/samplecolors?v=' + encodeURIComponent(buildColorCsv()), function () {});
+  }
+  function applyColorToSlot(idx, r, g, b, a) {
+    var e = cfEls[idx]; if (!e) return;
+    e.r.value = clamp255(r); e.g.value = clamp255(g); e.b.value = clamp255(b); e.a.value = clamp255(a);
+    e.pick.value = rgbToHex(r, g, b);
+    saveColors();
+  }
+  function syncFieldsFromPicker(e) {
+    var hex = e.pick.value || '#000000';
+    e.r.value = parseInt(hex.substr(1, 2), 16);
+    e.g.value = parseInt(hex.substr(3, 2), 16);
+    e.b.value = parseInt(hex.substr(5, 2), 16);
+  }
+  function loadColors() {
+    api('GET', '/api/samplecolors', function (status, data) {
+      if (status !== 200 || !data || !data.filter) return;
+      var slots = String(data.filter).split(';');
+      for (var i = 0; i < cfEls.length && i < slots.length; i++) {
+        var f = slots[i].split(',');
+        if (f.length < 6) continue;
+        var e = cfEls[i];
+        e.on.checked = (f[0] === '1');
+        e.a.value = clamp255(f[1]); e.r.value = clamp255(f[2]); e.g.value = clamp255(f[3]);
+        e.b.value = clamp255(f[4]); e.tol.value = clamp255(f[5]);
+        e.pick.value = rgbToHex(f[2], f[3], f[4]);
+      }
+    });
+  }
+  (function wireColorSlots() {
+    for (var i = 0; i < cfEls.length; i++) {
+      (function (e, idx) {
+        e.on.addEventListener('change', saveColors);
+        e.tol.addEventListener('input', saveColors);
+        ['a', 'r', 'g', 'b'].forEach(function (k) {
+          e[k].addEventListener('input', function () {
+            e.pick.value = rgbToHex(e.r.value, e.g.value, e.b.value);
+            saveColors();
+          });
+        });
+        e.pick.addEventListener('input', function () { syncFieldsFromPicker(e); saveColors(); });
+        e.target.addEventListener('click', function () { setActiveSlot(idx); });
+      })(cfEls[i], i);
+    }
+  })();
+  setActiveSlot(0);
+  loadColors();
+
+  // Magnifier: load a row crop, hover to inspect, click a pixel to fill the active
+  // color slot. A 1:1 offscreen canvas is used to read pixel values.
+  var magCanvas = document.getElementById('magCanvas');
+  var magCtx = magCanvas ? magCanvas.getContext('2d') : null;
+  var magReadout = document.getElementById('magreadout');
+  var magSrc = document.createElement('canvas');
+  var magSctx = magSrc.getContext('2d');
+  var magImg = new Image();
+  var magW = 0, magH = 0, magZoom = 1, magReady = false;
+
+  function drawMag(hx, hy) {
+    if (!magCtx) return;
+    magCtx.imageSmoothingEnabled = false;
+    magCtx.clearRect(0, 0, magCanvas.width, magCanvas.height);
+    if (!magReady) return;
+    magCtx.drawImage(magSrc, 0, 0, magW, magH, 0, 0, magW * magZoom, magH * magZoom);
+    if (hx >= 0 && hy >= 0) {
+      magCtx.strokeStyle = '#ff3b3b'; magCtx.lineWidth = 1;
+      magCtx.strokeRect(hx * magZoom + 0.5, hy * magZoom + 0.5, magZoom - 1, magZoom - 1);
+    }
+  }
+  function loadMag(id) {
+    magImg.onload = function () {
+      magW = magImg.naturalWidth || 1; magH = magImg.naturalHeight || 1;
+      magSrc.width = magW; magSrc.height = magH;
+      magSctx.clearRect(0, 0, magW, magH);
+      magSctx.drawImage(magImg, 0, 0);
+      magZoom = Math.max(2, Math.min(16, Math.floor(360 / magW)));
+      magCanvas.width = magW * magZoom; magCanvas.height = magH * magZoom;
+      magReady = true;
+      drawMag(-1, -1);
+      if (magReadout) magReadout.textContent = 'pick a pixel → Color ' + (activeSlot + 1);
+    };
+    magImg.src = '/api/sample/image?id=' + id + '&mag=1';
+  }
+  function magPixelAt(evt) {
+    var rect = magCanvas.getBoundingClientRect();
+    // Canvas may be CSS-scaled (max-width); map client coords back to canvas pixels.
+    var sx = magCanvas.width / rect.width, sy = magCanvas.height / rect.height;
+    var cx = (evt.clientX - rect.left) * sx, cy = (evt.clientY - rect.top) * sy;
+    var px = Math.floor(cx / magZoom), py = Math.floor(cy / magZoom);
+    if (px < 0 || py < 0 || px >= magW || py >= magH) return null;
+    var d = magSctx.getImageData(px, py, 1, 1).data;
+    return { x: px, y: py, r: d[0], g: d[1], b: d[2], a: d[3] };
+  }
+  if (magCanvas) {
+    magCanvas.addEventListener('mousemove', function (evt) {
+      if (!magReady) return;
+      var p = magPixelAt(evt);
+      if (!p) { drawMag(-1, -1); return; }
+      drawMag(p.x, p.y);
+      if (magReadout) magReadout.textContent =
+        'rgba(' + p.r + ',' + p.g + ',' + p.b + ',' + p.a + ') → Color ' + (activeSlot + 1);
+    });
+    magCanvas.addEventListener('mouseleave', function () { drawMag(-1, -1); });
+    magCanvas.addEventListener('click', function (evt) {
+      if (!magReady) return;
+      var p = magPixelAt(evt);
+      if (!p) return;
+      applyColorToSlot(activeSlot, p.r, p.g, p.b, p.a);
+      if (!cfEls[activeSlot].on.checked) { cfEls[activeSlot].on.checked = true; saveColors(); }
+      if (magReadout) magReadout.textContent =
+        'Color ' + (activeSlot + 1) + ' = rgba(' + p.r + ',' + p.g + ',' + p.b + ',' + p.a + ')';
+    });
+  }
 
   loadFontInfo();
   pollCapture();

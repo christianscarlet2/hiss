@@ -1494,6 +1494,63 @@ void CTrainerDlg::CaptureFontsForEditor()
 	SetStatus(s);
 }
 
+// One optional Sample Gen color filter: an ARGB target + per-channel tolerance.
+struct STrainerColorFilter { bool on; int a, r, g, b, tol; };
+
+static inline int ColorAbs(int x) { return x < 0 ? -x : x; }
+
+// True when the BGRA crop contains at least one pixel matching ANY enabled color
+// within its tolerance (OR across the three slots). Buffer layout is B,G,R,A.
+static bool CropMatchesAnyColor(const std::vector<BYTE> &bgra, int w, int h,
+	const STrainerColorFilter cf[3])
+{
+	int npix = w * h;
+	if (bgra.empty() || npix <= 0 || (int)bgra.size() < npix * 4) return false;
+	const BYTE *p = &bgra[0];
+	for (int i = 0; i < npix; ++i) {
+		int b = p[i * 4 + 0], g = p[i * 4 + 1], r = p[i * 4 + 2], a = p[i * 4 + 3];
+		for (int s = 0; s < 3; ++s) {
+			if (!cf[s].on) continue;
+			int t = cf[s].tol;
+			if (ColorAbs(r - cf[s].r) <= t && ColorAbs(g - cf[s].g) <= t &&
+				ColorAbs(b - cf[s].b) <= t && ColorAbs(a - cf[s].a) <= t) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+// Parse the serialized "on,a,r,g,b,tol;..." filter (up to 3 slots) from the DB.
+// Returns true if at least one slot is enabled.
+static bool ParseColorFilters(const CStringA &fv, STrainerColorFilter cf[3])
+{
+	for (int s = 0; s < 3; ++s) { cf[s].on = false; cf[s].a = cf[s].r = cf[s].g = cf[s].b = 0; cf[s].tol = 0; }
+	bool any = false;
+	int start = 0, slot = 0;
+	while (slot < 3 && start <= fv.GetLength()) {
+		int semi = fv.Find(';', start);
+		CStringA piece = (semi < 0) ? fv.Mid(start) : fv.Mid(start, semi - start);
+		int vals[6] = { 0, 0, 0, 0, 0, 0 };
+		int p = 0, vi = 0;
+		while (vi < 6 && p <= piece.GetLength()) {
+			int comma = piece.Find(',', p);
+			CStringA num = (comma < 0) ? piece.Mid(p) : piece.Mid(p, comma - p);
+			vals[vi++] = atoi(num);
+			if (comma < 0) break;
+			p = comma + 1;
+		}
+		cf[slot].on = (vals[0] != 0);
+		cf[slot].a = vals[1]; cf[slot].r = vals[2]; cf[slot].g = vals[3];
+		cf[slot].b = vals[4]; cf[slot].tol = vals[5];
+		if (cf[slot].on) any = true;
+		++slot;
+		if (semi < 0) break;
+		start = semi + 1;
+	}
+	return any;
+}
+
 void CTrainerDlg::CaptureTick()
 {
 	if (_attached == NULL || !::IsWindow(_attached)) {
@@ -1531,6 +1588,11 @@ void CTrainerDlg::CaptureTick()
 		// "No OCR prefill" (Sample Gen tool): add rows with empty text and keep
 		// blank/empty captures instead of skipping them, for manual labeling.
 		bool no_prefill = (TrainerDB_GetSetting("sample_gen", "no_prefill") == "1");
+		// Optional color filters: when any slot is enabled, only keep a crop whose
+		// pixels contain one of the target colors within tolerance (OR-matched).
+		STrainerColorFilter color_filters[3];
+		bool any_color_filter = ParseColorFilters(
+			CStringA(TrainerDB_GetSetting("sample_colors", "filter")), color_filters);
 		STrainerOcrSettings settings = ReadSettings();
 		for (size_t i = 0; i < _regions.size(); ++i) {
 			if (!_regions[i].enabled) {
@@ -1548,6 +1610,10 @@ void CTrainerDlg::CaptureTick()
 			if (cur != _last[i]) { _last[i] = cur; continue; }   // still settling
 			if (cur == _committed[i]) { continue; }
 			_committed[i] = cur;
+
+			if (any_color_filter && !CropMatchesAnyColor(cur, w, h, color_filters)) {
+				continue;   // crop contains none of the enabled target colors
+			}
 
 			Mat bgra((int)h, (int)w, CV_8UC4, &cur[0]);
 			Mat bgr;

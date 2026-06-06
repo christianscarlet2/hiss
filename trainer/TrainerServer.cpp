@@ -315,6 +315,25 @@ void CTrainerServer::HandleClient(SOCKET client)
 		return;
 	}
 
+	// API: color filters for the Sample Gen tool. Up to three ARGB+tolerance
+	// filters, serialized as "on,a,r,g,b,tol;on,a,r,g,b,tol;on,a,r,g,b,tol". When
+	// any slot is enabled the capture loop only keeps crops containing a pixel that
+	// matches ANY enabled color within tolerance (OR). Stored in the shared DB so
+	// TrainerDlg::CaptureTick can read it.
+	if (path.CompareNoCase("/api/samplecolors") == 0) {
+		CStringA v = UrlDecode(QueryValue(query, "v"));
+		if (!v.IsEmpty()) {
+			TrainerDB_SetSetting("sample_colors", "filter", CString(v));
+		}
+		CString cur = TrainerDB_GetSetting("sample_colors", "filter");
+		// Value is a digits/commas/semicolons CSV -- no JSON escaping needed.
+		CStringA body;
+		body.Format("{\"ok\":true,\"filter\":\"%s\"}", CStringA(cur).GetString());
+		CStringA response = Response(body, "application/json; charset=utf-8");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
 	// API: delete every file in the training\ folder (moved here from the dialog).
 	if (path.CompareNoCase("/api/training/clear") == 0) {
 		LRESULT deleted = (g_trainer_main_hwnd != NULL)
