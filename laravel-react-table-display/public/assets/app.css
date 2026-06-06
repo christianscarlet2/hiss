@@ -639,6 +639,7 @@ body {
   width: 52px;
   height: 73px;
   margin-left: -18px;
+  transform: translateX(6px);   /* nudge the cards right ~5% so they sit centred in the ring */
 }
 
 .player.hero .holecards .card .corner .rank {
