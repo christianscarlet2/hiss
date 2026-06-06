@@ -5,7 +5,7 @@
 #include <map>
 #include <set>
 
-// If `name` is p<0-8><type> with a type the trainer scrapes ("balance"/"name"),
+// If `name` is p<0-8><type> with a type the trainer scrapes ("balance"/"name"/"bet"),
 // returns that type lowercased; otherwise returns "". (Empty => skip the region.)
 static CString PlayerFieldType(const CString &name)
 {
@@ -13,7 +13,7 @@ static CString PlayerFieldType(const CString &name)
 	if (name[0] != 'p') return "";
 	if (name[1] < '0' || name[1] > '8') return "";
 	CString rest = name.Mid(2); rest.MakeLower();
-	if (rest == "balance" || rest == "name") return rest;
+	if (rest == "balance" || rest == "name" || rest == "bet") return rest;
 	return "";
 }
 

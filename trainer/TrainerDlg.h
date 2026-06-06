@@ -55,6 +55,7 @@ protected:
 	afx_msg LRESULT OnOcrGlyph(WPARAM wParam, LPARAM lParam);
 	afx_msg void OnBnClickedOpenTable();
 	afx_msg void OnBnClickedCreateFonts();
+	afx_msg void OnBnClickedPause();     // freeze/unfreeze the live screenshot
 	afx_msg void OnGenerateSamples();    // "Generate Username Samples" button / Tools menu
 	afx_msg void OnGenerateBalanceSamples(); // Tools > Generate Balance Samples...
 	afx_msg void OnToolsSettings();      // Tools > Settings...
@@ -124,6 +125,7 @@ private:
 
 	HWND _attached;
 	bool _capturing;
+	bool _paused;          // when true, CaptureTick freezes (keeps showing the last frame)
 	bool _suppress_persist;   // true while LoadOcrSettingsFromDb populates controls
 	CString _ocr_loaded_spec; // model spec currently loaded in _ocr (avoid redundant re-Init)
 	HHOOK _mouse_hook;

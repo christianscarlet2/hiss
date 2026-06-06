@@ -28,6 +28,7 @@ BEGIN
     PUSHBUTTON      "Open Sample Gen",IDC_OPEN_TABLE,199,7,154,16
     PUSHBUTTON      "Create Fonts",IDC_CREATE_FONTS,7,28,60,16
     CONTROL         "Ignore bad scrapes",IDC_IGNORE_BAD,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,73,32,114,10
+    PUSHBUTTON      "Pause Screenshot",IDC_PAUSE,240,28,113,16
 
     GROUPBOX        "Image Processing (OCR)",IDC_STATIC,7,50,346,96
     LTEXT           "Transform:",IDC_STATIC,14,65,40,8

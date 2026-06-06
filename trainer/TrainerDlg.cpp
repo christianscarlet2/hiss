@@ -199,6 +199,7 @@ CTrainerDlg::CTrainerDlg(CWnd *pParent)
 {
 	_attached = NULL;
 	_capturing = false;
+	_paused = false;
 	_suppress_persist = false;
 	_ocr_loaded_spec = "";
 	_mouse_hook = NULL;
@@ -249,6 +250,7 @@ BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_MESSAGE(WM_TRAINER_OCR_GLYPH, &CTrainerDlg::OnOcrGlyph)
 	ON_BN_CLICKED(IDC_OPEN_TABLE, &CTrainerDlg::OnBnClickedOpenTable)
 	ON_BN_CLICKED(IDC_CREATE_FONTS, &CTrainerDlg::OnBnClickedCreateFonts)
+	ON_BN_CLICKED(IDC_PAUSE, &CTrainerDlg::OnBnClickedPause)
 	ON_BN_CLICKED(IDC_GEN_SAMPLES, &CTrainerDlg::OnGenerateSamples)
 	ON_COMMAND(ID_TOOLS_GEN_SAMPLES, &CTrainerDlg::OnGenerateSamples)
 	ON_COMMAND(ID_TOOLS_GEN_BALANCES, &CTrainerDlg::OnGenerateBalanceSamples)
@@ -1056,6 +1058,16 @@ void CTrainerDlg::OnBnClickedCreateFonts()
 	OpenFontsWindow();
 }
 
+// Freeze / unfreeze the live screenshot. While paused, CaptureTick returns early so the
+// Table View keeps showing the last captured frame (you can still click regions on it).
+void CTrainerDlg::OnBnClickedPause()
+{
+	_paused = !_paused;
+	SetDlgItemText(IDC_PAUSE, _paused ? "Resume Screenshot" : "Pause Screenshot");
+	SetStatus(_paused ? "Screenshot frozen. Click Resume to continue live capture."
+		: "Live capture resumed.");
+}
+
 // "Generate Username Samples" button + Tools menu: ask for a count, then synthesize
 // that many username images with text2image into the training\ folder.
 void CTrainerDlg::OnGenerateSamples()
@@ -1327,6 +1339,10 @@ void CTrainerDlg::CaptureTick()
 		_capturing = false;   // web Start/Stop button re-syncs via /api/capture
 		SetStatus("The attached window is gone. Reconnect.");
 		return;
+	}
+
+	if (_paused) {
+		return;   // frozen: keep showing the last captured frame (no new grab, no capture)
 	}
 
 	int bw = 0, bh = 0;
