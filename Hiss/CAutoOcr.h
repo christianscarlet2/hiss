@@ -99,15 +99,18 @@ private:
 	// worker threads (each owns its own api/api2 and result state).
 	TessBaseAPI *api;
 	TessBaseAPI *api2;
-	CString     _model_a0;
-	CString     _model_a1;
+	// Per-transform OCR settings, indexed by AutoOcr engine number (A0=0, A1=1, A2=2).
+	// (settings table keys autoocr0 / autoocr1 / autoocr2.)
+	static const int kNumAutoOcr = 3;
+	CString     _model[kNumAutoOcr];
 	CString     _current_model;   // model currently loaded into api/api2
-	// Per-transform OCR settings (settings table keys autoocr0 / autoocr1).
-	int         _thr_a0, _thr_a1;       // binarize threshold
-	int         _mode_a0, _mode_a1;     // tesseract page-seg mode (always applied)
-	bool        _nopre_a0, _nopre_a1;   // skip resize/char-spacing enhancement
-	bool        _nowl_a0, _nowl_a1;     // disable the char whitelist
-	bool        _nocs_a0, _nocs_a1;     // disable only the character-spacing step
+	int         _thr[kNumAutoOcr];    // binarize threshold
+	int         _mode[kNumAutoOcr];   // tesseract page-seg mode (always applied)
+	bool        _nopre[kNumAutoOcr];  // skip resize/char-spacing enhancement
+	bool        _nowl[kNumAutoOcr];   // disable the char whitelist
+	bool        _nocs[kNumAutoOcr];   // disable only the character-spacing step
+	// Map a transform code ("A0"/"A1"/"A2") to an engine index 0..kNumAutoOcr-1.
+	static int  AutoOcrIndex(const CString &transform);
 	std::vector<CString> _decimal_fields;   // field types that use decimal splitting (Vision Settings > Fields)
 	bool RegionUsesDecimalSplit(const CString &region_name);
 

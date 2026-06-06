@@ -514,6 +514,7 @@ BOOL CDlgTableMap::OnInitDialog()
 	m_Transform.AddString("Image");
 	m_Transform.AddString("AutoOcr0");
 	m_Transform.AddString("AutoOcr1");
+	m_Transform.AddString("AutoOcr2");
 	m_Transform.AddString("Text0");
 	m_Transform.AddString("Text1");
 	m_Transform.AddString("Text2");
@@ -1420,6 +1421,7 @@ void CDlgTableMap::OnRegionChange()
 			text == "Image" ? "I" :
 			text == "AutoOcr0" ? "A0" :
 			text == "AutoOcr1" ? "A1" :
+			text == "AutoOcr2" ? "A2" :
 			text == "Text0" ? "T0" :
 			text == "Text1" ? "T1" :
 			text == "Text2" ? "T2" :
@@ -2471,7 +2473,8 @@ static void SplitModelSpec(const CString &spec, CString *dir, CString *lang) {
 // every OCR and re-Init Tesseract ONLY when the chosen model actually changes, so editing
 // the model in preferences takes effect here automatically (no restart).
 bool CDlgTableMap::EnsureOcrModel(const CString &transform) {
-	CString key = (transform == "AutoOcr1") ? CString("autoocr1") : CString("autoocr0");
+	CString key = (transform == "AutoOcr2") ? CString("autoocr2")
+		: (transform == "AutoOcr1") ? CString("autoocr1") : CString("autoocr0");
 	CString spec = (p_tablemap_db != NULL) ? p_tablemap_db->GetSettingString(key, "model") : CString("");
 	spec.Trim();
 	// A .checkpoint is a TRAINING artifact, not an OCR-able model. Trying to Init() one
@@ -2580,7 +2583,7 @@ CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast,
 	bool binarize_for_ocr = is_balance;
 	bool did_decimal = false;
 	CString decimal_result;
-	if ((transform == "AutoOcr0" || transform == "AutoOcr1") && EnsureOcrModel(transform)) {
+	if ((transform == "AutoOcr0" || transform == "AutoOcr1" || transform == "AutoOcr2") && EnsureOcrModel(transform)) {
 		// Decimal splitting (preferred for balances/bets/...): split the image at the
 		// decimal separator, OCR each half independently, and re-join with '.'. Whole-image
 		// OCR often drops or misreads the point (e.g. "50.28" -> "5028", "84.36" -> "84 36").
@@ -3284,6 +3287,7 @@ void CDlgTableMap::update_ocr_r$_display(void) {
 		if (sel_region->second.transform == "I")		selected_transform = "Image";
 		else if (sel_region->second.transform == "A0")		selected_transform = "AutoOcr0";
 		else if (sel_region->second.transform == "A1")		selected_transform = "AutoOcr1";
+		else if (sel_region->second.transform == "A2")		selected_transform = "AutoOcr2";
 	}
 
 	m_MatchMode.EnableWindow(false);
@@ -3458,6 +3462,7 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 		else if (sel_region->second.transform == "I")		selected_transform = "Image";
 		else if (sel_region->second.transform == "A0")		selected_transform = "AutoOcr0";
 		else if (sel_region->second.transform == "A1")		selected_transform = "AutoOcr1";
+		else if (sel_region->second.transform == "A2")		selected_transform = "AutoOcr2";
 		else if (sel_region->second.transform == "T0")		selected_transform = "Text0";
 		else if (sel_region->second.transform == "T1")		selected_transform = "Text1";
 		else if (sel_region->second.transform == "T2")		selected_transform = "Text2";

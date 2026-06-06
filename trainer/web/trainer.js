@@ -261,6 +261,7 @@
     };
     add('AutoOcr0', 'AutoOcr0');
     add('AutoOcr1', 'AutoOcr1');
+    add('AutoOcr2', 'AutoOcr2');
     for (var g = 0; g < 10; g++) {
       var n = (counts && typeof counts[g] === 'number') ? counts[g] : 0;
       add('Text' + g, 'Text' + g + ' (' + n + ')');

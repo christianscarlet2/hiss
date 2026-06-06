@@ -158,47 +158,49 @@ CAutoOcr::CAutoOcr() :
 	_api_initialized(false),
 	_api2_initialized(false),
 	_api_init_failed(false),
-	_models_loaded(false),
-	_thr_a0(kDefaultAutoOcrThreshold), _thr_a1(kDefaultAutoOcrThreshold),
-	_mode_a0((int)tesseract::PSM_SINGLE_LINE), _mode_a1((int)tesseract::PSM_SINGLE_LINE),
-	_nopre_a0(false), _nopre_a1(false),
-	_nowl_a0(false), _nowl_a1(false),
-	_nocs_a0(false), _nocs_a1(false) {
+	_models_loaded(false) {
+	for (int i = 0; i < kNumAutoOcr; ++i) {
+		_model[i] = "my_model";
+		_thr[i]   = kDefaultAutoOcrThreshold;
+		_mode[i]  = (int)tesseract::PSM_SINGLE_LINE;
+		_nopre[i] = _nowl[i] = _nocs[i] = false;
+	}
 }
 
-// Read the per-transform OCR settings (model/threshold/mode/no_preprocess/
-// no_whitelist) for A0 (autoocr0) and A1 (autoocr1) from the settings table.
+// Map "A0"/"A1"/"A2" to engine index 0..kNumAutoOcr-1 (defaults to 0 / autoocr0).
+int CAutoOcr::AutoOcrIndex(const CString &transform) {
+	if (transform.GetLength() >= 2 && (transform[0] == 'A' || transform[0] == 'a')) {
+		int n = transform[1] - '0';
+		if (n >= 0 && n < kNumAutoOcr) return n;
+	}
+	return 0;
+}
+
+// Read the per-transform OCR settings (model/threshold/mode/no_preprocess/no_whitelist/
+// no_char_spacing) for A0 (autoocr0), A1 (autoocr1) and A2 (autoocr2) from the settings table.
 void CAutoOcr::LoadModelSettings() {
-	_model_a0 = "my_model";
-	_model_a1 = "my_model";
-	_thr_a0 = _thr_a1 = kDefaultAutoOcrThreshold;
-	_mode_a0 = _mode_a1 = (int)tesseract::PSM_SINGLE_LINE;   // single-line for AutoOcr
-	_nopre_a0 = _nopre_a1 = false;
-	_nowl_a0 = _nowl_a1 = false;
-	_nocs_a0 = _nocs_a1 = false;
+	for (int i = 0; i < kNumAutoOcr; ++i) {
+		_model[i] = "my_model";
+		_thr[i]   = kDefaultAutoOcrThreshold;
+		_mode[i]  = (int)tesseract::PSM_SINGLE_LINE;   // single-line for AutoOcr
+		_nopre[i] = _nowl[i] = _nocs[i] = false;
+	}
 	_decimal_fields.clear();
 	if (p_tablemap_db != NULL) {
 		p_tablemap_db->GetSettingArray("decimal_split_fields", "fields", &_decimal_fields);
 	}
 	if (p_tablemap_db != NULL) {
-		const char *keys[2] = { "autoocr0", "autoocr1" };
-		for (int g = 0; g < 2; ++g) {
+		const char *keys[kNumAutoOcr] = { "autoocr0", "autoocr1", "autoocr2" };
+		for (int g = 0; g < kNumAutoOcr; ++g) {
 			CString model = p_tablemap_db->GetSettingString(keys[g], "model");
 			CString thr   = p_tablemap_db->GetSettingString(keys[g], "threshold");
 			CString mode  = p_tablemap_db->GetSettingString(keys[g], "mode");
-			bool nopre = (p_tablemap_db->GetSettingString(keys[g], "no_preprocess") == "1");
-			bool nowl  = (p_tablemap_db->GetSettingString(keys[g], "no_whitelist") == "1");
-			bool nocs  = (p_tablemap_db->GetSettingString(keys[g], "no_char_spacing") == "1");
-			CString &m = (g == 0) ? _model_a0 : _model_a1;
-			int &t = (g == 0) ? _thr_a0 : _thr_a1;
-			int &md = (g == 0) ? _mode_a0 : _mode_a1;
-			bool &np = (g == 0) ? _nopre_a0 : _nopre_a1;
-			bool &nw = (g == 0) ? _nowl_a0 : _nowl_a1;
-			bool &nc = (g == 0) ? _nocs_a0 : _nocs_a1;
-			if (!model.IsEmpty()) m = model;
-			if (!thr.IsEmpty()) t = atoi(thr.GetString());
-			if (!mode.IsEmpty()) md = atoi(mode.GetString());
-			np = nopre; nw = nowl; nc = nocs;
+			if (!model.IsEmpty()) _model[g] = model;
+			if (!thr.IsEmpty()) _thr[g] = atoi(thr.GetString());
+			if (!mode.IsEmpty()) _mode[g] = atoi(mode.GetString());
+			_nopre[g] = (p_tablemap_db->GetSettingString(keys[g], "no_preprocess") == "1");
+			_nowl[g]  = (p_tablemap_db->GetSettingString(keys[g], "no_whitelist") == "1");
+			_nocs[g]  = (p_tablemap_db->GetSettingString(keys[g], "no_char_spacing") == "1");
 		}
 	}
 	_models_loaded = true;
@@ -282,13 +284,13 @@ bool CAutoOcr::EnsureTesseractInitialized() {
 				return false;
 			}
 		}
-		if (SafeTessInit(api, _model_a0.GetString()) == -1) {		// OEM_LSTM_ONLY
+		if (SafeTessInit(api, _model[0].GetString()) == -1) {		// OEM_LSTM_ONLY
 			_api_init_failed = true;
 			MessageBox(NULL, "Failed to load tessdata files.\nMake sure tessdata folder is present and/or datas are not corrupted.", "AutoOcr error", MB_OK);
 			return false;
 		}
 		_api_initialized = true;
-		_current_model = _model_a0;
+		_current_model = _model[0];
 	}
 
 	if (!_api2_initialized) {
@@ -300,13 +302,13 @@ bool CAutoOcr::EnsureTesseractInitialized() {
 				return false;
 			}
 		}
-		if (SafeTessInit(api2, _model_a0.GetString()) == -1) {		// OEM_LSTM_ONLY
+		if (SafeTessInit(api2, _model[0].GetString()) == -1) {		// OEM_LSTM_ONLY
 			_api_init_failed = true;
 			MessageBox(NULL, "Failed to load tessdata files.\nMake sure tessdata folder is present and/or datas are not corrupted.", "AutoOcr error", MB_OK);
 			return false;
 		}
 		_api2_initialized = true;
-		_current_model = _model_a0;
+		_current_model = _model[0];
 	}
 
 	return true;
@@ -851,20 +853,20 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast, SAutoOc
 	ResultString = "";
 	ResultString2 = "";
 
-	// OCR parameters come from the per-transform settings groups (autoocr0 for
-	// "A0", autoocr1 for "A1"), not from the region. Threshold and page-seg mode
-	// always apply, regardless of "no preprocessing".
-	bool isA1 = (region->second.transform == "A1");
-	int tablemap_threshold = isA1 ? _thr_a1 : _thr_a0;
+	// OCR parameters come from the per-transform settings groups (autoocr0 for "A0",
+	// autoocr1 for "A1", autoocr2 for "A2"), not from the region. Threshold and page-seg
+	// mode always apply, regardless of "no preprocessing".
+	int ai = AutoOcrIndex(region->second.transform);
+	int tablemap_threshold = _thr[ai];
 	if (tablemap_threshold <= 0) tablemap_threshold = kDefaultAutoOcrThreshold;
 	SAutoOcrSettings settings;
 	settings.threshold = tablemap_threshold;
 	settings.use_cropping = false;   // cropping removed from the pipeline
 	settings.crop_size = 0;
-	settings.page_seg_mode = isA1 ? _mode_a1 : _mode_a0;
+	settings.page_seg_mode = _mode[ai];
 	settings.sharpen = 0;            // sharpen removed from the pipeline
-	settings.no_preprocess = isA1 ? _nopre_a1 : _nopre_a0;
-	settings.no_char_spacing = isA1 ? _nocs_a1 : _nocs_a0;
+	settings.no_preprocess = _nopre[ai];
+	settings.no_char_spacing = _nocs[ai];
 	// Balance fields are pure numbers; restrict OCR to digits and a dot. Other
 	// regions use the general character set.
 	bool is_balance = (CString(region->first).MakeLower().Find("balance") != -1);
@@ -885,11 +887,9 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast, SAutoOc
 	settings.use_cropping = false;   // never crop, even if a colour preset set it
 	tablemap_threshold = settings.threshold;
 
-	// The region's transform field (A0/A1) decides which model OCRs it.
-	if (region->second.transform == "A0") {
-		EnsureModelLoaded(_model_a0);
-	} else if (region->second.transform == "A1") {
-		EnsureModelLoaded(_model_a1);
+	// The region's transform field (A0/A1/A2) decides which model OCRs it.
+	if (region->second.transform.GetLength() >= 2 && region->second.transform[0] == 'A') {
+		EnsureModelLoaded(_model[ai]);
 	}
 
 	vector<CString> lst;

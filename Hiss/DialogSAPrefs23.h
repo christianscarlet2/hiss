@@ -35,9 +35,10 @@ protected:
 	virtual void OnOK();
 	afx_msg void OnBnClickedBrowse0();
 	afx_msg void OnBnClickedBrowse1();
+	afx_msg void OnBnClickedBrowse2();
 
 	enum { IDD = IDD_SAPREFS23 };
-	CEdit m_model0, m_model1;
+	CEdit m_model0, m_model1, m_model2;
 
 	void BrowseForModel(CEdit *target);
 

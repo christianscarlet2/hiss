@@ -65,6 +65,8 @@
 #define IDC_PW_WORKERS_PER_CPU          1436
 #define IDC_DECIMAL_FIELDS_LIST         1437
 #define IDC_OCR_BROWSE1                 1430
+#define IDC_OCR_MODEL2                  1438
+#define IDC_OCR_BROWSE2                 1439
 #define IDC_NEW                         1006
 #define IDC_DELETE                      1007
 #define IDC_RENAME                      1013
@@ -574,7 +576,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        193
 #define _APS_NEXT_COMMAND_VALUE         33001
-#define _APS_NEXT_CONTROL_VALUE         1438
+#define _APS_NEXT_CONTROL_VALUE         1440
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

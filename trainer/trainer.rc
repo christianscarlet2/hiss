@@ -63,6 +63,7 @@ BEGIN
     LTEXT           "Idle.",IDC_STATUS,7,304,346,36
     PUSHBUTTON      "AutoOcr0 Model...",IDC_SELECT_MODEL,7,346,110,16
     PUSHBUTTON      "AutoOcr1 Model...",IDC_SELECT_MODEL1,121,346,110,16
+    PUSHBUTTON      "AutoOcr2 Model...",IDC_SELECT_MODEL2,235,346,110,16
     PUSHBUTTON      "Generate Username Samples (text2image)...",IDC_GEN_SAMPLES,7,368,235,16
 END
 
@@ -88,13 +89,16 @@ BEGIN
     LTEXT           "text2image.exe:",IDC_STATIC,7,10,80,8
     EDITTEXT        IDC_T2I_PATH,72,8,180,14,ES_AUTOHSCROLL
     PUSHBUTTON      "...",IDC_T2I_BROWSE,256,8,20,14
-    GROUPBOX        "OCR models (.traineddata / .checkpoint, shared with Hiss + Vision)",IDC_STATIC,7,28,270,66
+    GROUPBOX        "OCR models (.traineddata / .checkpoint, shared with Hiss + Vision)",IDC_STATIC,7,28,270,90
     LTEXT           "AutoOcr0 model:",IDC_STATIC,16,44,70,8
     EDITTEXT        IDC_T2I_A0_MODEL,90,42,150,14,ES_AUTOHSCROLL
     PUSHBUTTON      "...",IDC_T2I_A0_BROWSE,244,42,20,14
     LTEXT           "AutoOcr1 model:",IDC_STATIC,16,68,70,8
     EDITTEXT        IDC_T2I_A1_MODEL,90,66,150,14,ES_AUTOHSCROLL
     PUSHBUTTON      "...",IDC_T2I_A1_BROWSE,244,66,20,14
+    LTEXT           "AutoOcr2 model:",IDC_STATIC,16,92,70,8
+    EDITTEXT        IDC_T2I_A2_MODEL,90,90,150,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "...",IDC_T2I_A2_BROWSE,244,90,20,14
     GROUPBOX        "Decimal splitting (shared with Hiss + Vision)",IDC_STATIC,7,124,270,90
     LTEXT           "Field types that use decimal splitting:",IDC_STATIC,16,138,250,8
     LISTBOX         IDC_T2I_DECIMAL_LIST,16,150,250,58,LBS_MULTIPLESEL | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP | WS_BORDER

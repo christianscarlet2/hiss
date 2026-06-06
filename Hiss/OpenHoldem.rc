@@ -934,7 +934,10 @@ BEGIN
     LTEXT           "AutoOcr1 model (.traineddata):",IDC_STATIC,4,48,160,8
     EDITTEXT        IDC_OCR_MODEL1,4,60,170,14,ES_AUTOHSCROLL
     PUSHBUTTON      "Browse...",IDC_OCR_BROWSE1,178,60,52,14
-    LTEXT           "Pick the Tesseract .traineddata model for each AutoOcr engine. The full path is stored; leave blank to use the default ""my_model"" in the tessdata folder.",IDC_STATIC,4,86,226,32
+    LTEXT           "AutoOcr2 model (.traineddata):",IDC_STATIC,4,86,160,8
+    EDITTEXT        IDC_OCR_MODEL2,4,98,170,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Browse...",IDC_OCR_BROWSE2,178,98,52,14
+    LTEXT           "Pick the Tesseract .traineddata model for each AutoOcr engine. The full path is stored; leave blank to use the default ""my_model"" in the tessdata folder.",IDC_STATIC,4,122,226,32
 END
 
 IDD_SAPREFS24 DIALOGEX 0, 0, 237, 213

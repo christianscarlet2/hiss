@@ -2125,8 +2125,10 @@ void COpenScrapeView::DebugRegionToFolder(const CString &region_name)
 	if (p_tablemap_db != NULL) {
 		CString m0 = p_tablemap_db->GetSettingString("autoocr0", "model");
 		CString m1 = p_tablemap_db->GetSettingString("autoocr1", "model");
+		CString m2 = p_tablemap_db->GetSettingString("autoocr2", "model");
 		line.Format("AutoOcr0      : %s\r\n", m0.IsEmpty() ? "(not set)" : m0.GetString()); info += line;
 		line.Format("AutoOcr1      : %s\r\n", m1.IsEmpty() ? "(not set)" : m1.GetString()); info += line;
+		line.Format("AutoOcr2      : %s\r\n", m2.IsEmpty() ? "(not set)" : m2.GetString()); info += line;
 	} else {
 		info += "(database not available)\r\n";
 	}

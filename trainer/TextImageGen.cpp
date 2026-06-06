@@ -500,12 +500,14 @@ protected:
 	afx_msg void OnBrowse();
 	afx_msg void OnBrowseA0();
 	afx_msg void OnBrowseA1();
+	afx_msg void OnBrowseA2();
 	DECLARE_MESSAGE_MAP()
 };
 BEGIN_MESSAGE_MAP(CT2ISettingsDlg, CDialog)
 	ON_BN_CLICKED(IDC_T2I_BROWSE, &CT2ISettingsDlg::OnBrowse)
 	ON_BN_CLICKED(IDC_T2I_A0_BROWSE, &CT2ISettingsDlg::OnBrowseA0)
 	ON_BN_CLICKED(IDC_T2I_A1_BROWSE, &CT2ISettingsDlg::OnBrowseA1)
+	ON_BN_CLICKED(IDC_T2I_A2_BROWSE, &CT2ISettingsDlg::OnBrowseA2)
 END_MESSAGE_MAP()
 
 // Decimal-split field types shown in the Settings multi-select (matches Vision).
@@ -536,6 +538,7 @@ BOOL CT2ISettingsDlg::OnInitDialog()
 	// read them. A region's transform field (A0/A1) decides which model OCRs it.
 	SetDlgItemText(IDC_T2I_A0_MODEL, TrainerDB_GetSetting("autoocr0", "model"));
 	SetDlgItemText(IDC_T2I_A1_MODEL, TrainerDB_GetSetting("autoocr1", "model"));
+	SetDlgItemText(IDC_T2I_A2_MODEL, TrainerDB_GetSetting("autoocr2", "model"));
 
 	// Decimal-splitting field-type multi-select, bound to the shared decimal_split_fields
 	// list (same control as Vision).
@@ -560,11 +563,13 @@ void CT2ISettingsDlg::OnOK()
 	GetDlgItemText(IDC_T2I_PT_DB, s.pt_dbname);
 	SaveSettings(s);
 	// Persist the AutoOcr models to the shared DB (Hiss + Vision pick them up).
-	CString a0, a1;
+	CString a0, a1, a2;
 	GetDlgItemText(IDC_T2I_A0_MODEL, a0); a0.Trim();
 	GetDlgItemText(IDC_T2I_A1_MODEL, a1); a1.Trim();
+	GetDlgItemText(IDC_T2I_A2_MODEL, a2); a2.Trim();
 	TrainerDB_SetSetting("autoocr0", "model", a0);
 	TrainerDB_SetSetting("autoocr1", "model", a1);
+	TrainerDB_SetSetting("autoocr2", "model", a2);
 
 	// Persist the decimal-splitting field list from the multi-select.
 	std::vector<CString> decimal;
@@ -586,6 +591,7 @@ void CT2ISettingsDlg::OnBrowse()
 
 void CT2ISettingsDlg::OnBrowseA0() { BrowseModelInto(this, IDC_T2I_A0_MODEL); }
 void CT2ISettingsDlg::OnBrowseA1() { BrowseModelInto(this, IDC_T2I_A1_MODEL); }
+void CT2ISettingsDlg::OnBrowseA2() { BrowseModelInto(this, IDC_T2I_A2_MODEL); }
 
 // ---- "how many?" ----
 class CGenCountDlg : public CDialog {

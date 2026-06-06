@@ -236,6 +236,7 @@ BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_BN_CLICKED(IDC_LOAD_TM, &CTrainerDlg::OnBnClickedLoadTm)
 	ON_BN_CLICKED(IDC_SELECT_MODEL, &CTrainerDlg::OnBnClickedSelectModel)
 	ON_BN_CLICKED(IDC_SELECT_MODEL1, &CTrainerDlg::OnBnClickedSelectModel1)
+	ON_BN_CLICKED(IDC_SELECT_MODEL2, &CTrainerDlg::OnBnClickedSelectModel2)
 	ON_CBN_SELCHANGE(IDC_TRANSFORM, &CTrainerDlg::OnSelchangeTransform)
 	ON_EN_CHANGE(IDC_SPLIT_MARGIN, &CTrainerDlg::OnChangeSplitMargin)
 	ON_BN_CLICKED(IDC_USE_DECIMAL_SPLIT, &CTrainerDlg::OnBnClickedDecimalSplit)
@@ -275,6 +276,7 @@ void CTrainerDlg::PopulateModeCombos()
 {
 	m_transform.AddString("AutoOcr0");
 	m_transform.AddString("AutoOcr1");
+	m_transform.AddString("AutoOcr2");
 	m_transform.SetCurSel(0);
 
 	for (int i = 0; i < kNumPsmModes; ++i) {
@@ -435,7 +437,9 @@ CString CTrainerDlg::CurrentAutoOcrKey()
 	if (sel >= 0) m_transform.GetLBText(sel, tr);
 	int index = 0;
 	if (tr.Left(7).CompareNoCase("AutoOcr") == 0) index = atoi(CStringA(tr.Mid(7)));
-	return (index == 1) ? CString("autoocr1") : CString("autoocr0");
+	if (index < 0 || index > 2) index = 0;
+	CString key; key.Format("autoocr%d", index);
+	return key;
 }
 
 // Load the model stored in the shared settings DB (key autoocr0/autoocr1, field
@@ -483,6 +487,7 @@ void CTrainerDlg::LoadOcrModelForRegion(int region_idx)
 	if (region_idx >= 0 && region_idx < (int)_regions.size()) {
 		CString tr = _regions[region_idx].transform; tr.Trim();
 		if (tr.CompareNoCase("A1") == 0) key = "autoocr1";
+		else if (tr.CompareNoCase("A2") == 0) key = "autoocr2";
 	}
 	ApplyModelFromDb(key);
 }
@@ -516,6 +521,7 @@ void CTrainerDlg::SelectModelForKey(const CString &key)
 
 void CTrainerDlg::OnBnClickedSelectModel()  { SelectModelForKey("autoocr0"); }
 void CTrainerDlg::OnBnClickedSelectModel1() { SelectModelForKey("autoocr1"); }
+void CTrainerDlg::OnBnClickedSelectModel2() { SelectModelForKey("autoocr2"); }
 
 // Push the desktop "Transform" combo into the shared engine selection so picking
 // AutoOcr0/AutoOcr1 actually takes effect (it drives CaptureTick + the web UI's
@@ -531,10 +537,11 @@ void CTrainerDlg::ApplyTransformSelection(bool recognize)
 	if (sel >= 0) m_transform.GetLBText(sel, tr);
 	int index = 0;
 	if (tr.Left(7).CompareNoCase("AutoOcr") == 0) index = atoi(CStringA(tr.Mid(7)));
+	if (index < 0 || index > 2) index = 0;
 	p_sample_store->SetTransform(TRAINER_MODE_AUTOOCR, index);
 	// Switch the preview engine + Image-Processing controls to this transform's settings
-	// (autoocr0/autoocr1, shared DB).
-	CString key = (index == 1) ? CString("autoocr1") : CString("autoocr0");
+	// (autoocr0/autoocr1/autoocr2, shared DB).
+	CString key; key.Format("autoocr%d", index);
 	ApplyModelFromDb(key);
 	LoadOcrSettingsFromDb(key);
 	// Mirror the web UI's /api/transform: re-recognize the existing rows with the
@@ -557,7 +564,8 @@ void CTrainerDlg::OnSelchangeTransform()
 		if (sel >= 0) m_transform.GetLBText(sel, tr);
 		int index = 0;
 		if (tr.Left(7).CompareNoCase("AutoOcr") == 0) index = atoi(CStringA(tr.Mid(7)));
-		CString tcode = (index == 1) ? CString("A1") : CString("A0");
+		if (index < 0 || index > 2) index = 0;
+		CString tcode; tcode.Format("A%d", index);
 		if (_regions[_selected].transform.CompareNoCase(tcode) != 0) {
 			_regions[_selected].transform = tcode;
 			if (!_tablemap_name.IsEmpty())
@@ -879,7 +887,7 @@ void CTrainerDlg::EnableOcrControls(bool on)
 		IDC_TRANSFORM, IDC_THRESHOLD, IDC_THRESHOLD_SPIN, IDC_MATCH_MODE,
 		IDC_CHAR_SPACING, IDC_CHAR_SPACING_SPIN, IDC_NO_PREPROCESS, IDC_NO_WHITELIST,
 		IDC_USE_DECIMAL_SPLIT, IDC_SPLIT_MARGIN, IDC_SPLIT_MARGIN_SPIN,
-		IDC_SELECT_MODEL, IDC_SELECT_MODEL1
+		IDC_SELECT_MODEL, IDC_SELECT_MODEL1, IDC_SELECT_MODEL2
 	};
 	for (int i = 0; i < (int)(sizeof(ids) / sizeof(ids[0])); ++i) {
 		CWnd *w = GetDlgItem(ids[i]);
@@ -896,6 +904,7 @@ void CTrainerDlg::ApplyRegionTransform(int idx)
 	int autoIndex = -1;
 	if (tr.CompareNoCase("A0") == 0) autoIndex = 0;
 	else if (tr.CompareNoCase("A1") == 0) autoIndex = 1;
+	else if (tr.CompareNoCase("A2") == 0) autoIndex = 2;
 
 	if (autoIndex < 0) {
 		// This region isn't AutoOcr0/AutoOcr1, but the AutoOcr settings are GLOBAL

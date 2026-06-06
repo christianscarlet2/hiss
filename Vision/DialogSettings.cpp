@@ -156,6 +156,7 @@ const char *CDlgSettings::GroupKey(int group)
 {
 	if (group == 2) return "autoocr0";
 	if (group == 3) return "autoocr1";
+	if (group == 7) return "autoocr2";
 	return NULL;
 }
 
@@ -170,6 +171,7 @@ BOOL CDlgSettings::OnInitDialog()
 	m_groups.AddString("Advanced");
 	m_groups.AddString("Auto Card Capture");
 	m_groups.AddString("Parallel Workers");
+	m_groups.AddString("AutoOcr2");   // appended (index 7) so the other group indices stay put
 	m_groups.SetCurSel(0);
 
 	// Auto card capture: detection poll interval (ms), default 2000 (~one frame).
@@ -345,6 +347,7 @@ void CDlgSettings::ShowPage(int index)
 	else if (index == 4) { show = advanced;show_n = sizeof(advanced)/ sizeof(int); title = "Advanced"; }
 	else if (index == 5) { show = autocap; show_n = sizeof(autocap)/ sizeof(int);  title = "Auto Card Capture"; }
 	else if (index == 6) { show = workers; show_n = sizeof(workers)/ sizeof(int);  title = "Parallel Workers"; }
+	else if (index == 7) { show = autoocr; show_n = sizeof(autoocr) / sizeof(int); title = "AutoOcr2"; }
 
 	int all[] = { IDC_SET_GENERAL_TEXT, IDC_SET_FIELDS_DECLBL, IDC_LST_DECIMAL_FIELDS,
 		IDC_SET_SCRAPE_LBL, IDC_LST_SCRAPE_FIELDS,
@@ -370,9 +373,9 @@ void CDlgSettings::OnSelchangeGroups()
 {
 	int g = m_groups.GetCurSel();
 	if (g < 0) return;
-	if (m_current_group == 2 || m_current_group == 3) SaveGroup(m_current_group);
+	if (m_current_group == 2 || m_current_group == 3 || m_current_group == 7) SaveGroup(m_current_group);
 	m_current_group = g;
-	if (g == 2 || g == 3) LoadGroup(g);
+	if (g == 2 || g == 3 || g == 7) LoadGroup(g);
 	ShowPage(g);
 }
 
@@ -402,7 +405,7 @@ void CDlgSettings::OnTimer(UINT_PTR nIDEvent)
 {
 	if (nIDEvent == SETTINGS_POLL_TIMER) {
 		if (IsDlgButtonChecked(IDC_CHK_LIVE_POLL) == BST_CHECKED
-				&& (m_current_group == 2 || m_current_group == 3)) {
+				&& (m_current_group == 2 || m_current_group == 3 || m_current_group == 7)) {
 			RunPreview();
 		}
 	}
@@ -441,7 +444,7 @@ void CDlgSettings::RunPreview()
 	}
 	CString hint;
 	hint.Format("Live: region '%s'  (transform %s)", name.GetString(),
-		(m_current_group == 3) ? "A1" : "A0");
+		(m_current_group == 7) ? "A2" : (m_current_group == 3) ? "A1" : "A0");
 	SetDlgItemText(IDC_SET_LIVE_HINT, hint);
 
 	// Re-capture the live window so the preview tracks the table.
@@ -474,7 +477,7 @@ void CDlgSettings::RunPreview()
 	// "Disable character spacing" -> 0px gap (ignored anyway when preprocessing off).
 	if (IsDlgButtonChecked(IDC_CHK_NO_CHARSPACING) == BST_CHECKED)
 		s.char_spacing = 0;
-	s.transform = (m_current_group == 3) ? "AutoOcr1" : "AutoOcr0";
+	s.transform = (m_current_group == 7) ? "AutoOcr2" : (m_current_group == 3) ? "AutoOcr1" : "AutoOcr0";
 	bool decimal = RegionUsesDecimalSplit(name);
 	s.use_decimal_split = decimal;
 
@@ -515,7 +518,7 @@ void CDlgSettings::RunPreview()
 
 void CDlgSettings::OnOK()
 {
-	if (m_current_group == 2 || m_current_group == 3) SaveGroup(m_current_group);
+	if (m_current_group == 2 || m_current_group == 3 || m_current_group == 7) SaveGroup(m_current_group);
 	SaveDecimalFields();
 	SaveScrapeFields();
 	// Persist the auto-capture poll interval.
