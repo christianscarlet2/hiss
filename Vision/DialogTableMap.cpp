@@ -292,6 +292,7 @@ void CDlgTableMap::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_AC_B3, m_AcB3);
 	DDX_Control(pDX, IDC_AC_PICK3, m_AcPick3);
 	DDX_Control(pDX, IDC_AC_TOL3, m_AcTol3);
+	DDX_Control(pDX, IDC_AC_PREVIEW, m_AcPreview);
 	DDX_Control(pDX, IDC_RADIUS, m_Radius);
 	DDX_Control(pDX, IDC_RESULT, m_Result);
 	DDX_Control(pDX, IDC_NEW, m_New);
@@ -3585,6 +3586,82 @@ void CDlgTableMap::update_ocr_r$_display(void) {
 }
 
 
+// Render the currently selected region's scrape, auto-cropped with its Auto Cropper
+// settings, into the m_AcPreview static (scaled to fit, nearest-neighbour). When the
+// Auto Cropper is disabled the full region is shown; when nothing matches the image is
+// left uncropped. Clears the preview when there is no connected table / no region.
+void CDlgTableMap::DrawAutoCropPreview()
+{
+	if (m_AcPreview.GetSafeHwnd() == NULL) return;
+
+	COpenScrapeDoc* pDoc = COpenScrapeDoc::GetDocument();
+	CString sel_text = "", type_text = "";
+	GetTextSelItemAndRecordType(&sel_text, &type_text);
+	RMapCI region = p_tablemap->r$()->find(sel_text.GetString());
+
+	bool ok = (pDoc != NULL && pDoc->attached_bitmap != NULL
+		&& region != p_tablemap->r$()->end());
+	int w = ok ? (int)(region->second.right - region->second.left + 1) : 0;
+	int h = ok ? (int)(region->second.bottom - region->second.top + 1) : 0;
+	if (!ok || w <= 0 || h <= 0) {
+		HBITMAP old = m_AcPreview.SetBitmap(NULL);
+		if (old) DeleteObject(old);
+		return;
+	}
+
+	// Grab the region's pixels (BGRA) from the attached table bitmap.
+	HDC hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL);
+	HDC hdcOrig = CreateCompatibleDC(hdcScreen);
+	HBITMAP oldOrig = (HBITMAP)SelectObject(hdcOrig, pDoc->attached_bitmap);
+	HDC hdcRgn = CreateCompatibleDC(hdcScreen);
+	HBITMAP bmpRgn = CreateCompatibleBitmap(hdcScreen, w, h);
+	HBITMAP oldRgn = (HBITMAP)SelectObject(hdcRgn, bmpRgn);
+	BitBlt(hdcRgn, 0, 0, w, h, hdcOrig, region->second.left, region->second.top, SRCCOPY);
+	Mat input(h, w, CV_8UC4);
+	BITMAPINFOHEADER bi = { sizeof(bi), w, -h, 1, 32, BI_RGB };
+	GetDIBits(hdcRgn, bmpRgn, 0, h, input.data, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
+	SelectObject(hdcRgn, oldRgn); DeleteObject(bmpRgn); DeleteDC(hdcRgn);
+	SelectObject(hdcOrig, oldOrig); DeleteDC(hdcOrig);
+
+	// Apply the same auto-crop the scraper uses.
+	SAutoCropColor accols[3] = {
+		{ region->second.autocrop_color1, region->second.autocrop_tol1, region->second.autocrop_c1_enabled },
+		{ region->second.autocrop_color2, region->second.autocrop_tol2, region->second.autocrop_c2_enabled },
+		{ region->second.autocrop_color3, region->second.autocrop_tol3, region->second.autocrop_c3_enabled },
+	};
+	Mat cropped = AutoCropToColors(input, region->second.autocrop_enabled, accols);
+	if (cropped.empty()) { DeleteDC(hdcScreen); return; }
+
+	// Scale to fit the preview control (integer-ish, nearest-neighbour for crisp pixels).
+	RECT rc; m_AcPreview.GetClientRect(&rc);
+	int cw = rc.right - rc.left, chh = rc.bottom - rc.top;
+	if (cw < 4) cw = 100;
+	if (chh < 4) chh = 50;
+	double sxr = (double)cw / cropped.cols, syr = (double)chh / cropped.rows;
+	double s = sxr < syr ? sxr : syr;
+	if (s <= 0) s = 1.0;
+	int dw = (int)(cropped.cols * s); if (dw < 1) dw = 1;
+	int dh = (int)(cropped.rows * s); if (dh < 1) dh = 1;
+	Mat scaled;
+	resize(cropped, scaled, Size(dw, dh), 0, 0, INTER_NEAREST);
+	if (scaled.channels() == 3) cvtColor(scaled, scaled, COLOR_BGR2BGRA);
+
+	// Build a 32-bit top-down DIB and hand it to the static (SS_BITMAP | SS_CENTERIMAGE).
+	BITMAPINFO bmi = { 0 };
+	bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+	bmi.bmiHeader.biWidth = dw; bmi.bmiHeader.biHeight = -dh;
+	bmi.bmiHeader.biPlanes = 1; bmi.bmiHeader.biBitCount = 32; bmi.bmiHeader.biCompression = BI_RGB;
+	void* bits = NULL;
+	HBITMAP hbmp = CreateDIBSection(hdcScreen, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
+	if (hbmp != NULL && bits != NULL) {
+		for (int y = 0; y < dh; ++y)
+			memcpy((BYTE*)bits + (size_t)y * dw * 4, scaled.ptr(y), (size_t)dw * 4);
+	}
+	DeleteDC(hdcScreen);
+	HBITMAP old = m_AcPreview.SetBitmap(hbmp);
+	if (old) DeleteObject(old);
+}
+
 void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 {
 	COpenScrapeDoc* pDoc = COpenScrapeDoc::GetDocument();
@@ -3899,6 +3976,7 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 	text.Format("%02x", (sel_region->second.autocrop_color3 >> 8) & 0xff);  m_AcG3.SetWindowText(text);
 	text.Format("%02x", (sel_region->second.autocrop_color3 >> 16) & 0xff); m_AcB3.SetWindowText(text);
 	text.Format("%d", sel_region->second.autocrop_tol3); m_AcTol3.SetWindowText(text);
+	DrawAutoCropPreview();
 
 	// avg color fields
 	if (selected_transform == "Color")

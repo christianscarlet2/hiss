@@ -123,6 +123,7 @@ protected:
 	void disable_ocr_and_clear_all(void);
 	void update_ocr_r$_display(void);
 	void update_r$_display(bool dont_update_spinners);
+	void DrawAutoCropPreview();   // render the auto-cropped scrape into m_AcPreview
 	void update_t$_display();
 	void PopulateTemplateMatchModes(void);
 	void PopulateTesseractMatchModes(void);
@@ -162,6 +163,7 @@ protected:
 	CEdit				m_AcA1, m_AcR1, m_AcG1, m_AcB1, m_AcTol1;
 	CEdit				m_AcA2, m_AcR2, m_AcG2, m_AcB2, m_AcTol2;
 	CEdit				m_AcA3, m_AcR3, m_AcG3, m_AcB3, m_AcTol3;
+	CStatic				m_AcPreview;   // live preview of the auto-cropped scrape
 	CButton				m_New, m_Delete, m_Edit, m_CreateImage, m_CreateFont, m_FontPlus, m_FontMinus;
 	CButton				m_CreateGroup, m_GroupBox;
 	CComboBox			m_GroupColor;
