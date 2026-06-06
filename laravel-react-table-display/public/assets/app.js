@@ -222,6 +222,7 @@ function Player(props) {
   var maxHoleCards = props.isOmaha ? 4 : 2;
   var pos = seatPos(nchairs, player.chair);
   var isHero = player.chair === HERO_CHAIR;
+  var toggleUnit = props.onToggleUnit;
   var style = { left: (pos[0] * 100) + '%', top: (pos[1] * 100) + '%' };
   var cards = [];
   var rawCards = player.cards || [];
