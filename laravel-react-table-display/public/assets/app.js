@@ -60,35 +60,56 @@ function thousands(value) {
   return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
-// Casino chip colour sets; each chair gets its own, so every bet shows a distinct chip.
+// Three casino chip colours used for every bet (red / green / black).
 var CHIP_COLORS = [
-  { body: '#c2182b', spot: '#f4f6f8', face: '#9c1020' },
-  { body: '#1f5fd6', spot: '#f4f6f8', face: '#163f93' },
-  { body: '#1f9a52', spot: '#f4f6f8', face: '#136b39' },
-  { body: '#17181c', spot: '#e7b9c0', face: '#000000' },
-  { body: '#6a2da8', spot: '#f4f6f8', face: '#4a1d77' },
-  { body: '#e07b1a', spot: '#231405', face: '#b35f0f' },
-  { body: '#e9ecef', spot: '#c2182b', face: '#cfd3d8' },
-  { body: '#e8c43a', spot: '#231405', face: '#c2a019' },
-  { body: '#d65a9a', spot: '#f4f6f8', face: '#a83c75' },
-  { body: '#1aa0a0', spot: '#f4f6f8', face: '#137575' }
+  { body: '#cf2233', edge: '#7c0e1a', spot: '#f6eef0', face: '#9c1020' },  // 0 red
+  { body: '#1f9a52', edge: '#0e5630', spot: '#eef7f1', face: '#0f6435' },  // 1 green
+  { body: '#23262c', edge: '#000000', spot: '#d6c0c4', face: '#0a0a0c' }   // 2 black
 ];
 
-// A top-down poker chip SVG (edge spots, inner ring, milled centre) coloured per chair.
-function chipSvg(chair) {
-  var n = CHIP_COLORS.length;
-  var c = CHIP_COLORS[((chair % n) + n) % n];
-  return '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
-    '<circle cx="50" cy="50" r="47" fill="rgba(0,0,0,.35)"/>' +
-    '<circle cx="50" cy="50" r="45" fill="#0c0c0c"/>' +
-    '<circle cx="50" cy="50" r="43" fill="' + c.body + '"/>' +
-    '<circle cx="50" cy="50" r="37" fill="none" stroke="' + c.spot + '" stroke-width="12" stroke-dasharray="10 23.6"/>' +
-    '<circle cx="50" cy="50" r="31" fill="' + c.body + '"/>' +
-    '<circle cx="50" cy="50" r="30" fill="none" stroke="rgba(255,255,255,.42)" stroke-width="1.4"/>' +
-    '<circle cx="50" cy="50" r="21" fill="' + c.face + '"/>' +
-    '<circle cx="50" cy="50" r="21" fill="none" stroke="rgba(255,255,255,.32)" stroke-width="1"/>' +
-    '<circle cx="50" cy="50" r="11" fill="none" stroke="rgba(255,255,255,.3)" stroke-width="1" stroke-dasharray="2 4"/>' +
-  '</svg>';
+// Chips for a bet: a taller stack for bigger bets (sqrt-scaled, capped), coloured in three
+// value bands (small = red, then green, then black for large bets). Returned bottom-first.
+function chipsForBet(bet) {
+  var v = Math.max(0.01, Number(bet) || 0);
+  var count = Math.min(14, Math.max(1, Math.round(Math.sqrt(v) * 1.5)));
+  var stack = [];
+  for (var i = 0; i < count; i++) {
+    var frac = count > 1 ? i / (count - 1) : 0;   // 0 bottom .. 1 top
+    var ci;
+    if (v >= 25) ci = frac < 0.34 ? 2 : (frac < 0.7 ? 1 : 0);
+    else if (v >= 5) ci = frac < 0.5 ? 1 : 0;
+    else ci = 0;
+    stack.push(ci);
+  }
+  return stack;
+}
+
+// An angled (perspective) stack of poker chips on the felt; its height grows with the bet.
+function chipStackSvg(bet) {
+  var stack = chipsForBet(bet);
+  var n = stack.length;
+  var rx = 27, ry = 9, th = 5, step = 7, W = 66, padB = 10, padT = 9;
+  var H = padT + (n - 1) * step + 2 * ry + th + padB;
+  var cx = W / 2;
+  var bottomCy = H - padB - ry - th;
+  var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg">';
+  s += '<defs><filter id="cstk" x="-30%" y="-12%" width="160%" height="135%"><feDropShadow dx="0" dy="2" stdDeviation="1.7" flood-color="#000" flood-opacity=".55"/></filter></defs>';
+  s += '<g filter="url(#cstk)">';
+  for (var i = 0; i < n; i++) {
+    var c = CHIP_COLORS[stack[i]];
+    var cy = bottomCy - i * step;
+    s += '<ellipse cx="' + cx + '" cy="' + (cy + th) + '" rx="' + rx + '" ry="' + ry + '" fill="' + c.edge + '"/>';
+    s += '<ellipse cx="' + cx + '" cy="' + cy + '" rx="' + rx + '" ry="' + ry + '" fill="' + c.body + '"/>';
+  }
+  s += '</g>';
+  var tc = CHIP_COLORS[stack[n - 1]];
+  var tcy = bottomCy - (n - 1) * step;
+  s += '<ellipse cx="' + cx + '" cy="' + tcy + '" rx="' + (rx - 3) + '" ry="' + (ry - 1.5) + '" fill="none" stroke="' + tc.spot + '" stroke-width="3.6" stroke-dasharray="3 7.4"/>';
+  s += '<ellipse cx="' + cx + '" cy="' + tcy + '" rx="' + (rx - 9) + '" ry="' + (ry - 3.5) + '" fill="' + tc.body + '"/>';
+  s += '<ellipse cx="' + cx + '" cy="' + tcy + '" rx="' + (rx - 9) + '" ry="' + (ry - 3.5) + '" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="1"/>';
+  s += '<ellipse cx="' + cx + '" cy="' + tcy + '" rx="' + (rx - 16) + '" ry="' + (ry - 5) + '" fill="' + tc.face + '"/>';
+  s += '</svg>';
+  return s;
 }
 
 // "Hiss by Scarlet Beast" felt seal: a glowing occult emblem (inverted pentagram,
@@ -282,7 +303,7 @@ function BetChip(props) {
     onDoubleClick: props.onToggleUnit,
     title: 'Double-click to toggle BB / $'
   },
-    e('span', { className: 'bet-chip', dangerouslySetInnerHTML: { __html: chipSvg(props.chair) } }),
+    e('span', { className: 'bet-chip', dangerouslySetInnerHTML: { __html: chipStackSvg(props.bet) } }),
     e('span', { className: 'bet-amt' }, bb(props.bet))
   );
 }
@@ -395,7 +416,8 @@ function App() {
     e('section', { className: 'table' },
       e('div', { className: 'felt' },
         e('div', { className: 'felt-logo', dangerouslySetInnerHTML: { __html: FELT_LOGO_SVG } }),
-        e('div', { className: 'felt-script' }, 'Hiss by Scarlet Beast'),
+        e('div', { className: 'felt-script' },
+          e('span', { className: 'hiss' }, 'Hiss'), ' by Scarlet Beast'),
         e('div', { className: 'felt-snake', dangerouslySetInnerHTML: { __html: SNAKE_SVG } })
       ),
       e('div', { className: 'center' },

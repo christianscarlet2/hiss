@@ -98,9 +98,11 @@ body {
   border-radius: 18px;
   border: 1px solid #1b1e22;
   overflow: hidden;
+  /* semi-transparent so the red Matrix rain behind faintly shows through the dark felt-
+     surround (the felt itself stays opaque) */
   background:
-    radial-gradient(140% 120% at 50% 45%, #15181b 0%, #0a0c0e 55%, #030405 100%);
-  box-shadow: inset 0 0 120px rgba(0, 0, 0, .7), 0 24px 60px rgba(0, 0, 0, .6);
+    radial-gradient(140% 120% at 50% 45%, rgba(21, 24, 27, .84) 0%, rgba(10, 12, 14, .88) 55%, rgba(3, 4, 5, .9) 100%);
+  box-shadow: inset 0 0 120px rgba(0, 0, 0, .55), 0 24px 60px rgba(0, 0, 0, .6);
 }
 
 .felt {
@@ -144,7 +146,9 @@ body {
   height: auto;
 }
 
-/* "Hiss by Scarlet Beast" written across the felt in cursive, above the board. */
+/* "Hiss by Scarlet Beast" branded/burned into the felt: a charred, recessed look.
+   The dark fill lets the felt show through like a scorch, and the layered text-shadows
+   give a singed rim + pressed-in highlight below. */
 .felt-script {
   position: absolute;
   left: 50%;
@@ -158,15 +162,22 @@ body {
   font-weight: 700;
   font-size: clamp(26px, 4.4vw, 62px);
   letter-spacing: 1px;
-  background: linear-gradient(180deg, #fff4dc 0%, #ecca8f 46%, #d11f33 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-  filter:
-    drop-shadow(0 2px 2px rgba(0, 0, 0, .6))
-    drop-shadow(0 0 14px rgba(209, 31, 51, .55))
-    drop-shadow(0 0 30px rgba(209, 31, 51, .3));
+  color: rgba(18, 9, 4, 0.82);          /* charred scorch */
+  text-shadow:
+    0 -1px 1px rgba(0, 0, 0, 0.55),      /* dark recessed top edge */
+    0 1px 0 rgba(120, 92, 40, 0.30),     /* warm singed rim below (pressed-in) */
+    0 0 7px rgba(70, 26, 10, 0.55),      /* scorch halo */
+    0 0 16px rgba(120, 40, 14, 0.30);
+}
+
+/* the word "Hiss" branded in deep scarlet (still burned-looking) */
+.felt-script .hiss {
+  color: #7c0d15;
+  text-shadow:
+    0 -1px 1px rgba(0, 0, 0, 0.6),
+    0 1px 0 rgba(150, 70, 40, 0.30),
+    0 0 9px rgba(150, 18, 30, 0.6),
+    0 0 20px rgba(150, 18, 30, 0.35);
 }
 
 /* the serpent beneath the cursive brand */
@@ -455,8 +466,8 @@ body {
   position: absolute;
   transform: translate(-50%, -50%);
   display: flex;
-  align-items: center;
-  gap: 5px;
+  align-items: flex-end;   /* amount sits at the base of the stack */
+  gap: 6px;
   white-space: nowrap;
   cursor: pointer;
   z-index: 5;
@@ -464,15 +475,15 @@ body {
 
 .bet-chip {
   flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
-  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, .6));
+  width: 38px;
+  height: auto;            /* the stack grows taller with bigger bets */
+  filter: drop-shadow(0 4px 5px rgba(0, 0, 0, .55));
 }
 
 .bet-chip svg {
   display: block;
   width: 100%;
-  height: 100%;
+  height: auto;
 }
 
 .bet-amt {
@@ -552,11 +563,11 @@ body {
 }
 
 .player.hero .seat-ring {
-  width: 96px;
-  height: 96px;
-  /* centre the ring on the hole cards (height 73 -> centre at ~36px from the box top)
-     rather than the whole box, so the hero's cards sit in the middle of the red circle */
-  top: 36px;
+  /* big enough to contain the larger hero cards (2 x 52w overlapped, 73 tall) and centred
+     on them (card centre is ~37px down from the box top) */
+  width: 118px;
+  height: 118px;
+  top: 37px;
   border-color: var(--scarlet);
   background: radial-gradient(circle at 50% 38%, #3a1216 0%, #1c0a0c 65%, #100506 100%);
   box-shadow:
