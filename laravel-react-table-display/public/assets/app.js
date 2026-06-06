@@ -282,12 +282,37 @@ function Player(props) {
 
 // Dealer button, positioned on the felt just in front of the seat (a short hop from the
 // chair toward the table centre) so it never sits on top of the player chair.
+// An angled (perspective) dealer button chip with a "D" on its face.
+function dealerChipSvg() {
+  var rx = 24, ry = 8, th = 5, W = 56, padT = 4, padB = 7;
+  var H = padT + 2 * ry + th + padB;
+  var cx = W / 2, cy = padT + ry;
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg">' +
+    '<defs><filter id="dch" x="-30%" y="-15%" width="160%" height="145%"><feDropShadow dx="0" dy="2" stdDeviation="1.5" flood-color="#000" flood-opacity=".55"/></filter></defs>' +
+    '<g filter="url(#dch)">' +
+      '<ellipse cx="' + cx + '" cy="' + (cy + th) + '" rx="' + rx + '" ry="' + ry + '" fill="#b89a3e"/>' +
+      '<ellipse cx="' + cx + '" cy="' + cy + '" rx="' + rx + '" ry="' + ry + '" fill="#f5ecd2"/>' +
+    '</g>' +
+    '<ellipse cx="' + cx + '" cy="' + cy + '" rx="' + (rx - 3) + '" ry="' + (ry - 1.4) + '" fill="none" stroke="#caa84e" stroke-width="2.8" stroke-dasharray="3 6.6"/>' +
+    '<ellipse cx="' + cx + '" cy="' + cy + '" rx="' + (rx - 9) + '" ry="' + (ry - 3) + '" fill="#fbf4e2"/>' +
+    '<g transform="translate(' + cx + ' ' + cy + ') scale(1 0.62) translate(-' + cx + ' -' + cy + ')">' +
+      '<text x="' + cx + '" y="' + cy + '" text-anchor="middle" dominant-baseline="central" font-family="Segoe UI, Arial, sans-serif" font-weight="900" font-size="15" fill="#7a1018">D</text>' +
+    '</g>' +
+  '</svg>';
+}
+
 function DealerButton(props) {
   var pos = seatPos(props.nchairs, props.chair);
-  var t = 0.26;   // fraction of the way from the seat toward the centre
-  var x = pos[0] + (0.5 - pos[0]) * t;
-  var y = pos[1] + (0.49 - pos[1]) * t;
-  return e('div', { className: 'dealer', style: { left: (x * 100) + '%', top: (y * 100) + '%' } }, 'D');
+  var dx = 0.5 - pos[0], dy = 0.49 - pos[1];
+  var len = Math.sqrt(dx * dx + dy * dy) || 1;
+  var t = 0.17, perp = 0.075;   // a short hop toward centre + offset to the side of the bet
+  var x = pos[0] + dx * t + (-dy / len) * perp;
+  var y = pos[1] + dy * t + (dx / len) * perp;
+  return e('div', {
+    className: 'dealer',
+    style: { left: (x * 100) + '%', top: (y * 100) + '%' },
+    dangerouslySetInnerHTML: { __html: dealerChipSvg() }
+  });
 }
 
 // A player's bet: a coloured chip + amount, placed out on the felt in front of the seat

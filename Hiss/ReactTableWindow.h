@@ -35,7 +35,15 @@ private:
 	void GetButtonRect(int index, CRect *rect);   // client coords; 0=min 1=max 2=close
 	int  HitButton(CPoint client_pt);              // -1 if none
 	void DoButtonAction(int index);
-	void InvalidateTitleBar(void);
+	void InvalidateChrome(void);
+	// Menu bar (File / Edit / Problem Solver / Help) + toolbar copied from the main window.
+	void GetMenuRect(int index, CRect *rect);      // client coords
+	int  HitMenu(CPoint client_pt);                // -1 if none
+	void GetToolRect(int index, CRect *rect);      // client coords
+	int  HitTool(CPoint client_pt);                // -1 if none
+	void OpenTopMenu(int index);                   // pop up a top-level menu
+	void ForwardCommand(unsigned int command_id);  // route a command to the main frame
+	int  ChromeHeight(void);
 
 	CWnd *_owner;
 	ICoreWebView2Controller *_controller;
@@ -43,6 +51,8 @@ private:
 	unsigned short _port;
 	int _hot_button;
 	int _pressed_button;
+	int _hot_menu;
+	int _hot_tool;
 	bool _tracking_mouse;
 	ULONG_PTR _gdiplus_token;
 };

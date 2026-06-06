@@ -1317,7 +1317,7 @@ END
 
 STRINGTABLE
 BEGIN
-    IDR_MAINFRAME           "Hiss\n\nformula\nHiss Files (*.ohf;)\n.ohf;.whf\nHiss.Document\nformula.Document"
+    IDR_MAINFRAME           "Hiss:\n\nformula\nHiss Files (*.ohf;)\n.ohf;.whf\nHiss.Document\nformula.Document"
     ID_INDICATOR_STATUS_PRWIN "prwin"
     ID_INDICATOR_STATUS_ACTION "action"
     ID_INDICATOR_STATUS_HANDRANK "status handrank"

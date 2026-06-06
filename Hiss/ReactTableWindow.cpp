@@ -5,14 +5,51 @@
 #include "WebView2.h"
 #include <gdiplus.h>
 #pragma comment(lib, "gdiplus.lib")
+#include "resource.h"
 
 using namespace Microsoft::WRL;
 using namespace Gdiplus;
 
 const int kReactTableWidth = 760;
 const int kReactTableHeight = 560;
-const int kTitleBarHeight = 38;
+const int kTitleBarHeight = 34;     // row 1: title + window buttons
+const int kMenuRowHeight = 30;      // row 2: menu bar + toolbar
 const int kCaptionButtonWidth = 46;
+
+// Top-level menus mirrored from IDR_MAINFRAME. submenu_index = position of the popup in
+// IDR_MAINFRAME (File=0, Edit=1, Help=3); Problem Solver has no popup -> a direct command.
+struct SMenuTop { const wchar_t *label; int submenu_index; UINT direct_command; int width; };
+static const SMenuTop kMenuTops[] = {
+	{ L"File",            0, 0,                     44 },
+	{ L"Edit",            1, 0,                     44 },
+	{ L"Problem Solver", -1, ID_HELP_PROBLEMSOLVER, 104 },
+	{ L"Help",            3, 0,                     46 },
+};
+static const int kNumMenuTops = sizeof(kMenuTops) / sizeof(kMenuTops[0]);
+
+// Toolbar buttons mirrored from the IDR_MAINFRAME toolbar (-1 = separator). Each non-
+// separator entry draws a Segoe MDL2 Assets glyph and forwards its command to the main frame.
+struct SToolItem { int command; const wchar_t *glyph; bool scarlet; };
+static const SToolItem kToolItems[] = {
+	{ ID_FILE_NEW,                     L"\xE7C3", false },  // page
+	{ ID_FILE_OPEN,                    L"\xE838", false },  // folder open
+	{ ID_FILE_SAVE,                    L"\xE74E", false },  // save
+	{ -1, L"", false },
+	{ ID_MAIN_TOOLBAR_AUTOPLAYER,      L"\xE768", true  },  // play (scarlet flair)
+	{ ID_MAIN_TOOLBAR_FORMULA,         L"\xE8EF", false },  // calculator / formula
+	{ ID_MAIN_TOOLBAR_VALIDATOR,       L"\xE73E", false },  // checkmark
+	{ ID_MAIN_TOOLBAR_TAGLOGFILE,      L"\xE8EC", false },  // tag
+	{ -1, L"", false },
+	{ ID_MAIN_TOOLBAR_SCRAPER_OUTPUT,  L"\xE890", false },  // view / eye
+	{ ID_MAIN_TOOLBAR_SHOOTFRAME,      L"\xE722", false },  // camera
+	{ ID_MAIN_TOOLBAR_MANUALMODE,      L"\xE815", false },  // touch pointer
+	{ -1, L"", false },
+	{ ID_MAIN_TOOLBAR_HELP,            L"\xE897", true  },  // help (scarlet flair)
+};
+static const int kNumToolItems = sizeof(kToolItems) / sizeof(kToolItems[0]);
+static const int kToolButtonWidth = 30;
+static const int kToolSeparatorWidth = 12;
+static const int kMenuStartX = 8;
 
 CReactTableWindow *p_react_table_window = NULL;
 
@@ -41,6 +78,8 @@ CReactTableWindow::CReactTableWindow()
 	_port = 0;
 	_hot_button = -1;
 	_pressed_button = -1;
+	_hot_menu = -1;
+	_hot_tool = -1;
 	_tracking_mouse = false;
 	_gdiplus_token = 0;
 }
@@ -77,7 +116,7 @@ BOOL CReactTableWindow::Create(CWnd *owner, unsigned short port)
 	BOOL created = CWnd::CreateEx(
 		WS_EX_TOOLWINDOW,
 		class_name,
-		"Hiss React Table Display",
+		"Hiss:",
 		WS_OVERLAPPEDWINDOW | WS_VISIBLE,
 		CW_USEDEFAULT,
 		CW_USEDEFAULT,
@@ -153,7 +192,7 @@ void CReactTableWindow::OnSize(UINT nType, int cx, int cy)
 {
 	CWnd::OnSize(nType, cx, cy);
 	ResizeBrowser();
-	InvalidateTitleBar();
+	InvalidateChrome();
 }
 
 void CReactTableWindow::ResizeBrowser(void)
@@ -163,7 +202,7 @@ void CReactTableWindow::ResizeBrowser(void)
 	}
 	CRect bounds;
 	GetClientRect(&bounds);
-	bounds.top += kTitleBarHeight;   // leave room for the custom title bar
+	bounds.top += ChromeHeight();   // leave room for the title bar + menu/toolbar row
 	if (bounds.top > bounds.bottom) {
 		bounds.top = bounds.bottom;
 	}
@@ -233,13 +272,19 @@ LRESULT CReactTableWindow::OnNcHitTest(CPoint point)
 		return HTTOP;
 	}
 
-	// Title bar: buttons are client (so we get clicks); the rest is draggable caption.
+	// Title bar (row 1): buttons are client (so we get clicks); the rest is draggable caption.
 	if (client_pt.y >= 0 && client_pt.y < kTitleBarHeight
 			&& client_pt.x >= 0 && client_pt.x < client.Width()) {
 		if (HitButton(client_pt) >= 0) {
 			return HTCLIENT;
 		}
 		return HTCAPTION;
+	}
+
+	// Menu/toolbar (row 2): all client so the menus and toolbar buttons receive clicks.
+	if (client_pt.y >= kTitleBarHeight && client_pt.y < ChromeHeight()
+			&& client_pt.x >= 0 && client_pt.x < client.Width()) {
+		return HTCLIENT;
 	}
 
 	return CWnd::OnNcHitTest(point);
@@ -252,7 +297,7 @@ BOOL CReactTableWindow::OnEraseBkgnd(CDC *pDC)
 
 BOOL CReactTableWindow::OnNcActivate(BOOL bActive)
 {
-	InvalidateTitleBar();
+	InvalidateChrome();
 	return TRUE;   // skip the default caption repaint (we have none)
 }
 
@@ -281,14 +326,19 @@ int CReactTableWindow::HitButton(CPoint client_pt)
 	return -1;
 }
 
-void CReactTableWindow::InvalidateTitleBar(void)
+int CReactTableWindow::ChromeHeight(void)
+{
+	return kTitleBarHeight + kMenuRowHeight;
+}
+
+void CReactTableWindow::InvalidateChrome(void)
 {
 	if (!::IsWindow(GetSafeHwnd())) {
 		return;
 	}
 	CRect client;
 	GetClientRect(&client);
-	CRect strip(0, 0, client.Width(), kTitleBarHeight);
+	CRect strip(0, 0, client.Width(), ChromeHeight());
 	InvalidateRect(strip, FALSE);
 }
 
@@ -299,52 +349,41 @@ void CReactTableWindow::OnPaint()
 	GetClientRect(&client);
 	int width = client.Width();
 	int H = kTitleBarHeight;
+	int chrome = ChromeHeight();
 
 	Graphics g(dc.GetSafeHdc());
 	g.SetSmoothingMode(SmoothingModeAntiAlias);
 	g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
 
-	// Fill the whole client dark (so it looks right before the WebView2 paints).
 	SolidBrush base(Color(255, 14, 16, 20));
 	g.FillRectangle(&base, 0, 0, width, client.Height());
 
-	// Title bar gradient + scarlet underline.
-	LinearGradientBrush bar(Point(0, 0), Point(0, H), Color(255, 26, 29, 35), Color(255, 13, 15, 19));
+	// ---- Row 1: title bar ----
+	LinearGradientBrush bar(Point(0, 0), Point(0, H), Color(255, 28, 31, 37), Color(255, 15, 17, 21));
 	g.FillRectangle(&bar, 0, 0, width, H);
-	SolidBrush underline(Color(255, 0x9a, 0x16, 0x22));
-	g.FillRectangle(&underline, 0, H - 2, width, 2);
-	SolidBrush underglow(Color(70, 0xd1, 0x1f, 0x33));
-	g.FillRectangle(&underglow, 0, H - 4, width, 2);
 
-	// Scarlet diamond mark.
 	SolidBrush mark(Color(255, 0xd1, 0x1f, 0x33));
 	REAL midy = (REAL)H / 2.0f;
-	PointF diamond[4] = { PointF(8, midy), PointF(14, midy - 6), PointF(20, midy), PointF(14, midy + 6) };
+	PointF diamond[4] = { PointF(8, midy), PointF(14, midy - 5), PointF(20, midy), PointF(14, midy + 5) };
 	g.FillPolygon(&mark, diamond, 4);
 
-	// Title text.
-	FontFamily font_family(L"Segoe UI");
-	Font font(&font_family, 12.5f, FontStyleBold, UnitPixel);
-	SolidBrush text_brush(Color(255, 0xee, 0xe6, 0xd2));
-	StringFormat sf;
-	sf.SetLineAlignment(StringAlignmentCenter);
-	sf.SetFormatFlags(StringFormatFlagsNoWrap);
-	RectF text_rect(28.0f, 0.0f, (REAL)(width - 28 - 3 * kCaptionButtonWidth - 8), (REAL)H);
-	g.DrawString(L"Hiss React Table Display", -1, &font, text_rect, &sf, &text_brush);
+	FontFamily ui(L"Segoe UI");
+	Font title_font(&ui, 12.5f, FontStyleBold, UnitPixel);
+	SolidBrush title_brush(Color(255, 0xee, 0xe6, 0xd2));
+	StringFormat sf_l;
+	sf_l.SetLineAlignment(StringAlignmentCenter);
+	sf_l.SetFormatFlags(StringFormatFlagsNoWrap);
+	RectF title_rect(28.0f, 0.0f, (REAL)(width - 28 - 3 * kCaptionButtonWidth - 8), (REAL)H);
+	g.DrawString(L"Hiss:", -1, &title_font, title_rect, &sf_l, &title_brush);
 
-	// Caption buttons.
 	for (int i = 0; i < 3; ++i) {
 		CRect br;
 		GetButtonRect(i, &br);
 		bool hot = (_hot_button == i);
 		bool pressed = (_pressed_button == i);
 		if (hot) {
-			Color bg;
-			if (i == 2) {
-				bg = pressed ? Color(255, 0xa8, 0x12, 0x26) : Color(255, 0xd1, 0x1f, 0x33);
-			} else {
-				bg = pressed ? Color(80, 255, 255, 255) : Color(40, 255, 255, 255);
-			}
+			Color bg = (i == 2) ? (pressed ? Color(255, 0xa8, 0x12, 0x26) : Color(255, 0xd1, 0x1f, 0x33))
+				: (pressed ? Color(80, 255, 255, 255) : Color(40, 255, 255, 255));
 			SolidBrush hb(bg);
 			g.FillRectangle(&hb, br.left, br.top, br.Width(), br.Height());
 		}
@@ -353,18 +392,72 @@ void CReactTableWindow::OnPaint()
 		int cx = br.left + br.Width() / 2;
 		int cy = br.top + br.Height() / 2;
 		if (i == 0) {
-			g.DrawLine(&pen, cx - 6, cy, cx + 6, cy);                 // minimize
+			g.DrawLine(&pen, cx - 6, cy, cx + 6, cy);
 		} else if (i == 1) {
-			if (IsZoomed()) {                                        // restore (two squares)
+			if (IsZoomed()) {
 				g.DrawRectangle(&pen, cx - 5, cy - 2, 7, 7);
 				g.DrawRectangle(&pen, cx - 2, cy - 5, 7, 7);
 			} else {
-				g.DrawRectangle(&pen, cx - 5, cy - 5, 10, 10);       // maximize
+				g.DrawRectangle(&pen, cx - 5, cy - 5, 10, 10);
 			}
 		} else {
-			g.DrawLine(&pen, cx - 5, cy - 5, cx + 5, cy + 5);        // close (X)
+			g.DrawLine(&pen, cx - 5, cy - 5, cx + 5, cy + 5);
 			g.DrawLine(&pen, cx + 5, cy - 5, cx - 5, cy + 5);
 		}
+	}
+
+	// ---- Row 2: menu bar + toolbar ----
+	LinearGradientBrush bar2(Point(0, H), Point(0, chrome), Color(255, 22, 24, 29), Color(255, 12, 14, 18));
+	g.FillRectangle(&bar2, 0, H, width, kMenuRowHeight);
+	SolidBrush underline(Color(255, 0x9a, 0x16, 0x22));
+	g.FillRectangle(&underline, 0, chrome - 2, width, 2);
+	SolidBrush underglow(Color(70, 0xd1, 0x1f, 0x33));
+	g.FillRectangle(&underglow, 0, chrome - 4, width, 2);
+
+	// Menu labels.
+	Font menu_font(&ui, 12.0f, FontStyleRegular, UnitPixel);
+	StringFormat sf_c;
+	sf_c.SetAlignment(StringAlignmentCenter);
+	sf_c.SetLineAlignment(StringAlignmentCenter);
+	sf_c.SetFormatFlags(StringFormatFlagsNoWrap);
+	for (int i = 0; i < kNumMenuTops; ++i) {
+		CRect mr;
+		GetMenuRect(i, &mr);
+		bool hot = (_hot_menu == i);
+		if (hot) {
+			SolidBrush hb(Color(46, 255, 255, 255));
+			g.FillRectangle(&hb, mr.left, mr.top + 3, mr.Width(), mr.Height() - 6);
+		}
+		SolidBrush mb(hot ? Color(255, 255, 246, 232) : Color(255, 0xc9, 0xc3, 0xb4));
+		RectF rf((REAL)mr.left, (REAL)mr.top, (REAL)mr.Width(), (REAL)mr.Height());
+		g.DrawString(kMenuTops[i].label, -1, &menu_font, rf, &sf_c, &mb);
+	}
+
+	// Toolbar icons (Segoe MDL2 Assets glyphs).
+	FontFamily mdl(L"Segoe MDL2 Assets");
+	Font icon_font(&mdl, 15.0f, FontStyleRegular, UnitPixel);
+	StringFormat sf_ic;
+	sf_ic.SetAlignment(StringAlignmentCenter);
+	sf_ic.SetLineAlignment(StringAlignmentCenter);
+	sf_ic.SetFormatFlags(StringFormatFlagsNoWrap);
+	for (int i = 0; i < kNumToolItems; ++i) {
+		CRect tr;
+		GetToolRect(i, &tr);
+		if (kToolItems[i].command < 0) {
+			SolidBrush sep(Color(55, 255, 255, 255));
+			g.FillRectangle(&sep, tr.left + tr.Width() / 2, tr.top + 5, 1, tr.Height() - 10);
+			continue;
+		}
+		bool hot = (_hot_tool == i);
+		if (hot) {
+			SolidBrush hb(Color(255, 0xd1, 0x1f, 0x33));
+			g.FillRectangle(&hb, tr.left, tr.top, tr.Width(), tr.Height());
+		}
+		Color gc = hot ? Color(255, 255, 255, 255)
+			: (kToolItems[i].scarlet ? Color(255, 0xe0, 0x46, 0x55) : Color(255, 0xcf, 0xc9, 0xb8));
+		SolidBrush gb(gc);
+		RectF rf((REAL)tr.left, (REAL)tr.top, (REAL)tr.Width(), (REAL)tr.Height());
+		g.DrawString(kToolItems[i].glyph, -1, &icon_font, rf, &sf_ic, &gb);
 	}
 }
 
@@ -374,7 +467,17 @@ void CReactTableWindow::OnLButtonDown(UINT nFlags, CPoint point)
 	if (hit >= 0) {
 		_pressed_button = hit;
 		SetCapture();
-		InvalidateTitleBar();
+		InvalidateChrome();
+		return;
+	}
+	int menu = HitMenu(point);
+	if (menu >= 0) {
+		OpenTopMenu(menu);
+		return;
+	}
+	int tool = HitTool(point);
+	if (tool >= 0) {
+		ForwardCommand((unsigned int)kToolItems[tool].command);
 		return;
 	}
 	CWnd::OnLButtonDown(nFlags, point);
@@ -386,7 +489,7 @@ void CReactTableWindow::OnLButtonUp(UINT nFlags, CPoint point)
 		int pressed = _pressed_button;
 		_pressed_button = -1;
 		ReleaseCapture();
-		InvalidateTitleBar();
+		InvalidateChrome();
 		if (HitButton(point) == pressed) {
 			DoButtonAction(pressed);
 		}
@@ -397,10 +500,14 @@ void CReactTableWindow::OnLButtonUp(UINT nFlags, CPoint point)
 
 void CReactTableWindow::OnMouseMove(UINT nFlags, CPoint point)
 {
-	int hit = HitButton(point);
-	if (hit != _hot_button) {
-		_hot_button = hit;
-		InvalidateTitleBar();
+	int hb = HitButton(point);
+	int hm = HitMenu(point);
+	int ht = HitTool(point);
+	if (hb != _hot_button || hm != _hot_menu || ht != _hot_tool) {
+		_hot_button = hb;
+		_hot_menu = hm;
+		_hot_tool = ht;
+		InvalidateChrome();
 	}
 	if (!_tracking_mouse) {
 		TRACKMOUSEEVENT tme = { sizeof(TRACKMOUSEEVENT), TME_LEAVE, GetSafeHwnd(), 0 };
@@ -413,9 +520,11 @@ void CReactTableWindow::OnMouseMove(UINT nFlags, CPoint point)
 void CReactTableWindow::OnMouseLeave()
 {
 	_tracking_mouse = false;
-	if (_hot_button != -1) {
+	if (_hot_button != -1 || _hot_menu != -1 || _hot_tool != -1) {
 		_hot_button = -1;
-		InvalidateTitleBar();
+		_hot_menu = -1;
+		_hot_tool = -1;
+		InvalidateChrome();
 	}
 	CWnd::OnMouseLeave();
 }
@@ -446,4 +555,105 @@ void CReactTableWindow::OnGetMinMaxInfo(MINMAXINFO *lpMMI)
 	lpMMI->ptMinTrackSize.x = 420;
 	lpMMI->ptMinTrackSize.y = 280;
 	CWnd::OnGetMinMaxInfo(lpMMI);
+}
+
+// ----- menu bar + toolbar (row 2) -------------------------------------------
+
+void CReactTableWindow::GetMenuRect(int index, CRect *rect)
+{
+	int x = kMenuStartX;
+	for (int j = 0; j < index; ++j) {
+		x += kMenuTops[j].width;
+	}
+	rect->SetRect(x, kTitleBarHeight, x + kMenuTops[index].width, kTitleBarHeight + kMenuRowHeight);
+}
+
+int CReactTableWindow::HitMenu(CPoint client_pt)
+{
+	if (client_pt.y < kTitleBarHeight || client_pt.y >= ChromeHeight()) {
+		return -1;
+	}
+	for (int i = 0; i < kNumMenuTops; ++i) {
+		CRect mr;
+		GetMenuRect(i, &mr);
+		if (mr.PtInRect(client_pt)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+void CReactTableWindow::GetToolRect(int index, CRect *rect)
+{
+	int x = kMenuStartX;
+	for (int j = 0; j < kNumMenuTops; ++j) {
+		x += kMenuTops[j].width;
+	}
+	x += 18;   // gap between the menu bar and the toolbar
+	for (int j = 0; j < index; ++j) {
+		x += (kToolItems[j].command < 0) ? kToolSeparatorWidth : kToolButtonWidth;
+	}
+	int w = (kToolItems[index].command < 0) ? kToolSeparatorWidth : kToolButtonWidth;
+	rect->SetRect(x, kTitleBarHeight + 1, x + w, kTitleBarHeight + kMenuRowHeight - 1);
+}
+
+int CReactTableWindow::HitTool(CPoint client_pt)
+{
+	if (client_pt.y < kTitleBarHeight || client_pt.y >= ChromeHeight()) {
+		return -1;
+	}
+	for (int i = 0; i < kNumToolItems; ++i) {
+		if (kToolItems[i].command < 0) {
+			continue;
+		}
+		CRect tr;
+		GetToolRect(i, &tr);
+		if (tr.PtInRect(client_pt)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+void CReactTableWindow::OpenTopMenu(int index)
+{
+	if (index < 0 || index >= kNumMenuTops) {
+		return;
+	}
+	if (kMenuTops[index].submenu_index < 0) {
+		ForwardCommand(kMenuTops[index].direct_command);   // "Problem Solver" (no popup)
+		return;
+	}
+	HMENU top = ::LoadMenu(AfxGetResourceHandle(), MAKEINTRESOURCE(IDR_MAINFRAME));
+	if (top == NULL) {
+		return;
+	}
+	HMENU sub = ::GetSubMenu(top, kMenuTops[index].submenu_index);
+	if (sub != NULL) {
+		CRect mr;
+		GetMenuRect(index, &mr);
+		CPoint pt(mr.left, mr.bottom);
+		ClientToScreen(&pt);
+		_hot_menu = index;
+		InvalidateChrome();
+		UINT cmd = ::TrackPopupMenu(sub, TPM_RETURNCMD | TPM_LEFTALIGN | TPM_TOPALIGN,
+			pt.x, pt.y, 0, GetSafeHwnd(), NULL);
+		_hot_menu = -1;
+		InvalidateChrome();
+		if (cmd != 0) {
+			ForwardCommand(cmd);
+		}
+	}
+	::DestroyMenu(top);
+}
+
+// Route a command to the main Hiss window (it owns all the menu/toolbar handlers).
+void CReactTableWindow::ForwardCommand(unsigned int command_id)
+{
+	if (command_id == 0) {
+		return;
+	}
+	if (_owner != NULL && ::IsWindow(_owner->GetSafeHwnd())) {
+		_owner->PostMessage(WM_COMMAND, MAKEWPARAM(command_id, 0), 0);
+	}
 }
