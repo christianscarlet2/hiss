@@ -63,6 +63,8 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
 	ON_UPDATE_COMMAND_UI(ID_MAIN_TOOLBAR_TRAINING, &CMainFrame::OnUpdateTrainingData)
 	ON_COMMAND(ID_AUTO_CAPTURE, &CMainFrame::OnAutoCapture)
 	ON_UPDATE_COMMAND_UI(ID_AUTO_CAPTURE, &CMainFrame::OnUpdateAutoCapture)
+	ON_COMMAND(ID_VIEW_PAUSESCREENSHOT, &CMainFrame::OnPauseScreenshot)
+	ON_UPDATE_COMMAND_UI(ID_VIEW_PAUSESCREENSHOT, &CMainFrame::OnUpdatePauseScreenshot)
 	ON_COMMAND(ID_AUTO_CAPTURE_BACK, &CMainFrame::OnAutoCaptureBack)
 	ON_COMMAND(ID_AUTO_CAPTURE_NEXT, &CMainFrame::OnAutoCaptureNext)
 	ON_COMMAND(ID_AUTO_CAPTURE_CLEAR, &CMainFrame::OnAutoCaptureClear)
@@ -691,6 +693,12 @@ void CMainFrame::OnViewConnecttowindow()
 	LPARAM				lparam;
 	CDlgSelectTable		cstd;
 
+	// Manually connecting is an explicit "go live" action -> resume if paused.
+	{
+		COpenScrapeView *pView = COpenScrapeView::GetView();
+		if (pView != NULL) pView->SetPaused(false);
+	}
+
 	// Clear global list for holding table candidates
 	g_tlist.RemoveAll();
 
@@ -1051,6 +1059,17 @@ void CMainFrame::OnAutoCapture()
 	COpenScrapeView *pView = COpenScrapeView::GetView();
 	if (pView) pView->ToggleAutoCapture();
 }
+
+void CMainFrame::OnPauseScreenshot()
+{
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	if (pView) pView->TogglePause();
+}
+void CMainFrame::OnUpdatePauseScreenshot(CCmdUI *pCmdUI)
+{
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	pCmdUI->SetCheck((pView && pView->IsPaused()) ? 1 : 0);
+}
 void CMainFrame::OnUpdateAutoCapture(CCmdUI *pCmdUI)
 {
 	COpenScrapeView *pView = COpenScrapeView::GetView();
@@ -1102,6 +1121,12 @@ void CMainFrame::OnViewRefresh()
 {
 	COpenScrapeDoc		*pDoc = COpenScrapeDoc::GetDocument();
 	RECT				crect;
+
+	// Refresh is an explicit "go live" action -> resume if paused.
+	{
+		COpenScrapeView *pView = COpenScrapeView::GetView();
+		if (pView != NULL) pView->SetPaused(false);
+	}
 
 	if (pDoc->attached_hwnd && IsWindow(pDoc->attached_hwnd))
 	{
@@ -1500,10 +1525,19 @@ void CMainFrame::OnUpdateGroupregionsByname(CCmdUI *pCmdUI)
 	pCmdUI->SetCheck(theApp.m_TableMapDlg->region_grouping==BY_NAME);
 }
 
-void CMainFrame::SaveBmpPbits(void)
+void CMainFrame::SaveBmpPbits(bool force)
 {
 	COpenScrapeDoc		*pDoc = COpenScrapeDoc::GetDocument();
 	int					width, height;
+
+	// Screenshot paused: keep the currently displayed frame frozen unless this is an
+	// explicit user grab (force = Refresh / Connect / Resume).
+	{
+		COpenScrapeView *pView = COpenScrapeView::GetView();
+		if (!force && pView != NULL && pView->IsPaused()) {
+			return;
+		}
+	}
 
 	// Clean up from a previous connect, if needed
 	if (pDoc->attached_bitmap != NULL)

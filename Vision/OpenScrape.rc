@@ -147,6 +147,7 @@ BEGIN
     POPUP "&View"
     BEGIN
         MENUITEM "&Connect To Window\tF3",      ID_VIEW_CONNECTTOWINDOW
+        MENUITEM "&Pause Screenshot",           ID_VIEW_PAUSESCREENSHOT
         MENUITEM "Previous Frame",              ID_VIEW_PREV
         MENUITEM "Re&fresh\tCtrl+R",            ID_VIEW_REFRESH
         MENUITEM "Next Frame\tF5",              ID_VIEW_NEXT

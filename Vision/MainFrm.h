@@ -62,6 +62,8 @@ class CMainFrame : public CFrameWnd {
 	afx_msg void OnAutoCaptureClear();
 	afx_msg void OnAutoCaptureRefresh();
 	afx_msg void OnUpdateAutoCaptureNav(CCmdUI *pCmdUI);
+	afx_msg void OnPauseScreenshot();
+	afx_msg void OnUpdatePauseScreenshot(CCmdUI *pCmdUI);
 	DECLARE_MESSAGE_MAP()
 
 	CStatusBar	m_wndStatusBar;
@@ -79,7 +81,10 @@ class CMainFrame : public CFrameWnd {
 	void SaveSessionToDb();
 	// Capture the connected window into the document bitmap (public so the auto-card-
 	// capture loop in the view can grab a fresh frame), and force a full redraw.
-	void SaveBmpPbits(void);
+	// force=true ignores the view's paused state (explicit user grabs: Refresh / Connect /
+	// Resume). Automatic callers (startup reconnect, auto-capture) leave it false so a
+	// paused view stays frozen.
+	void SaveBmpPbits(bool force = false);
 	void ForceRedraw();
 	virtual BOOL PreCreateWindow(CREATESTRUCT& cs);
 	virtual ~CMainFrame();

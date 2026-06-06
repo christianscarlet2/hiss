@@ -213,6 +213,7 @@ COpenScrapeView::COpenScrapeView()
 	_decimal_cached_bmp = NULL;
 	_card_results_bmp = NULL;
 	_auto_capture = false;
+	_paused = true;   // start frozen on the restored screenshot
 	_capture_index = -1;
 
 	dragging = false;
@@ -1645,12 +1646,25 @@ void COpenScrapeView::ToggleAutoCapture()
 {
 	_auto_capture = !_auto_capture;
 	if (_auto_capture) {
+		_paused = false;     // auto-capture implies live grabbing
 		SetTimer(AUTO_CAPTURE_TIMER, AutoCaptureIntervalMs(), NULL);
 		AutoCaptureTick();   // grab one immediately
 	} else {
 		KillTimer(AUTO_CAPTURE_TIMER);
 	}
 	if (theApp.m_pMainWnd) theApp.m_pMainWnd->Invalidate(FALSE);   // refresh the toolbar check
+}
+
+// Pause/resume the live screenshot. Resuming grabs a fresh frame immediately.
+void COpenScrapeView::TogglePause()
+{
+	_paused = !_paused;
+	CMainFrame *mf = (CMainFrame *)AfxGetMainWnd();
+	if (!_paused && mf != NULL) {
+		mf->SaveBmpPbits(true);   // resume -> grab one now
+		mf->ForceRedraw();
+	}
+	if (theApp.m_pMainWnd) theApp.m_pMainWnd->Invalidate(FALSE);   // refresh the menu check
 }
 
 void COpenScrapeView::OnAutoCaptureIntervalChanged(int interval_ms)
@@ -1909,7 +1923,14 @@ void COpenScrapeView::LoadCapturesFromDisk()
 			_capture_sizes.push_back(CSize(w, ht));
 		}
 	}
-	_capture_index = -1;   // don't override the live frame until the user navigates
+	if (_paused && !_capture_buffer.empty()) {
+		// Paused on start: show the most recent saved screenshot, frozen, instead of a
+		// (skipped) live grab.
+		_capture_index = (int)_capture_buffer.size() - 1;
+		NavigateCapture(0);
+	} else {
+		_capture_index = -1;   // don't override the live frame until the user navigates
+	}
 }
 
 // Toolbar "Refresh detection": re-run detection + every field/overlay on the current

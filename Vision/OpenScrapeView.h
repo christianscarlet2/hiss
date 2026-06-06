@@ -157,6 +157,11 @@ public:
 	// or all 5 community cards are present. The back/next arrows scrub the buffer.
 	void ToggleAutoCapture();
 	bool IsAutoCapture() const { return _auto_capture; }
+	// Screenshot pause: when paused the live window is NOT re-grabbed, so the displayed
+	// frame stays frozen. Starts PAUSED so launching never overwrites the restored frame.
+	bool IsPaused() const { return _paused; }
+	void SetPaused(bool p) { _paused = p; }
+	void TogglePause();
 	bool HasCaptures() const { return !_capture_buffer.empty(); }
 	void NavigateCapture(int delta);
 	void ClearCaptures();
@@ -177,6 +182,7 @@ public:
 	void LoadCapturesFromDisk();
 private:
 	bool                 _auto_capture;
+	bool                 _paused;             // true => freeze the displayed screenshot (no live re-grab)
 	int                  _capture_index;
 	std::vector<HBITMAP> _capture_buffer;     // copies of frames that matched
 	std::vector<CSize>   _capture_sizes;      // pixel size of each buffered frame
