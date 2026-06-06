@@ -5,6 +5,8 @@
 
 // Notifies the owner (TrainerDlg) when a region is clicked. wParam = region index.
 #define WM_TRAINER_REGION_SELECTED   (WM_APP + 5)
+// Right-click "Debug this field" on a region. wParam = region index.
+#define WM_TRAINER_DEBUG_FIELD       (WM_APP + 12)
 
 // A standalone window that shows the live screenshot of the connected window,
 // scaled to fit, with the balance regions outlined. Clicking a region selects it.
@@ -25,6 +27,7 @@ protected:
 	afx_msg void OnPaint();
 	afx_msg BOOL OnEraseBkgnd(CDC *pDC);
 	afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
+	afx_msg void OnRButtonDown(UINT nFlags, CPoint point);
 	afx_msg LRESULT OnExitSizeMove(WPARAM wParam, LPARAM lParam);
 
 private:

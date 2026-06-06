@@ -599,16 +599,18 @@ Mat CAutoOcr::prepareImage(Mat img_orig, const SAutoOcrSettings &settings, bool 
 		basewidth = static_cast<int>(static_cast<float>(img_orig.cols) * wpercent);
 	}
 	cvtColor(img_orig, img_resized, COLOR_BGR2GRAY);
-	// The upscale is enhancement: skip it when "no preprocessing" is set -- EXCEPT for the
-	// grayscale LSTM text path (!binarize), which always upscales to match Vision so the
-	// model sees adequately-sized glyphs.
-	if (!settings.no_preprocess || !binarize) {
+	// "No preprocessing" feeds the RAW grayscale crop straight to Tesseract (matching the
+	// trainer), so a grayscale-trained balance model sees exactly what it was trained on.
+	// Otherwise upscale: always for the grayscale LSTM text path (!binarize) so glyphs are
+	// large enough, and for the binarize path too.
+	if (!settings.no_preprocess) {
 		resize(img_resized, img_resized, Size(basewidth, hsize), INTER_LANCZOS4);
 	}
 
 	// Grayscale LSTM text path: adaptively boost contrast so FADED names (faint text barely
-	// above the background) become legible. Matches Vision. Skipped for the binarize path.
-	if (!binarize && !img_resized.empty() && img_resized.type() == CV_8UC1) {
+	// above the background) become legible. Matches Vision. Skipped for the binarize path AND
+	// for "no preprocessing" (CLAHE corrupts clean rendered digits, e.g. "163.3" -> "183..").
+	if (!binarize && !settings.no_preprocess && !img_resized.empty() && img_resized.type() == CV_8UC1) {
 		try {
 			cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(2.5, Size(8, 8));
 			clahe->apply(img_resized, img_resized);
@@ -881,7 +883,10 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast, SAutoOc
 	// tessdata_best / LSTM models read GRAYSCALE far better than a binarized image
 	// (binarizing thin light-on-dark name text produced digit noise). So only balances
 	// (custom model tuned on binarized input) are binarized; text regions feed grayscale.
-	bool do_binarize = is_balance;
+	// "No preprocessing" (per engine) forces the grayscale path even for balances: models
+	// trained on rendered/antialiased text (e.g. the decimal balance model) read "99 BB"
+	// correctly from grayscale but collapse to "1" once hard-binarized.
+	bool do_binarize = is_balance && !settings.no_preprocess;
 	// NOTE: the whitelist is no longer sent to Tesseract (it recognises better
 	// unconstrained); it is only used to SCRUB the output. So we always keep it set and
 	// the old "no whitelist" option no longer suppresses it -- matching Vision, which
@@ -898,17 +903,24 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast, SAutoOc
 	vector<CString> lst;
 	CString ocr_result, ocr_result2;
 
+	// The OCR input arrives 4-channel (BGRA) from the table bitmap, but the byte-level decimal
+	// helpers interpret the buffer as 3-channel BGR. Build a contiguous BGR copy so decimal
+	// splitting AND decimal correction work (they were silently skipped on CV_8UC4 input).
+	Mat img_bgr;
+	if (img_orig.type() == CV_8UC4) cvtColor(img_orig, img_bgr, COLOR_BGRA2BGR);
+	else if (img_orig.type() == CV_8UC3) img_bgr = img_orig;
+
 	// Decimal splitting (Vision's Settings > Fields list). When the region's name
 	// matches a selected field type, find the decimal separator, OCR each half
 	// independently and join them with ".". Falls back to whole-image OCR if no
 	// separator is found.
 	bool did_decimal = false;
 	if (RegionUsesDecimalSplit(CString(region->first))
-			&& img_orig.type() == CV_8UC3 && img_orig.cols >= 3 && img_orig.rows >= 3) {
-		int sx = FindDecimalSplitX(img_orig.data, img_orig.cols, img_orig.rows, (int)img_orig.step);
-		if (sx > 0 && sx < img_orig.cols) {
-			Mat left = img_orig(Rect(0, 0, sx, img_orig.rows)).clone();
-			Mat right = img_orig(Rect(sx, 0, img_orig.cols - sx, img_orig.rows)).clone();
+			&& !img_bgr.empty() && img_bgr.cols >= 3 && img_bgr.rows >= 3) {
+		int sx = FindDecimalSplitX(img_bgr.data, img_bgr.cols, img_bgr.rows, (int)img_bgr.step);
+		if (sx > 0 && sx < img_bgr.cols) {
+			Mat left = img_bgr(Rect(0, 0, sx, img_bgr.rows)).clone();
+			Mat right = img_bgr(Rect(sx, 0, img_bgr.cols - sx, img_bgr.rows)).clone();
 			// Pad each half's OUTER edge with 2px of that half's darkest colour before
 			// OCR (always applied, not a preprocessing step): left half on its left,
 			// right half on its right.
@@ -974,12 +986,12 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast, SAutoOc
 	// Post-processing decimal correction (per-engine option autoocr{N}.decimal_correct):
 	// when whole-image OCR dropped the decimal point, locate it in the image and re-insert
 	// it. No-op when the result already contains a '.' (e.g. decimal-split produced one).
-	if (_dcorr[ai] && img_orig.type() == CV_8UC3 && img_orig.cols >= 3 && img_orig.rows >= 3) {
+	if (_dcorr[ai] && !img_bgr.empty() && img_bgr.cols >= 3 && img_bgr.rows >= 3) {
 		ocr_result = ApplyDecimalCorrection(std::string(CStringA(ocr_result)),
-			img_orig.data, img_orig.cols, img_orig.rows, (int)img_orig.step).c_str();
+			img_bgr.data, img_bgr.cols, img_bgr.rows, (int)img_bgr.step).c_str();
 		if (!ocr_result2.IsEmpty()) {
 			ocr_result2 = ApplyDecimalCorrection(std::string(CStringA(ocr_result2)),
-				img_orig.data, img_orig.cols, img_orig.rows, (int)img_orig.step).c_str();
+				img_bgr.data, img_bgr.cols, img_bgr.rows, (int)img_bgr.step).c_str();
 		}
 	}
 

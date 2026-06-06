@@ -2084,8 +2084,10 @@ void COpenScrapeView::DebugRegionToFolder(const CString &region_name)
 
 	// For OCR transforms, also dump the exact (preprocessed) image handed to Tesseract --
 	// the selection above already ran OCR for this region, so it's the current one.
+	CString dcorr_info;
 	if (!transform.IsEmpty() && transform[0] == 'A' && theApp.m_TableMapDlg != NULL) {
 		theApp.m_TableMapDlg->SaveLastOcrInput(folder + "ocr_input.png");
+		dcorr_info = theApp.m_TableMapDlg->GetLastDecimalCorrectionInfo();
 	}
 
 	// 3) Everything else -> info.txt.
@@ -2132,6 +2134,9 @@ void COpenScrapeView::DebugRegionToFolder(const CString &region_name)
 	} else {
 		info += "(database not available)\r\n";
 	}
+
+	// Decimal-correction post-processing details (AutoOcr only).
+	if (!dcorr_info.IsEmpty()) info += dcorr_info;
 
 	char t0 = transform.IsEmpty() ? 'N' : (char)transform[0];
 

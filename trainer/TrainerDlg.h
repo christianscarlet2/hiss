@@ -67,6 +67,8 @@ protected:
 	afx_msg void OnMouseLeave();
 	afx_msg LRESULT OnAttachWindow(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnRegionSelected(WPARAM wParam, LPARAM lParam);
+	afx_msg LRESULT OnDebugField(WPARAM wParam, LPARAM lParam);
+	void DebugRegionToFolder(int index);
 	afx_msg LRESULT OnOpenFonts(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnCaptureFonts(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnRecognizeAll(WPARAM wParam, LPARAM lParam);

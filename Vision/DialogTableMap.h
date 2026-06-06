@@ -208,6 +208,11 @@ private:
 	int threshold, match_mode;
 	CString m_ocr_char_whitelist;	// scrub set for the region being OCR'd
 	bool m_ocr_auto_threshold;		// true => Otsu auto-threshold (non-balance/text regions)
+	bool m_ocr_no_preprocess;		// true => feed the RAW grayscale crop (no upscale/sharpen/CLAHE/binarize)
+	// Last decimal-correction post-processing details, surfaced by "Debug this field".
+	bool m_last_dcorr_enabled;
+	int  m_last_dcorr_places;
+	CString m_last_dcorr_before, m_last_dcorr_after;
 	CString m_current_ocr_model;	// model spec currently loaded into api/api2
 	CString m_last_settings_revision;	// last DB settings revision seen by the probe timer
 	// (Re)load the configured AutoOcr0/AutoOcr1 model for `transform` into api/api2,
@@ -220,6 +225,8 @@ private:
  public:
 	// Write the most recent Tesseract input image to a file (for "Debug this field").
 	void SaveLastOcrInput(const CString &path);
+	// Formatted summary of the most recent decimal-correction post-processing (for "Debug this field").
+	CString GetLastDecimalCorrectionInfo();
  protected:
 	bool proceed_scroll = true;
 	std::vector<ImageProcessingPreset> m_ImageProcessingPresets;

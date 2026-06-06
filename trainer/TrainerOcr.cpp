@@ -158,6 +158,7 @@ CTrainerOcr::CTrainerOcr()
 	_ready = false;
 	_last_conf = 0;
 	_did_split = false;
+	_dcorr_enabled = false; _dcorr_places = 0;
 	_s = DefaultOcrSettings();
 }
 
@@ -544,6 +545,7 @@ void CTrainerOcr::Run(const Mat &crop_bgr, const STrainerOcrSettings &settings,
 	_last_conf = 0;
 	_did_split = false;
 	_split_left = ""; _split_right = "";
+	_dcorr_enabled = false; _dcorr_places = 0; _dcorr_before = ""; _dcorr_after = "";
 
 	if (preview_bgr) *preview_bgr = Mat();
 	if (text) *text = "";
@@ -586,11 +588,16 @@ void CTrainerOcr::Run(const Mat &crop_bgr, const STrainerOcrSettings &settings,
 	}
 
 	// Post-processing decimal correction (per-engine autoocr{N}.decimal_correct): re-insert
-	// a decimal point detected in the image when whole-image OCR dropped it.
+	// a decimal point detected in the image when whole-image OCR dropped it. Details are
+	// recorded for "Debug this field".
+	_dcorr_enabled = _s.use_decimal_correct;
+	_dcorr_places = TrainerDetectDecimalPlaces(crop_bgr);
+	_dcorr_before = ocr_result;
 	if (_s.use_decimal_correct) {
 		ocr_result = TrainerApplyDecimalCorrection(ocr_result, crop_bgr);
 		ocr_result2 = TrainerApplyDecimalCorrection(ocr_result2, crop_bgr);
 	}
+	_dcorr_after = ocr_result;
 
 	CString final_text;
 	Mat preview = img_resized;

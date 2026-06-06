@@ -39,6 +39,12 @@ public:
 	const CString &split_left() const { return _split_left; }
 	const CString &split_right() const { return _split_right; }
 
+	// Decimal-correction post-processing details from the most recent Run() (for "Debug this field").
+	bool dcorr_enabled() const { return _dcorr_enabled; }
+	int  dcorr_places() const { return _dcorr_places; }
+	const CString &dcorr_before() const { return _dcorr_before; }
+	const CString &dcorr_after() const { return _dcorr_after; }
+
 	// Runs the full pipeline on a BGR crop. Returns the processed preview image
 	// (original-region scale), the recognized text, and a mean confidence.
 	void Run(const cv::Mat &crop_bgr, const STrainerOcrSettings &settings,
@@ -77,4 +83,9 @@ private:
 	// Decimal-split state from the last Run().
 	bool _did_split;
 	CString _split_left, _split_right;
+
+	// Decimal-correction state from the last Run().
+	bool _dcorr_enabled;
+	int  _dcorr_places;
+	CString _dcorr_before, _dcorr_after;
 };

@@ -12,6 +12,7 @@
 #include "TrainerMessages.h"
 #include "WindowCapture.h"
 #include "TextImageGen.h"
+#include <shellapi.h>
 
 using namespace cv;
 using namespace tesseract;
@@ -264,6 +265,7 @@ BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_WM_DESTROY()
 	ON_MESSAGE(WM_TRAINER_ATTACH, &CTrainerDlg::OnAttachWindow)
 	ON_MESSAGE(WM_TRAINER_REGION_SELECTED, &CTrainerDlg::OnRegionSelected)
+	ON_MESSAGE(WM_TRAINER_DEBUG_FIELD, &CTrainerDlg::OnDebugField)
 	ON_MESSAGE(WM_TRAINER_OPEN_FONTS, &CTrainerDlg::OnOpenFonts)
 	ON_MESSAGE(WM_TRAINER_CAPTURE_FONTS, &CTrainerDlg::OnCaptureFonts)
 	ON_MESSAGE(WM_TRAINER_RECOGNIZE_ALL, &CTrainerDlg::OnRecognizeAll)
@@ -889,6 +891,13 @@ LRESULT CTrainerDlg::OnRegionSelected(WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
+// Right-click "Debug this field" in the Table View -> write a diagnostic dump.
+LRESULT CTrainerDlg::OnDebugField(WPARAM wParam, LPARAM lParam)
+{
+	DebugRegionToFolder((int)wParam);
+	return 0;
+}
+
 // Enable/disable the Image-Processing + transform + model controls together (used when
 // a non-AutoOcr region is selected).
 void CTrainerDlg::EnableOcrControls(bool on)
@@ -1253,6 +1262,135 @@ static bool CropRegionBgra(HBITMAP bmp, int bmpW, int bmpH, RECT r,
 	DeleteDC(hdcScreen);
 	*outW = w; *outH = h;
 	return true;
+}
+
+// Keep alnum/._- in a path component; replace everything else with '_'.
+static CString SanitizeForPathT(const CString &s)
+{
+	CString out;
+	for (int i = 0; i < s.GetLength(); ++i) {
+		TCHAR c = s[i];
+		bool keep = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z')
+			|| (c >= 'a' && c <= 'z') || c == '.' || c == '_' || c == '-';
+		out += keep ? c : '_';
+	}
+	return out;
+}
+
+static bool WriteMatPngT(const CString &path, const cv::Mat &m)
+{
+	if (m.empty()) return false;
+	try { return cv::imwrite((const char *)CStringA(path), m); }
+	catch (...) { return false; }
+}
+
+// Right-click "Debug this field" in the Table View: write a full diagnostic dump (scraped
+// image, OCR input, whole table, settings, models, and decimal-correction post-processing)
+// to <appdir>\debug\<region>_<timestamp>\. Mirrors Vision's "Debug this field".
+void CTrainerDlg::DebugRegionToFolder(int index)
+{
+	if (index < 0 || index >= (int)_regions.size()) return;
+	if (_frame == NULL || _frame_w <= 0 || _frame_h <= 0) {
+		SetStatus("Debug this field: connect to a window first (no current frame).");
+		return;
+	}
+	const STrainerRegion &reg = _regions[index];
+
+	// Crop the region (BGRA) -> BGR.
+	std::vector<BYTE> buf; int rw = 0, rh = 0;
+	if (!CropRegionBgra(_frame, _frame_w, _frame_h, reg.rect, &buf, &rw, &rh)) {
+		SetStatus("Debug this field: region has an invalid size.");
+		return;
+	}
+	Mat bgra((int)rh, (int)rw, CV_8UC4, &buf[0]);
+	Mat bgr; cvtColor(bgra, bgr, COLOR_BGRA2BGR);
+
+	// Run OCR exactly as the live preview does so the result + decimal-correction details match.
+	LoadOcrModelForRegion(index);
+	STrainerOcrSettings settings = ReadSettings();
+	settings.use_decimal_split = TrainerRegionUsesDecimalSplit(reg.name);
+	Mat preview; CString text; int conf = 0;
+	_ocr.Run(bgr, settings, reg.name, &preview, &text, &conf);
+
+	// Folder <appdir>\debug\<region>_<timestamp>\.
+	char module[MAX_PATH] = { 0 };
+	GetModuleFileNameA(NULL, module, MAX_PATH);
+	CString appdir(module);
+	int slash = appdir.ReverseFind('\\'); if (slash >= 0) appdir = appdir.Left(slash);
+	SYSTEMTIME st; GetLocalTime(&st);
+	CString ts; ts.Format("%04d%02d%02d_%02d%02d%02d", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+	CString debugroot = appdir + "\\debug";
+	CreateDirectoryA(debugroot, NULL);
+	CString folder; folder.Format("%s\\%s_%s", debugroot.GetString(), SanitizeForPathT(reg.name).GetString(), ts.GetString());
+	CreateDirectoryA(folder, NULL);
+
+	// Images.
+	WriteMatPngT(folder + "\\scraped.png", bgr);
+	if (!preview.empty()) WriteMatPngT(folder + "\\ocr_input.png", preview);
+	std::vector<BYTE> fbuf; int fw = 0, fh = 0;
+	RECT full = { 0, 0, _frame_w - 1, _frame_h - 1 };
+	if (CropRegionBgra(_frame, _frame_w, _frame_h, full, &fbuf, &fw, &fh)) {
+		Mat fbgra((int)fh, (int)fw, CV_8UC4, &fbuf[0]);
+		Mat fbgr; cvtColor(fbgra, fbgr, COLOR_BGRA2BGR);
+		WriteMatPngT(folder + "\\table.png", fbgr);
+	}
+
+	// info.txt
+	CString info, line;
+	info += "=== Trainer \"Debug this field\" ===\r\n";
+	line.Format("Timestamp     : %s\r\n", ts.GetString());                          info += line;
+	line.Format("Region        : %s\r\n", reg.name.GetString());                    info += line;
+	line.Format("Field type    : %s\r\n", reg.field_type.GetString());              info += line;
+	line.Format("Transform     : %s\r\n", reg.transform.GetString());               info += line;
+	line.Format("Enabled       : %s\r\n", reg.enabled ? "yes (auto-captured)" : "no (not in scrape_fields)"); info += line;
+	line.Format("RESULT (OCR)  : %s\r\n", text.GetString());                        info += line;
+	line.Format("Confidence    : %d\r\n", conf);                                    info += line;
+
+	info += "\r\n--- Geometry ---\r\n";
+	line.Format("Rect          : left=%d top=%d right=%d bottom=%d  (%dx%d)\r\n",
+		(int)reg.rect.left, (int)reg.rect.top, (int)reg.rect.right, (int)reg.rect.bottom, rw, rh); info += line;
+
+	info += "\r\n--- OCR / image-processing settings ---\r\n";
+	line.Format("Threshold     : %d\r\n", settings.threshold);                      info += line;
+	line.Format("Match mode    : %d (Tesseract page-seg)\r\n", settings.page_seg_mode); info += line;
+	line.Format("Char spacing  : %d\r\n", settings.char_spacing);                   info += line;
+	line.Format("No preprocess : %s\r\n", settings.no_preprocess ? "yes" : "no");   info += line;
+	line.Format("No whitelist  : %s\r\n", settings.no_whitelist ? "yes" : "no");    info += line;
+	line.Format("Decimal split : %s\r\n", settings.use_decimal_split ? "yes" : "no"); info += line;
+
+	info += "\r\n--- AutoOCR models (shared settings) ---\r\n";
+	line.Format("AutoOcr0      : %s\r\n", TrainerDB_GetSetting("autoocr0", "model").GetString()); info += line;
+	line.Format("AutoOcr1      : %s\r\n", TrainerDB_GetSetting("autoocr1", "model").GetString()); info += line;
+	line.Format("AutoOcr2      : %s\r\n", TrainerDB_GetSetting("autoocr2", "model").GetString()); info += line;
+
+	info += "\r\n--- Decimal correction (post-processing) ---\r\n";
+	line.Format("Enabled (engine)   : %s\r\n", _ocr.dcorr_enabled() ? "yes" : "no"); info += line;
+	line.Format("Detected places    : %d (decimal dot found %s; 0 = none)\r\n",
+		_ocr.dcorr_places(), _ocr.dcorr_places() > 0 ? "in the image" : "not");      info += line;
+	line.Format("Result before      : %s\r\n", _ocr.dcorr_before().GetString());     info += line;
+	line.Format("Result after       : %s\r\n", _ocr.dcorr_after().GetString());      info += line;
+	if (_ocr.did_split()) {
+		info += "\r\n--- Decimal split ---\r\n";
+		line.Format("Left / Right       : %s | %s\r\n",
+			_ocr.split_left().GetString(), _ocr.split_right().GetString());          info += line;
+	}
+
+	FILE *f = NULL; fopen_s(&f, folder + "\\info.txt", "wb");
+	if (f != NULL) { CStringA a(info); fwrite((const char *)a, 1, a.GetLength(), f); fclose(f); }
+
+	// Path to the clipboard + open the folder.
+	if (OpenClipboard()) {
+		EmptyClipboard();
+		int bytes = (folder.GetLength() + 1) * sizeof(char);
+		HGLOBAL hmem = GlobalAlloc(GMEM_MOVEABLE, bytes);
+		if (hmem != NULL) {
+			void *d = GlobalLock(hmem);
+			if (d != NULL) { memcpy(d, (LPCSTR)folder, bytes); GlobalUnlock(hmem); SetClipboardData(CF_TEXT, hmem); }
+		}
+		CloseClipboard();
+	}
+	ShellExecuteA(NULL, "open", folder, NULL, NULL, SW_SHOWNORMAL);
+	SetStatus("Debug this field: wrote " + folder + "  (path copied to clipboard)");
 }
 
 LRESULT CTrainerDlg::OnOpenFonts(WPARAM, LPARAM)

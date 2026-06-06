@@ -683,6 +683,8 @@ BOOL CDlgTableMap::OnInitDialog()
 		return FALSE;
 	}
 	m_current_ocr_model = "my_model";   // matches the Init above; EnsureOcrModel swaps as needed
+	m_ocr_no_preprocess = false;        // default; get_ocr_result sets it per engine
+	m_last_dcorr_enabled = false; m_last_dcorr_places = 0;
 	// Poll the shared settings revision so a model change in preferences applies live.
 	SetTimer(kSettingsProbeTimer, 750, NULL);
 	//api->SetPageSegMode(PSM_SINGLE_LINE);
@@ -2203,7 +2205,11 @@ Mat CDlgTableMap::prepareImage(Mat img_orig, bool binarize, int threshold, bool 
 		basewidth = static_cast<int>(static_cast<float>(img_orig.cols) * wpercent);
 	}
 	cvtColor(img_orig, img_resized, COLOR_BGR2GRAY);
-	resize(img_resized, img_resized, Size(basewidth, hsize), INTER_LANCZOS4);
+	// "No preprocessing" feeds the RAW grayscale crop straight to Tesseract (matching the
+	// trainer), so a grayscale-trained balance model sees exactly what it was trained on.
+	if (!m_ocr_no_preprocess) {
+		resize(img_resized, img_resized, Size(basewidth, hsize), INTER_LANCZOS4);
+	}
 
 	// Sharpen (unsharp mask) before binarization so thin strokes stay crisp and
 	// digits like 7 don't get rounded into 1. Amount comes from the per-region
@@ -2211,7 +2217,7 @@ Mat CDlgTableMap::prepareImage(Mat img_orig, bool binarize, int threshold, bool 
 	CString sharpen_txt;
 	m_Sharpen.GetWindowText(sharpen_txt);
 	double sharpen_amount = atoi(sharpen_txt) / 100.0;
-	if (sharpen_amount > 0.0) {
+	if (!m_ocr_no_preprocess && sharpen_amount > 0.0) {
 		Mat blurred;
 		GaussianBlur(img_resized, blurred, Size(0, 0), kOcrSharpenSigma);
 		addWeighted(img_resized, 1.0 + sharpen_amount, blurred, -sharpen_amount, 0, img_resized);
@@ -2220,8 +2226,9 @@ Mat CDlgTableMap::prepareImage(Mat img_orig, bool binarize, int threshold, bool 
 	// For the grayscale (non-binarized) LSTM text path, adaptively boost contrast so FADED
 	// names (faint text barely above the background) become legible. CLAHE enhances local
 	// contrast without blowing out already-bright text. Skipped for the binarize path
-	// (balances) which is handled by thresholding.
-	if (!binarize && !img_resized.empty() && img_resized.type() == CV_8UC1) {
+	// (balances), and for "no preprocessing" (CLAHE corrupts clean rendered digits, e.g.
+	// "163.3" -> "183..").
+	if (!binarize && !m_ocr_no_preprocess && !img_resized.empty() && img_resized.type() == CV_8UC1) {
 		try {
 			cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(2.5, Size(8, 8));
 			clahe->apply(img_resized, img_resized);
@@ -2370,6 +2377,20 @@ void CDlgTableMap::SaveLastOcrInput(const CString &path) {
 	if (m_last_ocr_input.empty()) return;
 	try { cv::imwrite((const char *)path, m_last_ocr_input); }
 	catch (...) {}
+}
+
+CString CDlgTableMap::GetLastDecimalCorrectionInfo() {
+	CString s, line;
+	s += "\r\n--- Decimal correction (post-processing) ---\r\n";
+	line.Format("Enabled (engine)   : %s\r\n", m_last_dcorr_enabled ? "yes" : "no");        s += line;
+	line.Format("Detected places    : %d (decimal dot found %s; 0 = none)\r\n",
+		m_last_dcorr_places, m_last_dcorr_places > 0 ? "in the image" : "not");             s += line;
+	line.Format("Result before      : %s\r\n", m_last_dcorr_before.GetString());            s += line;
+	line.Format("Result after       : %s\r\n", m_last_dcorr_after.GetString());             s += line;
+	if (m_last_dcorr_enabled && m_last_dcorr_before == m_last_dcorr_after) {
+		s += "Note               : no change (result already had a '.', or no places detected)\r\n";
+	}
+	return s;
 }
 
 void CDlgTableMap::process_ocr(Mat img_orig, bool fast, bool second_pass) {
@@ -2580,19 +2601,36 @@ CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast,
 	// binarizing thin light-on-dark name text is what made it come out as digit noise.
 	// So only balance regions (custom model tuned on binarized input) get binarized; text
 	// regions (player names) are fed the upscaled grayscale directly.
-	bool binarize_for_ocr = is_balance;
+	// "No preprocessing" (per engine) forces the grayscale path even for balances: models
+	// trained on rendered/antialiased text (e.g. the decimal balance model) read "99 BB"
+	// correctly from grayscale but collapse to "1" once hard-binarized. Matches Hiss/trainer.
+	bool engine_no_preprocess = false;
+	if (p_tablemap_db != NULL) {
+		CString npkey = (transform == "AutoOcr2") ? CString("autoocr2")
+			: (transform == "AutoOcr1") ? CString("autoocr1") : CString("autoocr0");
+		engine_no_preprocess = (p_tablemap_db->GetSettingString(npkey, "no_preprocess") == "1");
+	}
+	m_ocr_no_preprocess = engine_no_preprocess;
+	bool binarize_for_ocr = is_balance && !engine_no_preprocess;
+	// The OCR input arrives 4-channel (BGRA) from the table bitmap, but the byte-level decimal
+	// helpers (FindDecimalSplitX / DetectDecimalPlaces) interpret the buffer as 3-channel BGR.
+	// Build a contiguous BGR copy so decimal splitting AND decimal correction work here too
+	// (they were silently skipped while img_orig was CV_8UC4).
+	Mat img_bgr;
+	if (img_orig.type() == CV_8UC4) cvtColor(img_orig, img_bgr, COLOR_BGRA2BGR);
+	else if (img_orig.type() == CV_8UC3) img_bgr = img_orig;
 	bool did_decimal = false;
 	CString decimal_result;
 	if ((transform == "AutoOcr0" || transform == "AutoOcr1" || transform == "AutoOcr2") && EnsureOcrModel(transform)) {
 		// Decimal splitting (preferred for balances/bets/...): split the image at the
 		// decimal separator, OCR each half independently, and re-join with '.'. Whole-image
 		// OCR often drops or misreads the point (e.g. "50.28" -> "5028", "84.36" -> "84 36").
-		if (RegionUsesDecimalSplit(region_name) && img_orig.type() == CV_8UC3
-				&& img_orig.cols >= 3 && img_orig.rows >= 3) {
-			int sx = FindDecimalSplitX(img_orig.data, img_orig.cols, img_orig.rows, (int)img_orig.step);
-			if (sx > 0 && sx < img_orig.cols) {
-				Mat left = img_orig(Rect(0, 0, sx, img_orig.rows)).clone();
-				Mat right = img_orig(Rect(sx, 0, img_orig.cols - sx, img_orig.rows)).clone();
+		if (RegionUsesDecimalSplit(region_name) && !img_bgr.empty()
+				&& img_bgr.cols >= 3 && img_bgr.rows >= 3) {
+			int sx = FindDecimalSplitX(img_bgr.data, img_bgr.cols, img_bgr.rows, (int)img_bgr.step);
+			if (sx > 0 && sx < img_bgr.cols) {
+				Mat left = img_bgr(Rect(0, 0, sx, img_bgr.rows)).clone();
+				Mat right = img_bgr(Rect(sx, 0, img_bgr.cols - sx, img_bgr.rows)).clone();
 				left = PadDarkestSidesV(left, true, false);
 				right = PadDarkestSidesV(right, false, true);
 				ResultString = ResultString2 = "";
@@ -2661,19 +2699,27 @@ CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast,
 
 	// Post-processing decimal correction (per-engine option autoocr{N}.decimal_correct):
 	// when whole-image OCR dropped the decimal point, locate it in the image and re-insert
-	// it (1-2 places from the right). No-op when the result already has a '.'.
+	// it (1-2 places from the right). No-op when the result already has a '.'. The detected
+	// places / before / after are recorded for "Debug this field".
+	m_last_dcorr_enabled = false;
+	m_last_dcorr_places = 0;
+	m_last_dcorr_before = ocr_result;
+	m_last_dcorr_after = ocr_result;
 	if ((transform == "AutoOcr0" || transform == "AutoOcr1" || transform == "AutoOcr2")
 			&& p_tablemap_db != NULL
-			&& img_orig.type() == CV_8UC3 && img_orig.cols >= 3 && img_orig.rows >= 3) {
+			&& !img_bgr.empty() && img_bgr.cols >= 3 && img_bgr.rows >= 3) {
 		CString dckey = (transform == "AutoOcr2") ? CString("autoocr2")
 			: (transform == "AutoOcr1") ? CString("autoocr1") : CString("autoocr0");
-		if (p_tablemap_db->GetSettingString(dckey, "decimal_correct") == "1") {
+		m_last_dcorr_enabled = (p_tablemap_db->GetSettingString(dckey, "decimal_correct") == "1");
+		m_last_dcorr_places = DetectDecimalPlaces(img_bgr.data, img_bgr.cols, img_bgr.rows, (int)img_bgr.step);
+		if (m_last_dcorr_enabled) {
 			ocr_result = ApplyDecimalCorrection(std::string(CStringA(ocr_result)),
-				img_orig.data, img_orig.cols, img_orig.rows, (int)img_orig.step).c_str();
+				img_bgr.data, img_bgr.cols, img_bgr.rows, (int)img_bgr.step).c_str();
 			if (!ocr_result2.IsEmpty()) {
 				ocr_result2 = ApplyDecimalCorrection(std::string(CStringA(ocr_result2)),
-					img_orig.data, img_orig.cols, img_orig.rows, (int)img_orig.step).c_str();
+					img_bgr.data, img_bgr.cols, img_bgr.rows, (int)img_bgr.step).c_str();
 			}
+			m_last_dcorr_after = ocr_result;
 		}
 	}
 

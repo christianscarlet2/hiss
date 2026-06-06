@@ -8,6 +8,7 @@ BEGIN_MESSAGE_MAP(CScreenshotView, CWnd)
 	ON_WM_PAINT()
 	ON_WM_ERASEBKGND()
 	ON_WM_LBUTTONDOWN()
+	ON_WM_RBUTTONDOWN()
 	ON_MESSAGE(WM_EXITSIZEMOVE, &CScreenshotView::OnExitSizeMove)
 END_MESSAGE_MAP()
 
@@ -192,4 +193,39 @@ void CScreenshotView::OnLButtonDown(UINT nFlags, CPoint point)
 		}
 	}
 	CWnd::OnLButtonDown(nFlags, point);
+}
+
+// Right-click a region: offer "Debug this field", which asks the main dialog to write a
+// full diagnostic dump (scraped image, OCR input, settings, models, decimal correction).
+void CScreenshotView::OnRButtonDown(UINT nFlags, CPoint point)
+{
+	int sx = 0, sy = 0;
+	int hit = -1;
+	if (ViewToSource(point, &sx, &sy)) {
+		for (size_t i = 0; i < _regions.size(); i++) {
+			const RECT &r = _regions[i].rect;
+			if (sx >= (int)r.left && sx <= (int)r.right && sy >= (int)r.top && sy <= (int)r.bottom) {
+				hit = (int)i;
+				break;
+			}
+		}
+	}
+	if (hit >= 0) {
+		_selected = hit;
+		Invalidate(FALSE);
+		const UINT kDebugId = 1;
+		CMenu menu;
+		menu.CreatePopupMenu();
+		CString item;
+		item.Format("Debug this field  (%s)", _regions[hit].name.GetString());
+		menu.AppendMenu(MF_STRING, kDebugId, item);
+		CPoint screen = point;
+		ClientToScreen(&screen);
+		UINT cmd = menu.TrackPopupMenu(TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_LEFTALIGN,
+			screen.x, screen.y, this);
+		if (cmd == kDebugId && _owner != NULL && ::IsWindow(_owner->GetSafeHwnd())) {
+			_owner->PostMessage(WM_TRAINER_DEBUG_FIELD, (WPARAM)hit, 0);
+		}
+	}
+	CWnd::OnRButtonDown(nFlags, point);
 }
