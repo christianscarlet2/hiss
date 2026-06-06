@@ -180,6 +180,48 @@ body {
     0 0 20px rgba(150, 18, 30, 0.35);
 }
 
+/* a blurred, irregular scorched patch burned into the felt behind the brand */
+.felt-script::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 150%;
+  height: 320%;
+  transform: translate(-50%, -50%);
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 50%;
+  filter: blur(7px);
+  background:
+    radial-gradient(ellipse 58% 52% at 28% 42%, rgba(16, 7, 2, .58), transparent 70%),
+    radial-gradient(ellipse 52% 60% at 72% 58%, rgba(28, 10, 3, .48), transparent 70%),
+    radial-gradient(ellipse 85% 58% at 50% 50%, rgba(10, 5, 2, .55), transparent 74%),
+    radial-gradient(ellipse 24% 34% at 50% 50%, rgba(120, 40, 12, .22), transparent 72%);
+}
+
+/* scattered charred specks / ember flecks around the lettering */
+.felt-script::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 138%;
+  height: 240%;
+  transform: translate(-50%, -50%);
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle 3px at 9% 28%, rgba(8, 3, 1, .65), transparent),
+    radial-gradient(circle 2px at 19% 78%, rgba(8, 3, 1, .55), transparent),
+    radial-gradient(circle 4px at 84% 36%, rgba(8, 3, 1, .6), transparent),
+    radial-gradient(circle 2px at 93% 72%, rgba(8, 3, 1, .5), transparent),
+    radial-gradient(circle 3px at 48% 10%, rgba(8, 3, 1, .45), transparent),
+    radial-gradient(circle 2px at 64% 90%, rgba(8, 3, 1, .55), transparent),
+    radial-gradient(circle 2px at 35% 16%, rgba(110, 30, 8, .4), transparent),
+    radial-gradient(circle 2px at 76% 84%, rgba(110, 30, 8, .35), transparent);
+}
+
 /* the serpent beneath the cursive brand */
 .felt-snake {
   position: absolute;
