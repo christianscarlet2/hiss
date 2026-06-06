@@ -15,6 +15,7 @@ const int kReactTableHeight = 560;
 const int kTitleBarHeight = 34;     // row 1: title + window buttons
 const int kMenuRowHeight = 30;      // row 2: menu bar + toolbar
 const int kCaptionButtonWidth = 46;
+const int kResizeBorder = 6;        // hit-test thickness for the custom resize frame
 
 // Top-level menus mirrored from IDR_MAINFRAME. submenu_index = position of the popup in
 // IDR_MAINFRAME (File=0, Edit=1, Help=3); Problem Solver has no popup -> a direct command.
@@ -121,9 +122,10 @@ BOOL CReactTableWindow::Create(CWnd *owner, unsigned short port)
 		WS_EX_TOOLWINDOW,
 		class_name,
 		"Hiss:",
-		// No WS_CAPTION: we draw our own title bar. WS_THICKFRAME keeps it sizable and
-		// keeps the DWM shadow; the remaining frame is trimmed in WM_NCCALCSIZE.
-		(WS_OVERLAPPEDWINDOW & ~WS_CAPTION) | WS_VISIBLE,
+		// Keep WS_OVERLAPPEDWINDOW (incl. WS_CAPTION) so snap/restore/resize and the DWM
+		// shadow stay stable; WM_NCCALCSIZE claims the whole window as client so the standard
+		// caption is never drawn, and we paint our own title bar + handle resize ourselves.
+		WS_OVERLAPPEDWINDOW | WS_VISIBLE,
 		CW_USEDEFAULT,
 		CW_USEDEFAULT,
 		kReactTableWidth,
@@ -210,8 +212,18 @@ void CReactTableWindow::ResizeBrowser(void)
 	CRect bounds;
 	GetClientRect(&bounds);
 	bounds.top += ChromeHeight();   // leave room for the title bar + menu/toolbar row
+	// Leave a resize-border strip uncovered on the sides/bottom so the edges stay grabbable
+	// (the WebView2 child would otherwise eat those mouse messages). Not needed when zoomed.
+	if (!IsZoomed()) {
+		bounds.left += kResizeBorder;
+		bounds.right -= kResizeBorder;
+		bounds.bottom -= kResizeBorder;
+	}
 	if (bounds.top > bounds.bottom) {
 		bounds.top = bounds.bottom;
+	}
+	if (bounds.left > bounds.right) {
+		bounds.left = bounds.right;
 	}
 	_controller->put_Bounds(bounds);
 }
@@ -254,47 +266,53 @@ void CReactTableWindow::OnNcCalcSize(BOOL bCalcValidRects, NCCALCSIZE_PARAMS *lp
 		CWnd::OnNcCalcSize(bCalcValidRects, lpncsp);
 		return;
 	}
-	LONG original_top = lpncsp->rgrc[0].top;
-	CWnd::OnNcCalcSize(bCalcValidRects, lpncsp);   // default frame insets
-	lpncsp->rgrc[0].top = original_top;            // ... but reclaim the caption strip
+	// Claim the ENTIRE window as the client area: with no non-client region the standard
+	// caption/frame is never drawn. Resizing is handled in OnNcHitTest. When maximized the
+	// client must be inset by the frame size or the edges spill past the monitor.
 	if (IsZoomed()) {
-		// Maximized windows need the frame padding back on top or the content is clipped.
-		int frame_y = GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
-		lpncsp->rgrc[0].top = original_top + frame_y;
+		int fx = GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+		int fy = GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+		lpncsp->rgrc[0].left += fx;
+		lpncsp->rgrc[0].top += fy;
+		lpncsp->rgrc[0].right -= fx;
+		lpncsp->rgrc[0].bottom -= fy;
 	}
+	// Non-maximized: leave rgrc[0] as the full window rectangle (returns 0).
 }
 
 LRESULT CReactTableWindow::OnNcHitTest(CPoint point)
 {
-	CPoint client_pt = point;
-	ScreenToClient(&client_pt);
+	CPoint p = point;
+	ScreenToClient(&p);
 	CRect client;
 	GetClientRect(&client);
+	int W = client.Width();
+	int Hh = client.Height();
 
-	// Top resize edge / corners (only when not maximized).
-	if (!IsZoomed() && client_pt.y >= 0 && client_pt.y < 6
-			&& client_pt.x >= 0 && client_pt.x < client.Width()) {
-		if (client_pt.x < 10) return HTTOPLEFT;
-		if (client_pt.x >= client.Width() - 10) return HTTOPRIGHT;
-		return HTTOP;
-	}
-
-	// Title bar (row 1): buttons are client (so we get clicks); the rest is draggable caption.
-	if (client_pt.y >= 0 && client_pt.y < kTitleBarHeight
-			&& client_pt.x >= 0 && client_pt.x < client.Width()) {
-		if (HitButton(client_pt) >= 0) {
-			return HTCLIENT;
-		}
-		return HTCAPTION;
-	}
-
-	// Menu/toolbar (row 2): all client so the menus and toolbar buttons receive clicks.
-	if (client_pt.y >= kTitleBarHeight && client_pt.y < ChromeHeight()
-			&& client_pt.x >= 0 && client_pt.x < client.Width()) {
+	// Window buttons take priority so the top resize edge can't steal them.
+	if (p.y >= 0 && p.y < kTitleBarHeight && HitButton(p) >= 0) {
 		return HTCLIENT;
 	}
 
-	return CWnd::OnNcHitTest(point);
+	// Custom resize frame (we own the whole window now, so we hit-test the edges/corners).
+	const int B = kResizeBorder;
+	if (!IsZoomed() && p.x >= 0 && p.x < W && p.y >= 0 && p.y < Hh) {
+		bool l = (p.x < B), r = (p.x >= W - B), t = (p.y < B), b = (p.y >= Hh - B);
+		if (t && l) return HTTOPLEFT;
+		if (t && r) return HTTOPRIGHT;
+		if (b && l) return HTBOTTOMLEFT;
+		if (b && r) return HTBOTTOMRIGHT;
+		if (l) return HTLEFT;
+		if (r) return HTRIGHT;
+		if (t) return HTTOP;
+		if (b) return HTBOTTOM;
+	}
+
+	// Title bar (row 1) is a draggable caption; menu/toolbar (row 2) is client.
+	if (p.y >= 0 && p.y < kTitleBarHeight) {
+		return HTCAPTION;
+	}
+	return HTCLIENT;
 }
 
 BOOL CReactTableWindow::OnEraseBkgnd(CDC *pDC)
