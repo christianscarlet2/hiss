@@ -1,6 +1,5 @@
 var useEffect = React.useEffect;
 var useState = React.useState;
-var useRef = React.useRef;
 
 // Seats are spread evenly around the felt ellipse (chair 0 at the bottom centre, then
 // distributed by equal angle). cx/cy = .5/.49, semi-axes .45 x .38.
@@ -59,6 +58,37 @@ function bb(value) {
 function thousands(value) {
   value = Math.max(0, Math.round(Number(value || 0)));
   return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+// Casino chip colour sets; each chair gets its own, so every bet shows a distinct chip.
+var CHIP_COLORS = [
+  { body: '#c2182b', spot: '#f4f6f8', face: '#9c1020' },
+  { body: '#1f5fd6', spot: '#f4f6f8', face: '#163f93' },
+  { body: '#1f9a52', spot: '#f4f6f8', face: '#136b39' },
+  { body: '#17181c', spot: '#e7b9c0', face: '#000000' },
+  { body: '#6a2da8', spot: '#f4f6f8', face: '#4a1d77' },
+  { body: '#e07b1a', spot: '#231405', face: '#b35f0f' },
+  { body: '#e9ecef', spot: '#c2182b', face: '#cfd3d8' },
+  { body: '#e8c43a', spot: '#231405', face: '#c2a019' },
+  { body: '#d65a9a', spot: '#f4f6f8', face: '#a83c75' },
+  { body: '#1aa0a0', spot: '#f4f6f8', face: '#137575' }
+];
+
+// A top-down poker chip SVG (edge spots, inner ring, milled centre) coloured per chair.
+function chipSvg(chair) {
+  var n = CHIP_COLORS.length;
+  var c = CHIP_COLORS[((chair % n) + n) % n];
+  return '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
+    '<circle cx="50" cy="50" r="47" fill="rgba(0,0,0,.35)"/>' +
+    '<circle cx="50" cy="50" r="45" fill="#0c0c0c"/>' +
+    '<circle cx="50" cy="50" r="43" fill="' + c.body + '"/>' +
+    '<circle cx="50" cy="50" r="37" fill="none" stroke="' + c.spot + '" stroke-width="12" stroke-dasharray="10 23.6"/>' +
+    '<circle cx="50" cy="50" r="31" fill="' + c.body + '"/>' +
+    '<circle cx="50" cy="50" r="30" fill="none" stroke="rgba(255,255,255,.42)" stroke-width="1.4"/>' +
+    '<circle cx="50" cy="50" r="21" fill="' + c.face + '"/>' +
+    '<circle cx="50" cy="50" r="21" fill="none" stroke="rgba(255,255,255,.32)" stroke-width="1"/>' +
+    '<circle cx="50" cy="50" r="11" fill="none" stroke="rgba(255,255,255,.3)" stroke-width="1" stroke-dasharray="2 4"/>' +
+  '</svg>';
 }
 
 // "Hiss by Scarlet Beast" felt seal: a glowing occult emblem (inverted pentagram,
@@ -200,9 +230,7 @@ function Player(props) {
       cards.push(rawCards[i]);
     }
   }
-  var toggleUnit = props.onToggleUnit;
   return e('div', { className: 'player' + (isHero ? ' hero' : ''), style: style },
-    player.bet ? e('div', { className: 'bet', onDoubleClick: toggleUnit, title: 'Double-click to toggle BB / $' }, bb(player.bet)) : null,
     e('div', { className: 'seat-ring ' + (player.active ? 'active' : '') }),
     e('div', { className: 'holecards' }, cards.map(function (card, index) {
       return e(CardView, { key: index, value: card });
@@ -240,13 +268,30 @@ function DealerButton(props) {
   return e('div', { className: 'dealer', style: { left: (x * 100) + '%', top: (y * 100) + '%' } }, 'D');
 }
 
+// A player's bet: a coloured chip + amount, placed out on the felt in front of the seat
+// (a third of the way toward the centre) so it sits on the felt for every seat.
+function BetChip(props) {
+  var pos = seatPos(props.nchairs, props.chair);
+  var t = 0.34;
+  var x = pos[0] + (0.5 - pos[0]) * t;
+  var y = pos[1] + (0.49 - pos[1]) * t;
+  return e('div', {
+    className: 'bet',
+    style: { left: (x * 100) + '%', top: (y * 100) + '%' },
+    onDoubleClick: props.onToggleUnit,
+    title: 'Double-click to toggle BB / $'
+  },
+    e('span', { className: 'bet-chip', dangerouslySetInnerHTML: { __html: chipSvg(props.chair) } }),
+    e('span', { className: 'bet-amt' }, bb(props.bet))
+  );
+}
+
 // Red "Matrix" digital rain, painted on a full-window canvas behind the table so it shows
 // through the black area around the felt.
 function MatrixRain() {
-  var ref = useRef(null);
   useEffect(function () {
-    var canvas = ref.current;
-    if (!canvas) return;
+    var canvas = document.getElementById('hiss-matrix-rain');
+    if (!canvas || !canvas.getContext) return;
     var ctx = canvas.getContext('2d');
     var chars = '01アツニ蛇HISSCARLETBEAST☠⛧666$';
     var fontSize = 16;
@@ -283,7 +328,7 @@ function MatrixRain() {
       window.removeEventListener('resize', resize);
     };
   }, []);
-  return e('canvas', { className: 'matrix-rain', ref: ref });
+  return e('canvas', { id: 'hiss-matrix-rain', className: 'matrix-rain' });
 }
 
 function App() {
@@ -363,6 +408,9 @@ function App() {
       }),
       (table.players || []).filter(function (p) { return p.dealer; }).map(function (p) {
         return e(DealerButton, { key: 'd' + p.chair, chair: p.chair, nchairs: table.nchairs });
+      }),
+      (table.players || []).filter(function (p) { return p.bet; }).map(function (p) {
+        return e(BetChip, { key: 'b' + p.chair, chair: p.chair, nchairs: table.nchairs, bet: p.bet, onToggleUnit: toggleUnit });
       })
     )
   );

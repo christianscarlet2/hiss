@@ -399,8 +399,7 @@ body {
 }
 
 .name,
-.balance,
-.bet {
+.balance {
   position: relative;
   display: inline-block;
   min-width: 60px;
@@ -450,24 +449,43 @@ body {
   box-shadow: 0 2px 6px rgba(0, 0, 0, .45), inset 0 0 0 1px rgba(232, 196, 102, .12);
 }
 
+/* bet = a real chip on the felt + the amount in a small pill, positioned (inline left/top %)
+   out on the felt in front of the seat */
 .bet {
   position: absolute;
-  left: 50%;
-  top: -30px;
-  transform: translateX(-50%);
-  border: 1px solid #6a5410;
-  background: linear-gradient(180deg, #f4d21b 0%, #d4a90f 100%);
-  color: #1a1305;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, .35);
-  box-shadow: 0 3px 10px rgba(0, 0, 0, .55), 0 0 14px rgba(244, 210, 27, .25);
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  cursor: pointer;
+  z-index: 5;
 }
 
-.bet::before {
-  content: "\1F4B0";   /* chips */
-  margin-right: 4px;
-  filter: grayscale(.1);
+.bet-chip {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, .6));
+}
+
+.bet-chip svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.bet-amt {
+  padding: 2px 8px;
+  border-radius: 8px;
+  border: 1px solid #6a5410;
+  background: linear-gradient(180deg, #2a2310 0%, #16120a 100%);
+  color: var(--gold);
+  font-weight: 800;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 1px #000;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, .55), 0 0 12px rgba(232, 196, 102, .15);
 }
 
 /* ---- HUD ------------------------------------------------------------------ */
@@ -536,9 +554,9 @@ body {
 .player.hero .seat-ring {
   width: 96px;
   height: 96px;
-  /* centre the ring on the hole cards (the top of the stack) rather than the whole box,
-     so the hero's cards sit in the middle of the red circle */
-  top: 38px;
+  /* centre the ring on the hole cards (height 73 -> centre at ~36px from the box top)
+     rather than the whole box, so the hero's cards sit in the middle of the red circle */
+  top: 36px;
   border-color: var(--scarlet);
   background: radial-gradient(circle at 50% 38%, #3a1216 0%, #1c0a0c 65%, #100506 100%);
   box-shadow:
