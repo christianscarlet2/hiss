@@ -536,6 +536,23 @@ void COpenScrapeView::SetGroupLocked(CString group_name, bool locked)
 	Invalidate(false);
 }
 
+// Hide/show a set of regions on the screenshot overlay (rect1, the optional 2nd
+// colour rectangle, and any card-result overlay). Runtime-only.
+void COpenScrapeView::SetRegionsHidden(const std::vector<CString> &names, bool hidden)
+{
+	for (size_t i = 0; i < names.size(); ++i) {
+		if (hidden) _hidden_regions.insert(names[i]);
+		else        _hidden_regions.erase(names[i]);
+	}
+	Invalidate(false);
+}
+
+void COpenScrapeView::ShowAllRegions()
+{
+	_hidden_regions.clear();
+	Invalidate(false);
+}
+
 bool COpenScrapeView::GetGroupColorForRegion(CString name, COLORREF *color)
 {
 	LoadGroupsFromTablemap();
@@ -775,7 +792,10 @@ bool COpenScrapeView::DuplicateRegionGroupToPlayer(CString group_name, CString t
 			return false;
 		}
 		CString new_name = source_group->second.members[i];
-		new_name.Replace(source_player, target_player);
+		// Observer seat: p3<x> regions become p3observer_<x> (note the underscore) so
+		// the live scraper's observer redirect can map p3<x> -> p3observer_<x>.
+		CString replacement = (target_player == "p3observer") ? CString("p3observer_") : target_player;
+		new_name.Replace(source_player, replacement);
 		if (p_tablemap->r$()->find(new_name.GetString()) != p_tablemap->r$()->end()) {
 			if (error_message != NULL) {
 				error_message->Format("Region '%s' already exists. Rename or remove it before duplicating.", new_name);
@@ -2338,6 +2358,7 @@ void COpenScrapeView::OnDraw(CDC* pDC)
 	// top of them (overlays sit underneath the boxes).
 	for (RMapCI r_iter=p_tablemap->r$()->begin(); r_iter!=p_tablemap->r$()->end(); r_iter++)
 	{
+		if (IsRegionHidden(r_iter->second.name)) continue;   // hidden via tree right-click
 		if (IsCardResultRegion(r_iter->second.name)) {
 			DrawCardResultOverlay(pDC, r_iter);
 		}
@@ -2345,6 +2366,7 @@ void COpenScrapeView::OnDraw(CDC* pDC)
 	// Draw all region rectangles
 	for (RMapCI r_iter=p_tablemap->r$()->begin(); r_iter!=p_tablemap->r$()->end(); r_iter++)
 	{
+		if (IsRegionHidden(r_iter->second.name)) continue;   // hidden via tree right-click
 		if (IsRegionSelected(r_iter->second.name))
 		{
 			pTempPen = (CPen*)pDC->SelectObject(yellow_pen);

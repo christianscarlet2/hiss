@@ -360,6 +360,7 @@ void CDlgTableMap::DoDataExchange(CDataExchange* pDX)
 
 BEGIN_MESSAGE_MAP(CDlgTableMap, CDialog)
 	ON_NOTIFY(TVN_SELCHANGED, IDC_TABLEMAP_TREE, &CDlgTableMap::OnTvnSelchangedTablemapTree)
+	ON_NOTIFY(NM_RCLICK, IDC_TABLEMAP_TREE, &CDlgTableMap::OnRclickTablemapTree)
 	ON_WM_PAINT()
 	ON_WM_CTLCOLOR()
 	ON_CBN_SELCHANGE(IDC_TRANSFORM, &CDlgTableMap::OnRegionChange)
@@ -1645,6 +1646,58 @@ void CDlgTableMap::OnZoomChange()
 {
 	theApp.m_pMainWnd->Invalidate(false);
 	Invalidate(false);
+}
+
+// Right-click a tree node to hide/show its regions on the main screenshot. A group
+// node hides every region in that group (e.g. right-click "p3" hides all p3 regions,
+// including each region's optional 2nd colour rectangle); a region leaf hides just
+// that one. "Show ALL" restores everything. Runtime-only (resets on tablemap reload).
+void CDlgTableMap::OnRclickTablemapTree(NMHDR* pNMHDR, LRESULT* pResult)
+{
+	if (pResult != NULL) *pResult = 0;
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	if (pView == NULL || p_tablemap == NULL) return;
+
+	CPoint screen_pt;
+	GetCursorPos(&screen_pt);
+	CPoint client_pt = screen_pt;
+	m_TableMapTree.ScreenToClient(&client_pt);
+	UINT flags = 0;
+	HTREEITEM item = m_TableMapTree.HitTest(client_pt, &flags);
+	if (item == NULL) return;
+	m_TableMapTree.SelectItem(item);
+	CString item_text = m_TableMapTree.GetItemText(item);
+
+	// Build the affected region list: a group node -> all its member regions; a region
+	// leaf -> just that region.
+	std::vector<CString> members;
+	bool is_group = (m_TableMapTree.ItemHasChildren(item) != FALSE);
+	if (is_group) {
+		for (RMapCI it = p_tablemap->r$()->begin(); it != p_tablemap->r$()->end(); ++it) {
+			if (GetGroupName(it->second.name) == item_text) members.push_back(it->second.name);
+		}
+	} else if (p_tablemap->r$()->find(item_text.GetString()) != p_tablemap->r$()->end()) {
+		members.push_back(item_text);
+	}
+	if (members.empty()) return;   // a root node (Regions/Fonts/...) or non-region item
+
+	bool all_hidden = true;
+	for (size_t i = 0; i < members.size(); ++i)
+		if (!pView->IsRegionHidden(members[i])) { all_hidden = false; break; }
+
+	const UINT ID_HIDE = 1, ID_SHOW = 2, ID_SHOWALL = 3;
+	CString what = (is_group ? CString("group \"") : CString("region \"")) + item_text + "\"";
+	CMenu menu;
+	menu.CreatePopupMenu();
+	if (all_hidden) menu.AppendMenu(MF_STRING, ID_SHOW, CString("Show ") + what + " on screenshot");
+	else            menu.AppendMenu(MF_STRING, ID_HIDE, CString("Hide ") + what + " on screenshot");
+	menu.AppendMenu(MF_SEPARATOR);
+	menu.AppendMenu(MF_STRING, ID_SHOWALL, "Show ALL regions on screenshot");
+
+	UINT cmd = menu.TrackPopupMenu(TPM_RETURNCMD | TPM_RIGHTBUTTON, screen_pt.x, screen_pt.y, this);
+	if (cmd == ID_HIDE)         pView->SetRegionsHidden(members, true);
+	else if (cmd == ID_SHOW)    pView->SetRegionsHidden(members, false);
+	else if (cmd == ID_SHOWALL) pView->ShowAllRegions();
 }
 
 void CDlgTableMap::OnTvnSelchangedTablemapTree(NMHDR* pNMHDR, LRESULT* pResult)
@@ -6539,6 +6592,9 @@ void CDlgTableMap::PopulateDuplicatePlayerCombo(void)
 		player_text.Format("p%d", player);
 		m_DuplicatePlayer.AddString(player_text);
 	}
+	// Observer-seat target: duplicating e.g. p3 -> p3observer creates p3observer_<field>
+	// regions (the observer redirect reads p3observer_<x> for p3<x>).
+	m_DuplicatePlayer.AddString("p3observer");
 
 	int selection = previous.IsEmpty() ? CB_ERR : m_DuplicatePlayer.FindStringExact(-1, previous);
 	if (selection == CB_ERR) {

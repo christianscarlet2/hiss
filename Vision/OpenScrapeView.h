@@ -17,6 +17,7 @@
 #pragma once
 #include <map>
 #include <vector>
+#include <set>
 
 struct SOpenScrapeRegionGroup {
 	CString name;
@@ -73,6 +74,7 @@ protected: // create from serialization only
 	CPoint		group_box_start, group_box_end;
 	std::vector<CString> selected_regions;
 	std::map<CString, SOpenScrapeRegionGroup> region_groups;
+	std::set<CString> _hidden_regions;   // regions hidden from the screenshot overlay (runtime)
 	std::vector<SOpenScrapeRegionMoveAction> undo_region_moves;
 	std::vector<SOpenScrapeRegionMoveAction> redo_region_moves;
 	std::vector<SOpenScrapeRegionMoveState> drag_move_before;
@@ -139,6 +141,12 @@ public:
 	bool RemoveRegionFromGroup(CString name);
 	bool DuplicateRegionGroupToPlayer(CString group_name, CString target_player, CString *error_message);
 	bool GetGroupColorForRegion(CString name, COLORREF *color);
+	// Hide/show region rectangles (rect1 + the optional 2nd colour rect + card overlays)
+	// on the screenshot. Runtime-only (per session). Used by the tree's right-click
+	// "Hide/Show group on screenshot".
+	bool IsRegionHidden(const CString &name) const { return _hidden_regions.find(name) != _hidden_regions.end(); }
+	void SetRegionsHidden(const std::vector<CString> &names, bool hidden);
+	void ShowAllRegions();
 	void SetShowPreview(bool show);
 	bool ShowPreview() const { return show_preview; }
 	void SetTrainingMode(bool on);
