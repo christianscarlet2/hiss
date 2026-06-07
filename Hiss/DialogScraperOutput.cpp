@@ -82,6 +82,7 @@ void CDlgScraperOutput::DoDataExchange(CDataExchange* pDX) {
 	DDX_Control(pDX, IDC_SCRAPER_RIGHT, m_ScraperRight);
 	DDX_Control(pDX, IDC_RESULT_LEFT, m_ResultLeft);
 	DDX_Control(pDX, IDC_RESULT_RIGHT, m_ResultRight);
+	DDX_Control(pDX, IDC_OBSERVER_STATUS, m_ObserverStatus);
 }
 
 // Paint an OpenCV image (grayscale or BGR) into a static control, scaled to fit. Used
@@ -116,7 +117,18 @@ BEGIN_MESSAGE_MAP(CDlgScraperOutput, CDialog)
 	ON_LBN_SELCHANGE(IDC_REGIONLIST, &CDlgScraperOutput::OnLbnSelchangeRegionlist)
 	ON_CBN_SELCHANGE(IDC_ZOOM, &CDlgScraperOutput::OnCbnSelchangeZoom)
 	ON_WM_PAINT()
+	ON_WM_CTLCOLOR()
 END_MESSAGE_MAP()
+
+// Draw the p3observer status banner in red.
+HBRUSH CDlgScraperOutput::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor) {
+	HBRUSH hbr = CDialog::OnCtlColor(pDC, pWnd, nCtlColor);
+	if (pWnd != NULL && pWnd->GetSafeHwnd() == m_ObserverStatus.GetSafeHwnd()) {
+		pDC->SetTextColor(RGB(220, 0, 0));
+		pDC->SetBkMode(TRANSPARENT);
+	}
+	return hbr;
+}
 
 // CDlgScraperOutput message handlers
 BOOL CDlgScraperOutput::OnInitDialog() {
@@ -232,6 +244,11 @@ void CDlgScraperOutput::UpdateDisplay() {
 	CString curtext = "";
 
 	if (in_startup) return;
+	// Red banner when observer mode is active (p3 results come from p3observer_ regions).
+	if (m_ObserverStatus.GetSafeHwnd() != NULL) {
+		bool obs = (p_scraper != NULL) && p_scraper->ObserverActive();
+		m_ObserverStatus.ShowWindow(obs ? SW_SHOW : SW_HIDE);
+	}
   // Only do this if we are not in the middle of a scraper/symbol update
 	if (TryEnterCriticalSection(&p_heartbeat_thread->cs_update_in_progress)) 	{
 		if (m_RegionList.GetCurSel() == kUndefined) {

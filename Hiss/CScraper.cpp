@@ -92,6 +92,7 @@ CScraper::CScraper(void) {
   _leaking_GDI_objects = 0;
   total_region_counter = 0;
   identical_region_counter = 0;
+  _observer_active = false;
 }
 
 CScraper::~CScraper(void) {
@@ -171,8 +172,41 @@ bool CScraper::ProcessRegion(RMapCI r_iter) {
 	return false;
 }
 
+// Observer redirect: when "p3observer" scrapes true, serve p3<x>/u3<x> from
+// "p3observer_<x>" (when that region exists). Leaves "p3observer" itself and any
+// already-"p3observer_" name untouched.
+CString CScraper::RedirectObserverName(const CString &name) {
+	if (!_observer_active) return name;
+	if (name.GetLength() < 3) return name;
+	if (name == "p3observer") return name;
+	if (name.Left(11) == "p3observer_") return name;
+	int c0 = name[0];
+	if ((c0 == 'p' || c0 == 'u' || c0 == 'P' || c0 == 'U') && name[1] == '3') {
+		CString redir = CString("p3observer_") + name.Mid(2);
+		if (p_tablemap->r$()->find(redir.GetString()) != p_tablemap->r$()->end()) {
+			return redir;
+		}
+	}
+	return name;
+}
+
+// Evaluate the "p3observer" indicator once per scrape frame and cache it. Called at
+// the start of the scrape cycle, BEFORE any p3 region is read, so the redirect in
+// EvaluateRegion sees the correct state.
+void CScraper::RefreshObserverState() {
+	_observer_active = false;
+	if (p_tablemap->r$()->find("p3observer") == p_tablemap->r$()->end()) return;
+	CString r;
+	if (EvaluateRegion("p3observer", &r)) {
+		r.MakeLower();
+		r.Trim();
+		_observer_active = (r == "true");
+	}
+}
+
 bool CScraper::EvaluateRegion(CString name, CString *result) {
   __HDC_HEADER
+  name = RedirectObserverName(name);   // observer mode: p3<x> -> p3observer_<x>
   write_log(Preferences()->debug_scraper(),
     "[CScraper] EvaluateRegion %s\n", name);
 	CTransform	trans;

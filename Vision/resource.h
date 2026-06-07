@@ -113,6 +113,7 @@
 #define IDC_AC_TOL3                     1295
 #define IDC_AC_PREVIEW                  1296
 #define IDC_AC_BLANK                    1297
+#define IDC_OBSERVER_LABEL              1298
 #define IDC_DRAWRECT                    1043
 #define IDC_PARSEBUTTON                 1044
 #define IDC_NUDGE_UP                    1045
@@ -277,7 +278,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        156
 #define _APS_NEXT_COMMAND_VALUE         32808
-#define _APS_NEXT_CONTROL_VALUE         1298
+#define _APS_NEXT_CONTROL_VALUE         1299
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

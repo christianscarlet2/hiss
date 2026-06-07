@@ -242,7 +242,9 @@ function Player(props) {
   var nchairs = props.nchairs;
   var maxHoleCards = props.isOmaha ? 4 : 2;
   var pos = seatPos(nchairs, player.chair);
-  var isHero = player.chair === HERO_CHAIR;
+  // In observer mode p3 is not the hero (we're watching, not playing): render the
+  // hero seat as a normal small chair like everyone else.
+  var isHero = player.chair === HERO_CHAIR && !props.observer;
   var toggleUnit = props.onToggleUnit;
   var style = { left: (pos[0] * 100) + '%', top: (pos[1] * 100) + '%' };
   var cards = [];
@@ -452,7 +454,7 @@ function App() {
         e('div', { className: 'pot', onDoubleClick: toggleUnit, title: 'Double-click to toggle BB / $' }, 'Pot ' + bb(table.pot))
       ),
       (table.players || []).map(function (player) {
-        return e(Player, { key: player.chair, player: player, nchairs: table.nchairs, isOmaha: !!table.isomaha, onToggleUnit: toggleUnit });
+        return e(Player, { key: player.chair, player: player, nchairs: table.nchairs, isOmaha: !!table.isomaha, observer: !!table.observer, onToggleUnit: toggleUnit });
       }),
       (table.players || []).filter(function (p) { return p.dealer; }).map(function (p) {
         return e(DealerButton, { key: 'd' + p.chair, chair: p.chair, nchairs: table.nchairs });

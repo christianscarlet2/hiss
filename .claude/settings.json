@@ -22,6 +22,18 @@
     ]
   },
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:\\www\\openholdembot_old\\scripts\\play_sound.ps1\" \"C:\\www\\openholdembot_old\\scripts\\sounds\\kenney-question_001.wav\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [

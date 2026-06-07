@@ -355,6 +355,7 @@ BEGIN
     LTEXT           "Fonts Set:",IDC_STATIC,16,313,34,8
     LTEXT           "#:",IDC_STATIC,81,313,9,12
     LTEXT           "Cards:",IDC_STATIC,16,328,22,8
+    LTEXT           "P3 OBSERVER ACTIVE - p3 values are coming from the p3observer_ regions, not p3",IDC_OBSERVER_LABEL,7,636,398,10,SS_CENTER | NOT WS_VISIBLE
     GROUPBOX        "Missing",IDC_,7,582,383,50
     LTEXT           "Cards",IDC_STATIC,15,617,20,8
     EDITTEXT        IDC_MISSING_CARDS,73,615,307,12,ES_AUTOHSCROLL | ES_READONLY | WS_HSCROLL

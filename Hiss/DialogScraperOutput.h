@@ -46,6 +46,7 @@ class CDlgScraperOutput : public CDialog {
 	afx_msg void OnLbnSelchangeRegionlist();
 	afx_msg void OnCbnSelchangeZoom();
 	afx_msg void OnPaint();
+	afx_msg HBRUSH OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor);
 	void DoBitblt(HBITMAP bitmap, RMapCI r_iter);
 
 	CListBox		m_RegionList;
@@ -58,6 +59,7 @@ class CDlgScraperOutput : public CDialog {
 	CStatic			m_ScraperRight;
 	CEdit			m_ResultLeft;
 	CEdit			m_ResultRight;
+	CStatic			m_ObserverStatus;   // red "p3observer = TRUE" banner
 	bool			in_startup;
 
 	DECLARE_MESSAGE_MAP()

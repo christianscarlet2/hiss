@@ -134,6 +134,7 @@
 #define IDC_DEBUGLEVEL                  1081
 #define IDC_REGIONLIST                  1083
 #define IDC_SCRAPERRESULT               1084
+#define IDC_OBSERVER_STATUS             1443
 #define IDC_SCRAPERBITMAP               1085
 #define IDC_ZOOM                        1090
 #define IDC_STATIC_ZOOM                 1091
@@ -579,7 +580,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        193
 #define _APS_NEXT_COMMAND_VALUE         33001
-#define _APS_NEXT_CONTROL_VALUE         1443
+#define _APS_NEXT_CONTROL_VALUE         1444
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

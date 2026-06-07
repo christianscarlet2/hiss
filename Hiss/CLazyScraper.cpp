@@ -83,6 +83,9 @@ void CLazyScraper::DoScrape() {
     return;
 	}
   _is_identical_scrape = false;
+	// Observer mode: refresh the cached "p3observer" state BEFORE any p3 region is
+	// scraped, so EvaluateRegion redirects p3<x> -> p3observer_<x> this frame.
+	p_scraper->RefreshObserverState();
 	// Optional: OCR all AutoOcr regions in parallel up-front (no-op unless enabled).
 	p_scraper->PreOcrParallel();
 	p_scraper->ScrapeLimits();

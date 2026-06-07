@@ -148,6 +148,8 @@ protected:
 	CStatic				m_BitmapFrame, m_MatFrame;
 	CStickyButton		m_Picker;
 	CStatic				m_LockedLabel;   // red "REGION LOCKED" indicator
+	CStatic				m_ObserverLabel; // red "P3 OBSERVER ACTIVE" indicator
+	bool EvaluateObserverActive();   // true if the "p3observer" region currently scrapes "true"
 	// Optional second/third colour cubes for the "Color" transform.
 	CStickyButton		m_Picker2, m_Picker3;
 	CButton				m_Color2Enable, m_Color3Enable;

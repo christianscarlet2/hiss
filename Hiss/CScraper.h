@@ -43,6 +43,12 @@ class CScraper : public CSpaceOptimizedGlobalObject {
   // For scraping custom regions at the DLL-level
   bool EvaluateRegion(CString name, CString *result);
   void EvaluateTrueFalseRegion(bool *result, const CString name);
+  // Observer mode: when the "p3observer" region scrapes "true", every p3<x>/u3<x>
+  // region request is transparently served from "p3observer_<x>" (when that region
+  // exists), so p3's scraped values come from the observer regions. Refreshed once
+  // per scrape frame; ObserverActive() exposes the cached state to other code.
+  void RefreshObserverState();
+  bool ObserverActive() const { return _observer_active; }
  public:
   bool IsCommonAnimation();
   // Public so a live DB tablemap-reload can re-allocate per-region bitmaps after the
@@ -116,6 +122,11 @@ class CScraper : public CSpaceOptimizedGlobalObject {
 	HBITMAP			_entire_window_cur;
 	// Parallel-OCR pre-pass results for this scrape cycle (region name -> text).
 	std::map<CString, CString> _ocr_cache;
+	// Cached per-frame result of the "p3observer" region (see RefreshObserverState).
+	bool			_observer_active;
+	// Map a p3<x>/u3<x> region name to "p3observer_<x>" when observer mode is active
+	// and that observer region exists; otherwise returns the name unchanged.
+	CString		RedirectObserverName(const CString &name);
 };
 
 extern CScraper *p_scraper;

@@ -252,6 +252,7 @@ void CDlgTableMap::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_BLUE_AVG, m_BlueAvg);
 	DDX_Control(pDX, IDC_PICKER, m_Picker);
 	DDX_Control(pDX, IDC_LOCKED_LABEL, m_LockedLabel);
+	DDX_Control(pDX, IDC_OBSERVER_LABEL, m_ObserverLabel);
 	DDX_Control(pDX, IDC_ALPHA2, m_Alpha2);
 	DDX_Control(pDX, IDC_RED2, m_Red2);
 	DDX_Control(pDX, IDC_GREEN2, m_Green2);
@@ -1593,7 +1594,8 @@ void CDlgTableMap::OnRegionChange()
 HBRUSH CDlgTableMap::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
 {
 	HBRUSH hbr = CDialog::OnCtlColor(pDC, pWnd, nCtlColor);
-	if (pWnd != NULL && pWnd->GetSafeHwnd() == m_LockedLabel.GetSafeHwnd()) {
+	if (pWnd != NULL && (pWnd->GetSafeHwnd() == m_LockedLabel.GetSafeHwnd()
+		|| pWnd->GetSafeHwnd() == m_ObserverLabel.GetSafeHwnd())) {
 		pDC->SetTextColor(RGB(220, 0, 0));
 		pDC->SetBkMode(TRANSPARENT);
 	}
@@ -2606,6 +2608,10 @@ bool CDlgTableMap::EnsureOcrModel(const CString &transform) {
 // reprocess everything -- the active region's Result, the card-result overlays, and (if
 // auto-polling) the buffered frames re-run their detection on the next paint/poll.
 void CDlgTableMap::OnTimer(UINT_PTR nIDEvent) {
+	// Live red banner: show whenever the "p3observer" region currently reads true.
+	if (m_ObserverLabel.GetSafeHwnd() != NULL) {
+		m_ObserverLabel.ShowWindow(EvaluateObserverActive() ? SW_SHOW : SW_HIDE);
+	}
 	if (nIDEvent == kSettingsProbeTimer && p_tablemap_db != NULL) {
 		CString rev = p_tablemap_db->GetSettingsRevision();
 		if (!rev.IsEmpty() && rev != m_last_settings_revision) {
@@ -3608,6 +3614,63 @@ void CDlgTableMap::update_ocr_r$_display(void) {
 	}
 }
 
+
+// True when a "p3observer" region exists and currently scrapes "true". Captures the
+// region (and its optional 2nd rectangle) from the attached bitmap and runs the same
+// Color transform the live scraper uses. Used to show the red observer banner.
+bool CDlgTableMap::EvaluateObserverActive()
+{
+	COpenScrapeDoc* pDoc = COpenScrapeDoc::GetDocument();
+	if (pDoc == NULL || pDoc->attached_bitmap == NULL || p_tablemap == NULL) return false;
+	RMapI it = p_tablemap->set_r$()->find("p3observer");
+	if (it == p_tablemap->set_r$()->end()) return false;
+
+	int w = (int)it->second.right - (int)it->second.left + 1;
+	int h = (int)it->second.bottom - (int)it->second.top + 1;
+	if (w <= 0 || h <= 0) return false;
+
+	HDC hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL);
+	HDC hdc_orig = CreateCompatibleDC(hdcScreen);
+	HBITMAP old_orig = (HBITMAP)SelectObject(hdc_orig, pDoc->attached_bitmap);
+
+	HDC hdc_rgn = CreateCompatibleDC(hdcScreen);
+	HBITMAP bmp = CreateCompatibleBitmap(hdcScreen, w, h);
+	HBITMAP old_rgn = (HBITMAP)SelectObject(hdc_rgn, bmp);
+	BitBlt(hdc_rgn, 0, 0, w, h, hdc_orig, it->second.left, it->second.top, SRCCOPY);
+
+	// Optional 2nd rectangle (OR-matched colour), mirroring the live scraper.
+	HBITMAP rect2_bmp = NULL; HDC rect2_dc = NULL;
+	it->second.cur_bmp2 = NULL;
+	if (it->second.rect2_enabled) {
+		int w2 = (int)it->second.right2 - (int)it->second.left2 + 1;
+		int h2 = (int)it->second.bottom2 - (int)it->second.top2 + 1;
+		if (w2 > 0 && h2 > 0) {
+			rect2_dc = CreateCompatibleDC(hdcScreen);
+			rect2_bmp = CreateCompatibleBitmap(hdcScreen, w2, h2);
+			HBITMAP r2old = (HBITMAP)SelectObject(rect2_dc, rect2_bmp);
+			BitBlt(rect2_dc, 0, 0, w2, h2, hdc_orig, it->second.left2, it->second.top2, SRCCOPY);
+			SelectObject(rect2_dc, r2old);
+			it->second.cur_bmp2 = rect2_bmp;
+		}
+	}
+
+	CTransform trans;
+	CString text, separation; COLORREF cr_avg = 0;
+	trans.DoTransform(it, hdc_rgn, &text, &separation, &cr_avg);
+	text.MakeLower(); text.Trim();
+	bool active = (text == "true");
+
+	it->second.cur_bmp2 = NULL;
+	if (rect2_bmp != NULL) DeleteObject(rect2_bmp);
+	if (rect2_dc != NULL) DeleteDC(rect2_dc);
+	SelectObject(hdc_rgn, old_rgn);
+	DeleteObject(bmp);
+	DeleteDC(hdc_rgn);
+	SelectObject(hdc_orig, old_orig);
+	DeleteDC(hdc_orig);
+	DeleteDC(hdcScreen);
+	return active;
+}
 
 // Render the currently selected region's scrape, auto-cropped with its Auto Cropper
 // settings, into the m_AcPreview static (scaled to fit, nearest-neighbour). When the
