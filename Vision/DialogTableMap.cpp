@@ -5038,8 +5038,12 @@ void CDlgTableMap::OnBnClickedDeletePlayerRegions()
 
 	std::vector<CString> regions_to_delete;
 	for (RMapCI r_iter = p_tablemap->r$()->begin(); r_iter != p_tablemap->r$()->end(); ++r_iter) {
-		if (RegionNameMatchesPlayer(r_iter->second.name, player)) {
-			regions_to_delete.push_back(r_iter->second.name);
+		const CString &rn = r_iter->second.name;
+		// Only the explicit "p3observer" entry deletes p3observer_ regions; a plain
+		// "p3" selection must not (they share the "p3" prefix).
+		if (player != "p3observer" && rn.Left(11) == "p3observer_") continue;
+		if (RegionNameMatchesPlayer(rn, player)) {
+			regions_to_delete.push_back(rn);
 		}
 	}
 
@@ -6602,6 +6606,8 @@ void CDlgTableMap::PopulateDeletePlayerCombo(void)
 			m_DeletePlayer.AddString(player_text);
 		}
 	}
+	// Observer seat: delete all p3observer_ regions as a group.
+	m_DeletePlayer.AddString("p3observer");
 
 	int selection = previous.IsEmpty() ? CB_ERR : m_DeletePlayer.FindStringExact(-1, previous);
 	if (selection == CB_ERR && m_DeletePlayer.GetCount() > 0) {
