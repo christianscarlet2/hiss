@@ -998,10 +998,13 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast, SAutoOc
 	ocr_result.Trim();
 	ocr_result2.Trim();
 
-	// Balance/stack fields carry a "BB" unit suffix that must be dropped.
-	if (CString(region->first).MakeLower().Find("balance") != -1) {
-		ocr_result = StripBalanceUnitSuffix(ocr_result);
-		ocr_result2 = StripBalanceUnitSuffix(ocr_result2);
+	// Balance/stack AND bet fields carry a "BB" unit suffix that must be dropped.
+	{
+		CString rl = CString(region->first); rl.MakeLower();
+		if (rl.Find("balance") != -1 || rl.Find("bet") != -1) {
+			ocr_result = StripBalanceUnitSuffix(ocr_result);
+			ocr_result2 = StripBalanceUnitSuffix(ocr_result2);
+		}
 	}
 
 	// Post-processing decimal correction (per-engine option autoocr{N}.decimal_correct):
