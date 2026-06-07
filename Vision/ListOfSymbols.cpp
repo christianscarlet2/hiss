@@ -111,6 +111,16 @@ CString ListOfRegions() {
   list += RangeOfSymbols("p%ichip00", 0, 9);
   list += RangeOfSymbols("p%ichip01", 0, 9);
   list += RangeOfSymbols("p%ichip10", 0, 9);
+  // Observer seat: "p3observer" is the boolean indicator; when it scrapes true the live
+  // scraper serves p3<field>/u3<field> from these p3observer_<field> regions instead.
+  list += "p3observer ";
+  list += "p3observer_active p3observer_balance p3observer_bet p3observer_cardback ";
+  list += "p3observer_cardface0 p3observer_cardface0nocard p3observer_cardface0rank p3observer_cardface0suit ";
+  list += "p3observer_cardface1 p3observer_cardface1nocard p3observer_cardface1rank p3observer_cardface1suit ";
+  list += "p3observer_cardface2 p3observer_cardface2nocard p3observer_cardface2rank p3observer_cardface2suit ";
+  list += "p3observer_cardface3 p3observer_cardface3nocard p3observer_cardface3rank p3observer_cardface3suit ";
+  list += "p3observer_colourcode p3observer_dealer p3observer_name p3observer_seated ";
+  list += "p3observer_chip00 p3observer_chip01 p3observer_chip10 ";
   list += RangeOfSymbols("tablepoint%i", 0, 9);
   list += RangeOfSymbols("u%iactive", 0, 9);
   list += RangeOfSymbols("u%ibalance", 0, 9);
