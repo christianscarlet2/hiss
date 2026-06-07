@@ -74,19 +74,8 @@ bool AllPlayersActed() {
 }
 
 void CHandHistoryShowdown::UpdateOnHeartbeat() {
-  if (p_betround_calculator->betround() == kBetroundRiver) {
-    _river_seen = true;
-  }
-  if (!_river_seen) return;
-  // For sure showdown if
-  // * somebody else shows his cards
-  // * or if all players have a non-zero equal bet or are allin
-  // But none of the conditions above is guaranteed to be true:
-  // * the user could be showing cards, while others ,uck.
-  // * cards could be highlightes (not recogniyed)
-  // * the river could be check (impossible to distinguish from no action)
-  if (!(AnyOpponentsCardsVisible() || AllPlayersActed())) return;
-  _job_done = true;
+  // Neutered: showdown detection now lives in CHandHistoryWriter, which is the
+  // single source of truth for hand histories. See CHandHistoryWriter.cpp.
 }
 
 bool CHandHistoryShowdown::EvaluateSymbol(const CString name, double *result, bool log /* = false */) {

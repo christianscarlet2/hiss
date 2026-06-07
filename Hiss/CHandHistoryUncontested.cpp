@@ -53,22 +53,8 @@ void CHandHistoryUncontested::UpdateOnMyTurn() {
 }
 
 void CHandHistoryUncontested::UpdateOnHeartbeat() {
-  if (_job_done) return;
-  if (p_engine_container->symbol_engine_active_dealt_playing()->nplayersdealt() < 2) return;
-  if (p_engine_container->symbol_engine_active_dealt_playing()->nplayersactive() != 1) return;
-  // So here we are:
-  // * a game is going on
-  // * only 1 player is left, who wins uncontested
-  for (int i=0; i<p_tablemap->nchairs(); ++i) {
-    if (IsBitSet(p_engine_container->symbol_engine_active_dealt_playing()->playersactivebits(), i)) {
-      CString message;
-      message.Format("Player %s wins the pot uncontested\n",
-        p_table_state->Player(i)->name());
-      p_handhistory_writer->AddMessage(message);
-      _job_done = true;
-      return;
-    }
-  }
+  // Neutered: uncontested-win detection now lives in CHandHistoryWriter, which is
+  // the single source of truth for hand histories. See CHandHistoryWriter.cpp.
 }
 
 bool CHandHistoryUncontested::EvaluateSymbol(const CString name, double *result, bool log /* = false */) {

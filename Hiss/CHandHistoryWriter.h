@@ -25,7 +25,7 @@
 #define INC_CHANDHISTORYWRITER_H
 
 #include "CVirtualSymbolEngine.h"
-#include "MagicNumbers.h"
+#include "..\Shared\MagicNumbers\MagicNumbers.h"
 
 const int kMaxLines = 256;
 
@@ -102,7 +102,7 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
   double  _street_max;
   bool    _folded[kMaxNumberOfPlayers];
   bool    _blinds_done;
-  CStringArray _lines;                    // body lines (street headers + actions)
+  CString _body;                          // chronological body (blinds + street headers + actions + result)
   // Board captured as it appears.
   CString _board_flop, _board_turn, _board_river;
   bool    _flop_logged, _turn_logged, _river_logged;
