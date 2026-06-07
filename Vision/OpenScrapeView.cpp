@@ -1281,6 +1281,7 @@ void COpenScrapeView::DrawMagnifierPreview(CDC *pDC)
 	int saved_dc = pDC->SaveDC();
 	pDC->IntersectClipRect(&preview_rect);
 	for (RMapCI r_iter = p_tablemap->r$()->begin(); r_iter != p_tablemap->r$()->end(); ++r_iter) {
+		if (IsRegionHidden(r_iter->second.name)) continue;   // hidden via tree right-click (rect1 + orange rect2)
 		CRect source_rect((int)r_iter->second.left - 1, (int)r_iter->second.top - 1,
 			(int)r_iter->second.right + 2, (int)r_iter->second.bottom + 2);
 		CRect visible_rect(source_left, source_top, source_left + source_size, source_top + source_size);
