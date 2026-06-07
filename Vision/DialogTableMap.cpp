@@ -1648,6 +1648,12 @@ void CDlgTableMap::OnZoomChange()
 	Invalidate(false);
 }
 
+static void AddUniqueRegion(std::vector<CString> &v, const CString &n)
+{
+	for (size_t i = 0; i < v.size(); ++i) if (v[i] == n) return;
+	v.push_back(n);
+}
+
 // Right-click a tree node to hide/show its regions on the main screenshot. A group
 // node hides every region in that group (e.g. right-click "p3" hides all p3 regions,
 // including each region's optional 2nd colour rectangle); a region leaf hides just
@@ -1671,34 +1677,44 @@ void CDlgTableMap::OnContextMenu(CWnd* pWnd, CPoint point)
 	UINT flags = 0;
 	HTREEITEM item = m_TableMapTree.HitTest(client_pt, &flags);
 
-	// Build the affected region list directly from the tree structure (independent of
-	// the grouping mode): a group node -> all region leaves under it (one nested level
-	// too, e.g. the "Regions" root); a region leaf -> just that region.
+	if (item == NULL) item = m_TableMapTree.GetSelectedItem();
+
+	// Build the affected region list from EVERY possible node type, deduped:
+	//   - a "Groups" list entry (explicit region group)  -> GroupNameForRegion match
+	//   - a "Regions" tree prefix group (e.g. "p3")       -> GetGroupName match
+	//   - a group node with region-leaf children          -> tree children (1 nested level)
+	//   - a single region leaf                            -> the item itself
 	std::vector<CString> members;
 	CString item_text;
-	bool is_group = false;
 	if (item != NULL) {
 		m_TableMapTree.SelectItem(item);
 		item_text = m_TableMapTree.GetItemText(item);
-		HTREEITEM child = m_TableMapTree.GetChildItem(item);
-		if (child != NULL) {
-			is_group = true;
-			for (; child != NULL; child = m_TableMapTree.GetNextSiblingItem(child)) {
-				CString cn = m_TableMapTree.GetItemText(child);
-				if (p_tablemap->r$()->find(cn.GetString()) != p_tablemap->r$()->end())
-					members.push_back(cn);
-				// one nested level (the Regions root holds group nodes holding regions)
-				for (HTREEITEM gc = m_TableMapTree.GetChildItem(child); gc != NULL;
-					gc = m_TableMapTree.GetNextSiblingItem(gc)) {
-					CString gn = m_TableMapTree.GetItemText(gc);
-					if (p_tablemap->r$()->find(gn.GetString()) != p_tablemap->r$()->end())
-						members.push_back(gn);
-				}
+
+		// Region leaves directly under the node (and one nested level).
+		for (HTREEITEM c = m_TableMapTree.GetChildItem(item); c != NULL;
+			c = m_TableMapTree.GetNextSiblingItem(c)) {
+			CString cn = m_TableMapTree.GetItemText(c);
+			if (p_tablemap->r$()->find(cn.GetString()) != p_tablemap->r$()->end())
+				AddUniqueRegion(members, cn);
+			for (HTREEITEM gc = m_TableMapTree.GetChildItem(c); gc != NULL;
+				gc = m_TableMapTree.GetNextSiblingItem(gc)) {
+				CString gn = m_TableMapTree.GetItemText(gc);
+				if (p_tablemap->r$()->find(gn.GetString()) != p_tablemap->r$()->end())
+					AddUniqueRegion(members, gn);
 			}
-		} else if (p_tablemap->r$()->find(item_text.GetString()) != p_tablemap->r$()->end()) {
-			members.push_back(item_text);
+		}
+		// The node itself is a region.
+		if (p_tablemap->r$()->find(item_text.GetString()) != p_tablemap->r$()->end())
+			AddUniqueRegion(members, item_text);
+		// The node names an explicit region group OR a prefix group.
+		for (RMapCI it = p_tablemap->r$()->begin(); it != p_tablemap->r$()->end(); ++it) {
+			if (pView->GroupNameForRegion(it->second.name) == item_text
+				|| GetGroupName(it->second.name) == item_text) {
+				AddUniqueRegion(members, it->second.name);
+			}
 		}
 	}
+	bool is_group = !(members.size() == 1 && members[0] == item_text);
 
 	bool all_hidden = !members.empty();
 	for (size_t i = 0; i < members.size(); ++i)
@@ -6572,7 +6588,7 @@ void CDlgTableMap::PopulateDeletePlayerCombo(void)
 	}
 
 	m_DeletePlayer.ResetContent();
-	for (int player = 1; player <= 10; ++player) {
+	for (int player = 0; player <= 9; ++player) {
 		CString player_text;
 		player_text.Format("p%d", player);
 		bool found = false;
@@ -6582,7 +6598,7 @@ void CDlgTableMap::PopulateDeletePlayerCombo(void)
 				break;
 			}
 		}
-		if (found || player <= 4) {
+		if (found || player <= 8) {
 			m_DeletePlayer.AddString(player_text);
 		}
 	}
