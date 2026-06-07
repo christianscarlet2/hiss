@@ -24,10 +24,16 @@ struct SAutoCropColor {
 };
 
 // Returns the sub-image cropped to the bounding box of matching pixels. If the
-// master switch is off, no colour is enabled, the image is empty/too few channels,
-// or nothing matches, the input image is returned unchanged (a shallow header copy).
+// master switch is off, no colour is enabled, or the image is empty/too few
+// channels, the input image is returned unchanged (a shallow header copy).
+//
+// When nothing matches:
+//   - blank_if_unmatched == false: the input image is returned unchanged.
+//   - blank_if_unmatched == true:  an all-white image (same size/type) is returned,
+//     so the downstream OCR sees a blank crop and yields no text. Used to suppress a
+//     field entirely when its expected colours are absent.
 inline cv::Mat AutoCropToColors(const cv::Mat &img, bool master_enabled,
-	const SAutoCropColor cols[3])
+	const SAutoCropColor cols[3], bool blank_if_unmatched = false)
 {
 	if (!master_enabled || img.empty()) return img;
 	int ch = img.channels();
@@ -64,7 +70,13 @@ inline cv::Mat AutoCropToColors(const cv::Mat &img, bool master_enabled,
 			}
 		}
 	}
-	if (maxx < minx || maxy < miny) return img;   // nothing matched -> uncropped
+	if (maxx < minx || maxy < miny) {
+		// Nothing matched.
+		if (blank_if_unmatched) {
+			return cv::Mat(img.rows, img.cols, img.type(), cv::Scalar::all(255));
+		}
+		return img;   // leave the scrape unchanged
+	}
 	cv::Rect roi(minx, miny, maxx - minx + 1, maxy - miny + 1);
 	return img(roi).clone();
 }

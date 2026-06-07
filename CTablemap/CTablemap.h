@@ -78,6 +78,10 @@ struct STablemapRegion {
 	COLORREF		autocrop_color1 = 0; int autocrop_tol1 = 0; bool autocrop_c1_enabled = false;
 	COLORREF		autocrop_color2 = 0; int autocrop_tol2 = 0; bool autocrop_c2_enabled = false;
 	COLORREF		autocrop_color3 = 0; int autocrop_tol3 = 0; bool autocrop_c3_enabled = false;
+	// When true AND autocrop_enabled AND no enabled colour is found, the OCR pipeline
+	// is fed an all-white image (so the field reads as empty) instead of the uncropped
+	// scrape. Lets a field be suppressed entirely when its colours are absent.
+	bool			autocrop_blank = false;
 	HBITMAP			cur_bmp;
 	HBITMAP			last_bmp;
 	bool			use_default;

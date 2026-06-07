@@ -1312,7 +1312,7 @@ void CTrainerDlg::DebugRegionToFolder(int index)
 			{ reg.ac_color2, reg.ac_tol2, reg.ac_c2en },
 			{ reg.ac_color3, reg.ac_tol3, reg.ac_c3en },
 		};
-		Mat ac = AutoCropToColors(bgr, reg.ac_enabled, accols);
+		Mat ac = AutoCropToColors(bgr, reg.ac_enabled, accols, reg.ac_blank);
 		if (!ac.empty() && ac.data != bgr.data) bgr = ac;
 	}
 
@@ -1636,7 +1636,7 @@ void CTrainerDlg::CaptureTick()
 					{ _regions[i].ac_color2, _regions[i].ac_tol2, _regions[i].ac_c2en },
 					{ _regions[i].ac_color3, _regions[i].ac_tol3, _regions[i].ac_c3en },
 				};
-				Mat bgra_cropped = AutoCropToColors(bgra_full, _regions[i].ac_enabled, accols);
+				Mat bgra_cropped = AutoCropToColors(bgra_full, _regions[i].ac_enabled, accols, _regions[i].ac_blank);
 				if (!bgra_cropped.empty() && bgra_cropped.data != bgra_full.data) {
 					w = bgra_cropped.cols; h = bgra_cropped.rows;
 					cur.assign(bgra_cropped.data, bgra_cropped.data + (size_t)w * h * 4);

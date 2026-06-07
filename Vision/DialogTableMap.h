@@ -158,7 +158,7 @@ protected:
 	CEdit				m_Alpha3, m_Red3, m_Green3, m_Blue3;
 	CButton				m_Rect2Enable;
 	// Auto Cropper: master enable + 3 colours (enable + A/R/G/B + eyedropper + tolerance).
-	CButton				m_AcEnable, m_AcC1En, m_AcC2En, m_AcC3En;
+	CButton				m_AcEnable, m_AcC1En, m_AcC2En, m_AcC3En, m_AcBlank;
 	CStickyButton		m_AcPick1, m_AcPick2, m_AcPick3;
 	CEdit				m_AcA1, m_AcR1, m_AcG1, m_AcB1, m_AcTol1;
 	CEdit				m_AcA2, m_AcR2, m_AcG2, m_AcB2, m_AcTol2;

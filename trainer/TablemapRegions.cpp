@@ -156,7 +156,8 @@ bool LoadBalanceRegionsFromDB(const CString &tm_name, std::vector<STrainerRegion
 		" COALESCE(ac_enabled,false),"
 		" COALESCE(ac_color1,0), COALESCE(ac_tol1,0), COALESCE(ac_c1en,false),"
 		" COALESCE(ac_color2,0), COALESCE(ac_tol2,0), COALESCE(ac_c2en,false),"
-		" COALESCE(ac_color3,0), COALESCE(ac_tol3,0), COALESCE(ac_c3en,false)"
+		" COALESCE(ac_color3,0), COALESCE(ac_tol3,0), COALESCE(ac_c3en,false),"
+		" COALESCE(ac_blank,false)"
 		" FROM tm_regions WHERE tablemap_id=%ld", id);
 	std::set<CString> enabled;
 	GetEnabledScrapeFields(&enabled);
@@ -189,6 +190,7 @@ bool LoadBalanceRegionsFromDB(const CString &tm_name, std::vector<STrainerRegion
 			region.ac_color3 = (COLORREF)strtoul(PQgetvalue(res, i, 15), NULL, 10);
 			region.ac_tol3 = atol(PQgetvalue(res, i, 16));
 			region.ac_c3en = (strcmp(PQgetvalue(res, i, 17), "t") == 0);
+			region.ac_blank = (strcmp(PQgetvalue(res, i, 18), "t") == 0);
 			region.field_type = ftype;
 			region.enabled = (enabled.find(ftype) != enabled.end());
 			out->push_back(region);

@@ -18,6 +18,7 @@ struct STrainerRegion {
 	COLORREF ac_color1 = 0; int ac_tol1 = 0; bool ac_c1en = false;
 	COLORREF ac_color2 = 0; int ac_tol2 = 0; bool ac_c2en = false;
 	COLORREF ac_color3 = 0; int ac_tol3 = 0; bool ac_c3en = false;
+	bool     ac_blank = false;   // feed white image to OCR when no colour matches
 };
 
 // The set of player field types the trainer scrapes (p0balance..p8balance,

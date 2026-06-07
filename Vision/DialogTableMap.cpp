@@ -293,6 +293,7 @@ void CDlgTableMap::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_AC_PICK3, m_AcPick3);
 	DDX_Control(pDX, IDC_AC_TOL3, m_AcTol3);
 	DDX_Control(pDX, IDC_AC_PREVIEW, m_AcPreview);
+	DDX_Control(pDX, IDC_AC_BLANK, m_AcBlank);
 	DDX_Control(pDX, IDC_RADIUS, m_Radius);
 	DDX_Control(pDX, IDC_RESULT, m_Result);
 	DDX_Control(pDX, IDC_NEW, m_New);
@@ -385,6 +386,7 @@ BEGIN_MESSAGE_MAP(CDlgTableMap, CDialog)
 	ON_BN_CLICKED(IDC_AC_C1EN, &CDlgTableMap::OnRegionChange)
 	ON_BN_CLICKED(IDC_AC_C2EN, &CDlgTableMap::OnRegionChange)
 	ON_BN_CLICKED(IDC_AC_C3EN, &CDlgTableMap::OnRegionChange)
+	ON_BN_CLICKED(IDC_AC_BLANK, &CDlgTableMap::OnRegionChange)
 	ON_EN_KILLFOCUS(IDC_AC_A1, &CDlgTableMap::OnRegionChange)
 	ON_EN_KILLFOCUS(IDC_AC_R1, &CDlgTableMap::OnRegionChange)
 	ON_EN_KILLFOCUS(IDC_AC_G1, &CDlgTableMap::OnRegionChange)
@@ -1468,6 +1470,7 @@ void CDlgTableMap::OnRegionChange()
 
 		// Auto Cropper (3 colours, ABGR packing like the colour cubes; tol is decimal).
 		sel_region->second.autocrop_enabled = (m_AcEnable.GetCheck() == BST_CHECKED);
+		sel_region->second.autocrop_blank = (m_AcBlank.GetCheck() == BST_CHECKED);
 		{
 			CString a, r, g, b, tol;
 			m_AcA1.GetWindowText(a); m_AcR1.GetWindowText(r); m_AcG1.GetWindowText(g); m_AcB1.GetWindowText(b);
@@ -2697,7 +2700,7 @@ CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast,
 				{ acr->second.autocrop_color2, acr->second.autocrop_tol2, acr->second.autocrop_c2_enabled },
 				{ acr->second.autocrop_color3, acr->second.autocrop_tol3, acr->second.autocrop_c3_enabled },
 			};
-			Mat ac = AutoCropToColors(img_orig, acr->second.autocrop_enabled, accols);
+			Mat ac = AutoCropToColors(img_orig, acr->second.autocrop_enabled, accols, acr->second.autocrop_blank);
 			if (!ac.empty() && ac.data != img_orig.data) img_orig = ac;
 		}
 	}
@@ -3629,7 +3632,7 @@ void CDlgTableMap::DrawAutoCropPreview()
 		{ region->second.autocrop_color2, region->second.autocrop_tol2, region->second.autocrop_c2_enabled },
 		{ region->second.autocrop_color3, region->second.autocrop_tol3, region->second.autocrop_c3_enabled },
 	};
-	Mat cropped = AutoCropToColors(input, region->second.autocrop_enabled, accols);
+	Mat cropped = AutoCropToColors(input, region->second.autocrop_enabled, accols, region->second.autocrop_blank);
 	if (cropped.empty()) { DeleteDC(hdcScreen); return; }
 
 	// Scale to fit the preview control (integer-ish, nearest-neighbour for crisp pixels).
@@ -3949,6 +3952,8 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 	bool ac_on = sel_region->second.autocrop_enabled;
 	m_AcEnable.EnableWindow(true);
 	m_AcEnable.SetCheck(ac_on ? BST_CHECKED : BST_UNCHECKED);
+	m_AcBlank.EnableWindow(ac_on);
+	m_AcBlank.SetCheck(sel_region->second.autocrop_blank ? BST_CHECKED : BST_UNCHECKED);
 	m_AcC1En.SetCheck(sel_region->second.autocrop_c1_enabled ? BST_CHECKED : BST_UNCHECKED);
 	m_AcC2En.SetCheck(sel_region->second.autocrop_c2_enabled ? BST_CHECKED : BST_UNCHECKED);
 	m_AcC3En.SetCheck(sel_region->second.autocrop_c3_enabled ? BST_CHECKED : BST_UNCHECKED);
