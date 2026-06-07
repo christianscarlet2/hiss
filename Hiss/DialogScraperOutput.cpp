@@ -19,6 +19,7 @@
 
 #include "CAutoOcr.h"
 #include "CScraper.h"
+#include "..\AutoCrop.h"
 #include "..\CTransform\CTransform.h"
 #include "..\CTablemap\CTablemapDB.h"
 #include "MainFrm.h"
@@ -308,31 +309,60 @@ void CDlgScraperOutput::DoBitblt(HBITMAP bitmap, RMapCI r_iter) {
 		     m_Zoom.GetCurSel()==3 ? 8 :
 		     m_Zoom.GetCurSel()==4 ? 16 : 1;
 
-	w = (r_iter->second.right - r_iter->second.left + 1) * zoom;
-	h = (r_iter->second.bottom - r_iter->second.top + 1) * zoom;
+	int region_width = r_iter->second.right - r_iter->second.left + 1;
+	int region_height = r_iter->second.bottom - r_iter->second.top + 1;
+	w = region_width * zoom;
+	h = region_height * zoom;
+
+	// Capture the region pixels (BGRA) and compute the Auto Cropper's FINAL image so
+	// the preview matches exactly what the OCR pipeline sees (cropped bbox, or an
+	// all-white image when colours are absent and "blank" is on).
+	Mat region_bgra;
+	bool ac_blanked = false;
+	if (region_width > 0 && region_height > 0) {
+		region_bgra.create(region_height, region_width, CV_8UC4);
+		BITMAPINFOHEADER bi = { sizeof(bi), region_width, -region_height, 1, 32, BI_RGB };
+		GetDIBits(hdcCompat1, bitmap, 0, region_height, region_bgra.data, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
+	}
+	SAutoCropColor accols[3] = {
+		{ r_iter->second.autocrop_color1, r_iter->second.autocrop_tol1, r_iter->second.autocrop_c1_enabled },
+		{ r_iter->second.autocrop_color2, r_iter->second.autocrop_tol2, r_iter->second.autocrop_c2_enabled },
+		{ r_iter->second.autocrop_color3, r_iter->second.autocrop_tol3, r_iter->second.autocrop_c3_enabled },
+	};
+	Mat disp = region_bgra.empty() ? region_bgra
+		: AutoCropToColors(region_bgra, r_iter->second.autocrop_enabled, accols,
+			r_iter->second.autocrop_blank, &ac_blanked);
 
 	hbm2 = CreateCompatibleBitmap(hdcScreen, w, h);
 	old_bitmap2 = (HBITMAP) SelectObject(hdcCompat2, hbm2);
-	StretchBlt(	hdcCompat2, 0, 0, w, h,
-				hdcCompat1, 0, 0,
-				r_iter->second.right - r_iter->second.left + 1,
-				r_iter->second.bottom - r_iter->second.top + 1,
-				SRCCOPY );
+	if (r_iter->second.autocrop_enabled && !disp.empty() && disp.data != region_bgra.data) {
+		// Auto-crop changed the image (cropped bbox or white): render that scaled image.
+		Mat dispc = disp.isContinuous() ? disp : disp.clone();
+		HDC hdcDisp = CreateCompatibleDC(hdcScreen);
+		HBITMAP dbm = CreateCompatibleBitmap(hdcScreen, disp.cols, disp.rows);
+		HBITMAP oldd = (HBITMAP) SelectObject(hdcDisp, dbm);
+		BITMAPINFOHEADER dbi = { sizeof(dbi), disp.cols, -disp.rows, 1, 32, BI_RGB };
+		SetDIBits(hdcDisp, dbm, 0, disp.rows, dispc.data, (BITMAPINFO*)&dbi, DIB_RGB_COLORS);
+		SetStretchBltMode(hdcCompat2, COLORONCOLOR);
+		StretchBlt(hdcCompat2, 0, 0, w, h, hdcDisp, 0, 0, disp.cols, disp.rows, SRCCOPY);
+		SelectObject(hdcDisp, oldd);
+		DeleteObject(dbm);
+		DeleteDC(hdcDisp);
+	} else {
+		StretchBlt(	hdcCompat2, 0, 0, w, h,
+					hdcCompat1, 0, 0, region_width, region_height, SRCCOPY );
+	}
 
 	// Copy 2nd DC to control
 	BitBlt( hdcControl, 1, 1, rect.right-rect.left-2, rect.bottom-rect.top-2,
 			hdcCompat2, 0, 0, SRCCOPY );
 
-	// Output result
+	// Output result -- full OCR pipeline (get_ocr_result auto-crops + blanks itself, so
+	// pass the FULL region; the result matches the live scraper exactly).
 	SAutoOcrSplit split;
 	if (r_iter->second.transform[0] == 'A') {
-		int region_width = r_iter->second.right - r_iter->second.left + 1;
-		int region_height = r_iter->second.bottom - r_iter->second.top + 1;
-		if (region_width > 0 && region_height > 0) {
-			Mat input(region_height, region_width, CV_8UC4);
-			BITMAPINFOHEADER bi = { sizeof(bi), region_width, -region_height, 1, 32, BI_RGB };
-			GetDIBits(hdcCompat1, bitmap, 0, region_height, input.data, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
-			res = AutoOcr()->get_ocr_result(input, r_iter, false, &split);
+		if (!region_bgra.empty()) {
+			res = AutoOcr()->get_ocr_result(region_bgra.clone(), r_iter, false, &split);
 		}
 	} else {
 		trans.DoTransform(r_iter, hdcCompat1, &res);

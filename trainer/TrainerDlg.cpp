@@ -1306,13 +1306,14 @@ void CTrainerDlg::DebugRegionToFolder(int index)
 	Mat bgra((int)rh, (int)rw, CV_8UC4, &buf[0]);
 	Mat bgr; cvtColor(bgra, bgr, COLOR_BGRA2BGR);
 	// Auto Cropper: match the capture path so Debug reflects the cropped image.
+	bool ac_blanked = false;
 	{
 		SAutoCropColor accols[3] = {
 			{ reg.ac_color1, reg.ac_tol1, reg.ac_c1en },
 			{ reg.ac_color2, reg.ac_tol2, reg.ac_c2en },
 			{ reg.ac_color3, reg.ac_tol3, reg.ac_c3en },
 		};
-		Mat ac = AutoCropToColors(bgr, reg.ac_enabled, accols, reg.ac_blank);
+		Mat ac = AutoCropToColors(bgr, reg.ac_enabled, accols, reg.ac_blank, &ac_blanked);
 		if (!ac.empty() && ac.data != bgr.data) bgr = ac;
 	}
 
@@ -1321,7 +1322,10 @@ void CTrainerDlg::DebugRegionToFolder(int index)
 	STrainerOcrSettings settings = ReadSettings();
 	settings.use_decimal_split = TrainerRegionUsesDecimalSplit(reg.name);
 	Mat preview; CString text; int conf = 0;
-	_ocr.Run(bgr, settings, reg.name, &preview, &text, &conf);
+	// Colours absent + "blank" on: empty field; don't OCR the white placeholder.
+	if (!ac_blanked) {
+		_ocr.Run(bgr, settings, reg.name, &preview, &text, &conf);
+	}
 
 	// Folder <appdir>\debug\<region>_<timestamp>\.
 	char module[MAX_PATH] = { 0 };
@@ -1629,6 +1633,7 @@ void CTrainerDlg::CaptureTick()
 			// Auto Cropper (shared with Vision/Hiss): crop the BGRA crop to the colour
 			// bounding box so both the stored sample image AND the OCR use the cropped
 			// region. No-op when this region's Auto Cropper is disabled.
+			bool ac_blanked = false;
 			{
 				Mat bgra_full((int)h, (int)w, CV_8UC4, &cur[0]);
 				SAutoCropColor accols[3] = {
@@ -1636,12 +1641,15 @@ void CTrainerDlg::CaptureTick()
 					{ _regions[i].ac_color2, _regions[i].ac_tol2, _regions[i].ac_c2en },
 					{ _regions[i].ac_color3, _regions[i].ac_tol3, _regions[i].ac_c3en },
 				};
-				Mat bgra_cropped = AutoCropToColors(bgra_full, _regions[i].ac_enabled, accols, _regions[i].ac_blank);
-				if (!bgra_cropped.empty() && bgra_cropped.data != bgra_full.data) {
+				Mat bgra_cropped = AutoCropToColors(bgra_full, _regions[i].ac_enabled, accols,
+					_regions[i].ac_blank, &ac_blanked);
+				if (!ac_blanked && !bgra_cropped.empty() && bgra_cropped.data != bgra_full.data) {
 					w = bgra_cropped.cols; h = bgra_cropped.rows;
 					cur.assign(bgra_cropped.data, bgra_cropped.data + (size_t)w * h * 4);
 				}
 			}
+			// Colours absent + "blank" on: nothing to capture for this field.
+			if (ac_blanked) continue;
 
 			Mat bgra((int)h, (int)w, CV_8UC4, &cur[0]);
 			Mat bgr;

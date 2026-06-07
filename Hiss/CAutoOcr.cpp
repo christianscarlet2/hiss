@@ -905,7 +905,14 @@ CString CAutoOcr::get_ocr_result(Mat img_orig, RMapCI region, bool fast, SAutoOc
 			{ region->second.autocrop_color2, region->second.autocrop_tol2, region->second.autocrop_c2_enabled },
 			{ region->second.autocrop_color3, region->second.autocrop_tol3, region->second.autocrop_c3_enabled },
 		};
-		Mat ac = AutoCropToColors(img_orig, region->second.autocrop_enabled, accols, region->second.autocrop_blank);
+		bool ac_blanked = false;
+		Mat ac = AutoCropToColors(img_orig, region->second.autocrop_enabled, accols,
+			region->second.autocrop_blank, &ac_blanked);
+		if (ac_blanked) {
+			// Configured colours absent and "blank" is on: the field is empty. Return
+			// nothing WITHOUT OCR (OCR'ing a white image makes the model hallucinate).
+			return "";
+		}
 		if (!ac.empty() && ac.data != img_orig.data) img_orig = ac;
 	}
 

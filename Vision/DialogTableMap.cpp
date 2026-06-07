@@ -2700,7 +2700,14 @@ CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast,
 				{ acr->second.autocrop_color2, acr->second.autocrop_tol2, acr->second.autocrop_c2_enabled },
 				{ acr->second.autocrop_color3, acr->second.autocrop_tol3, acr->second.autocrop_c3_enabled },
 			};
-			Mat ac = AutoCropToColors(img_orig, acr->second.autocrop_enabled, accols, acr->second.autocrop_blank);
+			bool ac_blanked = false;
+			Mat ac = AutoCropToColors(img_orig, acr->second.autocrop_enabled, accols,
+				acr->second.autocrop_blank, &ac_blanked);
+			if (ac_blanked) {
+				// Colours absent + "blank" on: empty field. Skip OCR (white would be
+				// misread by the model).
+				return "";
+			}
 			if (!ac.empty() && ac.data != img_orig.data) img_orig = ac;
 		}
 	}

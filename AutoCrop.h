@@ -29,12 +29,16 @@ struct SAutoCropColor {
 //
 // When nothing matches:
 //   - blank_if_unmatched == false: the input image is returned unchanged.
-//   - blank_if_unmatched == true:  an all-white image (same size/type) is returned,
-//     so the downstream OCR sees a blank crop and yields no text. Used to suppress a
-//     field entirely when its expected colours are absent.
+//   - blank_if_unmatched == true:  an all-white image (same size/type) is returned
+//     AND *out_blanked is set to true. OCR callers should check out_blanked and return
+//     an EMPTY result WITHOUT running OCR -- feeding a white image to some models (e.g.
+//     the bets model) makes them hallucinate a value ("1 BB"), so the white image is
+//     only useful as a visual placeholder (e.g. Vision's preview); it must not be OCR'd.
 inline cv::Mat AutoCropToColors(const cv::Mat &img, bool master_enabled,
-	const SAutoCropColor cols[3], bool blank_if_unmatched = false)
+	const SAutoCropColor cols[3], bool blank_if_unmatched = false,
+	bool *out_blanked = nullptr)
 {
+	if (out_blanked) *out_blanked = false;
 	if (!master_enabled || img.empty()) return img;
 	int ch = img.channels();
 	if (ch < 3) return img;   // need BGR(A)
@@ -73,6 +77,7 @@ inline cv::Mat AutoCropToColors(const cv::Mat &img, bool master_enabled,
 	if (maxx < minx || maxy < miny) {
 		// Nothing matched.
 		if (blank_if_unmatched) {
+			if (out_blanked) *out_blanked = true;
 			return cv::Mat(img.rows, img.cols, img.type(), cv::Scalar::all(255));
 		}
 		return img;   // leave the scrape unchanged
