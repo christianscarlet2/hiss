@@ -220,6 +220,7 @@ private:
 	CString m_ocr_char_whitelist;	// scrub set for the region being OCR'd
 	bool m_ocr_auto_threshold;		// true => Otsu auto-threshold (non-balance/text regions)
 	bool m_ocr_no_preprocess;		// true => feed the RAW grayscale crop (no upscale/sharpen/CLAHE/binarize)
+	int  m_ocr_psm;					// shared per-engine page-seg mode (autoocr0/1/2 "mode"); set per OCR call
 	// Last decimal-correction post-processing details, surfaced by "Debug this field".
 	bool m_last_dcorr_enabled;
 	int  m_last_dcorr_places;

@@ -736,6 +736,7 @@ BOOL CDlgTableMap::OnInitDialog()
 	}
 	m_current_ocr_model = "my_model";   // matches the Init above; EnsureOcrModel swaps as needed
 	m_ocr_no_preprocess = false;        // default; get_ocr_result sets it per engine
+	m_ocr_psm = (int)tesseract::PSM_SINGLE_LINE;   // default; get_ocr_result sets it per engine
 	m_last_dcorr_enabled = false; m_last_dcorr_places = 0;
 	// Poll the shared settings revision so a model change in preferences applies live.
 	SetTimer(kSettingsProbeTimer, 750, NULL);
@@ -2478,7 +2479,10 @@ void CDlgTableMap::process_ocr(Mat img_orig, bool fast, bool second_pass) {
 
 	m_last_ocr_input = img_orig.clone();   // exact image Tesseract sees (for the debug dump)
 
-	tesseract::PageSegMode page_seg_mode = static_cast<tesseract::PageSegMode>(SelectedTesseractPageSegMode());
+	// Use the SHARED per-engine PSM (autoocr0/1/2 "mode") set by get_ocr_result, so
+	// Vision matches Hiss/trainer exactly. Falls back to the UI combo only if unset.
+	int psm = (m_ocr_psm > 0) ? m_ocr_psm : SelectedTesseractPageSegMode();
+	tesseract::PageSegMode page_seg_mode = static_cast<tesseract::PageSegMode>(psm);
 	api->SetPageSegMode(page_seg_mode);
 	api->SetVariable("user_defined_dpi", "300");
 	// No tessedit_char_whitelist: Tesseract is more accurate unconstrained; we scrub the
@@ -2681,10 +2685,16 @@ CString CDlgTableMap::get_ocr_result(Mat img_orig, CString transform, bool fast,
 	// trained on rendered/antialiased text (e.g. the decimal balance model) read "99 BB"
 	// correctly from grayscale but collapse to "1" once hard-binarized. Matches Hiss/trainer.
 	bool engine_no_preprocess = false;
+	m_ocr_psm = (int)tesseract::PSM_SINGLE_LINE;   // default if the shared setting is unset
 	if (p_tablemap_db != NULL) {
 		CString npkey = (transform == "AutoOcr2") ? CString("autoocr2")
 			: (transform == "AutoOcr1") ? CString("autoocr1") : CString("autoocr0");
 		engine_no_preprocess = (p_tablemap_db->GetSettingString(npkey, "no_preprocess") == "1");
+		// Page-seg mode is a SHARED per-engine setting (autoocr0/1/2 "mode") so Hiss,
+		// Vision and the trainer all use the same PSM; editing it in any app's settings
+		// dialog updates the DB and changes everywhere.
+		int shared_psm = atoi(p_tablemap_db->GetSettingString(npkey, "mode"));
+		if (shared_psm > 0) m_ocr_psm = shared_psm;
 	}
 	m_ocr_no_preprocess = engine_no_preprocess;
 	bool binarize_for_ocr = is_balance && !engine_no_preprocess;
