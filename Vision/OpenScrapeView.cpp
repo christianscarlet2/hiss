@@ -553,6 +553,25 @@ void COpenScrapeView::ShowAllRegions()
 	Invalidate(false);
 }
 
+// All region names belonging to an explicit region group.
+std::vector<CString> COpenScrapeView::RegionsInGroup(const CString &group_name)
+{
+	std::vector<CString> v;
+	if (p_tablemap == NULL) return v;
+	for (RMapCI it = p_tablemap->r$()->begin(); it != p_tablemap->r$()->end(); ++it) {
+		if (GroupNameForRegion(it->second.name) == group_name) v.push_back(it->second.name);
+	}
+	return v;
+}
+
+bool COpenScrapeView::AllRegionsHidden(const std::vector<CString> &names)
+{
+	if (names.empty()) return false;
+	for (size_t i = 0; i < names.size(); ++i)
+		if (!IsRegionHidden(names[i])) return false;
+	return true;
+}
+
 bool COpenScrapeView::GetGroupColorForRegion(CString name, COLORREF *color)
 {
 	LoadGroupsFromTablemap();
@@ -2919,8 +2938,20 @@ void COpenScrapeView::OnRButtonDown(UINT nFlags, CPoint point)
 			const UINT kDeleteAllInGroupMenuId = 51003;
 			const UINT kDeleteGroupOnlyMenuId = 51004;
 			const UINT kToggleLockGroupMenuId = 51005;
+			const UINT kHideGroupMenuId = 51007;
+			const UINT kShowGroupMenuId = 51008;
+			const UINT kShowAllMenuId = 51009;
 			bool group_locked = IsGroupLocked(empty_group_name);
+			std::vector<CString> group_members = RegionsInGroup(empty_group_name);
+			bool group_all_hidden = AllRegionsHidden(group_members);
 			menu.AppendMenu(MF_STRING, kToggleLockGroupMenuId, group_locked ? "Unlock group" : "Lock group");
+			if (!group_members.empty()) {
+				menu.AppendMenu(MF_STRING, group_all_hidden ? kShowGroupMenuId : kHideGroupMenuId,
+					group_all_hidden ? "Show all regions in group on screenshot"
+					                 : "Hide all regions in group on screenshot");
+			}
+			menu.AppendMenu(MF_STRING, kShowAllMenuId, "Show ALL regions on screenshot");
+			menu.AppendMenu(MF_SEPARATOR);
 			menu.AppendMenu(MF_STRING, kDeleteAllInGroupMenuId, "Delete all regions in group");
 			menu.AppendMenu(MF_STRING, kDeleteGroupOnlyMenuId, "Delete group only (keep regions)");
 
@@ -2929,7 +2960,16 @@ void COpenScrapeView::OnRButtonDown(UINT nFlags, CPoint point)
 			UINT command = menu.TrackPopupMenu(TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
 				screen_point.x, screen_point.y, this);
 
-			if (command == kToggleLockGroupMenuId) {
+			if (command == kHideGroupMenuId) {
+				SetRegionsHidden(group_members, true);
+			}
+			else if (command == kShowGroupMenuId) {
+				SetRegionsHidden(group_members, false);
+			}
+			else if (command == kShowAllMenuId) {
+				ShowAllRegions();
+			}
+			else if (command == kToggleLockGroupMenuId) {
 				SetGroupLocked(empty_group_name, !group_locked);
 				theApp.m_TableMapDlg->update_tree("Groups");
 				theApp.m_TableMapDlg->update_display();   // re-enable/disable the geometry controls
@@ -2968,7 +3008,15 @@ void COpenScrapeView::OnRButtonDown(UINT nFlags, CPoint point)
 		menu.CreatePopupMenu();
 		const UINT kDeleteRegionMenuId = 51001;
 		const UINT kDebugFieldMenuId = 51006;
+		const UINT kHideRegionMenuId = 51010;
+		const UINT kShowRegionMenuId = 51011;
+		const UINT kShowAllMenuId = 51009;
+		bool region_hidden = IsRegionHidden(region_name);
 		menu.AppendMenu(MF_STRING, kDebugFieldMenuId, "Debug this field");
+		menu.AppendMenu(MF_STRING, region_hidden ? kShowRegionMenuId : kHideRegionMenuId,
+			region_hidden ? "Show this region on screenshot" : "Hide this region on screenshot");
+		menu.AppendMenu(MF_STRING, kShowAllMenuId, "Show ALL regions on screenshot");
+		menu.AppendMenu(MF_SEPARATOR);
 		menu.AppendMenu(MF_STRING, kDeleteRegionMenuId, "Delete");
 
 		CPoint screen_point = point;
@@ -2976,7 +3024,18 @@ void COpenScrapeView::OnRButtonDown(UINT nFlags, CPoint point)
 		UINT command = menu.TrackPopupMenu(TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
 			screen_point.x, screen_point.y, this);
 
-		if (command == kDebugFieldMenuId) {
+		if (command == kHideRegionMenuId) {
+			std::vector<CString> one(1, region_name);
+			SetRegionsHidden(one, true);
+		}
+		else if (command == kShowRegionMenuId) {
+			std::vector<CString> one(1, region_name);
+			SetRegionsHidden(one, false);
+		}
+		else if (command == kShowAllMenuId) {
+			ShowAllRegions();
+		}
+		else if (command == kDebugFieldMenuId) {
 			DebugRegionToFolder(region_name);
 		}
 		else if (command == kDeleteRegionMenuId) {
@@ -3005,8 +3064,20 @@ void COpenScrapeView::OnRButtonDown(UINT nFlags, CPoint point)
 	const UINT kUngroupRegionMenuId = 51002;
 	const UINT kToggleLockGroupMenuId = 51005;
 	const UINT kDebugFieldMenuId = 51006;
+	const UINT kHideGroupMenuId = 51007;
+	const UINT kShowGroupMenuId = 51008;
+	const UINT kShowAllMenuId = 51009;
 	bool group_locked = IsGroupLocked(group_name);
+	std::vector<CString> group_members = RegionsInGroup(group_name);
+	bool group_all_hidden = AllRegionsHidden(group_members);
 	menu.AppendMenu(MF_STRING, kDebugFieldMenuId, "Debug this field");
+	if (!group_members.empty()) {
+		menu.AppendMenu(MF_STRING, group_all_hidden ? kShowGroupMenuId : kHideGroupMenuId,
+			group_all_hidden ? "Show all regions in group on screenshot"
+			                 : "Hide all regions in group on screenshot");
+	}
+	menu.AppendMenu(MF_STRING, kShowAllMenuId, "Show ALL regions on screenshot");
+	menu.AppendMenu(MF_SEPARATOR);
 	menu.AppendMenu(MF_STRING, kToggleLockGroupMenuId, group_locked ? "Unlock group" : "Lock group");
 	menu.AppendMenu(MF_STRING, kDeleteRegionMenuId, "Delete");
 	menu.AppendMenu(MF_STRING, kUngroupRegionMenuId, "Ungroup this item");
@@ -3016,7 +3087,16 @@ void COpenScrapeView::OnRButtonDown(UINT nFlags, CPoint point)
 	UINT command = menu.TrackPopupMenu(TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
 		screen_point.x, screen_point.y, this);
 
-	if (command == kDebugFieldMenuId) {
+	if (command == kHideGroupMenuId) {
+		SetRegionsHidden(group_members, true);
+	}
+	else if (command == kShowGroupMenuId) {
+		SetRegionsHidden(group_members, false);
+	}
+	else if (command == kShowAllMenuId) {
+		ShowAllRegions();
+	}
+	else if (command == kDebugFieldMenuId) {
 		DebugRegionToFolder(region_name);
 	}
 	else if (command == kToggleLockGroupMenuId) {

@@ -147,6 +147,8 @@ public:
 	bool IsRegionHidden(const CString &name) const { return _hidden_regions.find(name) != _hidden_regions.end(); }
 	void SetRegionsHidden(const std::vector<CString> &names, bool hidden);
 	void ShowAllRegions();
+	std::vector<CString> RegionsInGroup(const CString &group_name);   // members of an explicit group
+	bool AllRegionsHidden(const std::vector<CString> &names);
 	void SetShowPreview(bool show);
 	bool ShowPreview() const { return show_preview; }
 	void SetTrainingMode(bool on);
