@@ -390,6 +390,7 @@
     <ClCompile Include="CAutoplayer.cpp" />
     <ClCompile Include="CAutoplayerFunctions.cpp" />
     <ClCompile Include="CCasinoInterface.cpp" />
+    <ClCompile Include="CTwoSuccessiveClicks.cpp" />
     <ClCompile Include="CRebuyManagement.cpp" />
     <ClCompile Include="CStableFramesCounter.cpp" />
     <ClCompile Include="PokerChat.cpp" />
@@ -720,6 +721,7 @@
     <ClInclude Include="CAutoplayer.h" />
     <ClInclude Include="CAutoplayerFunctions.h" />
     <ClInclude Include="CCasinoInterface.h" />
+    <ClInclude Include="CTwoSuccessiveClicks.h" />
     <ClInclude Include="CRebuyManagement.h" />
     <ClInclude Include="CStableFramesCounter.h" />
     <ClInclude Include="PokerChat.hpp" />

@@ -31,10 +31,16 @@ class CTwoSuccessiveClicks {
   ~CTwoSuccessiveClicks();
  public:
   // UI thread: set (and optionally persist to the current tablemap) the config.
-  void SetConfig(CString match_text, int delay_ms, bool persist_to_tablemap);
+  // Two independent match texts, each with its own enable flag; the clicks fire
+  // when EITHER enabled (and non-empty) text equals the label OCR.
+  void SetConfig(CString text1, bool enable1, CString text2, bool enable2,
+                 int delay_ms, bool persist_to_tablemap);
   // UI thread: (re)load the values saved for the currently-loaded tablemap.
   void LoadForCurrentTablemap();
-  CString MatchText();
+  CString Text1();
+  CString Text2();
+  bool    Enable1();
+  bool    Enable2();
   int     DelayMs();
  public:
   // Autoplayer thread, once per cadence. Returns true if it performed the clicks.
@@ -43,7 +49,8 @@ class CTwoSuccessiveClicks {
   CString TablemapField();
  private:
   CCritSec m_critsec;
-  CString  _match_text;
+  CString  _text1, _text2;
+  bool     _enable1, _enable2;
   int      _delay_ms;
   bool     _was_matching;
 };

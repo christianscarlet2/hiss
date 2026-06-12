@@ -579,6 +579,9 @@
 #define IDC_TWOCLICKS_TEXT              1444
 #define IDC_TWOCLICKS_DELAY             1445
 #define IDC_TWOCLICKS_SAVE              1446
+#define IDC_TWOCLICKS_TEXT2             1447
+#define IDC_TWOCLICKS_EN1               1448
+#define IDC_TWOCLICKS_EN2               1449
 
 // Next default values for new objects
 //
@@ -586,7 +589,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        194
 #define _APS_NEXT_COMMAND_VALUE         33001
-#define _APS_NEXT_CONTROL_VALUE         1447
+#define _APS_NEXT_CONTROL_VALUE         1450
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

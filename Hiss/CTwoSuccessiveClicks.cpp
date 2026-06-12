@@ -16,7 +16,6 @@
 
 #include "CCasinoInterface.h"
 #include "CMyMutex.h"
-#include "CPreferences.h"
 #include "CScraper.h"
 #include "..\CTablemap\CTablemap.h"
 #include "..\CTablemap\CTableMapAccess.h"
@@ -28,13 +27,19 @@ CTwoSuccessiveClicks *p_two_successive_clicks = NULL;
 
 // Per-tablemap values live under these setting-keys, fielded by the loaded
 // tablemap's filename (mirrors how table-window placement is stored).
-static const CString kKeyText  = "two_successive_clicks_text";
+static const CString kKeyText1 = "two_successive_clicks_text";   // text box 1
+static const CString kKeyText2 = "two_successive_clicks_text2";  // text box 2
+static const CString kKeyEn1   = "two_successive_clicks_en1";    // enable 1 ("1"/"0")
+static const CString kKeyEn2   = "two_successive_clicks_en2";    // enable 2 ("1"/"0")
 static const CString kKeyDelay = "two_successive_clicks_delay";
 static const int     kDefaultDelayMs = 200;
 
 CTwoSuccessiveClicks::CTwoSuccessiveClicks() {
-  _match_text   = "";
-  _delay_ms     = kDefaultDelayMs;
+  _text1 = "";
+  _text2 = "";
+  _enable1 = false;
+  _enable2 = false;
+  _delay_ms = kDefaultDelayMs;
   _was_matching = false;
 }
 
@@ -48,19 +53,25 @@ CString CTwoSuccessiveClicks::TablemapField() {
   return f;
 }
 
-void CTwoSuccessiveClicks::SetConfig(CString match_text, int delay_ms, bool persist_to_tablemap) {
-  match_text.Trim();
+void CTwoSuccessiveClicks::SetConfig(CString text1, bool enable1, CString text2, bool enable2,
+                                     int delay_ms, bool persist_to_tablemap) {
+  text1.Trim();
+  text2.Trim();
   if (delay_ms < 0) delay_ms = 0;
   {
     ENT
-    _match_text = match_text;
-    _delay_ms   = delay_ms;
+    _text1 = text1; _enable1 = enable1;
+    _text2 = text2; _enable2 = enable2;
+    _delay_ms = delay_ms;
   }
   if (persist_to_tablemap && p_tablemap_db != NULL) {
     CString field = TablemapField();
     CString delay_string;
     delay_string.Format("%d", delay_ms);
-    p_tablemap_db->SetSettingString(kKeyText,  field, match_text);
+    p_tablemap_db->SetSettingString(kKeyText1, field, text1);
+    p_tablemap_db->SetSettingString(kKeyText2, field, text2);
+    p_tablemap_db->SetSettingString(kKeyEn1,   field, enable1 ? "1" : "0");
+    p_tablemap_db->SetSettingString(kKeyEn2,   field, enable2 ? "1" : "0");
     p_tablemap_db->SetSettingString(kKeyDelay, field, delay_string);
   }
 }
@@ -68,36 +79,44 @@ void CTwoSuccessiveClicks::SetConfig(CString match_text, int delay_ms, bool pers
 void CTwoSuccessiveClicks::LoadForCurrentTablemap() {
   if (p_tablemap_db == NULL) return;
   CString field = TablemapField();
-  CString text  = p_tablemap_db->GetSettingString(kKeyText,  field);
+  CString text1 = p_tablemap_db->GetSettingString(kKeyText1, field);
+  CString text2 = p_tablemap_db->GetSettingString(kKeyText2, field);
+  CString en1s  = p_tablemap_db->GetSettingString(kKeyEn1,   field);
+  CString en2s  = p_tablemap_db->GetSettingString(kKeyEn2,   field);
   CString delay = p_tablemap_db->GetSettingString(kKeyDelay, field);
+  // Default enable to ON when there is saved text but the enable flag was never
+  // stored (back-compat with the original single-text version).
+  bool en1 = en1s.IsEmpty() ? !text1.IsEmpty() : (en1s == "1");
+  bool en2 = en2s.IsEmpty() ? !text2.IsEmpty() : (en2s == "1");
   int d = atoi(delay.GetString());
   if (d <= 0) d = kDefaultDelayMs;
   ENT
-  _match_text   = text;
-  _delay_ms     = d;
+  _text1 = text1; _enable1 = en1;
+  _text2 = text2; _enable2 = en2;
+  _delay_ms = d;
   _was_matching = false;
 }
 
-CString CTwoSuccessiveClicks::MatchText() {
-  ENT
-  return _match_text;
-}
-
-int CTwoSuccessiveClicks::DelayMs() {
-  ENT
-  return _delay_ms;
-}
+CString CTwoSuccessiveClicks::Text1() { ENT return _text1; }
+CString CTwoSuccessiveClicks::Text2() { ENT return _text2; }
+bool    CTwoSuccessiveClicks::Enable1() { ENT return _enable1; }
+bool    CTwoSuccessiveClicks::Enable2() { ENT return _enable2; }
+int     CTwoSuccessiveClicks::DelayMs() { ENT return _delay_ms; }
 
 bool CTwoSuccessiveClicks::HandleCycle() {
-  CString match_text;
+  CString text1, text2;
+  bool    enable1, enable2;
   int     delay_ms;
   {
     ENT
-    match_text = _match_text;
-    delay_ms   = _delay_ms;
+    text1 = _text1; enable1 = _enable1;
+    text2 = _text2; enable2 = _enable2;
+    delay_ms = _delay_ms;
   }
-  // Disabled when no match-text is configured.
-  if (match_text.IsEmpty()) {
+  bool box1_active = enable1 && !text1.IsEmpty();
+  bool box2_active = enable2 && !text2.IsEmpty();
+  // Disabled when neither text box is enabled with text.
+  if (!box1_active && !box2_active) {
     _was_matching = false;
     return false;
   }
@@ -125,11 +144,12 @@ bool CTwoSuccessiveClicks::HandleCycle() {
   rect2.right  = (LONG)region->second.right2;
   rect2.bottom = (LONG)region->second.bottom2;
 
-  // OCR the label region and compare (trimmed, case-insensitive).
+  // OCR the label region and compare (trimmed, case-insensitive) against either box.
   CString ocr;
   p_scraper->EvaluateRegion("two_successive_clicks_label", &ocr);
   ocr.Trim();
-  bool matching = (ocr.CompareNoCase(match_text) == 0);
+  bool matching = (box1_active && ocr.CompareNoCase(text1) == 0)
+               || (box2_active && ocr.CompareNoCase(text2) == 0);
 
   bool clicked = false;
   // Edge-triggered: fire once when the label starts matching.
@@ -139,8 +159,8 @@ bool CTwoSuccessiveClicks::HandleCycle() {
       return false;
     }
     write_log(Preferences()->debug_autoplayer(),
-      "[TwoClicks] Label \"%s\" == \"%s\": click rect1, wait %d ms, click rect2.\n",
-      ocr.GetString(), match_text.GetString(), delay_ms);
+      "[TwoClicks] Label \"%s\" matched: click rect1, wait %d ms, click rect2.\n",
+      ocr.GetString(), delay_ms);
     p_casino_interface->ClickRect(rect1);
     Sleep(delay_ms);
     if (p_casino_interface->TableLostFocus()) {

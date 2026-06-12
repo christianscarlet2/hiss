@@ -740,13 +740,16 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent) {
 void CMainFrame::OnTwoClicksSave() {
 	if (p_two_successive_clicks == NULL) return;
 	if (m_two_clicks_bar.GetSafeHwnd() == NULL) return;
-	CString text, delay_string;
-	m_two_clicks_bar.GetDlgItemText(IDC_TWOCLICKS_TEXT, text);
+	CString text1, text2, delay_string;
+	m_two_clicks_bar.GetDlgItemText(IDC_TWOCLICKS_TEXT, text1);
+	m_two_clicks_bar.GetDlgItemText(IDC_TWOCLICKS_TEXT2, text2);
 	m_two_clicks_bar.GetDlgItemText(IDC_TWOCLICKS_DELAY, delay_string);
+	bool enable1 = (((CButton*)m_two_clicks_bar.GetDlgItem(IDC_TWOCLICKS_EN1))->GetCheck() == BST_CHECKED);
+	bool enable2 = (((CButton*)m_two_clicks_bar.GetDlgItem(IDC_TWOCLICKS_EN2))->GetCheck() == BST_CHECKED);
 	int delay = atoi(delay_string.GetString());
 	if (delay < 0) delay = 0;
 	// Persist to the currently-loaded tablemap (postgres settings table).
-	p_two_successive_clicks->SetConfig(text, delay, true);
+	p_two_successive_clicks->SetConfig(text1, enable1, text2, enable2, delay, true);
 }
 
 void CMainFrame::RefreshTwoClicksBarFromConfig() {
@@ -754,8 +757,13 @@ void CMainFrame::RefreshTwoClicksBarFromConfig() {
 	if (m_two_clicks_bar.GetSafeHwnd() == NULL) return;
 	CString delay_string;
 	delay_string.Format("%d", p_two_successive_clicks->DelayMs());
-	m_two_clicks_bar.SetDlgItemText(IDC_TWOCLICKS_TEXT, p_two_successive_clicks->MatchText());
+	m_two_clicks_bar.SetDlgItemText(IDC_TWOCLICKS_TEXT, p_two_successive_clicks->Text1());
+	m_two_clicks_bar.SetDlgItemText(IDC_TWOCLICKS_TEXT2, p_two_successive_clicks->Text2());
 	m_two_clicks_bar.SetDlgItemText(IDC_TWOCLICKS_DELAY, delay_string);
+	((CButton*)m_two_clicks_bar.GetDlgItem(IDC_TWOCLICKS_EN1))->SetCheck(
+		p_two_successive_clicks->Enable1() ? BST_CHECKED : BST_UNCHECKED);
+	((CButton*)m_two_clicks_bar.GetDlgItem(IDC_TWOCLICKS_EN2))->SetCheck(
+		p_two_successive_clicks->Enable2() ? BST_CHECKED : BST_UNCHECKED);
 }
 
 void CMainFrame::OnAutoplayer() {

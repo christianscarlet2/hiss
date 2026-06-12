@@ -175,6 +175,9 @@ void InstantiateAllSingletons() {
   write_log(Preferences()->debug_singletons(), "[Singletons] Going to create CCasinoInterface\n");
   assert(!p_casino_interface);
   p_casino_interface = new CCasinoInterface;
+  write_log(Preferences()->debug_singletons(), "[Singletons] Going to create CTwoSuccessiveClicks\n");
+  assert(!p_two_successive_clicks);
+  p_two_successive_clicks = new CTwoSuccessiveClicks;
   write_log(Preferences()->debug_singletons(), "[Singletons] All singletons created.\n");
 }
 
