@@ -1,6 +1,7 @@
 #ifndef INC_MAINFRM_H
 #define INC_MAINFRM_H
 
+#include <afxext.h>   // CDialogBar
 #include "..\CTablemap\CTablemap.h"
 #include "..\Shared\CCritSec\CCritSec.h"
 
@@ -38,6 +39,9 @@ protected: // create from serialization only
   afx_msg void OnSbGoogle();
   afx_msg void OnSbAutoRebuy();
   afx_msg void OnSbLoadHud();
+  // Two-successive-clicks toolbar: Save button + helper to populate the fields.
+  afx_msg void OnTwoClicksSave();
+  void RefreshTwoClicksBarFromConfig();
  public:
 	afx_msg void OnFileOpen();
 	afx_msg void OnEditFormula();
@@ -111,6 +115,11 @@ private:
 	RECT			_prev_att_rect, _prev_wrect;
 
 	CCritSec		m_critsec;
+
+	// Two-successive-clicks: always-visible toolbar with the match-text + delay
+	// input fields. Synced to whichever tablemap is currently loaded.
+	CDialogBar	m_two_clicks_bar;
+	CString		_loaded_tablemap_name;
 };
 
 // used by EnumProcTopLevelWindowList function

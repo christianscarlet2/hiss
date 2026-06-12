@@ -51,6 +51,7 @@
 #include "CTableState.h"
 #include "CTableTitle.h"
 #include "CTitleEvaluator.h"
+#include "CTwoSuccessiveClicks.h"
 #include "CValidator.h"
 #include "CVersionInfo.h"
 #include "CWatchdog.h"

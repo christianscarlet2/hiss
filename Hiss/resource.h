@@ -574,13 +574,19 @@
 #define ID_EDIT_CLEARLOG                32999
 #define ID_EDIT_VERIFYNAMEMAPPINGS      33000
 
+// Two-successive-clicks toolbar bar + controls
+#define IDD_TWO_CLICKS_BAR              193
+#define IDC_TWOCLICKS_TEXT              1444
+#define IDC_TWOCLICKS_DELAY             1445
+#define IDC_TWOCLICKS_SAVE              1446
+
 // Next default values for new objects
-// 
+//
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        193
+#define _APS_NEXT_RESOURCE_VALUE        194
 #define _APS_NEXT_COMMAND_VALUE         33001
-#define _APS_NEXT_CONTROL_VALUE         1444
+#define _APS_NEXT_CONTROL_VALUE         1447
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

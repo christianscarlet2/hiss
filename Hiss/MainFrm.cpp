@@ -79,6 +79,7 @@
 #include "ReactMappingsWindow.h"
 #include "SAPrefsDialog.h"
 #include "Singletons.h"
+#include "CTwoSuccessiveClicks.h"
 
 // CMainFrame
 
@@ -117,6 +118,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
 	ON_COMMAND(IDM_SB_GOOGLE, &CMainFrame::OnSbGoogle)
 	ON_COMMAND(IDM_SB_AUTOREBUY, &CMainFrame::OnSbAutoRebuy)
 	ON_COMMAND(IDM_SB_LOADHUD, &CMainFrame::OnSbLoadHud)
+	ON_COMMAND(IDC_TWOCLICKS_SAVE, &CMainFrame::OnTwoClicksSave)
 
 	// Main toolbar 
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_AUTOPLAYER, &CMainFrame::OnAutoplayer)
@@ -300,6 +302,11 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct) {
 		return -1;
 	// Tool bar
 	p_flags_toolbar = new CFlagsToolbar(this);
+	// Two-successive-clicks input bar (match-text + delay, always visible).
+	if (m_two_clicks_bar.Create(this, IDD_TWO_CLICKS_BAR,
+			CBRS_TOP | CBRS_TOOLTIPS | CBRS_FLYBY, IDD_TWO_CLICKS_BAR)) {
+		RecalcLayout();
+	}
 	// Status bar
 	p_openholdem_statusbar = new COpenHoldemStatusbar(this);
 	PostMessage(WM_SB_INITMENU);
@@ -716,9 +723,39 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent) {
     write_log(Preferences()->debug_alltherest(), "[GUI] location Johnny_P\n");
 		p_openholdem_statusbar->OnUpdateStatusbar();
     write_log(Preferences()->debug_alltherest(), "[GUI] location Johnny_Q\n");
+    // Keep the two-successive-clicks fields in sync with the loaded tablemap.
+    if (p_two_successive_clicks != NULL && p_tablemap != NULL && p_tablemap->valid()) {
+      CString tm = p_tablemap->filename();
+      if (tm != _loaded_tablemap_name) {
+        _loaded_tablemap_name = tm;
+        p_two_successive_clicks->LoadForCurrentTablemap();
+        RefreshTwoClicksBarFromConfig();
+      }
+    }
 	}
   write_log(Preferences()->debug_alltherest(), "[GUI] location Johnny_R\n");
 	CWnd::OnTimer(nIDEvent); 
+}
+
+void CMainFrame::OnTwoClicksSave() {
+	if (p_two_successive_clicks == NULL) return;
+	if (m_two_clicks_bar.GetSafeHwnd() == NULL) return;
+	CString text, delay_string;
+	m_two_clicks_bar.GetDlgItemText(IDC_TWOCLICKS_TEXT, text);
+	m_two_clicks_bar.GetDlgItemText(IDC_TWOCLICKS_DELAY, delay_string);
+	int delay = atoi(delay_string.GetString());
+	if (delay < 0) delay = 0;
+	// Persist to the currently-loaded tablemap (postgres settings table).
+	p_two_successive_clicks->SetConfig(text, delay, true);
+}
+
+void CMainFrame::RefreshTwoClicksBarFromConfig() {
+	if (p_two_successive_clicks == NULL) return;
+	if (m_two_clicks_bar.GetSafeHwnd() == NULL) return;
+	CString delay_string;
+	delay_string.Format("%d", p_two_successive_clicks->DelayMs());
+	m_two_clicks_bar.SetDlgItemText(IDC_TWOCLICKS_TEXT, p_two_successive_clicks->MatchText());
+	m_two_clicks_bar.SetDlgItemText(IDC_TWOCLICKS_DELAY, delay_string);
 }
 
 void CMainFrame::OnAutoplayer() {
