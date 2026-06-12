@@ -361,6 +361,9 @@ bool CAutoConnector::ConnectVirtual() {
   if (PMainframe() != NULL) PMainframe()->ResetDisplay();
   WriteLogTableReset("VIRTUAL CONNECTION (Scarlet Beast server-scrape)");
   _autoconnector_mutex->Unlock();
+  // Auto-engage the autoplayer if the user enabled that preference, just like a
+  // real connection -- so "bot connected" actually means the bot is acting.
+  p_autoplayer->EngageAutoPlayerUponConnectionIfNeeded();
   return true;
 }
 
