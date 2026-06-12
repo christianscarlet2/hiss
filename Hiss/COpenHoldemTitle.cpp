@@ -17,6 +17,7 @@
 #include <assert.h>
 #include "CAutoConnector.h"
 #include "CFunctionCollection.h"
+#include "CScarletBeast.h"
 
 #include "../CTablemap/CTablemap.h"
 #include "CTableTitle.h"
@@ -33,15 +34,25 @@ COpenHoldemTitle::~COpenHoldemTitle()
 {}
 
 CString COpenHoldemTitle::GetTitle() {
+	CString base;
 	// user-defined overwrites everything
 	if (user_defined_title != "") 	{
-		return user_defined_title;
-	}
-	if (Preferences()->simple_window_title()) {
-		return simple_title;
+		base = user_defined_title;
+	}	else if (Preferences()->simple_window_title()) {
+		base = simple_title;
 	}	else {
-		return FullTitle();
+		base = FullTitle();
 	}
+	// Scarlet Beast server-scrape: suffix the title with the live table name from
+	// the API (e.g. "... | Arena 25/50 #1") so multiple instances are identifiable.
+	if (p_scarlet_beast != NULL && p_scarlet_beast->ScrapeFromServer()) {
+		CString table_name(p_scarlet_beast->ServerTableName().c_str());
+		table_name.Trim();
+		if (!table_name.IsEmpty()) {
+			base += " | " + table_name;
+		}
+	}
+	return base;
 }
 
 CString COpenHoldemTitle::FullTitle() {

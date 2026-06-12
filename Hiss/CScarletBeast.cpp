@@ -442,6 +442,13 @@ void CScarletBeast::AutoRebuyIfBusted() {
   Request(L"POST", path, body, true);
 }
 
+std::string CScarletBeast::ServerTableName() {
+  if (_seat_json_cache.empty()) return std::string();
+  std::string table = HUD_Object(_seat_json_cache, "table");
+  if (table.empty()) return std::string();
+  return ExtractJsonString(table, "name");
+}
+
 bool CScarletBeast::RefreshHud() {
   unsigned long now = ::GetTickCount();
   // HUD stats move slowly; refresh at most ~once every 3 s.

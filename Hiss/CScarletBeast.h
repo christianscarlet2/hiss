@@ -74,6 +74,9 @@ class CScarletBeast {
   long ServerMinRaise(long def);
   // Monotonic table-state version; lets the autoplayer act exactly once per state.
   long ServerStateVersion();
+  // The table's display name from the seat view (UTF-8), e.g. "Arena 25/50 #1".
+  // Empty when not available. Used to suffix the Hiss window title.
+  std::string ServerTableName();
 
   // PokerTracker-style HUD stats from the server (used instead of a PokerTracker 4
   // database when scraping from the API). Fetches GET /api/v1/tables/{id}/hud
