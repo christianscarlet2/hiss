@@ -1096,10 +1096,11 @@ void COpenHoldemView::DrawPlayerBet(const int chair) {
 }
 
 void COpenHoldemView::DrawPlayerCards(const int chair) {
-	if (!p_table_state->Player(chair)->active())	{
-		// Forget about inactive players, they have no cards.
-		// Don't draw them to point out the mistake faster
-		// for newbies with bad tablemaps.
+	if (!p_table_state->Player(chair)->active()
+			&& !p_table_state->Player(chair)->hole_cards(0)->IsAnyCard()
+			&& !p_table_state->Player(chair)->hole_cards(1)->IsAnyCard())	{
+		// Nothing to draw: the seat is inactive AND holds no cards. (A seated player
+		// with cardbacks can read active=false, so we must still draw their cards.)
 		return;
 	}
 	// Get size of current client window
