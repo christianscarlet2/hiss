@@ -65,6 +65,23 @@ class CScarletBeast {
   bool RefreshSeatView();
   const std::string& LastSeatJson() const { return _seat_json_cache; }
 
+  // --- server-scrape acting context (parsed from the cached seat view) ---
+  // hand.to_act as a 1-based server seat number (-1 if absent / unknown).
+  long ServerToAct();
+  // hand.current_bet (the amount to match this street).
+  long ServerCurrentBet();
+  // hand.min_raise (minimum raise increment); returns `def` if absent.
+  long ServerMinRaise(long def);
+  // Monotonic table-state version; lets the autoplayer act exactly once per state.
+  long ServerStateVersion();
+
+  // PokerTracker-style HUD stats from the server (used instead of a PokerTracker 4
+  // database when scraping from the API). Fetches GET /api/v1/tables/{id}/hud
+  // (throttled) and returns one stat for a 0-based chair. `basic_stat` is a pt_
+  // symbol name without the "pt_" prefix and chair suffix (e.g. "vpip", "pfr",
+  // "af", "threebet", "cbet"). Returns false if the API doesn't provide it.
+  bool HudStatForChair(int chair, const char* basic_stat, double* out_value);
+
   // True once a request has produced a 2xx; useful for the settings "Test" button.
   bool LastOk() const { return _last_ok; }
   int  LastStatus() const { return _last_status; }
@@ -101,6 +118,9 @@ class CScarletBeast {
 
   std::string   _seat_json_cache;  // last raw seat-view JSON (shared per heartbeat)
   unsigned long _seat_json_tick;   // GetTickCount() of the last fetch
+  std::string   _hud_json_cache;   // last raw HUD JSON (stats change slowly)
+  unsigned long _hud_tick;         // GetTickCount() of the last HUD fetch
+  bool RefreshHud();               // throttled GET /api/v1/tables/{id}/hud
 };
 
 // Single shared instance for the process (declared in the .cpp).

@@ -1,0 +1,251 @@
+##f$notes##
+//*****************************************************************************
+//
+//  Scarlet Beast — Advanced Test Bot (OpenPPL, 6-max No-Limit Hold'em)
+//  ------------------------------------------------------------------
+//  A complete, opponent-aware NLHE cash strategy for playing on
+//  poker.scarletbeast.com through Hiss in server-scrape mode.
+//
+//  * Equity backbone:   prwin (Monte-Carlo win probability)
+//  * Ranges:            position-based open / 3-bet / 4-bet hand lists
+//  * Opponent model:    PokerTracker symbols served from the API HUD
+//                       (vpip / pfr / af / wtsd / hands of the raiser)
+//  * Postflop:          c-bet, value-bet, pot-control, semi-bluff draws
+//
+//  All bet amounts are in BIG BLINDS (RaiseTo) or POT-FRACTIONS (RaiseHalfPot
+//  / RaiseTwoThirdPot / RaisePot). Hiss converts the resulting f$betsize into
+//  the server's chip amount and POSTs the action to /api/v1/tables/{id}/act.
+//
+//  This is a TEST profile — tune the ranges and thresholds to taste.
+//
+//*****************************************************************************
+
+//=============================================================================
+//  prwin configuration
+//=============================================================================
+
+##f$prwin_number_of_iterations##
+20000
+
+##f$prwin_number_of_opponents##
+// Simulate against the opponents still in the hand.
+WHEN Others RETURN nopponentsplaying FORCE
+
+//=============================================================================
+//  Opponent model — PokerTracker stats sourced from the API HUD.
+//  Stats describe the LAST RAISER (the player we must react to). They default
+//  to neutral values when the sample is too small or the stat is unavailable,
+//  so the bot always has a sane fallback.
+//=============================================================================
+
+##f$Opp_Hands##
+pt_hands_raischair
+
+##f$Opp_Known##
+// Trust the read only with a meaningful sample.
+WHEN f$Opp_Hands >= 30 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_VPIP##
+WHEN f$Opp_Known RETURN pt_vpip_raischair FORCE
+WHEN Others RETURN 25 FORCE
+
+##f$Opp_PFR##
+WHEN f$Opp_Known RETURN pt_pfr_raischair FORCE
+WHEN Others RETURN 18 FORCE
+
+##f$Opp_AF##
+WHEN f$Opp_Known RETURN pt_flop_af_raischair FORCE
+WHEN Others RETURN 2 FORCE
+
+##f$Opp_WTSD##
+WHEN f$Opp_Known RETURN pt_wtsd_raischair FORCE
+WHEN Others RETURN 28 FORCE
+
+##f$Opp_IsNit##
+// Tight + folds a lot: attack with 3-bet bluffs, fold to their aggression.
+WHEN f$Opp_Known AND f$Opp_VPIP < 18 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_IsLoose##
+// Wide opener: 3-bet/iso for value more often.
+WHEN f$Opp_Known AND f$Opp_VPIP > 30 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_IsStation##
+// Calls down too much: value-bet thin, never bluff.
+WHEN f$Opp_Known AND f$Opp_WTSD > 34 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_IsPassive##
+// Low aggression: their bets/raises mean strength.
+WHEN f$Opp_Known AND f$Opp_AF < 1.3 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//=============================================================================
+//  Hand-range lists
+//=============================================================================
+
+##listPremium##
+// Hands we are always happy to get it in pre.
+AA  KK  QQ  AKs  AKo
+
+##listStrong##
+// Strong value: opens everywhere, 3-bets for value.
+JJ  TT  AQs  AQo  AJs  KQs
+
+##listOpenEP##
+// Early-position opening range (tight).
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+ATs AJs AQs AKs KQs KJs QJs JTs
+AJo AQo AKo
+
+##listOpenMP##
+// Middle-position opening range.
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A8s A9s ATs AJs AQs AKs
+KTs KJs KQs QTs QJs JTs T9s 98s
+ATo AJo AQo AKo KQo
+
+##listOpenLP##
+// Cutoff / late-position opening range (wide).
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+K8s K9s KTs KJs KQs Q9s QTs QJs J9s JTs T8s T9s 97s 98s 87s 76s 65s
+A9o ATo AJo AQo AKo KTo KJo KQo QTo QJo JTo
+
+##listOpenBTN##
+// Button opening range (very wide).
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+K2s K3s K4s K5s K6s K7s K8s K9s KTs KJs KQs
+Q6s Q7s Q8s Q9s QTs QJs J7s J8s J9s JTs T7s T8s T9s 96s 97s 98s 86s 87s 75s 76s 65s 54s
+A2o A3o A4o A5o A7o A8o A9o ATo AJo AQo AKo K9o KTo KJo KQo Q9o QTo QJo J9o JTo T9o
+
+##list3betValue##
+// 3-bet for value vs an open.
+AA KK QQ JJ AKs AKo AQs
+
+##list3betBluff##
+// 3-bet bluff candidates (ace blockers / playable suited hands when called).
+A5s A4s A3s K9s KTs KJs Q9s QJs J9s JTs T8s T9s
+
+##listCallOpen##
+// Flat an open (mostly in position / blinds with playable hands).
+22 33 44 55 66 77 88 99 TT
+ATs AJs AQs KQs KJs QJs JTs T9s 98s 87s
+AJo AQo KQo
+
+##list4betValue##
+// 4-bet for value vs a 3-bet.
+AA KK QQ AKs AKo
+
+//=============================================================================
+//  PREFLOP
+//=============================================================================
+
+##f$preflop##
+
+// --- Facing a 3-bet or more (Raises >= 2): 4-bet premiums, else fold ---------
+WHEN Raises >= 2 AND list4betValue RaiseBy 100% FORCE
+WHEN Raises >= 2 AND listPremium AND StackSize < 25 RaiseMax FORCE
+WHEN Raises >= 2 Fold FORCE
+
+// --- Facing a single raise (Raises = 1) --------------------------------------
+WHEN Raises = 1 AND list3betValue RaiseBy 100% FORCE
+// 3-bet bluff more vs nits who over-fold; never vs calling stations.
+WHEN Raises = 1 AND list3betBluff AND f$Opp_IsNit AND NOT InSmallBlind RaiseBy 100% FORCE
+// Flat the rest of our continuing range, mostly in position.
+WHEN Raises = 1 AND listCallOpen AND (InButton OR InCutOff OR InBigBlind) Call FORCE
+WHEN Raises = 1 AND listStrong Call FORCE
+WHEN Raises = 1 Fold FORCE
+
+// --- Limped pot: isolate limpers with a raise ---------------------------------
+WHEN Calls >= 1 AND Raises = 0 AND (listStrong OR listPremium) RaiseTo 4 FORCE
+WHEN Calls >= 1 AND Raises = 0 AND listOpenLP AND InLatePosition RaiseTo 4 FORCE
+WHEN Calls >= 1 AND Raises = 0 AND listOpenBTN AND InButton RaiseTo 4 FORCE
+
+// --- Unopened pot: open by position ------------------------------------------
+WHEN Raises = 0 AND Calls = 0 AND InEarlyPosition AND listOpenEP RaiseTo 4 FORCE
+WHEN Raises = 0 AND Calls = 0 AND InMiddlePosition AND listOpenMP RaiseTo 3.5 FORCE
+WHEN Raises = 0 AND Calls = 0 AND InCutOff AND listOpenLP RaiseTo 3 FORCE
+WHEN Raises = 0 AND Calls = 0 AND InButton AND listOpenBTN RaiseTo 3 FORCE
+WHEN Raises = 0 AND Calls = 0 AND InSmallBlind AND listOpenLP RaiseTo 3.5 FORCE
+// Big blind gets a walk / checks its option.
+WHEN Raises = 0 AND Calls = 0 AND InBigBlind Check FORCE
+
+WHEN Others Fold FORCE
+
+//=============================================================================
+//  POSTFLOP — dispatch by "is there a bet to us?"
+//=============================================================================
+
+##f$flop##
+WHEN AmountToCall > 0 RETURN f$postflop_vs_bet FORCE
+WHEN Others RETURN f$postflop_bet FORCE
+
+##f$turn##
+WHEN AmountToCall > 0 RETURN f$postflop_vs_bet FORCE
+WHEN Others RETURN f$postflop_bet FORCE
+
+##f$river##
+WHEN AmountToCall > 0 RETURN f$river_vs_bet FORCE
+WHEN Others RETURN f$river_bet FORCE
+
+//=============================================================================
+//  Postflop helpers
+//=============================================================================
+
+##f$HaveStrongMade##
+// Two pair or better, or an overpair/top pair on a dry board.
+WHEN HaveSet OR HaveTwoPair OR HaveStraight OR HaveFlush OR HaveFullHouse OR HaveQuads RETURN true FORCE
+WHEN (HaveOverPair OR HaveTopPair) AND NOT FlushPossible AND NOT StraightPossible RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$HaveDecentMade##
+WHEN HaveOverPair OR HaveTopPair OR HaveTwoPair OR HaveSet OR HaveStraight OR HaveFlush OR HaveFullHouse OR HaveQuads RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$HaveBigDraw##
+WHEN HaveNutFlushDraw OR HaveFlushDraw OR HaveOpenEndedStraightDraw RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+// --- No bet to us: value-bet / c-bet / semi-bluff, else check ----------------
+##f$postflop_bet##
+// Strong made hands: bet for value, bigger on draw-heavy boards.
+WHEN f$HaveStrongMade AND (FlushPossible OR StraightPossible) RaiseTwoThirdPot FORCE
+WHEN f$HaveStrongMade RaiseHalfPot FORCE
+// Thin value vs calling stations.
+WHEN f$HaveDecentMade AND f$Opp_IsStation RaiseHalfPot FORCE
+// Semi-bluff our big draws.
+WHEN f$HaveBigDraw AND NOT f$Opp_IsStation RaiseHalfPot FORCE
+// Continuation-bet bluff vs a single foldable opponent.
+WHEN nopponentsplaying = 1 AND NOT f$Opp_IsStation AND prwin > 0.35 RaiseHalfPot FORCE
+WHEN Others Check FORCE
+
+// --- Facing a bet on flop/turn -----------------------------------------------
+##f$postflop_vs_bet##
+// Raise our strongest hands for value.
+WHEN (HaveSet OR HaveTwoPair OR HaveStraight OR HaveFlush OR HaveFullHouse OR HaveQuads) RaisePot FORCE
+// Continue with decent made hands and the right price.
+WHEN f$HaveDecentMade Call FORCE
+// Call big draws if the price is reasonable.
+WHEN f$HaveBigDraw AND AmountToCall * 3 < PotSize Call FORCE
+// Float a single opponent who c-bets a lot, in position, with backdoors/equity.
+WHEN nopponentsplaying = 1 AND prwin > 0.40 AND AmountToCall * 4 < PotSize Call FORCE
+WHEN Others Fold FORCE
+
+// --- River: only made-hand value & bluff-catch (no draws left) ----------------
+##f$river_bet##
+WHEN (HaveStraight OR HaveFlush OR HaveFullHouse OR HaveQuads) RaiseThreeFourthPot FORCE
+WHEN (HaveSet OR HaveTwoPair) AND NOT f$Opp_IsPassive RaiseTwoThirdPot FORCE
+WHEN (HaveOverPair OR HaveTopPair) AND f$Opp_IsStation RaiseHalfPot FORCE
+WHEN Others Check FORCE
+
+##f$river_vs_bet##
+// Value-raise the nuts-ish.
+WHEN (HaveStraight OR HaveFlush OR HaveFullHouse OR HaveQuads) AND NOT f$Opp_IsPassive RaisePot FORCE
+// Bluff-catch: call down vs aggressive players, fold vs passive value-bettors.
+WHEN (HaveTwoPair OR HaveSet OR HaveStraight OR HaveFlush OR HaveFullHouse OR HaveQuads) Call FORCE
+WHEN (HaveOverPair OR HaveTopPair) AND NOT f$Opp_IsPassive AND AmountToCall * 3 < PotSize Call FORCE
+WHEN Others Fold FORCE

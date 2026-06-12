@@ -30,7 +30,10 @@
 
 #include "CRebuyManagement.h"
 #include "CReplayFrame.h"
+#include "CScarletBeast.h"
 #include "CScraper.h"
+#include "CSymbolEngineTableLimits.h"
+#include <string>
 #include "CStableFramesCounter.h"
 #include "CSymbolEngineAutoplayer.h"
 #include "CSymbolEngineCasino.h"
@@ -56,6 +59,7 @@ CAutoplayer::CAutoplayer(void) {
 	_autoplayer_engaged = false;
 	action_sequence_needs_to_be_finished = false;
   _already_executing_allin_adjustment = false;
+  _last_server_act_version = 0;
 }
 
 
@@ -456,6 +460,12 @@ bool CAutoplayer::DoAllin(void) {
 
 void CAutoplayer::DoAutoplayer(void) {
 	write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Starting Autoplayer cadence...\n");
+	// Scarlet Beast server-scrape: there are no screen buttons to click; decide via
+	// the formulas and POST the action to poker.scarletbeast.com instead.
+	if (p_scarlet_beast != NULL && p_scarlet_beast->ScrapeFromServer()) {
+		DoAutoplayerServer();
+		return;
+	}
   CheckBringKeyboard();
   write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Number of visible buttons: %d (%s)\n", 
 		p_casino_interface->NumberOfVisibleAutoplayerButtons(),
@@ -501,7 +511,112 @@ AutoPlayerCleanupAndFinalization:
 	write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] ...ending Autoplayer cadence.\n");
 }
 
-bool CAutoplayer::DoBetsize() { 
+void CAutoplayer::DoAutoplayerServer() {
+  // Acting through the Scarlet Beast API (POST /act) rather than clicking buttons.
+  // Verbs: fold|check|call|bet|raise. bet.amount = chips ADDED this street;
+  // raise.amount = total street commitment ("raise to"). All-in = bet/raise of the
+  // whole stack. We act exactly once per server state-version.
+  if (p_scarlet_beast == NULL) return;
+  if (!p_engine_container->symbol_engine_userchair()->userchair_confirmed()) {
+    write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Server: userchair unknown, not acting\n");
+    return;
+  }
+  int my_server_seat = p_engine_container->symbol_engine_userchair()->userchair() + 1; // 1-based
+  if (p_scarlet_beast->ServerToAct() != my_server_seat) {
+    return;  // not our turn
+  }
+  long version = p_scarlet_beast->ServerStateVersion();
+  if (version != 0 && version == _last_server_act_version) {
+    return;  // already acted on this exact state
+  }
+
+  // Make sure the primary formulas are freshly evaluated.
+  p_autoplayer_functions->CalcPrimaryFormulas();
+
+  long   current_bet  = p_scarlet_beast->ServerCurrentBet();
+  long   min_raise    = p_scarlet_beast->ServerMinRaise(
+                          (long)p_engine_container->symbol_engine_tablelimits()->bblind());
+  if (min_raise < 1) min_raise = 1;
+  double my_committed = p_table_state->User()->_bet.GetValue();
+  double my_stack     = p_table_state->User()->_balance.GetValue();
+  double call_amt     = p_engine_container->symbol_engine_chip_amounts()->call();
+  long   max_raise_to = (long)(my_committed + my_stack);
+
+  const char *verb = NULL;
+  long amount = 0;
+  bool with_amount = false;
+  int  action_code = k_autoplayer_function_fold;
+
+  if (p_autoplayer_functions->GetAutoplayerFunctionValue(k_autoplayer_function_allin)) {
+    if (current_bet <= 0) { verb = "bet";   amount = (long)my_stack; }
+    else                  { verb = "raise"; amount = max_raise_to; }
+    with_amount = true;
+    action_code = k_autoplayer_function_allin;
+  } else {
+    // betpot fractions (largest first), else f$betsize
+    double target = 0;
+    for (int i = k_autoplayer_function_betpot_2_1; i <= k_autoplayer_function_betpot_1_4; ++i) {
+      if (p_autoplayer_functions->GetAutoplayerFunctionValue(i)) { target = BetsizeForBetpot(i); break; }
+    }
+    if (target <= 0) {
+      target = p_autoplayer_functions->GetAutoplayerFunctionValue(k_autoplayer_function_betsize);
+    }
+    if (target > 0) {
+      if (current_bet <= 0) {
+        verb = "bet";
+        amount = (long)(target - my_committed);          // chips added
+        if (amount > (long)my_stack) amount = (long)my_stack;
+        if (amount < min_raise)      amount = min_raise;  // respect table minimum
+      } else {
+        verb = "raise";
+        amount = (long)target;                            // raise-to total
+        long min_to = current_bet + min_raise;
+        if (amount < min_to)      amount = min_to;
+        if (amount > max_raise_to) amount = max_raise_to;
+      }
+      with_amount = true;
+      action_code = k_autoplayer_function_betsize;
+    } else if (p_autoplayer_functions->GetAutoplayerFunctionValue(k_autoplayer_function_raise)) {
+      verb = "raise";
+      amount = current_bet + min_raise;                   // a min-raise
+      if (amount > max_raise_to) amount = max_raise_to;
+      with_amount = true;
+      action_code = k_autoplayer_function_raise;
+    } else if (p_autoplayer_functions->GetAutoplayerFunctionValue(k_autoplayer_function_call)) {
+      verb = "call";  action_code = k_autoplayer_function_call;
+    } else if (p_autoplayer_functions->GetAutoplayerFunctionValue(k_autoplayer_function_check)
+               && call_amt <= 0) {
+      verb = "check"; action_code = k_autoplayer_function_check;
+    } else if (p_autoplayer_functions->GetAutoplayerFunctionValue(k_autoplayer_function_fold)) {
+      verb = "fold";  action_code = k_autoplayer_function_fold;
+    }
+  }
+
+  if (verb == NULL) {
+    // No formula fired: avoid an unnecessary timeout-fold when we can check for free.
+    if (call_amt <= 0) { verb = "check"; action_code = k_autoplayer_function_check; }
+    else               { verb = "fold";  action_code = k_autoplayer_function_fold; }
+  }
+
+  std::string body = std::string("{\"action\":\"") + verb + "\"";
+  if (with_amount) {
+    char b[40];
+    sprintf_s(b, sizeof(b), ",\"amount\":%ld", amount);
+    body += b;
+  }
+  body += "}";
+
+  p_scarlet_beast->Act(p_scarlet_beast->TableId(), body);
+  _last_server_act_version = version;
+  write_log(kAlwaysLogAutoplayerFunctions,
+    "[AutoPlayer] Scarlet Beast act seat %d: %s -> HTTP %d (%s)\n",
+    my_server_seat, body.c_str(), p_scarlet_beast->LastStatus(),
+    p_scarlet_beast->LastOk() ? "ok" : "FAILED");
+  p_engine_container->UpdateAfterAutoplayerAction(action_code);
+  p_autoplayer_trace->Print(ActionConstantNames(action_code), kAlwaysLogAutoplayerFunctions);
+}
+
+bool CAutoplayer::DoBetsize() {
   double betsize = p_function_collection->EvaluateAutoplayerFunction(k_autoplayer_function_betsize);
   double betsize_for_allin = p_table_state->User()->_bet.GetValue()
 	  + p_table_state->User()->_balance.GetValue();

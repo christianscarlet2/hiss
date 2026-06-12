@@ -21,7 +21,8 @@ CScarletBeast::CScarletBeast()
       _last_manage_tick(0),
       _last_ok(false),
       _last_status(0),
-      _seat_json_tick(0) {
+      _seat_json_tick(0),
+      _hud_tick(0) {
   LoadFromRegistry();
   ParseCommandLine();
 }
@@ -271,6 +272,139 @@ bool CScarletBeast::PopulateSymbols(int table_id, std::map<std::string, std::str
   out["sb_hole"] = ExtractJsonString(seat, "hole");
   out["sb_raw"] = seat;  // full payload for advanced parsing in the symbol engine
   return true;
+}
+
+// ----------------------------------------------------- HUD (PT stats) -------
+// Balanced { ... } block (inclusive) starting at brace_pos; respects strings.
+static std::string HUD_BracedBlock(const std::string& s, size_t brace_pos) {
+  if (brace_pos >= s.size() || s[brace_pos] != '{') return "";
+  int depth = 0;
+  bool in_str = false;
+  for (size_t i = brace_pos; i < s.size(); ++i) {
+    char c = s[i];
+    if (in_str) {
+      if (c == '\\') { ++i; continue; }
+      if (c == '"') in_str = false;
+    } else if (c == '"') { in_str = true; }
+    else if (c == '{') { ++depth; }
+    else if (c == '}') { if (--depth == 0) return s.substr(brace_pos, i - brace_pos + 1); }
+  }
+  return "";
+}
+
+// Value object for "key": { ... }.
+static std::string HUD_Object(const std::string& s, const std::string& key) {
+  std::string needle = "\"" + key + "\"";
+  size_t p = s.find(needle);
+  while (p != std::string::npos) {
+    size_t c = s.find(':', p + needle.size());
+    if (c != std::string::npos) {
+      size_t q = c + 1;
+      while (q < s.size() && (s[q] == ' ' || s[q] == '\t' || s[q] == '\n' || s[q] == '\r')) ++q;
+      if (q < s.size() && s[q] == '{') return HUD_BracedBlock(s, q);
+    }
+    p = s.find(needle, p + needle.size());
+  }
+  return "";
+}
+
+// Floating-point value of "key": N (handles negatives and decimals).
+static bool HUD_Number(const std::string& s, const std::string& key, double* out) {
+  std::string needle = "\"" + key + "\"";
+  size_t p = s.find(needle);
+  if (p == std::string::npos) return false;
+  p = s.find(':', p + needle.size());
+  if (p == std::string::npos) return false;
+  ++p;
+  while (p < s.size() && (s[p] == ' ' || s[p] == '\t')) ++p;
+  size_t start = p;
+  if (p < s.size() && (s[p] == '-' || s[p] == '+')) ++p;
+  bool any = false;
+  while (p < s.size() && ((s[p] >= '0' && s[p] <= '9') || s[p] == '.')) { ++p; any = true; }
+  if (!any) return false;
+  *out = atof(s.substr(start, p - start).c_str());
+  return true;
+}
+
+// Map a PT-symbol basic name (no "pt_" prefix / chair suffix) to the API HUD key.
+// Normalises by lower-casing and dropping underscores, then matches known aliases.
+static std::string MapPtStatToApiKey(const char* basic_stat) {
+  std::string s;
+  for (const char* p = basic_stat; *p; ++p) {
+    char c = *p;
+    if (c == '_') continue;
+    if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+    s += c;
+  }
+  struct Pair { const char* alias; const char* key; };
+  static const Pair kMap[] = {
+    {"vpip","vpip"}, {"pfr","pfr"}, {"hands","hands"}, {"wtsd","wtsd"},
+    {"wsd","wsd"}, {"wonsd","wsd"}, {"wwsf","wwsf"}, {"wonwhensawflop","wwsf"},
+    {"bb100","bb100"}, {"winrate","bb100"}, {"bbper100","bb100"},
+    {"af","af"}, {"totalaf","af"}, {"aggression","af"}, {"aggressionfactor","af"},
+    {"flopaf","af"}, {"turnaf","af"}, {"riveraf","af"},  // street AF -> total AF proxy (API has no per-street AF)
+    {"3bet","threebet"}, {"threebet","threebet"}, {"pf3bet","threebet"}, {"3betpf","threebet"},
+    {"fold3bet","fold3bet"}, {"foldto3bet","fold3bet"}, {"f3bet","fold3bet"}, {"foldpf3bet","fold3bet"},
+    {"4bet","fourbet"}, {"fourbet","fourbet"},
+    {"fold4bet","fold4bet"}, {"foldto4bet","fold4bet"}, {"f4bet","fold4bet"},
+    {"cbet","cbetf"}, {"cbetf","cbetf"}, {"flopcbet","cbetf"}, {"cbetflop","cbetf"},
+    {"cbett","cbett"}, {"turncbet","cbett"}, {"cbetturn","cbett"},
+    {"cbetr","cbetr"}, {"rivercbet","cbetr"}, {"cbetriver","cbetr"},
+    {"foldcbet","foldcbetf"}, {"foldcbetf","foldcbetf"}, {"foldflopcbet","foldcbetf"}, {"foldtocbet","foldcbetf"},
+    {"foldcbett","foldcbett"}, {"foldturncbet","foldcbett"},
+    {"foldcbetr","foldcbetr"}, {"foldrivercbet","foldcbetr"},
+  };
+  for (size_t i = 0; i < sizeof(kMap) / sizeof(kMap[0]); ++i) {
+    if (s == kMap[i].alias) return kMap[i].key;
+  }
+  return "";
+}
+
+bool CScarletBeast::RefreshHud() {
+  unsigned long now = ::GetTickCount();
+  // HUD stats move slowly; refresh at most ~once every 3 s.
+  if (!_hud_json_cache.empty() && _hud_tick != 0 && (now - _hud_tick) < 3000) return true;
+  std::wstring path = L"/api/v1/tables/" + std::to_wstring((long)TableId()) + L"/hud";
+  std::string body = Request(L"GET", path, "", true);
+  if (!_last_ok || body.empty()) return false;
+  _hud_json_cache = body;
+  _hud_tick = now;
+  return true;
+}
+
+bool CScarletBeast::HudStatForChair(int chair, const char* basic_stat, double* out_value) {
+  if (chair < 0 || out_value == NULL) return false;
+  if (!RefreshHud()) return false;
+  std::string key = MapPtStatToApiKey(basic_stat);
+  if (key.empty()) return false;  // stat not provided by the API
+  std::string seats = HUD_Object(_hud_json_cache, "seats");
+  if (seats.empty()) return false;
+  char seat_no[8];
+  sprintf_s(seat_no, sizeof(seat_no), "%d", chair + 1);  // API seats are 1-based
+  std::string seat = HUD_Object(seats, seat_no);
+  if (seat.empty()) return false;
+  return HUD_Number(seat, key, out_value);
+}
+
+// --------------------------------------------- server acting context --------
+// These read top-level/hand scalars from the cached seat view. Each of these keys
+// occurs exactly once in the payload, so the first-match extractor is safe.
+
+long CScarletBeast::ServerToAct() {
+  if (_seat_json_cache.empty()) return -1;
+  return ExtractJsonNumber(_seat_json_cache, "to_act", -1);
+}
+long CScarletBeast::ServerCurrentBet() {
+  if (_seat_json_cache.empty()) return 0;
+  return ExtractJsonNumber(_seat_json_cache, "current_bet", 0);
+}
+long CScarletBeast::ServerMinRaise(long def) {
+  if (_seat_json_cache.empty()) return def;
+  return ExtractJsonNumber(_seat_json_cache, "min_raise", def);
+}
+long CScarletBeast::ServerStateVersion() {
+  if (_seat_json_cache.empty()) return 0;
+  return ExtractJsonNumber(_seat_json_cache, "version", 0);
 }
 
 // --------------------------------------------------------- tiny JSON utils ----

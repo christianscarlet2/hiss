@@ -18,6 +18,7 @@
 #include "CEngineContainer.h"
 #include "CFormulaParser.h"
 #include "CParseErrors.h"
+#include "CScarletBeast.h"
 #include "CParseTreeTerminalNodeEndOfFunction.h"
 #include "..\PokerTracker_Query_Definitions\pokertracker_query_definitions.h"
 #include "CPokerTrackerThread.h"
@@ -179,6 +180,27 @@ bool CSymbolEnginePokerTracker::EvaluateSymbol(const CString name, double *resul
 		// Invalid PokerTracker symbol
 		WarnAboutInvalidPTSymbol(name);
 		*result = kUndefined;
+		return true;
+	}
+	// Scarlet Beast server-scrape: source the stat from the poker.scarletbeast.com
+	// HUD API instead of a PokerTracker 4 database. By evaluation time the symbol
+	// always carries a numeric chair suffix (symbolic refs like _userchair are
+	// already translated), so we read the trailing digit for the chair.
+	if (p_scarlet_beast != NULL && p_scarlet_beast->ScrapeFromServer()) {
+		CString last_char = name.Right(1);
+		if (isdigit((unsigned char)last_char[0])) {
+			int sb_chair = atoi(last_char);
+			CString basic = name.Mid(3);  // drop "pt_"
+			while (basic.GetLength() > 0 && isdigit((unsigned char)basic[basic.GetLength() - 1])) {
+				basic.Delete(basic.GetLength() - 1, 1);
+			}
+			double value = 0;
+			if (p_scarlet_beast->HudStatForChair(sb_chair, (LPCSTR)basic, &value)) {
+				*result = value;
+				return true;
+			}
+		}
+		*result = kUndefined;  // stat not provided by the API HUD
 		return true;
 	}
 	int chair = 0;

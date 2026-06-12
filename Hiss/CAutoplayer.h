@@ -43,6 +43,9 @@ private:
 	// private functions and variables - not available via accessors or mutators
 	void DoRebuyIfNeccessary();
 	bool ExecutePrimaryFormulasIfNecessary();
+	// Scarlet Beast server-scrape: decide via the f$-formulas and POST the action to
+	// poker.scarletbeast.com (/act) instead of clicking screen buttons.
+	void DoAutoplayerServer();
 	bool ExecuteSecondaryFormulasIfNecessary();
 	bool ExecuteRaiseCallCheckFold();
 	bool ExecuteBeep();
@@ -66,6 +69,8 @@ private:
 	HWND	window_with_focus;
 	bool	action_sequence_needs_to_be_finished;
 	bool	_already_executing_allin_adjustment;
+	// Last server table-state version we acted on (act exactly once per state).
+	long	_last_server_act_version;
 
 	CCritSec	m_critsec;
 };
