@@ -6,6 +6,7 @@
 #include "CSymbolEngineGameType.h"
 #include "CSymbolEngineIsOmaha.h"
 #include "CSymbolEngineChipAmounts.h"
+#include "CSymbolEngineUserchair.h"
 #include "CHandresetDetector.h"
 #include "CTableState.h"
 #include "CScraper.h"
@@ -472,8 +473,15 @@ CStringA CChatTerminalServer::BuildTableStateJson(void)
 	// Observer mode: when "p3observer" is true, p3's scraped values come from the
 	// p3observer_ regions and p3 should render as a normal seat (not the hero).
 	bool observer = (p_scraper != NULL) && p_scraper->ObserverActive();
-	json.Format("{\"nchairs\":%d,\"handnumber\":\"%s\",\"isomaha\":%s,\"observer\":%s,\"limits\":{\"sblind\":%.2f,\"bblind\":%.2f,\"ante\":%.2f,\"gametype\":%d},\"pot\":%.2f,",
-		nchairs, JsonEscape(handnumber).GetString(), is_omaha ? "true" : "false",
+	// The hero's chair (userchair) so the display can seat the real player at the
+	// bottom instead of assuming a fixed chair. -1 when unknown.
+	int userchair = -1;
+	if (p_engine_container != NULL
+		&& p_engine_container->symbol_engine_userchair()->userchair_confirmed()) {
+		userchair = p_engine_container->symbol_engine_userchair()->userchair();
+	}
+	json.Format("{\"nchairs\":%d,\"userchair\":%d,\"handnumber\":\"%s\",\"isomaha\":%s,\"observer\":%s,\"limits\":{\"sblind\":%.2f,\"bblind\":%.2f,\"ante\":%.2f,\"gametype\":%d},\"pot\":%.2f,",
+		nchairs, userchair, JsonEscape(handnumber).GetString(), is_omaha ? "true" : "false",
 		observer ? "true" : "false", sblind, bblind, ante, gametype, pot);
 	json += "\"commonCards\":[";
 	for (int i = 0; i < kNumberOfCommunityCards; ++i) {

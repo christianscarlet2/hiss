@@ -28,6 +28,7 @@
 #include "COpenHoldemStatusbar.h"
 #include "COpenHoldemTitle.h"
 
+#include "CFunctionCollection.h"
 #include "CScarletBeast.h"
 #include "CScraper.h"
 #include "CSymbolEngineAutoplayer.h"
@@ -212,9 +213,15 @@ void CHeartbeatThread::AutoConnect() {
   write_log(Preferences()->debug_alltherest(), "[CHeartbeatThread] location Johnny_D\n");
 	assert(!p_autoconnector->IsConnectedToAnything());
 	// Scarlet Beast server-scrape: connect window-lessly (no poker window needed) so
-	// the heartbeat scrapes the table from poker.scarletbeast.com.
+	// the heartbeat scrapes the table from poker.scarletbeast.com. Wait until the
+	// formula (and its auto-included OpenPPL library) has finished parsing, otherwise
+	// UpdateOnConnection's OpenPPL init-function check would fire on an empty
+	// function-collection and pop a spurious "can't find UpdateMemorySymbolsOnHandReset"
+	// warning.
 	if (p_scarlet_beast != NULL && p_scarlet_beast->ScrapeFromServer()) {
-		p_autoconnector->ConnectVirtual();
+		if (p_function_collection != NULL && p_function_collection->BotLogicCorrectlyParsed()) {
+			p_autoconnector->ConnectVirtual();
+		}
 		return;
 	}
 	if (Preferences()->autoconnector_when_to_connect() == k_AutoConnector_Connect_Permanent) {

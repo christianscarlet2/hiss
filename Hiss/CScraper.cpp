@@ -700,6 +700,39 @@ static std::vector<std::string> SB_StringArray(const std::string& s, const std::
   return out;
 }
 
+// Object blocks of "key": [ {...}, {...} ] (top-level objects inside the array).
+static std::vector<std::string> SB_ArrayObjects(const std::string& s, const std::string& key) {
+  std::vector<std::string> out;
+  std::string needle = "\"" + key + "\"";
+  size_t p = s.find(needle);
+  if (p == std::string::npos) return out;
+  size_t c = s.find(':', p + needle.size());
+  if (c == std::string::npos) return out;
+  size_t q = c + 1;
+  while (q < s.size() && (s[q] == ' ' || s[q] == '\t' || s[q] == '\n' || s[q] == '\r')) ++q;
+  if (q >= s.size() || s[q] != '[') return out;
+  int array_depth = 0;
+  bool in_str = false;
+  for (size_t i = q; i < s.size(); ++i) {
+    char ch = s[i];
+    if (in_str) {
+      if (ch == '\\') { ++i; continue; }
+      if (ch == '"') in_str = false;
+      continue;
+    }
+    if (ch == '"') { in_str = true; }
+    else if (ch == '[') { ++array_depth; }
+    else if (ch == ']') { if (--array_depth == 0) break; }
+    else if (ch == '{' && array_depth == 1) {
+      std::string block = SB_BracedBlock(s, i);
+      if (block.empty()) break;
+      out.push_back(block);
+      i += block.size() - 1;
+    }
+  }
+  return out;
+}
+
 static long SB_Num(const std::string& s, const std::string& key, long def) {
   std::string needle = "\"" + key + "\"";
   size_t p = s.find(needle);
@@ -774,6 +807,22 @@ bool CScraper::ScrapeFromScarletBeastServer() {
     for (int j = 0; j < kMaxNumberOfCardsPerPlayer; ++j) pl->hole_cards(j)->ClearValue();
   }
 
+  // Pass 1: everyone seated at the table (the authoritative "seats" list). This
+  // ensures every occupied seat -- including the hero, and players between hands
+  // or sitting out -- always appears, even if they're not in the current hand.
+  std::vector<std::string> seats = SB_ArrayObjects(json, "seats");
+  for (size_t i = 0; i < seats.size(); ++i) {
+    const std::string& sb = seats[i];
+    long seat_no = SB_Num(sb, "seat_no", 0);
+    int chair = static_cast<int>(seat_no) - 1;
+    if (chair < 0 || chair >= kMaxNumberOfPlayers) continue;
+    CPlayer* pl = p_table_state->Player(chair);
+    pl->set_seated(true);
+    pl->set_name(CString(SB_Str(sb, "name").c_str()));
+    pl->_balance.SetValue(static_cast<double>(SB_Num(sb, "stack", 0)));
+  }
+
+  // Pass 2: overlay the current hand (bets, who's still in, hole cards, button).
   std::string players = SB_Object(hand, "players");
   for (long seat_no = 1; seat_no <= max_seats; ++seat_no) {
     char k[16];
@@ -784,7 +833,9 @@ bool CScraper::ScrapeFromScarletBeastServer() {
     if (chair < 0 || chair >= kMaxNumberOfPlayers) continue;
     CPlayer* pl = p_table_state->Player(chair);
     pl->set_seated(true);
-    pl->set_name(CString(SB_Str(pb, "name").c_str()));
+    // Name/stack may be fresher here than in the seats list.
+    CString nm = CString(SB_Str(pb, "name").c_str());
+    if (!nm.IsEmpty()) pl->set_name(nm);
     pl->_balance.SetValue(static_cast<double>(SB_Num(pb, "stack", 0)));
     pl->_bet.SetValue(static_cast<double>(SB_Num(pb, "committed_street", 0)));
     pl->set_active(SB_Bool(pb, "in_hand", false));

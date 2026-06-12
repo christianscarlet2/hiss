@@ -425,6 +425,9 @@ function App() {
   }, []);
 
   var table = state || { nchairs: 10, players: [], commonCards: [], limits: {}, pot: 0, handnumber: '' };
+  // Seat the real hero at the bottom. The backend sends userchair (the human's
+  // chair); fall back to the legacy fixed chair 3 when it isn't known.
+  HERO_CHAIR = (typeof table.userchair === 'number' && table.userchair >= 0) ? table.userchair : 3;
   var limits = table.limits || {};
   var instancePort = window.location.port || '80';
   // Drive the money formatter: in "usd" mode amounts are big blinds x the big-blind size.
