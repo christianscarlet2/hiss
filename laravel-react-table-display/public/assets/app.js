@@ -321,11 +321,19 @@ function DealerButton(props) {
 // (a third of the way toward the centre) so it sits on the felt for every seat.
 function BetChip(props) {
   var pos = seatPos(props.nchairs, props.chair);
-  var t = 0.34;
+  var isHero = props.chair === HERO_CHAIR && !props.observer;
+  // The hero seat is large (big hole cards + glowing ring). A normal bet position
+  // would land on top of the cards, so push the hero's bet further toward the
+  // centre and out to the left (the dealer button already sits to the right),
+  // clear of the cards.
+  var t = isHero ? 0.50 : 0.34;
   var x = pos[0] + (0.5 - pos[0]) * t;
   var y = pos[1] + (0.49 - pos[1]) * t;
+  if (isHero) {
+    x -= 0.12;
+  }
   return e('div', {
-    className: 'bet',
+    className: 'bet' + (isHero ? ' hero-bet' : ''),
     style: { left: (x * 100) + '%', top: (y * 100) + '%' },
     onDoubleClick: props.onToggleUnit,
     title: 'Double-click to toggle BB / $'
@@ -463,7 +471,7 @@ function App() {
         return e(DealerButton, { key: 'd' + p.chair, chair: p.chair, nchairs: table.nchairs });
       }),
       (table.players || []).filter(function (p) { return p.bet; }).map(function (p) {
-        return e(BetChip, { key: 'b' + p.chair, chair: p.chair, nchairs: table.nchairs, bet: p.bet, onToggleUnit: toggleUnit });
+        return e(BetChip, { key: 'b' + p.chair, chair: p.chair, nchairs: table.nchairs, bet: p.bet, observer: !!table.observer, onToggleUnit: toggleUnit });
       })
     )
   );
