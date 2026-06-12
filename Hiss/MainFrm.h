@@ -17,6 +17,7 @@
 #define IDM_SB_LOBBY    0x8805
 #define IDM_SB_GOOGLE  0x8806
 #define IDM_SB_AUTOREBUY 0x8807
+#define IDM_SB_LOADHUD   0x8808
 
 class CMainFrame : public CFrameWnd 
 {
@@ -36,6 +37,7 @@ protected: // create from serialization only
   afx_msg void OnSbLobby();
   afx_msg void OnSbGoogle();
   afx_msg void OnSbAutoRebuy();
+  afx_msg void OnSbLoadHud();
  public:
 	afx_msg void OnFileOpen();
 	afx_msg void OnEditFormula();

@@ -33,6 +33,9 @@ void CSymbolEngineScarletBeast::UpdateOnHeartbeat() {
     p_scarlet_beast->ManageInstances();
     // Auto buy-back-in when we bust out (stack hit zero).
     p_scarlet_beast->AutoRebuyIfBusted();
+    // Keep the HUD payload fresh (throttled) so the React table display can render
+    // it -- whether or not the bot's formula reads pt_* symbols.
+    p_scarlet_beast->RefreshHud();
   }
 }
 

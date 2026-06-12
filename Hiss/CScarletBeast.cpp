@@ -4,9 +4,11 @@
 
 #include <windows.h>
 #include <winhttp.h>
+#include <wincrypt.h>
 #include <vector>
 
 #pragma comment(lib, "winhttp.lib")
+#pragma comment(lib, "crypt32.lib")
 
 CScarletBeast* p_scarlet_beast = nullptr;
 
@@ -456,6 +458,145 @@ void CScarletBeast::AutoRebuyIfBusted() {
   write_log(k_always_log_basic_information,
     "[ScarletBeast] AutoRebuy: busted at seat %d -> POST /rebuy amount=%ld -> HTTP %d (%s)\n",
     hero_seat, target, _last_status, _last_ok ? "ok" : "FAILED");
+}
+
+// Every top-level { ... } object inside a string, regardless of array nesting
+// (the PT4 HUD "rows" are arrays-of-arrays of flat stat cells).
+static std::vector<std::string> HUD_AllObjects(const std::string& s) {
+  std::vector<std::string> out;
+  bool in_str = false;
+  for (size_t i = 0; i < s.size(); ++i) {
+    char c = s[i];
+    if (in_str) {
+      if (c == '\\') { ++i; continue; }
+      if (c == '"') in_str = false;
+      continue;
+    }
+    if (c == '"') { in_str = true; }
+    else if (c == '{') {
+      std::string b = HUD_BracedBlock(s, i);
+      if (b.empty()) break;
+      out.push_back(b);
+      i += b.size() - 1;
+    }
+  }
+  return out;
+}
+
+// The "key": [ ... ] array substring (inclusive of brackets).
+static std::string HUD_ArraySubstr(const std::string& s, const std::string& key) {
+  std::string n = "\"" + key + "\"";
+  size_t p = s.find(n);
+  if (p == std::string::npos) return "";
+  size_t c = s.find(':', p + n.size());
+  if (c == std::string::npos) return "";
+  size_t q = c + 1;
+  while (q < s.size() && (s[q] == ' ' || s[q] == '\t' || s[q] == '\n' || s[q] == '\r')) ++q;
+  if (q >= s.size() || s[q] != '[') return "";
+  int depth = 0;
+  bool in_str = false;
+  for (size_t i = q; i < s.size(); ++i) {
+    char ch = s[i];
+    if (in_str) {
+      if (ch == '\\') { ++i; continue; }
+      if (ch == '"') in_str = false;
+      continue;
+    }
+    if (ch == '"') in_str = true;
+    else if (ch == '[') ++depth;
+    else if (ch == ']') { if (--depth == 0) return s.substr(q, i - q + 1); }
+  }
+  return "";
+}
+
+static std::string HUD_JsonEscape(const std::string& s) {
+  std::string o;
+  for (size_t i = 0; i < s.size(); ++i) {
+    char c = s[i];
+    if (c == '"' || c == '\\') { o += '\\'; o += c; }
+    else if ((unsigned char)c >= 0x20) o += c;
+  }
+  return o;
+}
+
+std::string CScarletBeast::ServerHudArrayForChair(int chair) {
+  if (chair < 0) return "";
+  std::string hud = _hud_json_cache;  // snapshot (read-only)
+  if (hud.empty()) return "";
+  std::string profile = HUD_Object(hud, "profile");
+  std::string rows = profile.empty() ? "" : HUD_ArraySubstr(profile, "rows");
+  std::string map = HUD_Object(hud, "map");
+  if (rows.empty() || map.empty()) return "";
+  std::string seats = HUD_Object(hud, "seats");
+  char seat_no[8];
+  sprintf_s(seat_no, sizeof(seat_no), "%d", chair + 1);  // API seats are 1-based
+  std::string seat = HUD_Object(seats, seat_no);
+  if (seat.empty()) return "";
+
+  std::string out;
+  std::vector<std::string> cells = HUD_AllObjects(rows);
+  for (size_t i = 0; i < cells.size(); ++i) {
+    std::string stat = ExtractJsonString(cells[i], "stat");
+    if (stat.empty()) continue;
+    std::string key = ExtractJsonString(map, stat);
+    if (key.empty() || key == "name") continue;  // skip the name cell
+    double v = 0;
+    if (!HUD_Number(seat, key, &v)) continue;     // no numeric value for this seat
+    std::string label = ExtractJsonString(cells[i], "label");
+    std::string abbr = label.empty() ? stat : label;
+    char val[32];
+    if (v == (double)(long)v)
+      sprintf_s(val, sizeof(val), "%ld", (long)v);   // whole numbers: "23"
+    else
+      sprintf_s(val, sizeof(val), "%.1f", v);        // ratios: "0.9"
+    if (!out.empty()) out += ",";
+    out += "{\"abbr\":\"" + HUD_JsonEscape(abbr) + "\",\"name\":\"" + HUD_JsonEscape(stat)
+         + "\",\"value\":\"" + val + "\",\"important\":false}";
+  }
+  return out;
+}
+
+std::string CScarletBeast::UploadPt4Hud(const std::wstring& filepath) {
+  // Read the .pt4hud (binary).
+  HANDLE h = ::CreateFileW(filepath.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL,
+                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE) return "Could not open the selected file.";
+  DWORD size = ::GetFileSize(h, NULL);
+  if (size == INVALID_FILE_SIZE || size == 0 || size > 4u * 1024 * 1024) {
+    ::CloseHandle(h);
+    return "File is empty or too large.";
+  }
+  std::vector<BYTE> buf(size);
+  DWORD read = 0;
+  BOOL ok = ::ReadFile(h, buf.data(), size, &read, NULL);
+  ::CloseHandle(h);
+  if (!ok || read != size) return "Failed to read the file.";
+
+  // Base64-encode the bytes.
+  DWORD b64len = 0;
+  ::CryptBinaryToStringA(buf.data(), size, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, NULL, &b64len);
+  if (b64len == 0) return "Base64 encoding failed.";
+  std::string b64(b64len, '\0');
+  if (!::CryptBinaryToStringA(buf.data(), size, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, &b64[0], &b64len))
+    return "Base64 encoding failed.";
+  while (!b64.empty() && (b64[b64.size() - 1] == '\0' || b64[b64.size() - 1] == '\n' || b64[b64.size() - 1] == '\r'))
+    b64.resize(b64.size() - 1);
+
+  // Derive a profile name from the file name (without path / extension).
+  std::wstring wname = filepath;
+  size_t slash = wname.find_last_of(L"\\/");
+  if (slash != std::wstring::npos) wname = wname.substr(slash + 1);
+  std::string name = Narrow(wname);
+  size_t dot = name.find_last_of('.');
+  if (dot != std::string::npos) name = name.substr(0, dot);
+
+  std::string body = "{\"name\":\"" + HUD_JsonEscape(name) + "\",\"content_b64\":\"" + b64 + "\"}";
+  std::string resp = Request(L"POST", L"/api/v1/hud/import", body, true);
+  if (_last_ok) {
+    return std::string("HUD layout loaded and selected: ") + name
+         + ". It will show on the table within a few seconds.";
+  }
+  return std::string("Upload failed (HTTP ") + std::to_string(_last_status) + "): " + resp;
 }
 
 std::string CScarletBeast::ServerTableName() {

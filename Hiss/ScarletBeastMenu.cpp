@@ -55,6 +55,7 @@ void CMainFrame::AppendScarletBeastMenu() {
   sb.AppendMenu(MF_STRING, IDM_SB_LOBBY, _T("Open Lobby"));
   sb.AppendMenu(MF_SEPARATOR, 0, _T(""));
   sb.AppendMenu(MF_STRING, IDM_SB_AUTOREBUY, _T("Auto Rebuy when busted (toggle)"));
+  sb.AppendMenu(MF_STRING, IDM_SB_LOADHUD, _T("Load PT4 HUD file..."));
   pTop->AppendMenu(MF_POPUP, (UINT_PTR)sb.Detach(), _T("Scarlet Beast"));
   // Reflect current toggle states.
   if (p_scarlet_beast != NULL && p_scarlet_beast->ScrapeFromServer()) {
@@ -116,6 +117,16 @@ void CMainFrame::OnSbGoogle() {
 void CMainFrame::OnSbLobby() {
   // Embedded WebView2 lobby (falls back to the browser if unavailable).
   SB_ShowLobby();
+}
+
+void CMainFrame::OnSbLoadHud() {
+  if (p_scarlet_beast == NULL) return;
+  CFileDialog dlg(TRUE, _T("pt4hud"), NULL, OFN_FILEMUSTEXIST | OFN_HIDEREADONLY,
+    _T("PokerTracker 4 HUD (*.pt4hud)|*.pt4hud|All Files (*.*)|*.*||"));
+  if (dlg.DoModal() != IDOK) return;
+  std::wstring wpath = SB_ToW(dlg.GetPathName());
+  std::string result = p_scarlet_beast->UploadPt4Hud(wpath);
+  AfxMessageBox(CString(result.c_str()));
 }
 
 void CMainFrame::OnSbAutoRebuy() {

@@ -254,13 +254,22 @@ function Player(props) {
       cards.push(rawCards[i]);
     }
   }
-  return e('div', { className: 'player' + (isHero ? ' hero' : ''), style: style },
-    e('div', { className: 'seat-ring ' + (player.active ? 'active' : '') }),
-    e('div', { className: 'holecards' }, cards.map(function (card, index) {
+  // "Out" = seated but not in the current hand (folded / sitting out). The API still
+  // returns the hero's own cards in that case, so dim them to make the state obvious.
+  var isOut = player.seated && !player.active;
+  // The green "active" indicator should mark only the player whose TURN it is
+  // (to act), not everyone still in the hand. The backend sends toact (the chair
+  // to act); fall back to the in-hand flag only when toact is unknown (-1).
+  var isActor = (typeof props.toact === 'number' && props.toact >= 0)
+    ? (player.chair === props.toact)
+    : player.active;
+  return e('div', { className: 'player' + (isHero ? ' hero' : '') + (isOut ? ' out' : ''), style: style },
+    e('div', { className: 'seat-ring ' + (isActor ? 'active' : '') }),
+    e('div', { className: 'holecards' + (isOut ? ' out' : '') }, cards.map(function (card, index) {
       return e(CardView, { key: index, value: card });
     })),
     e('div', { className: 'name' + (player.matched ? ' matched' : ''), title: player.ptname || '' },
-      player.active ? e('span', { className: 'active-dot' }) : null,
+      isActor ? e('span', { className: 'active-dot' }) : null,
       player.name || ('p' + player.chair)
     ),
     e('div', { className: 'balance', onDoubleClick: toggleUnit, title: 'Double-click to toggle BB / $' },
@@ -465,7 +474,7 @@ function App() {
         e('div', { className: 'pot', onDoubleClick: toggleUnit, title: 'Double-click to toggle BB / $' }, 'Pot ' + bb(table.pot))
       ),
       (table.players || []).map(function (player) {
-        return e(Player, { key: player.chair, player: player, nchairs: table.nchairs, isOmaha: !!table.isomaha, observer: !!table.observer, onToggleUnit: toggleUnit });
+        return e(Player, { key: player.chair, player: player, nchairs: table.nchairs, toact: (typeof table.toact === 'number' ? table.toact : -1), isOmaha: !!table.isomaha, observer: !!table.observer, onToggleUnit: toggleUnit });
       }),
       (table.players || []).filter(function (p) { return p.dealer; }).map(function (p) {
         return e(DealerButton, { key: 'd' + p.chair, chair: p.chair, nchairs: table.nchairs });

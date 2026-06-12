@@ -26,6 +26,9 @@ class CScarletBeast {
   void   SetScrapeFromServer(bool on);
   bool   AutoRebuy() const { return _auto_rebuy; }
   void   SetAutoRebuy(bool on);
+  // Load a .pt4hud layout into the account (base64 JSON import) and select it.
+  // Returns a human-readable status message for a message box.
+  std::string UploadPt4Hud(const std::wstring& filepath);
   std::wstring BaseUrl() const { return _base_url; }
   void   SetBaseUrl(const std::wstring& url);
   std::wstring ApiKey() const { return _api_key; }
@@ -80,12 +83,22 @@ class CScarletBeast {
   // Empty when not available. Used to suffix the Hiss window title.
   std::string ServerTableName();
 
+  // The HUD for one chair, rendered from the active server HUD profile (the layout
+  // a .pt4hud upload defines) + that seat's live stats. Returns the JSON array
+  // ELEMENTS (no surrounding brackets), e.g.
+  //   {"abbr":"VPIP","name":"VPIP","value":"23","important":false},{...}
+  // Empty string when no stats. Read-only over the cached HUD payload.
+  std::string ServerHudArrayForChair(int chair);
+
   // PokerTracker-style HUD stats from the server (used instead of a PokerTracker 4
   // database when scraping from the API). Fetches GET /api/v1/tables/{id}/hud
   // (throttled) and returns one stat for a 0-based chair. `basic_stat` is a pt_
   // symbol name without the "pt_" prefix and chair suffix (e.g. "vpip", "pfr",
   // "af", "threebet", "cbet"). Returns false if the API doesn't provide it.
   bool HudStatForChair(int chair, const char* basic_stat, double* out_value);
+  // Fetch the table HUD (GET /api/v1/tables/{id}/hud), throttled (~3s). Safe to
+  // call every heartbeat; keeps the HUD payload fresh for the display + pt_* stats.
+  bool RefreshHud();
 
   // Auto buy-back-in: when our table stack has dropped to zero (busted, still
   // seated as sitting_out), top it back up from our bankroll via POST /rebuy.
@@ -131,7 +144,6 @@ class CScarletBeast {
   unsigned long _seat_json_tick;   // GetTickCount() of the last fetch
   std::string   _hud_json_cache;   // last raw HUD JSON (stats change slowly)
   unsigned long _hud_tick;         // GetTickCount() of the last HUD fetch
-  bool RefreshHud();               // throttled GET /api/v1/tables/{id}/hud
   unsigned long _last_rebuy_tick;  // throttle for AutoRebuyIfBusted
 };
 

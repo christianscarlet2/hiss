@@ -452,6 +452,12 @@ body {
   filter: drop-shadow(0 4px 6px rgba(0, 0, 0, .55));
 }
 
+/* "Out" of the hand (folded / sitting out): dim + desaturate the cards to signal it. */
+.holecards.out {
+  opacity: .3;
+  filter: grayscale(1) drop-shadow(0 3px 5px rgba(0, 0, 0, .5));
+}
+
 .name,
 .balance {
   position: relative;

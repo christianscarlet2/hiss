@@ -7,6 +7,7 @@
 #include "CSymbolEngineIsOmaha.h"
 #include "CSymbolEngineChipAmounts.h"
 #include "CSymbolEngineUserchair.h"
+#include "CScarletBeast.h"
 #include "CHandresetDetector.h"
 #include "CTableState.h"
 #include "CScraper.h"
@@ -480,8 +481,16 @@ CStringA CChatTerminalServer::BuildTableStateJson(void)
 		&& p_engine_container->symbol_engine_userchair()->userchair_confirmed()) {
 		userchair = p_engine_container->symbol_engine_userchair()->userchair();
 	}
-	json.Format("{\"nchairs\":%d,\"userchair\":%d,\"handnumber\":\"%s\",\"isomaha\":%s,\"observer\":%s,\"limits\":{\"sblind\":%.2f,\"bblind\":%.2f,\"ante\":%.2f,\"gametype\":%d},\"pot\":%.2f,",
-		nchairs, userchair, JsonEscape(handnumber).GetString(), is_omaha ? "true" : "false",
+	// The chair whose turn it is (to act), so the display highlights exactly one
+	// seat instead of every player still in the hand. -1 when unknown (the display
+	// then falls back to the per-player "active" flag). Server-scrape only for now.
+	int toact = -1;
+	if (p_scarlet_beast != NULL && p_scarlet_beast->ScrapeFromServer()) {
+		long ta = p_scarlet_beast->ServerToAct();  // 1-based server seat
+		if (ta > 0) toact = (int)ta - 1;
+	}
+	json.Format("{\"nchairs\":%d,\"userchair\":%d,\"toact\":%d,\"handnumber\":\"%s\",\"isomaha\":%s,\"observer\":%s,\"limits\":{\"sblind\":%.2f,\"bblind\":%.2f,\"ante\":%.2f,\"gametype\":%d},\"pot\":%.2f,",
+		nchairs, userchair, toact, JsonEscape(handnumber).GetString(), is_omaha ? "true" : "false",
 		observer ? "true" : "false", sblind, bblind, ante, gametype, pot);
 	json += "\"commonCards\":[";
 	for (int i = 0; i < kNumberOfCommunityCards; ++i) {
@@ -532,8 +541,13 @@ CStringA CChatTerminalServer::BuildTableStateJson(void)
 			json.AppendFormat("\"%s\"", JsonEscape(card).GetString());
 		}
 		json += "],\"hud\":[";
-		// Stats are only exposed once the name mapping is verified ("confirmed").
-		if (name_verified && p_hud_manager != NULL && p_hud_manager->IsEnabled()) {
+		// Scarlet Beast server-scrape: render the HUD from the API's active profile
+		// (the .pt4hud layout) + live per-seat stats, since there's no PokerTracker DB.
+		if (p_scarlet_beast != NULL && p_scarlet_beast->ScrapeFromServer()) {
+			json += p_scarlet_beast->ServerHudArrayForChair(chair).c_str();
+		}
+		// Otherwise: PT4 stats, only once the name mapping is verified ("confirmed").
+		else if (name_verified && p_hud_manager != NULL && p_hud_manager->IsEnabled()) {
 			const std::vector<SHudStatValue> &stats = p_hud_manager->StatsForChair(chair);
 			for (size_t stat_index = 0; stat_index < stats.size(); ++stat_index) {
 				if (stat_index > 0) json += ",";
