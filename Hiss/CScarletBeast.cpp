@@ -20,7 +20,8 @@ CScarletBeast::CScarletBeast()
       _cmdline_table(0),
       _last_manage_tick(0),
       _last_ok(false),
-      _last_status(0) {
+      _last_status(0),
+      _seat_json_tick(0) {
   LoadFromRegistry();
   ParseCommandLine();
 }
@@ -238,11 +239,26 @@ std::string CScarletBeast::GraphQL(const std::string& query, const std::string& 
   return Request(L"POST", L"/console/graphql", body, true);
 }
 
+// Fetch the seat view at most ~once per 120 ms; cache the raw JSON so the scraper
+// (table-state) and the symbol engine (sb_* symbols) share one network round-trip
+// per heartbeat instead of hitting the API twice.
+bool CScarletBeast::RefreshSeatView() {
+  unsigned long now = ::GetTickCount();
+  if (!_seat_json_cache.empty() && _seat_json_tick != 0 && (now - _seat_json_tick) < 120) {
+    return true;  // reuse the very recent fetch (same heartbeat)
+  }
+  std::string seat = SeatView(TableId());
+  if (!_last_ok || seat.empty()) return false;
+  _seat_json_cache = seat;
+  _seat_json_tick = now;
+  return true;
+}
+
 // Pull the seat view and flatten the parts the symbol engine cares about into
 // tablemap-style symbols. Uses tiny extractors instead of a JSON dependency.
 bool CScarletBeast::PopulateSymbols(int table_id, std::map<std::string, std::string>& out) {
-  std::string seat = SeatView(table_id);
-  if (!_last_ok || seat.empty()) return false;
+  if (!RefreshSeatView()) return false;
+  const std::string& seat = _seat_json_cache;
 
   // Headline fields the symbol engine can map onto OpenHoldem symbols.
   out["sb_table_id"] = std::to_string(table_id);

@@ -19,6 +19,7 @@
 #include "CEngineContainer.h"
 #include "CHandresetDetector.h"
 
+#include "CScarletBeast.h"
 #include "CScraper.h"
 #include "CSymbolEngineActiveDealtPlaying.h"
 #include "CSymbolEngineHistory.h"
@@ -78,6 +79,15 @@ CLazyScraper::~CLazyScraper() {
 // If in doubt be conservative.
 
 void CLazyScraper::DoScrape() {
+	// Scarlet Beast server-scrape: when the operator has chosen poker.scarletbeast.com
+	// as the source, pull the live table from the API straight into CTableState and
+	// skip screen-scraping entirely. This drives the React table display and the whole
+	// symbol pipeline off the server.
+	if (p_scarlet_beast != NULL && p_scarlet_beast->ScrapeFromServer()) {
+		_is_identical_scrape = false;
+		p_scraper->ScrapeFromScarletBeastServer();
+		return;
+	}
 	if (p_scraper->IsIdenticalScrape())	{
 		_is_identical_scrape = true;
     return;

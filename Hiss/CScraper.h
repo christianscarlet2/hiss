@@ -59,6 +59,11 @@ class CScraper : public CSpaceOptimizedGlobalObject {
   // When enabled it OCRs all AutoOcr ("A") regions across worker threads up-front
   // into _ocr_cache, which EvaluateRegion then reads instead of OCRing serially.
   void PreOcrParallel();
+  // Scarlet Beast server-scrape: pull the configured table's live state from
+  // poker.scarletbeast.com and write players/cards/bets/board/pot directly into
+  // CTableState (so the React display and the whole symbol pipeline see it),
+  // instead of screen-scraping. Returns true if a payload was applied.
+  bool ScrapeFromScarletBeastServer();
  protected:
 	bool IsIdenticalScrape();
  protected:

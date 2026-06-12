@@ -26,6 +26,7 @@ using namespace std;
 #include "CEngineContainer.h"
 #include "CAutoOcr.h"
 
+#include "CScarletBeast.h"
 #include "CStringMatch.h"
 #include "CSymbolEngineActiveDealtPlaying.h"
 #include "CSymbolEngineAutoplayer.h"
@@ -624,6 +625,197 @@ int CScraper::CardString2CardNumber(CString card) {
   } else {
     return CARD_UNDEFINED;
   }
+}
+
+// ===========================================================================
+// Scarlet Beast server-scrape: poker.scarletbeast.com -> CTableState
+// ===========================================================================
+// Dependency-free JSON helpers, matched to the documented /api/v1/tables/{id}
+// payload. They locate a "key" and read the value that follows.
+
+// Balanced { ... } block (inclusive) starting at brace_pos; respects strings.
+static std::string SB_BracedBlock(const std::string& s, size_t brace_pos) {
+  if (brace_pos >= s.size() || s[brace_pos] != '{') return "";
+  int depth = 0;
+  bool in_str = false;
+  for (size_t i = brace_pos; i < s.size(); ++i) {
+    char c = s[i];
+    if (in_str) {
+      if (c == '\\') { ++i; continue; }
+      if (c == '"') in_str = false;
+    } else if (c == '"') {
+      in_str = true;
+    } else if (c == '{') {
+      ++depth;
+    } else if (c == '}') {
+      if (--depth == 0) return s.substr(brace_pos, i - brace_pos + 1);
+    }
+  }
+  return "";
+}
+
+// Value object for "key": { ... }  (the first such key whose value is an object).
+static std::string SB_Object(const std::string& s, const std::string& key) {
+  std::string needle = "\"" + key + "\"";
+  size_t p = s.find(needle);
+  while (p != std::string::npos) {
+    size_t c = s.find(':', p + needle.size());
+    if (c != std::string::npos) {
+      size_t q = c + 1;
+      while (q < s.size() && (s[q] == ' ' || s[q] == '\t' || s[q] == '\n' || s[q] == '\r')) ++q;
+      if (q < s.size() && s[q] == '{') return SB_BracedBlock(s, q);
+    }
+    p = s.find(needle, p + needle.size());
+  }
+  return "";
+}
+
+// String elements of "key": [ "a", "b", ... ].
+static std::vector<std::string> SB_StringArray(const std::string& s, const std::string& key) {
+  std::vector<std::string> out;
+  std::string needle = "\"" + key + "\"";
+  size_t p = s.find(needle);
+  if (p == std::string::npos) return out;
+  size_t c = s.find(':', p + needle.size());
+  if (c == std::string::npos) return out;
+  size_t q = c + 1;
+  while (q < s.size() && (s[q] == ' ' || s[q] == '\t')) ++q;
+  if (q >= s.size() || s[q] != '[') return out;
+  size_t end = s.find(']', q);
+  if (end == std::string::npos) return out;
+  for (size_t i = q + 1; i < end; ) {
+    if (s[i] == '"') {
+      std::string val;
+      ++i;
+      while (i < end && s[i] != '"') {
+        if (s[i] == '\\' && i + 1 < end) { val += s[i + 1]; i += 2; }
+        else val += s[i++];
+      }
+      out.push_back(val);
+      if (i < end) ++i;  // skip closing quote
+    } else {
+      ++i;
+    }
+  }
+  return out;
+}
+
+static long SB_Num(const std::string& s, const std::string& key, long def) {
+  std::string needle = "\"" + key + "\"";
+  size_t p = s.find(needle);
+  if (p == std::string::npos) return def;
+  p = s.find(':', p + needle.size());
+  if (p == std::string::npos) return def;
+  ++p;
+  while (p < s.size() && (s[p] == ' ' || s[p] == '\t')) ++p;
+  bool neg = false;
+  if (p < s.size() && s[p] == '-') { neg = true; ++p; }
+  if (p >= s.size() || s[p] < '0' || s[p] > '9') return def;
+  long v = 0;
+  while (p < s.size() && s[p] >= '0' && s[p] <= '9') { v = v * 10 + (s[p] - '0'); ++p; }
+  return neg ? -v : v;
+}
+
+static std::string SB_Str(const std::string& s, const std::string& key) {
+  std::string needle = "\"" + key + "\"";
+  size_t p = s.find(needle);
+  if (p == std::string::npos) return "";
+  p = s.find(':', p + needle.size());
+  if (p == std::string::npos) return "";
+  ++p;
+  while (p < s.size() && (s[p] == ' ' || s[p] == '\t')) ++p;
+  if (p >= s.size() || s[p] != '"') return "";
+  ++p;
+  std::string out;
+  while (p < s.size() && s[p] != '"') {
+    if (s[p] == '\\' && p + 1 < s.size()) { out += s[p + 1]; p += 2; }
+    else out += s[p++];
+  }
+  return out;
+}
+
+static bool SB_Bool(const std::string& s, const std::string& key, bool def) {
+  std::string needle = "\"" + key + "\"";
+  size_t p = s.find(needle);
+  if (p == std::string::npos) return def;
+  p = s.find(':', p + needle.size());
+  if (p == std::string::npos) return def;
+  ++p;
+  while (p < s.size() && (s[p] == ' ' || s[p] == '\t')) ++p;
+  return (p < s.size() && (s[p] == 't' || s[p] == 'T'));
+}
+
+bool CScraper::ScrapeFromScarletBeastServer() {
+  if (p_scarlet_beast == NULL || p_table_state == NULL) return false;
+  if (!p_scarlet_beast->RefreshSeatView()) return false;  // keep last good state on failure
+  const std::string json = p_scarlet_beast->LastSeatJson();
+
+  std::string hand = SB_Object(json, "hand");
+  if (hand.empty()) return false;
+
+  long max_seats = SB_Num(json, "max_seats", 0);
+  if (max_seats <= 0 || max_seats > kMaxNumberOfPlayers) max_seats = kMaxNumberOfPlayers;
+  long button = SB_Num(hand, "button", 0);
+  long pot = SB_Num(hand, "pot", 0);
+
+  // Clear every chair, then fill from the server.
+  for (int c = 0; c < kMaxNumberOfPlayers; ++c) {
+    CPlayer* pl = p_table_state->Player(c);
+    pl->set_seated(false);
+    pl->set_active(false);
+    pl->set_dealer(false);
+    pl->set_name("");
+    pl->_balance.SetValue(0.0);
+    pl->_bet.SetValue(0.0);
+    for (int j = 0; j < kMaxNumberOfCardsPerPlayer; ++j) pl->hole_cards(j)->ClearValue();
+  }
+
+  std::string players = SB_Object(hand, "players");
+  for (long seat_no = 1; seat_no <= max_seats; ++seat_no) {
+    char k[16];
+    sprintf_s(k, sizeof(k), "%ld", seat_no);
+    std::string pb = SB_Object(players, k);
+    if (pb.empty()) continue;
+    int chair = static_cast<int>(seat_no) - 1;
+    if (chair < 0 || chair >= kMaxNumberOfPlayers) continue;
+    CPlayer* pl = p_table_state->Player(chair);
+    pl->set_seated(true);
+    pl->set_name(CString(SB_Str(pb, "name").c_str()));
+    pl->_balance.SetValue(static_cast<double>(SB_Num(pb, "stack", 0)));
+    pl->_bet.SetValue(static_cast<double>(SB_Num(pb, "committed_street", 0)));
+    pl->set_active(SB_Bool(pb, "in_hand", false));
+    if (seat_no == button) pl->set_dealer(true);
+    // hole cards: "??" => hidden (card back); "As" => known; [] => no cards.
+    std::vector<std::string> hole = SB_StringArray(pb, "hole");
+    for (int j = 0; j < kMaxNumberOfCardsPerPlayer; ++j) {
+      if (j >= static_cast<int>(hole.size())) { pl->hole_cards(j)->ClearValue(); continue; }
+      const std::string& h = hole[j];
+      if (h.empty() || h == "??") {
+        pl->hole_cards(j)->SetValue(CARD_BACK);
+      } else {
+        int v = CardString2CardNumber(CString(h.c_str()));
+        pl->hole_cards(j)->SetValue(v == CARD_UNDEFINED ? CARD_BACK : v);
+      }
+    }
+  }
+
+  // Community cards.
+  std::vector<std::string> board = SB_StringArray(hand, "board");
+  for (int i = 0; i < kNumberOfCommunityCards; ++i) {
+    if (i < static_cast<int>(board.size()) && !board[i].empty() && board[i] != "??") {
+      int v = CardString2CardNumber(CString(board[i].c_str()));
+      if (v == CARD_UNDEFINED) p_table_state->CommonCards(i)->ClearValue();
+      else p_table_state->CommonCards(i)->SetValue(v);
+    } else {
+      p_table_state->CommonCards(i)->ClearValue();
+    }
+  }
+
+  // Pot.
+  char potbuf[32];
+  sprintf_s(potbuf, sizeof(potbuf), "%ld", pot);
+  p_table_state->set_pot(0, potbuf);
+  return true;
 }
 
 int CScraper::ScrapeCardface(CString base_name) {

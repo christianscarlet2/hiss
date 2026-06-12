@@ -59,6 +59,12 @@ class CScarletBeast {
   // Returns true on success; fills `out_symbols`.
   bool PopulateSymbols(int table_id, std::map<std::string, std::string>& out_symbols);
 
+  // Fetch the configured table's seat view at most ~once per 120 ms and cache the
+  // raw JSON. Returns true when a fresh-or-recent payload is in LastSeatJson().
+  // Lets the scraper and the symbol engine share a single fetch per heartbeat.
+  bool RefreshSeatView();
+  const std::string& LastSeatJson() const { return _seat_json_cache; }
+
   // True once a request has produced a 2xx; useful for the settings "Test" button.
   bool LastOk() const { return _last_ok; }
   int  LastStatus() const { return _last_status; }
@@ -92,6 +98,9 @@ class CScarletBeast {
   bool         _last_ok;
   int          _last_status;
   std::wstring _last_error;
+
+  std::string   _seat_json_cache;  // last raw seat-view JSON (shared per heartbeat)
+  unsigned long _seat_json_tick;   // GetTickCount() of the last fetch
 };
 
 // Single shared instance for the process (declared in the .cpp).
