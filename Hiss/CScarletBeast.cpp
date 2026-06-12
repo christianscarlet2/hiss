@@ -15,9 +15,88 @@ static const wchar_t* kRegPath = L"Software\\ScarletBeast";
 CScarletBeast::CScarletBeast()
     : _scrape_from_server(false),
       _base_url(L"poker.scarletbeast.com"),
+      _table_id(1),
+      _is_child(false),
+      _cmdline_table(0),
+      _last_manage_tick(0),
       _last_ok(false),
       _last_status(0) {
   LoadFromRegistry();
+  ParseCommandLine();
+}
+
+// Detect child mode: "--sb-table=N" on the command line binds this instance to
+// one table and suppresses further spawning.
+void CScarletBeast::ParseCommandLine() {
+  std::string cmd = ::GetCommandLineA() ? ::GetCommandLineA() : "";
+  const std::string flag = "--sb-table=";
+  size_t p = cmd.find(flag);
+  if (p != std::string::npos) {
+    _cmdline_table = atoi(cmd.c_str() + p + flag.size());
+    if (_cmdline_table > 0) _is_child = true;
+  }
+}
+
+// Spawn another Hiss bound to a specific table.
+void CScarletBeast::SpawnChild(int table_id) {
+  char exe[MAX_PATH] = {0};
+  if (!::GetModuleFileNameA(NULL, exe, MAX_PATH)) return;
+  std::string cmd = std::string("\"") + exe + "\" --sb-table=" + std::to_string(table_id);
+  std::vector<char> buf(cmd.begin(), cmd.end());
+  buf.push_back(0);
+  STARTUPINFOA si;
+  ZeroMemory(&si, sizeof(si));
+  si.cb = sizeof(si);
+  PROCESS_INFORMATION pi;
+  ZeroMemory(&pi, sizeof(pi));
+  if (::CreateProcessA(NULL, buf.data(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+    _children[table_id] = std::make_pair((void*)pi.hProcess, (void*)pi.hThread);
+  }
+}
+
+// Poll the seated-tables endpoint; spawn/kill children to match. Throttled to
+// once every ~5s. Master only.
+void CScarletBeast::ManageInstances() {
+  if (_is_child || !_scrape_from_server) return;
+  unsigned long now = ::GetTickCount();
+  if (_last_manage_tick != 0 && (now - _last_manage_tick) < 5000) return;
+  _last_manage_tick = now;
+
+  std::string body = Request(L"GET", L"/api/v1/me/tables", "", true);
+  if (!_last_ok) return;
+
+  // Parse {"tables":[1,2,3]} into a set of ids.
+  std::map<int, bool> seated;
+  size_t p = body.find("\"tables\"");
+  if (p != std::string::npos) {
+    p = body.find('[', p);
+    size_t end = (p == std::string::npos) ? std::string::npos : body.find(']', p);
+    while (p != std::string::npos && end != std::string::npos && p < end) {
+      while (p < end && (body[p] < '0' || body[p] > '9')) ++p;
+      if (p >= end) break;
+      int id = 0;
+      while (p < end && body[p] >= '0' && body[p] <= '9') { id = id * 10 + (body[p] - '0'); ++p; }
+      if (id > 0) seated[id] = true;
+    }
+  }
+
+  int mine = TableId();
+  // Spawn children for seated tables other than the master's own table.
+  for (std::map<int, bool>::iterator it = seated.begin(); it != seated.end(); ++it) {
+    int id = it->first;
+    if (id == mine) continue;
+    if (_children.find(id) == _children.end()) SpawnChild(id);
+  }
+  // Close children whose table is no longer seated.
+  for (std::map<int, std::pair<void*, void*> >::iterator it = _children.begin(); it != _children.end();) {
+    if (seated.find(it->first) == seated.end()) {
+      if (it->second.first) { ::TerminateProcess((HANDLE)it->second.first, 0); ::CloseHandle((HANDLE)it->second.first); }
+      if (it->second.second) ::CloseHandle((HANDLE)it->second.second);
+      _children.erase(it++);
+    } else {
+      ++it;
+    }
+  }
 }
 
 CScarletBeast::~CScarletBeast() {}
@@ -55,6 +134,8 @@ void CScarletBeast::LoadFromRegistry() {
   _base_url = RegReadString(L"BaseUrl", L"poker.scarletbeast.com");
   _api_key = RegReadString(L"ApiKey", L"");
   _google_token = RegReadString(L"GoogleToken", L"");
+  _table_id = _wtoi(RegReadString(L"TableId", L"1").c_str());
+  if (_table_id <= 0) _table_id = 1;
 }
 
 void CScarletBeast::SaveToRegistry() {
@@ -62,9 +143,11 @@ void CScarletBeast::SaveToRegistry() {
   RegWriteString(L"BaseUrl", _base_url);
   RegWriteString(L"ApiKey", _api_key);
   RegWriteString(L"GoogleToken", _google_token);
+  RegWriteString(L"TableId", std::to_wstring(_table_id));
 }
 
 void CScarletBeast::SetScrapeFromServer(bool on) { _scrape_from_server = on; SaveToRegistry(); }
+void CScarletBeast::SetTableId(int id) { _table_id = (id > 0 ? id : 1); SaveToRegistry(); }
 void CScarletBeast::SetBaseUrl(const std::wstring& url) { _base_url = url; SaveToRegistry(); }
 void CScarletBeast::SetApiKey(const std::wstring& key) { _api_key = key; SaveToRegistry(); }
 void CScarletBeast::SetGoogleToken(const std::wstring& token) { _google_token = token; SaveToRegistry(); }

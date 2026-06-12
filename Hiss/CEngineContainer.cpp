@@ -69,6 +69,7 @@
 #include "CSymbolEngineReplayFrameController.h"
 #include "CSymbolEngineTableStats.h"
 #include "CSymbolEngineTime.h"
+#include "CSymbolEngineScarletBeast.h"
 #include "CSymbolEngineUserchair.h"
 #include "CSymbolEngineUserDLL.h"
 #include "CSymbolEngineVariousDataLookup.h"
@@ -139,6 +140,9 @@ void CEngineContainer::CreateSymbolEngines() {
   // CSymbolEngineTime
   p_symbol_engine_time = new CSymbolEngineTime();
   AddSymbolEngine(p_symbol_engine_time);
+  // CSymbolEngineScarletBeast (server scrape source)
+  p_symbol_engine_scarlet_beast = new CSymbolEngineScarletBeast();
+  AddSymbolEngine(p_symbol_engine_scarlet_beast);
   // CSymbolEngineAutoplayer
   p_symbol_engine_autoplayer = new CSymbolEngineAutoplayer();
   AddSymbolEngine(p_symbol_engine_autoplayer);

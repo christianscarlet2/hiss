@@ -8,6 +8,15 @@
 #define ENABLE_BUTTONS_TIMER    2
 #define UPDATE_STATUS_BAR_TIMER 3
 
+// Scarlet Beast menu command IDs
+#define WM_SB_INITMENU  (WM_USER + 0x4201)
+#define IDM_SB_CONNECT  0x8801
+#define IDM_SB_SETKEY   0x8802
+#define IDM_SB_SETTABLE 0x8803
+#define IDM_SB_TEST     0x8804
+#define IDM_SB_LOBBY    0x8805
+#define IDM_SB_GOOGLE  0x8806
+
 class CMainFrame : public CFrameWnd 
 {
 protected: // create from serialization only
@@ -16,6 +25,16 @@ protected: // create from serialization only
 
 	CMainFrame();
 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
+ public:
+  void AppendScarletBeastMenu();
+  afx_msg LRESULT OnSbInitMenu(WPARAM wParam, LPARAM lParam);
+  afx_msg void OnSbConnect();
+  afx_msg void OnSbSetKey();
+  afx_msg void OnSbSetTable();
+  afx_msg void OnSbTest();
+  afx_msg void OnSbLobby();
+  afx_msg void OnSbGoogle();
+ public:
 	afx_msg void OnFileOpen();
 	afx_msg void OnEditFormula();
 	afx_msg void OnEditForceuserchair();

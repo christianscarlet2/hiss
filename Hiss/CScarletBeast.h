@@ -14,6 +14,7 @@
 
 #include <string>
 #include <map>
+#include <utility>
 
 class CScarletBeast {
  public:
@@ -29,6 +30,15 @@ class CScarletBeast {
   void   SetApiKey(const std::wstring& key);
   std::wstring GoogleToken() const { return _google_token; }
   void   SetGoogleToken(const std::wstring& token);
+  // Child instances (spawned per extra table) override the configured table.
+  int    TableId() const { return _is_child ? _cmdline_table : _table_id; }
+  void   SetTableId(int id);
+  bool   IsChild() const { return _is_child; }
+
+  // Multi-instance: the master polls the seated-tables endpoint and spawns one
+  // child Hiss per additional table, closing children when the player leaves.
+  // No-op for child instances (prevents spawn loops). Self-throttled.
+  void   ManageInstances();
   void   LoadFromRegistry();
   void   SaveToRegistry();
 
@@ -70,6 +80,14 @@ class CScarletBeast {
   std::wstring _base_url;       // e.g. L"poker.scarletbeast.com"
   std::wstring _api_key;        // sbp_...
   std::wstring _google_token;   // linked identity token
+  int          _table_id;       // which table this instance polls
+  bool         _is_child;       // launched with --sb-table=N
+  int          _cmdline_table;  // the table a child is bound to
+  std::map<int, std::pair<void*, void*> > _children;  // table -> (hProcess, hThread)
+  unsigned long _last_manage_tick;
+
+  void ParseCommandLine();
+  void SpawnChild(int table_id);
 
   bool         _last_ok;
   int          _last_status;

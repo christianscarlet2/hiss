@@ -408,6 +408,9 @@
     <ClCompile Include="CLazyScraper.cpp" />
     <ClCompile Include="CScraper.cpp" />
     <ClCompile Include="CScarletBeast.cpp" />
+    <ClCompile Include="CSymbolEngineScarletBeast.cpp" />
+    <ClCompile Include="ScarletBeastMenu.cpp" />
+    <ClCompile Include="CScarletBeastLobby.cpp" />
     <ClCompile Include="CardFunctions.cpp" />
     <ClCompile Include="CStringHashtableTemplate.cpp" />
     <ClCompile Include="CStringMatch.cpp" />
@@ -734,6 +737,8 @@
     <ClInclude Include="Bitmaps.h" />
     <ClInclude Include="CScraper.h" />
     <ClInclude Include="CScarletBeast.h" />
+    <ClInclude Include="CSymbolEngineScarletBeast.h" />
+    <ClInclude Include="CScarletBeastLobby.h" />
     <ClInclude Include="..\CTablemap\CTablemap.h" />
     <ClInclude Include="..\CTablemap\CTablemapDB.h" />
     <ClInclude Include="..\CTablemap\CTableMapAccess.h" />

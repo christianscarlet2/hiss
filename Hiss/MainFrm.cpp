@@ -108,6 +108,13 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
 	ON_COMMAND(ID_HELP_OPEN_PPL, &CMainFrame::OnHelpOpenPPL)
 	ON_COMMAND(ID_HELP_FORUMS, &CMainFrame::OnHelpForums)
 	ON_COMMAND(ID_HELP_PROBLEMSOLVER, &CMainFrame::OnHelpProblemSolver)
+	ON_MESSAGE(WM_SB_INITMENU, &CMainFrame::OnSbInitMenu)
+	ON_COMMAND(IDM_SB_CONNECT, &CMainFrame::OnSbConnect)
+	ON_COMMAND(IDM_SB_SETKEY, &CMainFrame::OnSbSetKey)
+	ON_COMMAND(IDM_SB_SETTABLE, &CMainFrame::OnSbSetTable)
+	ON_COMMAND(IDM_SB_TEST, &CMainFrame::OnSbTest)
+	ON_COMMAND(IDM_SB_LOBBY, &CMainFrame::OnSbLobby)
+	ON_COMMAND(IDM_SB_GOOGLE, &CMainFrame::OnSbGoogle)
 
 	// Main toolbar 
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_AUTOPLAYER, &CMainFrame::OnAutoplayer)
@@ -293,6 +300,7 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct) {
 	p_flags_toolbar = new CFlagsToolbar(this);
 	// Status bar
 	p_openholdem_statusbar = new COpenHoldemStatusbar(this);
+	PostMessage(WM_SB_INITMENU);
 	// ChatGPT-style terminal companion window
 	p_chat_terminal = new CChatTerminalWindow();
 	p_chat_terminal->Create(this);
