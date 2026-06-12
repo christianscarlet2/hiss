@@ -24,6 +24,8 @@ class CScarletBeast {
   // ---- configuration (registry-backed) ----
   bool   ScrapeFromServer() const { return _scrape_from_server; }
   void   SetScrapeFromServer(bool on);
+  bool   AutoRebuy() const { return _auto_rebuy; }
+  void   SetAutoRebuy(bool on);
   std::wstring BaseUrl() const { return _base_url; }
   void   SetBaseUrl(const std::wstring& url);
   std::wstring ApiKey() const { return _api_key; }
@@ -108,6 +110,7 @@ class CScarletBeast {
   static std::string  Narrow(const std::wstring& s);
 
   bool         _scrape_from_server;
+  bool         _auto_rebuy;     // auto buy-back-in when busted (registry-backed)
   std::wstring _base_url;       // e.g. L"poker.scarletbeast.com"
   std::wstring _api_key;        // sbp_...
   std::wstring _google_token;   // linked identity token

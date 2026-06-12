@@ -115,6 +115,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
 	ON_COMMAND(IDM_SB_TEST, &CMainFrame::OnSbTest)
 	ON_COMMAND(IDM_SB_LOBBY, &CMainFrame::OnSbLobby)
 	ON_COMMAND(IDM_SB_GOOGLE, &CMainFrame::OnSbGoogle)
+	ON_COMMAND(IDM_SB_AUTOREBUY, &CMainFrame::OnSbAutoRebuy)
 
 	// Main toolbar 
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_AUTOPLAYER, &CMainFrame::OnAutoplayer)

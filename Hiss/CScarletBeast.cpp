@@ -14,6 +14,7 @@ static const wchar_t* kRegPath = L"Software\\ScarletBeast";
 
 CScarletBeast::CScarletBeast()
     : _scrape_from_server(false),
+      _auto_rebuy(true),
       _base_url(L"poker.scarletbeast.com"),
       _table_id(1),
       _is_child(false),
@@ -134,6 +135,7 @@ static void RegWriteString(const wchar_t* name, const std::wstring& val) {
 
 void CScarletBeast::LoadFromRegistry() {
   _scrape_from_server = RegReadString(L"ScrapeFromServer", L"0") == L"1";
+  _auto_rebuy = RegReadString(L"AutoRebuy", L"1") == L"1";  // default ON
   _base_url = RegReadString(L"BaseUrl", L"poker.scarletbeast.com");
   _api_key = RegReadString(L"ApiKey", L"");
   _google_token = RegReadString(L"GoogleToken", L"");
@@ -143,6 +145,7 @@ void CScarletBeast::LoadFromRegistry() {
 
 void CScarletBeast::SaveToRegistry() {
   RegWriteString(L"ScrapeFromServer", _scrape_from_server ? L"1" : L"0");
+  RegWriteString(L"AutoRebuy", _auto_rebuy ? L"1" : L"0");
   RegWriteString(L"BaseUrl", _base_url);
   RegWriteString(L"ApiKey", _api_key);
   RegWriteString(L"GoogleToken", _google_token);
@@ -150,6 +153,7 @@ void CScarletBeast::SaveToRegistry() {
 }
 
 void CScarletBeast::SetScrapeFromServer(bool on) { _scrape_from_server = on; SaveToRegistry(); }
+void CScarletBeast::SetAutoRebuy(bool on) { _auto_rebuy = on; SaveToRegistry(); }
 void CScarletBeast::SetTableId(int id) { _table_id = (id > 0 ? id : 1); SaveToRegistry(); }
 void CScarletBeast::SetBaseUrl(const std::wstring& url) { _base_url = url; SaveToRegistry(); }
 void CScarletBeast::SetApiKey(const std::wstring& key) { _api_key = key; SaveToRegistry(); }
@@ -395,7 +399,7 @@ static std::vector<std::string> HUD_ArrayObjects(const std::string& s, const std
 }
 
 void CScarletBeast::AutoRebuyIfBusted() {
-  if (!_scrape_from_server) return;
+  if (!_scrape_from_server || !_auto_rebuy) return;
   unsigned long now = ::GetTickCount();
   if (_last_rebuy_tick != 0 && (now - _last_rebuy_tick) < 6000) return;  // throttle
   if (_seat_json_cache.empty()) return;
@@ -404,7 +408,11 @@ void CScarletBeast::AutoRebuyIfBusted() {
   // Our seat + bankroll (chips).
   std::string you = HUD_Object(json, "you");
   double seatd = 0;
-  if (you.empty() || !HUD_Number(you, "seat_no", &seatd) || seatd <= 0) return;
+  if (you.empty() || !HUD_Number(you, "seat_no", &seatd) || seatd <= 0) {
+    write_log(k_always_log_basic_information,
+      "[ScarletBeast] AutoRebuy: hero seat unknown (you.seat_no missing) -- skipping\n");
+    return;
+  }
   int hero_seat = static_cast<int>(seatd);
   double chips = 0;
   HUD_Number(you, "chips", &chips);
@@ -428,7 +436,12 @@ void CScarletBeast::AutoRebuyIfBusted() {
   }
   if (stack < -0.5) return;       // couldn't read our seat
   if (stack > 0.0001) return;     // not busted
-  if (chips < minbuy) return;     // can't even afford a minimum buy-in
+  if (chips < minbuy) {
+    write_log(k_always_log_basic_information,
+      "[ScarletBeast] AutoRebuy: busted at seat %d but bankroll %.0f < min buy-in %.0f\n",
+      hero_seat, chips, minbuy);
+    return;
+  }
 
   // Buy back a full stack, capped by what our bankroll can afford.
   long target = static_cast<long>(maxbuy);
@@ -440,6 +453,9 @@ void CScarletBeast::AutoRebuyIfBusted() {
   sprintf_s(body, sizeof(body), "{\"amount\":%ld}", target);
   std::wstring path = L"/api/v1/tables/" + std::to_wstring((long)TableId()) + L"/rebuy";
   Request(L"POST", path, body, true);
+  write_log(k_always_log_basic_information,
+    "[ScarletBeast] AutoRebuy: busted at seat %d -> POST /rebuy amount=%ld -> HTTP %d (%s)\n",
+    hero_seat, target, _last_status, _last_ok ? "ok" : "FAILED");
 }
 
 std::string CScarletBeast::ServerTableName() {

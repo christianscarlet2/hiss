@@ -53,10 +53,15 @@ void CMainFrame::AppendScarletBeastMenu() {
   sb.AppendMenu(MF_STRING, IDM_SB_GOOGLE, _T("Link Google Account (console + networkedin)"));
   sb.AppendMenu(MF_STRING, IDM_SB_TEST, _T("Test Connection"));
   sb.AppendMenu(MF_STRING, IDM_SB_LOBBY, _T("Open Lobby"));
+  sb.AppendMenu(MF_SEPARATOR, 0, _T(""));
+  sb.AppendMenu(MF_STRING, IDM_SB_AUTOREBUY, _T("Auto Rebuy when busted (toggle)"));
   pTop->AppendMenu(MF_POPUP, (UINT_PTR)sb.Detach(), _T("Scarlet Beast"));
-  // Reflect current toggle state.
+  // Reflect current toggle states.
   if (p_scarlet_beast != NULL && p_scarlet_beast->ScrapeFromServer()) {
     pTop->CheckMenuItem(IDM_SB_CONNECT, MF_BYCOMMAND | MF_CHECKED);
+  }
+  if (p_scarlet_beast != NULL && p_scarlet_beast->AutoRebuy()) {
+    pTop->CheckMenuItem(IDM_SB_AUTOREBUY, MF_BYCOMMAND | MF_CHECKED);
   }
   DrawMenuBar();
 }
@@ -111,4 +116,15 @@ void CMainFrame::OnSbGoogle() {
 void CMainFrame::OnSbLobby() {
   // Embedded WebView2 lobby (falls back to the browser if unavailable).
   SB_ShowLobby();
+}
+
+void CMainFrame::OnSbAutoRebuy() {
+  if (p_scarlet_beast == NULL) return;
+  bool now = !p_scarlet_beast->AutoRebuy();
+  p_scarlet_beast->SetAutoRebuy(now);
+  CMenu* m = GetMenu();
+  if (m != NULL) m->CheckMenuItem(IDM_SB_AUTOREBUY, MF_BYCOMMAND | (now ? MF_CHECKED : MF_UNCHECKED));
+  AfxMessageBox(now ? _T("Scarlet Beast: Auto Rebuy is ON. When your stack busts to zero, ")
+                      _T("the bot will buy back in a full stack from your bankroll.")
+                    : _T("Scarlet Beast: Auto Rebuy is OFF. You will sit out when busted."));
 }
