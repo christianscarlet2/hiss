@@ -625,11 +625,14 @@ void COpenHoldemView::DrawSeatedActiveCircle(const int chair) {
 	pTempPen = (CPen*)pDC->SelectObject(&_black_pen);
 	oldpen.FromHandle((HPEN)pTempPen);					// Save old pen
 
-	// A seat holding cards (cardbacks or known) is in the hand, so show it as
-	// active even if the scraped "active" flag is false (a seated player with
-	// cardbacks can read active=false, which was greying live players).
+	// A seat holding at least one card (cardback or known) is in the hand, so show
+	// it as active even when the scraped "active" flag is false (a seated player
+	// with cardbacks can read active=false, which was greying live players). We
+	// check per-card rather than HasAnyCards(), which requires EVERY slot to be a
+	// card and so fails when only one cardback is detected.
 	if (p_table_state->Player(chair)->active()
-			|| p_table_state->Player(chair)->HasAnyCards()) {
+			|| p_table_state->Player(chair)->hole_cards(0)->IsAnyCard()
+			|| p_table_state->Player(chair)->hole_cards(1)->IsAnyCard()) {
 		pTempBrush = (CBrush*)pDC->SelectObject(&_white_brush);
 	}	else {
 		pTempBrush = (CBrush*)pDC->SelectObject(&_gray_brush);
