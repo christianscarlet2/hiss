@@ -1,7 +1,7 @@
 ##f$notes##
 //*****************************************************************************
 //
-//  Scarlet Beast — Advanced Test Bot (OpenPPL, 6-max No-Limit Hold'em)
+//  Scarlet Beast - Advanced Test Bot (OpenPPL, 6-max No-Limit Hold'em)
 //  ------------------------------------------------------------------
 //  A complete, opponent-aware NLHE cash strategy for playing on
 //  poker.scarletbeast.com through Hiss in server-scrape mode.
@@ -16,7 +16,7 @@
 //  / RaiseTwoThirdPot / RaisePot). Hiss converts the resulting f$betsize into
 //  the server's chip amount and POSTs the action to /api/v1/tables/{id}/act.
 //
-//  This is a TEST profile — tune the ranges and thresholds to taste.
+//  This is a TEST profile - tune the ranges and thresholds to taste.
 //
 //*****************************************************************************
 
@@ -32,7 +32,7 @@
 WHEN Others RETURN nopponentsplaying FORCE
 
 //=============================================================================
-//  Opponent model — PokerTracker stats sourced from the API HUD.
+//  Opponent model - PokerTracker stats sourced from the API HUD.
 //  Stats describe the LAST RAISER (the player we must react to). They default
 //  to neutral values when the sample is too small or the stat is unavailable,
 //  so the bot always has a sane fallback.
@@ -177,7 +177,7 @@ WHEN Raises = 0 AND Calls = 0 AND InBigBlind Check FORCE
 WHEN Others Fold FORCE
 
 //=============================================================================
-//  POSTFLOP — dispatch by "is there a bet to us?"
+//  POSTFLOP - dispatch by "is there a bet to us?"
 //=============================================================================
 
 ##f$flop##
