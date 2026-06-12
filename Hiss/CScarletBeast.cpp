@@ -22,7 +22,8 @@ CScarletBeast::CScarletBeast()
       _last_ok(false),
       _last_status(0),
       _seat_json_tick(0),
-      _hud_tick(0) {
+      _hud_tick(0),
+      _last_rebuy_tick(0) {
   LoadFromRegistry();
   ParseCommandLine();
 }
@@ -358,6 +359,87 @@ static std::string MapPtStatToApiKey(const char* basic_stat) {
     if (s == kMap[i].alias) return kMap[i].key;
   }
   return "";
+}
+
+// Top-level object blocks inside "key": [ {...}, {...} ].
+static std::vector<std::string> HUD_ArrayObjects(const std::string& s, const std::string& key) {
+  std::vector<std::string> out;
+  std::string needle = "\"" + key + "\"";
+  size_t p = s.find(needle);
+  if (p == std::string::npos) return out;
+  size_t c = s.find(':', p + needle.size());
+  if (c == std::string::npos) return out;
+  size_t q = c + 1;
+  while (q < s.size() && (s[q] == ' ' || s[q] == '\t' || s[q] == '\n' || s[q] == '\r')) ++q;
+  if (q >= s.size() || s[q] != '[') return out;
+  int depth = 0;
+  bool in_str = false;
+  for (size_t i = q; i < s.size(); ++i) {
+    char ch = s[i];
+    if (in_str) {
+      if (ch == '\\') { ++i; continue; }
+      if (ch == '"') in_str = false;
+      continue;
+    }
+    if (ch == '"') { in_str = true; }
+    else if (ch == '[') { ++depth; }
+    else if (ch == ']') { if (--depth == 0) break; }
+    else if (ch == '{' && depth == 1) {
+      std::string b = HUD_BracedBlock(s, i);
+      if (b.empty()) break;
+      out.push_back(b);
+      i += b.size() - 1;
+    }
+  }
+  return out;
+}
+
+void CScarletBeast::AutoRebuyIfBusted() {
+  if (!_scrape_from_server) return;
+  unsigned long now = ::GetTickCount();
+  if (_last_rebuy_tick != 0 && (now - _last_rebuy_tick) < 6000) return;  // throttle
+  if (_seat_json_cache.empty()) return;
+  const std::string& json = _seat_json_cache;
+
+  // Our seat + bankroll (chips).
+  std::string you = HUD_Object(json, "you");
+  double seatd = 0;
+  if (you.empty() || !HUD_Number(you, "seat_no", &seatd) || seatd <= 0) return;
+  int hero_seat = static_cast<int>(seatd);
+  double chips = 0;
+  HUD_Number(you, "chips", &chips);
+
+  // Table buy-in bounds.
+  std::string table = HUD_Object(json, "table");
+  double maxbuy = 0, minbuy = 0;
+  HUD_Number(table, "max_buy_in", &maxbuy);
+  HUD_Number(table, "min_buy_in", &minbuy);
+  if (maxbuy <= 0) return;
+
+  // Our table stack (from the authoritative seats[] list).
+  std::vector<std::string> seats = HUD_ArrayObjects(json, "seats");
+  double stack = -1;
+  for (size_t i = 0; i < seats.size(); ++i) {
+    double sn = 0;
+    if (HUD_Number(seats[i], "seat_no", &sn) && static_cast<int>(sn) == hero_seat) {
+      HUD_Number(seats[i], "stack", &stack);
+      break;
+    }
+  }
+  if (stack < -0.5) return;       // couldn't read our seat
+  if (stack > 0.0001) return;     // not busted
+  if (chips < minbuy) return;     // can't even afford a minimum buy-in
+
+  // Buy back a full stack, capped by what our bankroll can afford.
+  long target = static_cast<long>(maxbuy);
+  if (static_cast<double>(target) > chips) target = static_cast<long>(chips);
+  if (target < static_cast<long>(minbuy)) return;
+
+  _last_rebuy_tick = now;
+  char body[64];
+  sprintf_s(body, sizeof(body), "{\"amount\":%ld}", target);
+  std::wstring path = L"/api/v1/tables/" + std::to_wstring((long)TableId()) + L"/rebuy";
+  Request(L"POST", path, body, true);
 }
 
 bool CScarletBeast::RefreshHud() {

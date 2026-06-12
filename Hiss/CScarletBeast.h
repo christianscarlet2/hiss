@@ -82,6 +82,11 @@ class CScarletBeast {
   // "af", "threebet", "cbet"). Returns false if the API doesn't provide it.
   bool HudStatForChair(int chair, const char* basic_stat, double* out_value);
 
+  // Auto buy-back-in: when our table stack has dropped to zero (busted, still
+  // seated as sitting_out), top it back up from our bankroll via POST /rebuy.
+  // Throttled; no-op unless server-scrape is on and we can afford a buy-in.
+  void AutoRebuyIfBusted();
+
   // True once a request has produced a 2xx; useful for the settings "Test" button.
   bool LastOk() const { return _last_ok; }
   int  LastStatus() const { return _last_status; }
@@ -121,6 +126,7 @@ class CScarletBeast {
   std::string   _hud_json_cache;   // last raw HUD JSON (stats change slowly)
   unsigned long _hud_tick;         // GetTickCount() of the last HUD fetch
   bool RefreshHud();               // throttled GET /api/v1/tables/{id}/hud
+  unsigned long _last_rebuy_tick;  // throttle for AutoRebuyIfBusted
 };
 
 // Single shared instance for the process (declared in the .cpp).

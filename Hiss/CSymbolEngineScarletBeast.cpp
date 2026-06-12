@@ -31,6 +31,8 @@ void CSymbolEngineScarletBeast::UpdateOnHeartbeat() {
   // ...and keep the per-table Hiss instances in sync with the seated tables.
   if (p_scarlet_beast != NULL) {
     p_scarlet_beast->ManageInstances();
+    // Auto buy-back-in when we bust out (stack hit zero).
+    p_scarlet_beast->AutoRebuyIfBusted();
   }
 }
 
