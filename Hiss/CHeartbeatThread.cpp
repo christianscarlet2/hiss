@@ -29,6 +29,7 @@
 #include "COpenHoldemTitle.h"
 
 #include "CFormulaParser.h"
+#include "CFunctionCollection.h"
 #include "CScarletBeast.h"
 #include "CScraper.h"
 #include "CSymbolEngineAutoplayer.h"
@@ -217,7 +218,14 @@ void CHeartbeatThread::AutoConnect() {
 	// formula parser is idle so we don't connect mid-parse; we do NOT require a fully
 	// parsed bot, so the table still displays even with no/invalid bot loaded.
 	if (p_scarlet_beast != NULL && p_scarlet_beast->ScrapeFromServer()) {
-		if (p_formula_parser == NULL || !p_formula_parser->IsParsing()) {
+		// Wait until the OpenPPL library is loaded (and the parser is idle) before
+		// connecting. At startup the heartbeat thread is created BEFORE
+		// ParseDefaultLibraries() runs; connecting too early makes
+		// UpdateOnConnection's OpenPPL init-function check run against an unloaded
+		// library and pop the spurious "can't find UpdateMemorySymbolsOnHandReset"
+		// warning (which also blocks the main window from finishing startup).
+		if (p_formula_parser != NULL && !p_formula_parser->IsParsing()
+			&& p_function_collection != NULL && p_function_collection->OpenPPLLibraryLoaded()) {
 			p_autoconnector->ConnectVirtual();
 		}
 		return;
