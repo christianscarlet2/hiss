@@ -758,6 +758,10 @@ bool CScraper::ScrapeFromScarletBeastServer() {
   long button = SB_Num(hand, "button", 0);
   long pot = SB_Num(hand, "pot", 0);
 
+  // Make the seat count follow the server table (the display + symbol engines all
+  // iterate p_tablemap->nchairs(); in pure server mode there is no real tablemap).
+  if (p_tablemap != NULL && max_seats >= 2) p_tablemap->set_nchairs(static_cast<int>(max_seats));
+
   // Clear every chair, then fill from the server.
   for (int c = 0; c < kMaxNumberOfPlayers; ++c) {
     CPlayer* pl = p_table_state->Player(c);

@@ -29,6 +29,7 @@
 #include "COpenHoldemTitle.h"
 #include "CPokerTrackerThread.h"
 #include "CPopupHandler.h"
+#include "CScarletBeast.h"
 #include "CScraper.h"
 #include "CSharedMem.h"
 #include "CTableMapLoader.h"
@@ -48,6 +49,7 @@ CAutoConnector::CAutoConnector() {
 	write_log(Preferences()->debug_autoconnector(), "[CAutoConnector] CAutoConnector()\n");
   CString MutexName = CString(Preferences()->mutex_name()) + "AutoConnector";
 	_autoconnector_mutex = new CMutex(false, MutexName);
+	_virtual_connection = false;
 	set_attached_hwnd(NULL);
 }
 
@@ -335,8 +337,37 @@ bool CAutoConnector::Connect(HWND targetHWnd) {
 	return (SelectedItem != kUndefined);
 }
 
+// Scarlet Beast server-scrape: window-less connection. We attach to the desktop
+// window (always a valid HWND, so IsConnectedToExistingWindow() stays true and the
+// heartbeat keeps scraping) and run only the lifecycle reset that EvaluateAll needs.
+// No tablemap is loaded; the seat count and table state come from the server payload
+// each heartbeat (CScraper::ScrapeFromScarletBeastServer).
+bool CAutoConnector::ConnectVirtual() {
+  if (p_engine_container == NULL) return false;
+  if (p_table_state == NULL) return false;
+  if (p_casino_interface == NULL) return false;
+  if (p_sharedmem == NULL) return false;
+  if (IsConnectedToAnything()) return true;
+  if (!_autoconnector_mutex->Lock(500)) return false;
+  write_log(k_always_log_basic_information,
+    "[CAutoConnector] Scarlet Beast: establishing window-less virtual connection\n");
+  _virtual_connection = true;
+  // Desktop window: always valid, never "gone", and not a poker window we'd act on.
+  set_attached_hwnd(::GetDesktopWindow());
+  p_table_state->Reset();
+  p_casino_interface->Reset();
+  p_engine_container->UpdateOnConnection();
+  WAIT_FOR_CONDITION(PMainframe() != NULL)
+  if (PMainframe() != NULL) PMainframe()->ResetDisplay();
+  WriteLogTableReset("VIRTUAL CONNECTION (Scarlet Beast server-scrape)");
+  _autoconnector_mutex->Unlock();
+  return true;
+}
+
 void CAutoConnector::Disconnect(CString reason_for_disconnection) {
 	write_log(Preferences()->debug_autoconnector(), "[CAutoConnector] Disconnect()\n");
+  bool was_virtual = _virtual_connection;
+  _virtual_connection = false;
   if (!IsConnectedToAnything()) {
     // Be extra safe.
     // This stupid error happened, when OnTimer() only checked if the window 
@@ -357,8 +388,11 @@ void CAutoConnector::Disconnect(CString reason_for_disconnection) {
   _autoconnector_mutex->Lock(INFINITE); 
 	p_engine_container->UpdateOnDisconnection();
 	// Remember where/how big the table window is, so the next connection restores it
-	// (shared DB) instead of forcing it onto monitor 1.
-	p_table_positioner->SaveCurrentPlacement();
+	// (shared DB) instead of forcing it onto monitor 1. Skipped for the window-less
+	// virtual connection (the "window" is the desktop; there is nothing to save).
+	if (!was_virtual) {
+		p_table_positioner->SaveCurrentPlacement();
+	}
 	// Clear "attached" info
 	set_attached_hwnd(NULL);
 	// Unattach OH.

@@ -201,8 +201,11 @@ public:
 	CString GetTMSymbol(CString name);
 	void GetTMRegion(const CString name, RECT *region);
 public:
-	// commonly used strings 
+	// commonly used strings
 	inline const int nchairs() { return _nchairs; }
+	// Used by the Scarlet Beast server-scrape (no real tablemap) to make the seat
+	// count follow the server table's max_seats.
+	void set_nchairs(const int n) { _nchairs = n; }
 	inline int LastChair() { return (nchairs() - 1); }
 	const int swagtextmethod() { return GetTMSymbol("betsizeinterpretationmethod", 0); }
 	const int potmethod() { return GetTMSymbol("potmethod", 0); }

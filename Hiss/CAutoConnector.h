@@ -24,12 +24,18 @@ class CAutoConnector: public CSpaceOptimizedGlobalObject {
 	~CAutoConnector();
  public:
 	bool Connect(HWND targetHWnd);
+	// Scarlet Beast server-scrape: establish a window-less "virtual" connection so
+	// the heartbeat scrapes/evaluates from poker.scarletbeast.com without attaching
+	// to a real poker table window. Attaches to the desktop window (always valid)
+	// and runs only the connection-lifecycle reset (no tablemap/bitmaps/positioning).
+	bool ConnectVirtual();
 	void Disconnect(CString reason_for_disconnection);
-	double SecondsSinceLastFailedAttemptToConnect(); 
+	double SecondsSinceLastFailedAttemptToConnect();
  public:
   bool IsConnectedToAnything();
   bool IsConnectedToExistingWindow();
   bool IsConnectedToGoneWindow();
+  bool IsVirtualConnection() { return _virtual_connection; }
  public:
 	// public accessors
 	const HWND attached_hwnd()    { return _attached_hwnd; }
@@ -48,6 +54,7 @@ class CAutoConnector: public CSpaceOptimizedGlobalObject {
  private:
 	// private variables - use public accessors and public mutators to address these
 	HWND     _attached_hwnd; // Table that we are attached to
+	bool     _virtual_connection; // window-less Scarlet Beast server-scrape connection
 	CCritSec m_critsec;
  private:
 	// Mutex used for cross-instance autoconnector coordination

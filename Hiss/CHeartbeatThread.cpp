@@ -28,6 +28,7 @@
 #include "COpenHoldemStatusbar.h"
 #include "COpenHoldemTitle.h"
 
+#include "CScarletBeast.h"
 #include "CScraper.h"
 #include "CSymbolEngineAutoplayer.h"
 #include "CSymbolEngineChipAmounts.h"
@@ -109,6 +110,12 @@ UINT CHeartbeatThread::HeartbeatThreadFunction(LPVOID pParam) {
       LogMemoryUsage("H3");
       p_autoconnector->Disconnect("table disappeared");
     }
+    // Scarlet Beast: if a window-less virtual connection is up but server-scrape
+    // was turned off, drop it so we can fall back to a real poker window.
+    if (p_autoconnector->IsVirtualConnection()
+        && (p_scarlet_beast == NULL || !p_scarlet_beast->ScrapeFromServer())) {
+      p_autoconnector->Disconnect("Scarlet Beast server-scrape turned off");
+    }
     LogMemoryUsage("H4");
     if (!p_autoconnector->IsConnectedToAnything()) {
       // Not connected
@@ -120,7 +127,10 @@ UINT CHeartbeatThread::HeartbeatThreadFunction(LPVOID pParam) {
     LogMemoryUsage("H5");
     write_log(Preferences()->debug_alltherest(), "[CHeartbeatThread] location Johnny_C\n");
 		if (p_autoconnector->IsConnectedToExistingWindow()) {
-      if (tablepoint_checker.TablepointsMismatchedTheLastNHeartbeats()) {
+      // The tablepoint/theme check and tablemap live-reload only make sense for a
+      // real window-backed connection, not the Scarlet Beast virtual connection.
+      if (!p_autoconnector->IsVirtualConnection()
+          && tablepoint_checker.TablepointsMismatchedTheLastNHeartbeats()) {
         LogMemoryUsage("H6");
         p_autoconnector->Disconnect("table theme changed (tablepoints)");
       } else {
@@ -128,7 +138,7 @@ UINT CHeartbeatThread::HeartbeatThreadFunction(LPVOID pParam) {
         // Lightweight "settings changed" live-reload: every few beats, cheaply probe
         // the hiss DB revision and re-pull the connected map + OCR settings if the
         // trainer/Vision edited them (no disconnect, no game-state reset).
-        if ((_heartbeat_counter % 8) == 0) {
+        if (!p_autoconnector->IsVirtualConnection() && (_heartbeat_counter % 8) == 0) {
           p_tablemap_loader->ReloadConnectedTablemapIfSettingsChanged();
         }
         ScrapeEvaluateAct();
@@ -153,7 +163,10 @@ UINT CHeartbeatThread::HeartbeatThreadFunction(LPVOID pParam) {
 }
 
 void CHeartbeatThread::ScrapeEvaluateAct() {
-	p_table_positioner->AlwaysKeepPositionIfEnabled();
+	// No window to keep in position for the Scarlet Beast virtual connection.
+	if (!p_autoconnector->IsVirtualConnection()) {
+		p_table_positioner->AlwaysKeepPositionIfEnabled();
+	}
 	// This critical section lets other threads know that the internal state is being updated
 	EnterCriticalSection(&pParent->cs_update_in_progress);
 
@@ -198,6 +211,12 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
 void CHeartbeatThread::AutoConnect() {
   write_log(Preferences()->debug_alltherest(), "[CHeartbeatThread] location Johnny_D\n");
 	assert(!p_autoconnector->IsConnectedToAnything());
+	// Scarlet Beast server-scrape: connect window-lessly (no poker window needed) so
+	// the heartbeat scrapes the table from poker.scarletbeast.com.
+	if (p_scarlet_beast != NULL && p_scarlet_beast->ScrapeFromServer()) {
+		p_autoconnector->ConnectVirtual();
+		return;
+	}
 	if (Preferences()->autoconnector_when_to_connect() == k_AutoConnector_Connect_Permanent) {
 		if (p_autoconnector->SecondsSinceLastFailedAttemptToConnect() > 1 /* seconds */) {
 			write_log(Preferences()->debug_autoconnector(), "[CHeartbeatThread] going to call Connect()\n");
