@@ -336,6 +336,7 @@ CStringA CChatTerminalServer::BinaryResponse(CByteArray &body, CStringA content_
 	response.Format(
 		"HTTP/1.1 %s\r\n"
 		"Content-Type: %s\r\n"
+		"Cache-Control: no-cache, no-store, must-revalidate\r\n"
 		"Content-Length: %d\r\n"
 		"Connection: close\r\n"
 		"\r\n",
