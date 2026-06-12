@@ -254,9 +254,15 @@ function Player(props) {
       cards.push(rawCards[i]);
     }
   }
-  // "Out" = seated but not in the current hand (folded / sitting out). The API still
-  // returns the hero's own cards in that case, so dim them to make the state obvious.
-  var isOut = player.seated && !player.active;
+  // Dim cards only for a seat that is genuinely OUT *and* still showing its own
+  // FACE-UP cards (e.g. the hero after folding, whose cards are still returned).
+  // A seat holding face-DOWN cards (cardbacks) is in the hand and must NEVER be
+  // dimmed -- the in-hand "active" flag alone is unreliable (a seated player with
+  // cardbacks can read active=false), which was greying live players by mistake.
+  var isCardBack = function (c) { return c === 'BACK' || c === '??' || c === 'CARD_BACK'; };
+  var hasBackCard = cards.some(isCardBack);
+  var hasKnownCard = cards.some(function (c) { return !isCardBack(c); });
+  var isOut = player.seated && !player.active && hasKnownCard && !hasBackCard;
   // The green "active" indicator should mark only the player whose TURN it is
   // (to act), not everyone still in the hand. The backend sends toact (the chair
   // to act); fall back to the in-hand flag only when toact is unknown (-1).
