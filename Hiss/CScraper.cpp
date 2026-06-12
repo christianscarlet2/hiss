@@ -1046,8 +1046,14 @@ void CScraper::ScrapePlayerCards(int chair) {
 		// p{N}cardback region exists, so tablemaps without one keep standard scraping.
 		CString cb_region, cb_res;
 		cb_region.Format("p%dcardback", chair);
-		bool cardback_true = EvaluateRegion(cb_region, &cb_res)
+		bool cardback_region_exists = EvaluateRegion(cb_region, &cb_res);
+		bool cardback_true = cardback_region_exists
 			&& ((cb_res == "cardback") || (cb_res == "true"));
+		write_log(Preferences()->debug_scraper(),
+			"[CScraper] cardback-rule chair %d: seated=%s p%dcardback exists=%s result='%s' -> %s\n",
+			chair, Bool2CString(p_table_state->Player(chair)->seated()), chair,
+			Bool2CString(cardback_region_exists), cb_res.GetString(),
+			(p_table_state->Player(chair)->seated() && cardback_true) ? "DRAW CARDBACKS" : "normal scrape");
 		if (p_table_state->Player(chair)->seated() && cardback_true) {
 			for (int i = 0; i < number_of_cards_to_be_scraped; i++) {
 				p_table_state->Player(chair)->hole_cards(i)->SetValue(CARD_BACK);
