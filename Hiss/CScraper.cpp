@@ -1041,16 +1041,30 @@ void CScraper::ScrapePlayerCards(int chair) {
 		}
 	}
 	else {
-		for (int i = 0; i < number_of_cards_to_be_scraped; i++) {
-			card_name.Format("p%dcardface%d", chair, i);
-			if ((i > 0)
-				&& ((card == CARD_UNDEFINED) || (card == CARD_BACK) || (card == CARD_NOCARD))) {
-				// Stop scraping if we find missing cards or cardbacks
+		// Draw cardbacks whenever the seat is occupied and its cardback region reads
+		// true: p{N}seated == true AND p{N}cardback == true. Only kicks in when a
+		// p{N}cardback region exists, so tablemaps without one keep standard scraping.
+		CString cb_region, cb_res;
+		cb_region.Format("p%dcardback", chair);
+		bool cardback_true = EvaluateRegion(cb_region, &cb_res)
+			&& ((cb_res == "cardback") || (cb_res == "true"));
+		if (p_table_state->Player(chair)->seated() && cardback_true) {
+			for (int i = 0; i < number_of_cards_to_be_scraped; i++) {
+				p_table_state->Player(chair)->hole_cards(i)->SetValue(CARD_BACK);
 			}
-			else {
-				card = ScrapeCard(card_name);
+		}
+		else {
+			for (int i = 0; i < number_of_cards_to_be_scraped; i++) {
+				card_name.Format("p%dcardface%d", chair, i);
+				if ((i > 0)
+					&& ((card == CARD_UNDEFINED) || (card == CARD_BACK) || (card == CARD_NOCARD))) {
+					// Stop scraping if we find missing cards or cardbacks
+				}
+				else {
+					card = ScrapeCard(card_name);
+				}
+				p_table_state->Player(chair)->hole_cards(i)->SetValue(card);
 			}
-			p_table_state->Player(chair)->hole_cards(i)->SetValue(card);
 		}
 	}
 	p_table_state->Player(chair)->CheckPlayerCardsForConsistency();
