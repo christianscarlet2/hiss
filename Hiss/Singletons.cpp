@@ -16,6 +16,7 @@
 
 #include "CCasinoInterface.h"
 #include "CAutoConnector.h"
+#include "CScarletBeast.h"
 #include "CAutoOcr.h"
 #include "CAutoplayer.h"
 #include "CAutoplayerFunctions.h"
@@ -152,6 +153,8 @@ void InstantiateAllSingletons() {
   write_log(Preferences()->debug_singletons(), "[Singletons] Going to create CAutoConnector\n");
   assert(!p_autoconnector);
   p_autoconnector = new CAutoConnector;
+  assert(!p_scarlet_beast);
+  p_scarlet_beast = new CScarletBeast;
   write_log(Preferences()->debug_singletons(), "[Singletons] Going to create COpenHoldemTitle\n");
   assert(!p_openholdem_title);
   p_openholdem_title = new COpenHoldemTitle;
@@ -238,6 +241,7 @@ void DeleteAllSingletons() {
   DELETE_AND_CLEAR(p_popup_handler)
   write_log(Preferences()->debug_singletons(), "[Singletons] Deleting autoconnector\n");
   DELETE_AND_CLEAR(p_autoconnector)
+  DELETE_AND_CLEAR(p_scarlet_beast)
   write_log(Preferences()->debug_singletons(), "[Singletons] Deleting version_info\n");
   DELETE_AND_CLEAR(p_version_info)
   write_log(Preferences()->debug_singletons(), "[Singletons] Deleting tablemap loader\n");
