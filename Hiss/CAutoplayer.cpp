@@ -301,22 +301,33 @@ bool CAutoplayer::HandleTwoSuccessiveClicksBetRaise() {
 	if (p_two_successive_clicks == NULL || p_function_collection == NULL) {
 		return false;
 	}
+	// The raw OpenPPL decision for this betround is already expressed in BIG BLINDS
+	// (RaiseTo N -> N, RaiseBy N -> ncallbets + N, percentage bets -> ncallbets +
+	// pct*pot). A POSITIVE value means "bet/raise to this many big blinds".
+	double decision_bb = 0.0;
+	int betround = p_betround_calculator->betround();
+	if (betround >= kBetroundPreflop && betround <= kBetroundRiver) {
+		double d = p_function_collection->Evaluate(k_OpenPPL_function_names[betround]);
+		if (d > 0) decision_bb = d;
+	}
+	// f$betsize is in DOLLARS (= decision * bblind). On this BB-only setup the
+	// blind-guesser sometimes reports bblind == 0, which zeroes f$betsize even on a
+	// genuine RaiseTo/RaiseBy decision -- the bot would then skip the keypad and
+	// fall through to clicking Call (the reported "raise-to-3 calls instead" bug).
+	double f_betsize = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_betsize]);
+	bool wants_raise = (p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_raise]) != 0);
 	// Fire on a BET or RAISE decision (phone tables expose a keypad rather than a
 	// betsize textbox, so we click the two configured region-centres to open it).
-	bool wants_bet_or_raise =
-		(p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_raise]) != 0)
-		|| (p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_betsize]) > 0);
-	if (!wants_bet_or_raise) {
+	if (!wants_raise && f_betsize <= 0 && decision_bb <= 0) {
 		return false;
 	}
-	// Guard: f$betsize = decision * bblind. Until the blind-guesser has settled on a
-	// real big blind, bblind (and therefore betsize) is 0 -- acting now would open
-	// the keypad and type "0" (the "raise by 0" bug). Skip until the size is known;
-	// we don't even click the two region-centres, so HandleCycle's edge-trigger is
-	// preserved and fires cleanly once a real betsize is available.
-	double betsize = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_betsize]);
+	// Keypad amount: prefer the dollar-betsize when the guesser has settled (bblind
+	// known); otherwise type the raw big-blind decision. Either way the on-screen
+	// keypad receives the big-blind amount this BB-only bot expects (bblind == 1 ->
+	// dollars == big blinds; bblind == 0 -> fall back to the BB decision directly).
+	double betsize = (f_betsize > 0) ? f_betsize : decision_bb;
 	if (betsize <= 0) {
-		APTrace("two-successive-clicks: SKIP, f$betsize<=0 (blind not known yet / guesser not settled)");
+		APTrace("two-successive-clicks: SKIP, no positive size (f$betsize=0 AND OpenPPL decision<=0)");
 		return false;
 	}
 	if (!p_two_successive_clicks->HandleCycle(true)) {

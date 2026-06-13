@@ -1236,7 +1236,11 @@ CString CChatTerminalWindow::CalculatePotOddsText(CString hole_cards, CString bo
 void CChatTerminalWindow::UpdatePotOddsForCurrentBoard(bool force)
 {
 	if (!_pot_odds_enabled && !_implied_pot_odds_enabled && !_reverse_implied_odds_enabled) {
-		SetPinnedState("main", "");
+		// Pot-odds display is OFF: leave the pinned State block ALONE. The
+		// timing-tells engine owns this block and rewrites it on every chair
+		// change; previously we blanked it ("") every heartbeat here, which
+		// fought the timing publisher and made the State pane (and the browser
+		// mirror) flicker between the timing block and an empty screen.
 		return;
 	}
 	CString board = CurrentCommunityCardsText();
