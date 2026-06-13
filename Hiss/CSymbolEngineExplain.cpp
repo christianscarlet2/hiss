@@ -86,13 +86,22 @@ CString CSymbolEngineExplain::RenderTemplate(const CString tag) {
     // No template defined: still emit something useful (the tag itself).
     return tag;
   }
-  // Extract the text between the first and last double-quote (the string literal),
-  // ignoring surrounding comments / whitespace the parser kept in the raw body.
-  int first = raw.Find('"');
-  int last = raw.ReverseFind('"');
+  // The template lives on a "//~" comment line (comments are parser-safe, so the
+  // {placeholders}/%/$ never trip the OpenPPL tokenizer). Extract that line.
   CString tmpl;
-  if (first >= 0 && last > first) tmpl = raw.Mid(first + 1, last - first - 1);
-  else { tmpl = raw; tmpl.Trim(); }
+  int marker = raw.Find("//~");
+  if (marker >= 0) {
+    int start = marker + 3;
+    int eol = raw.Find('\n', start);
+    tmpl = (eol >= 0) ? raw.Mid(start, eol - start) : raw.Mid(start);
+    tmpl.Trim();
+  } else {
+    // Back-compat: a quoted string literal, else the raw body.
+    int first = raw.Find('"');
+    int last = raw.ReverseFind('"');
+    if (first >= 0 && last > first) tmpl = raw.Mid(first + 1, last - first - 1);
+    else { tmpl = raw; tmpl.Trim(); }
+  }
   return Interpolate(tmpl);
 }
 

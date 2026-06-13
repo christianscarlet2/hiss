@@ -12,10 +12,13 @@ made and play is never changed until you explicitly enable it).
 Annotate any decision branch so that, **when it fires**, a templated explanation
 with live values is printed to the **Decisions** pane of the Terminal.
 
-**Define a template** (a string literal; `{tokens}` are any symbol/`f$function`):
+**Define a template** on a `//~` comment line (comments are parser-safe, so
+`{tokens}`, `%`, `$` never trip the OpenPPL tokenizer; `{tokens}` are any
+symbol/`f$function`). The `0` body is a required, unused valid expression:
 ```
 ##f$expl_fold_tank##
-"FOLD one pair -- raiser TANKED {lastraiseractiontime}s; pot {PotSize}bb, call {AmountToCall}bb."
+//~ FOLD one pair -- raiser TANKED {lastraiseractiontime}s; pot {PotSize}bb, call {AmountToCall}bb.
+0
 ```
 **Trigger it** by putting `explain_<tag>` at the TAIL of the branch's `WHEN`
 (OpenPPL short-circuits `AND`, so it fires only when that branch is actually

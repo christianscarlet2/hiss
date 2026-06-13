@@ -67,6 +67,18 @@ void CParserSymbolTable::VerifySymbol(CString name) {
       "[CParserSymbolTable] user-variable, can't be verified\n");
     return;
   }
+  // Dynamic ScarletBeast symbol families, validated by their engines at runtime:
+  //   explain_<tag>  (CSymbolEngineExplain)   openai_<...>  (CSymbolEngineOpenAI)
+  if (memicmp(name, "explain", 7) == 0) {
+    write_log(Preferences()->debug_symbol_verification(),
+      "[CParserSymbolTable] explain-symbol, validated by CSymbolEngineExplain\n");
+    return;
+  }
+  if (memicmp(name, "openai", 6) == 0) {
+    write_log(Preferences()->debug_symbol_verification(),
+      "[CParserSymbolTable] openai-symbol, validated by CSymbolEngineOpenAI\n");
+    return;
+  }
   // Other symbols
   // First: fast lookup of known good symbols
   if (_known_symbols[name]) {
