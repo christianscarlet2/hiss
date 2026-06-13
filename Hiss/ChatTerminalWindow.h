@@ -116,6 +116,7 @@ private:
 	int EnsureScreen(CString screen);
 	void RefreshScreenList(void);
 	void RefreshVisibleSections(void);
+	void RefreshSection(int section);
 	void AppendToSection(CString screen, int section, CString text, bool stream);
 	void SetPinnedState(CString screen, CString text);
 	void SendChatText(void);

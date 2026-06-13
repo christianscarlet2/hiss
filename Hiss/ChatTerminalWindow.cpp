@@ -509,16 +509,24 @@ void CChatTerminalWindow::AppendAnsi(int section, const CString &text) {
 	if (section < 0 || section >= kChatTerminalSectionCount) return;
 	CRichEditCtrl &rec = _sections[section];
 
-	// Auto-scroll ONLY if the view is already at (essentially) the bottom. If the
-	// user has scrolled up to read history, leave their position alone.
+	// Auto-scroll ONLY if the view is already at the bottom -- i.e. the LAST line is
+	// currently visible. This is unit-agnostic (no reliance on rich-edit scrollbar
+	// metrics), so auto-scroll reliably RESUMES the moment the user scrolls back
+	// down to the bottom, and stays off while they're scrolled up reading history.
 	bool was_at_bottom = true;
-	SCROLLINFO si; ZeroMemory(&si, sizeof(si)); si.cbSize = sizeof(si); si.fMask = SIF_ALL;
-	if (rec.GetScrollInfo(SB_VERT, &si) && si.nPage != 0) {
-		was_at_bottom = ((int)(si.nPos + (int)si.nPage) >= ((int)si.nMax - 24));
+	{
+		CRect rc; rec.GetClientRect(&rc);
+		POINTL ptl; ptl.x = rc.left + 1; ptl.y = (rc.bottom > 2) ? (rc.bottom - 2) : 0;
+		long ch = (long)rec.SendMessage(EM_CHARFROMPOS, 0, (LPARAM)&ptl);
+		long last_visible_line = (long)rec.SendMessage(EM_EXLINEFROMCHAR, 0, (LPARAM)ch);
+		long total_lines = rec.GetLineCount();
+		was_at_bottom = (last_visible_line >= total_lines - 1);
 	}
 	int first_before = rec.GetFirstVisibleLine();
 
-	rec.SetRedraw(FALSE);
+	// NOTE: do NOT SetRedraw(FALSE/TRUE) here. On this rich-edit it leaves the
+	// control showing only the erased (black) background instead of repainting the
+	// text, especially under rapid updates -- that was the "black State window".
 	// EM_REPLACESEL is ignored on a read-only rich edit, so drop read-only for the
 	// programmatic write, then restore it (the user still can't type in it).
 	rec.SetReadOnly(FALSE);
@@ -549,16 +557,13 @@ void CChatTerminalWindow::AppendAnsi(int section, const CString &text) {
 	}
 	AppendColoredRun(rec, run, cur, bold);
 	rec.SetReadOnly(TRUE);
-	rec.SetRedraw(TRUE);
 
-	// Scroll AFTER re-enabling redraw so it actually takes visible effect.
 	if (was_at_bottom) {
 		rec.SendMessage(WM_VSCROLL, SB_BOTTOM, 0);   // follow the newest content
 	} else {
 		int first_after = rec.GetFirstVisibleLine();
 		if (first_after != first_before) rec.LineScroll(first_before - first_after);
 	}
-	rec.Invalidate();
 }
 
 CChatTerminalWindow::CChatTerminalWindow()
@@ -868,21 +873,23 @@ void CChatTerminalWindow::RefreshScreenList(void)
 	}
 }
 
+void CChatTerminalWindow::RefreshSection(int i)
+{
+	if (_active_screen < 0 || _active_screen >= (int)_screens.size()) return;
+	if (i < 0 || i >= kChatTerminalSectionCount) return;
+	CString text = _screens[_active_screen].sections[i];
+	if (i == kChatTerminalState && !_screens[_active_screen].pinned_state.IsEmpty()) {
+		text = _screens[_active_screen].pinned_state + text;
+	}
+	_sections[i].SetReadOnly(FALSE);
+	_sections[i].SetWindowText("");          // clear, then re-render with colour
+	_sections[i].SetReadOnly(TRUE);
+	AppendAnsi(i, text);
+}
+
 void CChatTerminalWindow::RefreshVisibleSections(void)
 {
-	if (_active_screen < 0 || _active_screen >= (int)_screens.size()) {
-		return;
-	}
-	for (int i = 0; i < kChatTerminalSectionCount; ++i) {
-		CString text = _screens[_active_screen].sections[i];
-		if (i == kChatTerminalState && !_screens[_active_screen].pinned_state.IsEmpty()) {
-			text = _screens[_active_screen].pinned_state + text;
-		}
-		_sections[i].SetReadOnly(FALSE);
-		_sections[i].SetWindowText("");          // clear, then re-render with colour
-		_sections[i].SetReadOnly(TRUE);
-		AppendAnsi(i, text);
-	}
+	for (int i = 0; i < kChatTerminalSectionCount; ++i) RefreshSection(i);
 }
 
 void CChatTerminalWindow::AppendToSection(CString screen, int section, CString text, bool stream)
@@ -900,7 +907,7 @@ void CChatTerminalWindow::AppendToSection(CString screen, int section, CString t
 		return;
 	}
 	if (section == kChatTerminalState && !_screens[screen_index].pinned_state.IsEmpty()) {
-		RefreshVisibleSections();
+		RefreshSection(kChatTerminalState);   // only the State window
 		return;
 	}
 	AppendAnsi(section, text);
@@ -914,7 +921,7 @@ void CChatTerminalWindow::SetPinnedState(CString screen, CString text)
 	}
 	_screens[screen_index].pinned_state = text;
 	if (screen_index == _active_screen) {
-		RefreshVisibleSections();
+		RefreshSection(kChatTerminalState);   // pinned timing block lives in State only
 	}
 }
 
