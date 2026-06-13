@@ -392,7 +392,49 @@ BEGIN_MESSAGE_MAP(CChatTerminalWindow, CWnd)
 	ON_EN_KILLFOCUS(IDC_TERMINAL_HOLE_CARDS, &CChatTerminalWindow::OnHoleCardsChanged)
 	ON_MESSAGE(WM_CHAT_TERMINAL_APPEND, &CChatTerminalWindow::OnAppendMessage)
 	ON_MESSAGE(WM_CHAT_TERMINAL_CLEAR, &CChatTerminalWindow::OnClearTerminal)
+	ON_WM_CTLCOLOR()
+	ON_WM_ERASEBKGND()
 END_MESSAGE_MAP()
+
+// Terminal palette.
+static const COLORREF kTermBg    = RGB(0x0A, 0x0E, 0x12);  // near-black
+static const COLORREF kTermText  = RGB(0x3D, 0xF5, 0x7A);  // phosphor green
+static const COLORREF kTermLabel = RGB(0x7F, 0xD0, 0xFF);  // cyan-ish labels
+static const COLORREF kTermInput = RGB(0xEA, 0xEA, 0xEA);  // near-white for input
+
+HBRUSH CChatTerminalWindow::OnCtlColor(CDC *pDC, CWnd *pWnd, UINT nCtlColor) {
+	if (_term_bg_brush.GetSafeHandle() == NULL) {
+		_term_bg_brush.CreateSolidBrush(kTermBg);
+	}
+	// The 4 section displays: dark console with green monospace text.
+	for (int i = 0; i < kChatTerminalSectionCount; ++i) {
+		if (pWnd == &_sections[i]) {
+			pDC->SetTextColor(kTermText);
+			pDC->SetBkColor(kTermBg);
+			return (HBRUSH)_term_bg_brush.GetSafeHandle();
+		}
+		if (pWnd == &_section_labels[i]) {
+			pDC->SetTextColor(kTermLabel);
+			pDC->SetBkColor(kTermBg);
+			return (HBRUSH)_term_bg_brush.GetSafeHandle();
+		}
+	}
+	// The chat / hole-cards input boxes: dark with light text.
+	if (pWnd == &_chat_input || pWnd == &_hole_cards_input) {
+		pDC->SetTextColor(kTermInput);
+		pDC->SetBkColor(kTermBg);
+		return (HBRUSH)_term_bg_brush.GetSafeHandle();
+	}
+	return CWnd::OnCtlColor(pDC, pWnd, nCtlColor);
+}
+
+BOOL CChatTerminalWindow::OnEraseBkgnd(CDC *pDC) {
+	CRect rc;
+	GetClientRect(&rc);
+	CBrush bg(kTermBg);
+	pDC->FillRect(&rc, &bg);
+	return TRUE;
+}
 
 CChatTerminalWindow::CChatTerminalWindow()
 {
@@ -474,6 +516,10 @@ int CChatTerminalWindow::OnCreate(LPCREATESTRUCT lpCreateStruct)
 		"Decisions",
 		"Chat"
 	};
+	// Monospace font so the section displays read like a terminal.
+	_terminal_font.CreateFont(15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+		DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+		CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN, "Consolas");
 	for (int i = 0; i < kChatTerminalSectionCount; ++i) {
 		_section_labels[i].Create(labels[i], WS_CHILD | WS_VISIBLE | SS_LEFT, CRect(0, 0, 0, 0), this);
 		_sections[i].Create(
@@ -483,7 +529,11 @@ int CChatTerminalWindow::OnCreate(LPCREATESTRUCT lpCreateStruct)
 			this,
 			25000 + i);
 		_sections[i].SetLimitText(0);
+		_sections[i].SetFont(&_terminal_font);
+		_section_labels[i].SetFont(&_terminal_font);
 	}
+	_chat_input.SetFont(&_terminal_font);
+	_hole_cards_input.SetFont(&_terminal_font);
 
 	_layout_ready = true;
 	EnsureScreen("main");

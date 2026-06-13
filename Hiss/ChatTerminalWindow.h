@@ -101,6 +101,8 @@ protected:
 	afx_msg void OnHoleCardsChanged();
 	afx_msg LRESULT OnAppendMessage(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnClearTerminal(WPARAM wParam, LPARAM lParam);
+	afx_msg HBRUSH OnCtlColor(CDC *pDC, CWnd *pWnd, UINT nCtlColor);
+	afx_msg BOOL OnEraseBkgnd(CDC *pDC);
 
 private:
 	friend class COpponentRangeWindow;
@@ -137,6 +139,8 @@ private:
 	CStatic _hole_cards_label;
 	CStatic _section_labels[kChatTerminalSectionCount];
 	CEdit _sections[kChatTerminalSectionCount];
+	CFont _terminal_font;     // monospace console font for the section displays
+	CBrush _term_bg_brush;    // dark background brush for the terminal widgets
 	COpponentRangeWindow _opponent_range_window;
 	std::vector<SChatTerminalScreen> _screens;
 	int _active_screen;
