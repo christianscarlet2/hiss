@@ -54,6 +54,10 @@ using namespace std;
 
 CScraper *p_scraper = NULL;
 bool g_dump_scrapes_once = false;
+// MCP/API control requests, consumed by the heartbeat thread (so clicks happen on
+// the same thread the autoplayer normally acts on). -1 = no request pending.
+int g_mcp_autoplayer_request = -1;   // 0 = turn off, 1 = turn on
+int g_mcp_action_request = -1;       // a k_autoplayer_function_* code (FCKRA)
 
 // Make a region name safe for a filename (region names are normally alphanumeric).
 static CString SanitizeRegionFilename(CString name) {

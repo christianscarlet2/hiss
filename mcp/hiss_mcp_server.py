@@ -128,6 +128,12 @@ def image_content(path):
 TOOLS = [
     {"name": "hiss_status", "description": "Is hiss.exe running? Returns its terminal HTTP port and reachability.",
      "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "start_hiss", "description": "Launch Release\\Hiss.exe (cwd=Release). No-op if already reachable, unless force=true.",
+     "inputSchema": {"type": "object", "properties": {"force": {"type": "boolean", "default": False}}}},
+    {"name": "stop_hiss", "description": "Terminate all running Hiss.exe processes (and their OCR workers).",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "replay_screenshot", "description": "Take a FRESH replay screenshot of the connected table window (triggers a capture, then returns the image).",
+     "inputSchema": {"type": "object", "properties": {}}},
     {"name": "terminal_panes", "description": "Live contents of the 4 Terminal panes (Context / State / Decisions / Chat) + the pinned State block, from the running hiss.exe.",
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "game_state", "description": "Live internal-engine game state JSON (seats, cards, pot, blinds, button, hero, HUD) from the running hiss.exe.",
@@ -186,6 +192,41 @@ def call_tool(name, args):
             return [{"type": "text", "text": "hiss.exe reachable on port %d." % port}]
         except Exception as e:
             return [{"type": "text", "text": "port %d found but not responding: %s" % (port, e)}]
+    if name == "start_hiss":
+        if not args.get("force") and hiss_port():
+            try:
+                hiss_get("/api/terminal-state")
+                return [{"type": "text", "text": "Hiss already running and reachable; not relaunching (pass force=true to start another)."}]
+            except Exception:
+                pass
+        exe = os.path.join(RELEASE, "Hiss.exe")
+        if not os.path.isfile(exe):
+            return [{"type": "text", "text": "Hiss.exe not found at %s" % exe}]
+        DETACHED = 0x00000008 | 0x00000200   # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        subprocess.Popen([exe], cwd=RELEASE, close_fds=True,
+                         creationflags=DETACHED if os.name == "nt" else 0)
+        return [{"type": "text", "text": "Launched Hiss.exe (cwd=Release). Give it a few seconds to bind its terminal port, then call hiss_status."}]
+    if name == "stop_hiss":
+        if os.name != "nt":
+            return [{"type": "text", "text": "stop_hiss is Windows-only."}]
+        proc = subprocess.run(["taskkill", "/IM", "Hiss.exe", "/F"],
+                              capture_output=True, text=True)
+        out = (proc.stdout or "") + (proc.stderr or "")
+        return [{"type": "text", "text": out.strip() or "taskkill issued."}]
+    if name == "replay_screenshot":
+        try:
+            hiss_get("/api/dump-scrapes")
+        except Exception as e:
+            return [{"type": "text", "text": "Could not reach Hiss to trigger a capture: %s" % e}]
+        p = os.path.join(SCRAPES, "_table.bmp")
+        deadline = time.time() + 4.0
+        while time.time() < deadline:           # wait for a heartbeat to write it
+            if os.path.isfile(p) and time.time() - os.path.getmtime(p) < 5:
+                break
+            time.sleep(0.4)
+        if not os.path.isfile(p):
+            return [{"type": "text", "text": "Capture triggered but no screenshot file appeared (is Hiss connected to a table?)."}]
+        return [image_content(p)]
     if name == "terminal_panes":
         return [{"type": "text", "text": hiss_get("/api/terminal-state")}]
     if name == "game_state":

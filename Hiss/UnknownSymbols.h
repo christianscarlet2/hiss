@@ -20,4 +20,9 @@
 bool IsOutdatedSymbol(CString symbol);
 void WarnAboutUnknownSymbol(CString symbol);
 
+// When true, WarnAboutUnknownSymbol() suppresses its blocking modal dialog and
+// fails silently. The /api/symbols endpoint sets this around on-demand evaluation
+// so a bad symbol name from a tool/API call can never freeze the bot.
+extern bool g_suppress_unknown_symbol_warning;
+
 #endif // NC_UNKNOWNSYMBOLS_H

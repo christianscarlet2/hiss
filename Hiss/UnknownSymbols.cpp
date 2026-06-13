@@ -371,8 +371,17 @@ bool IsOutdatedSymbol(CString symbol) {
   }
 }
 
+// When set, unknown-symbol lookups fail silently instead of popping a blocking
+// modal dialog. Set by the /api/symbols HTTP endpoint (the MCP server) so a typo'd
+// symbol name from a tool call can never freeze the bot on a message box.
+bool g_suppress_unknown_symbol_warning = false;
+
 void WarnAboutUnknownSymbol(CString symbol) {
-  // Empty symbol 
+  if (g_suppress_unknown_symbol_warning) {
+    // Quiet mode (e.g. on-demand symbol evaluation via the API): no modal.
+    return;
+  }
+  // Empty symbol
   // Can happen by DLL or by incorrect parse-tree.
   if (symbol == "") {
     CString error_message = CString("Empty symbol in CGrammar::EvaluateSymbol()\n")

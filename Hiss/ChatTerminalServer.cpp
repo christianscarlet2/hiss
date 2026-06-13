@@ -2,6 +2,7 @@
 #include "ChatTerminalServer.h"
 #include "ChatTerminalWindow.h"
 #include "CEngineContainer.h"
+#include "UnknownSymbols.h"
 #include "CSymbolEngineTableLimits.h"
 #include "CSymbolEngineGameType.h"
 #include "CSymbolEngineIsOmaha.h"
@@ -328,6 +329,9 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		CStringA body = "{";
 		int start = 0;
 		bool first = true;
+		// Evaluating a typo'd / unknown symbol must NOT pop Hiss's blocking modal
+		// (which would freeze the heartbeat). Suppress it for the duration.
+		g_suppress_unknown_symbol_warning = true;
 		while (start <= names.GetLength()) {
 			int comma = names.Find(',', start);
 			CStringA one = comma >= 0 ? names.Mid(start, comma - start) : names.Mid(start);
@@ -350,10 +354,49 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 			if (comma < 0) break;
 			start = comma + 1;
 		}
+		g_suppress_unknown_symbol_warning = false;
 		body += "}";
 		CStringA response;
 		response.Format(
 			"HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+			body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	// Turn the autoplayer on/off:  /api/autoplayer?on=1  or  ?on=0
+	if (path.CompareNoCase("/api/autoplayer") == 0) {
+		CStringA on = QueryValue(query, "on");
+		bool want_on = (on == "1") || (on.CompareNoCase("true") == 0) || (on.CompareNoCase("on") == 0);
+		g_mcp_autoplayer_request = want_on ? 1 : 0;   // applied by the heartbeat thread
+		CStringA body; body.Format("{\"ok\":true,\"request\":\"%s\"}", want_on ? "on" : "off");
+		CStringA response;
+		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+			body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	// Manually click an FCKRA button:  /api/action?do=fold|check|call|raise|allin
+	if (path.CompareNoCase("/api/action") == 0) {
+		CStringA d = QueryValue(query, "do"); d.MakeLower();
+		int code = -1;
+		if (d == "fold")  code = k_autoplayer_function_fold;
+		else if (d == "check") code = k_autoplayer_function_check;
+		else if (d == "call")  code = k_autoplayer_function_call;
+		else if (d == "raise") code = k_autoplayer_function_raise;
+		else if (d == "allin" || d == "all-in") code = k_autoplayer_function_allin;
+		CStringA body;
+		if (code < 0) {
+			body = "{\"ok\":false,\"error\":\"do must be fold|check|call|raise|allin\"}";
+		} else {
+			g_mcp_action_request = code;   // clicked by the heartbeat thread on our turn
+			body.Format("{\"ok\":true,\"action\":\"%s\"}", d.GetString());
+		}
+		CStringA response;
+		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
 			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
 			body.GetLength(), body.GetString());
 		send(client, response.GetString(), response.GetLength(), 0);

@@ -165,6 +165,9 @@ extern CScraper *p_scraper;
 // One-shot trigger: set true to make the next heartbeat scrape dump all region
 // images + results to logs\scrapes\ (for the MCP server / Claude /improve).
 extern bool g_dump_scrapes_once;
+// MCP/API control, consumed by the heartbeat thread. -1 = nothing pending.
+extern int g_mcp_autoplayer_request;   // 0 = off, 1 = on
+extern int g_mcp_action_request;       // a k_autoplayer_function_* code (FCKRA)
 
 #endif // INC_CSCRAPER_H
 
