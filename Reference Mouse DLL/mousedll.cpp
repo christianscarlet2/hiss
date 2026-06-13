@@ -43,13 +43,21 @@ MOUSEDLL_API int MouseClick(const HWND hwnd, const RECT rect, const MouseButton 
 	INPUT			input[100] = {0};
 
 	POINT pt = RandomizeClickLocation(rect);
-	double fScreenWidth = ::GetSystemMetrics( SM_CXSCREEN )-1;
-	double fScreenHeight = ::GetSystemMetrics( SM_CYSCREEN )-1;
+
+	// Use the FULL virtual desktop, not just the primary monitor, so clicks on
+	// secondary monitors (e.g. a scrcpy/phone-mirror window placed above or to
+	// the left of the primary screen, possibly at negative coordinates) land
+	// correctly. SM_C?SCREEN only describes the primary monitor and produced
+	// out-of-range / clamped coordinates for off-primary windows.
+	double vLeft   = ::GetSystemMetrics(SM_XVIRTUALSCREEN);
+	double vTop    = ::GetSystemMetrics(SM_YVIRTUALSCREEN);
+	double vWidth  = ::GetSystemMetrics(SM_CXVIRTUALSCREEN) - 1;
+	double vHeight = ::GetSystemMetrics(SM_CYVIRTUALSCREEN) - 1;
 
 	// Translate click point to screen/mouse coords
 	ClientToScreen(hwnd, &pt);
-	double fx = pt.x*(65535.0f/fScreenWidth);
-	double fy = pt.y*(65535.0f/fScreenHeight);
+	double fx = (pt.x - vLeft) * (65535.0 / vWidth);
+	double fy = (pt.y - vTop)  * (65535.0 / vHeight);
 
 	// Set up the input structure
 	for (int i = 0; i<clicks*2; i+=2)
@@ -62,16 +70,16 @@ MOUSEDLL_API int MouseClick(const HWND hwnd, const RECT rect, const MouseButton 
 		switch (button)
 		{
 		case MouseLeft:
-			input[i].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTDOWN;
+			input[i].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTDOWN;
 			break;
 		case MouseMiddle:
-			input[i].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_MIDDLEDOWN;
+			input[i].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_MOVE | MOUSEEVENTF_MIDDLEDOWN;
 			break;
 		case MouseRight:
-			input[i].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_RIGHTDOWN;
+			input[i].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_MOVE | MOUSEEVENTF_RIGHTDOWN;
 			break;
 		}
-		
+
 		ZeroMemory(&input[i+1],sizeof(INPUT));
 		input[i+1].type = INPUT_MOUSE;
 		input[i+1].mi.dx = (LONG) fx;
@@ -80,13 +88,13 @@ MOUSEDLL_API int MouseClick(const HWND hwnd, const RECT rect, const MouseButton 
 		switch (button)
 		{
 		case MouseLeft:
-			input[i+1].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTUP;
+			input[i+1].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTUP;
 			break;
 		case MouseMiddle:
-			input[i+1].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_MIDDLEUP;
+			input[i+1].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_MOVE | MOUSEEVENTF_MIDDLEUP;
 			break;
 		case MouseRight:
-			input[i+1].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_RIGHTUP;
+			input[i+1].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_MOVE | MOUSEEVENTF_RIGHTUP;
 			break;
 		}
 	}
@@ -108,8 +116,10 @@ MOUSEDLL_API int MouseClickDrag(const HWND hwnd, const RECT rect, bool is_horizo
 	POINT			pt;
 	double		fx, fy;
 
-	double fScreenWidth = ::GetSystemMetrics(SM_CXSCREEN) - 1;
-	double fScreenHeight = ::GetSystemMetrics(SM_CYSCREEN) - 1;
+	double vLeft   = ::GetSystemMetrics(SM_XVIRTUALSCREEN);
+	double vTop    = ::GetSystemMetrics(SM_YVIRTUALSCREEN);
+	double fScreenWidth = ::GetSystemMetrics(SM_CXVIRTUALSCREEN) - 1;
+	double fScreenHeight = ::GetSystemMetrics(SM_CYVIRTUALSCREEN) - 1;
 
 	if (is_horizontal_drag) {
 		// Set up the input structure
@@ -117,26 +127,26 @@ MOUSEDLL_API int MouseClickDrag(const HWND hwnd, const RECT rect, bool is_horizo
 		pt.x = rect.left;
 		pt.y = rect.top + (rect.bottom - rect.top) / 2;
 		ClientToScreen(hwnd, &pt);
-		fx = pt.x * (65535.0f / fScreenWidth);
-		fy = pt.y * (65535.0f / fScreenHeight);
+		fx = (pt.x - vLeft) * (65535.0 / fScreenWidth);
+		fy = (pt.y - vTop)  * (65535.0 / fScreenHeight);
 
 		ZeroMemory(&input[0], sizeof(INPUT));
 		input[0].type = INPUT_MOUSE;
 		input[0].mi.dx = (LONG)fx;
 		input[0].mi.dy = (LONG)fy;
-		input[0].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTDOWN;
+		input[0].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTDOWN;
 
 		pt.x = rect.right;
 		pt.y = rect.top + (rect.bottom - rect.top) / 2;
 		ClientToScreen(hwnd, &pt);
-		fx = pt.x * (65535.0f / fScreenWidth);
-		fy = pt.y * (65535.0f / fScreenHeight);
+		fx = (pt.x - vLeft) * (65535.0 / fScreenWidth);
+		fy = (pt.y - vTop)  * (65535.0 / fScreenHeight);
 
 		ZeroMemory(&input[1], sizeof(INPUT));
 		input[1].type = INPUT_MOUSE;
 		input[1].mi.dx = (LONG)fx;
 		input[1].mi.dy = (LONG)fy;
-		input[1].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE;
+		input[1].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_MOVE;
 	}
 	else {
 		// Set up the input structure
@@ -144,26 +154,26 @@ MOUSEDLL_API int MouseClickDrag(const HWND hwnd, const RECT rect, bool is_horizo
 		pt.x = rect.left + (rect.right - rect.left) / 2;
 		pt.y = rect.bottom;
 		ClientToScreen(hwnd, &pt);
-		fx = pt.x * (65535.0f / fScreenWidth);
-		fy = pt.y * (65535.0f / fScreenHeight);
+		fx = (pt.x - vLeft) * (65535.0 / fScreenWidth);
+		fy = (pt.y - vTop)  * (65535.0 / fScreenHeight);
 
 		ZeroMemory(&input[0], sizeof(INPUT));
 		input[0].type = INPUT_MOUSE;
 		input[0].mi.dx = (LONG)fx;
 		input[0].mi.dy = (LONG)fy;
-		input[0].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTDOWN;
+		input[0].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTDOWN;
 
 		pt.x = rect.left + (rect.right - rect.left) / 2;
 		pt.y = rect.top;
 		ClientToScreen(hwnd, &pt);
-		fx = pt.x * (65535.0f / fScreenWidth);
-		fy = pt.y * (65535.0f / fScreenHeight);
+		fx = (pt.x - vLeft) * (65535.0 / fScreenWidth);
+		fy = (pt.y - vTop)  * (65535.0 / fScreenHeight);
 
 		ZeroMemory(&input[1], sizeof(INPUT));
 		input[1].type = INPUT_MOUSE;
 		input[1].mi.dx = (LONG)fx;
 		input[1].mi.dy = (LONG)fy;
-		input[1].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE;
+		input[1].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_MOVE;
 	}
 
 	ZeroMemory(&input[2], sizeof(INPUT));
