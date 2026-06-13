@@ -16,6 +16,7 @@
 #include "CVirtualSymbolEngine.h"
 
 class CSymbolEngineActiveDealtPlaying;
+class CSymbolEngineTimingTells;
 class CSymbolEngineAutoplayer;
 class CSymbolEngineBlinds;
 class CSymbolEngineCallers;
@@ -110,6 +111,8 @@ class CEngineContainer : public CSpaceOptimizedGlobalObject {
 public:
   CSymbolEngineActiveDealtPlaying *symbol_engine_active_dealt_playing()
     { return p_symbol_engine_active_dealt_playing; }
+  CSymbolEngineTimingTells *symbol_engine_timing_tells()
+    { return p_symbol_engine_timing_tells; }
   CSymbolEngineAutoplayer *symbol_engine_autoplayer()
     { return p_symbol_engine_autoplayer; }
   CSymbolEngineBlinds *symbol_engine_blinds()
@@ -202,6 +205,7 @@ public:
     { return p_symbol_engine_icm; }
 private:
   CSymbolEngineActiveDealtPlaying *p_symbol_engine_active_dealt_playing;
+  CSymbolEngineTimingTells *p_symbol_engine_timing_tells;
   CSymbolEngineAutoplayer *p_symbol_engine_autoplayer;
   CSymbolEngineBlinds *p_symbol_engine_blinds;
   CSymbolEngineCallers *p_symbol_engine_callers;

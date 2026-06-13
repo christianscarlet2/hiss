@@ -78,6 +78,7 @@ bool ParseOcrWorkerCommandLine(CString* pipe_name, CString* tablemap_name) {
 //==============================================================================
 
 void RunOcrWorker(const CString& pipe_name, const CString& tablemap_name) {
+ try {
   // Load the same tablemap + OCR settings the coordinator is using, then service
   // recognition requests until the pipe closes. Everything here runs in this
   // process's own heap, isolated from the main Hiss.
@@ -126,6 +127,11 @@ void RunOcrWorker(const CString& pipe_name, const CString& tablemap_name) {
     if (tlen && !WriteAll(pipe, t.GetString(), tlen)) break;
   }
   CloseHandle(pipe);
+ } catch (...) {
+  // A worker must never propagate a C++ exception out of here (that would be a
+  // 0xC0000409 crash). It's isolated anyway, but exit cleanly so the coordinator
+  // simply respawns it and the affected region falls back to its last OCR value.
+ }
   // Skip MFC/singleton teardown (it asserts threads were started); just exit.
   ExitProcess(0);
 }

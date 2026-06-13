@@ -1,0 +1,138 @@
+//******************************************************************************
+//
+// This file is part of the OpenHoldem project
+//    Licensed under GPL v3: http://www.gnu.org/licenses/gpl.html
+//
+//******************************************************************************
+
+#include "stdafx.h"
+#include "CSymbolEngineTimingTells.h"
+
+#include "CScraper.h"
+#include "CStringMatch.h"
+#include "CTableState.h"
+#include "ChatTerminalWindow.h"
+#include "..\CTablemap\CTablemap.h"
+
+CSymbolEngineTimingTells::CSymbolEngineTimingTells() {
+  _last_chair = -1;
+  _last_tick = 0;
+  for (int i = 0; i < kMaxNumberOfPlayers; ++i) {
+    _timing_seconds[i] = 0.0;
+    _was_active[i] = false;
+  }
+}
+
+CSymbolEngineTimingTells::~CSymbolEngineTimingTells() {}
+
+void CSymbolEngineTimingTells::InitOnStartup()   { UpdateOnConnection(); }
+
+void CSymbolEngineTimingTells::UpdateOnConnection() {
+  _last_chair = -1;
+  _last_tick = 0;
+  for (int i = 0; i < kMaxNumberOfPlayers; ++i) {
+    _timing_seconds[i] = 0.0;
+    _was_active[i] = false;
+  }
+  _last_published = "";
+}
+
+void CSymbolEngineTimingTells::UpdateOnHandreset() {
+  // Don't carry a dwell across hands: the next activation must not be timed
+  // against a chair that went active in the previous hand. Keep the recorded
+  // per-chair values (they're useful reads) but drop the "currently active" anchor.
+  _last_chair = -1;
+}
+
+void CSymbolEngineTimingTells::UpdateOnNewRound() {}
+void CSymbolEngineTimingTells::UpdateOnMyTurn() {}
+
+bool CSymbolEngineTimingTells::Rect1Active(int chair) {
+  if (p_tablemap == NULL || p_scraper == NULL || p_string_match == NULL) return false;
+  CString name;
+  name.Format("p%dactive", chair);
+  RMap::iterator it = p_tablemap->set_r$()->find(name.GetString());
+  if (it == p_tablemap->set_r$()->end()) return false;
+  // Force rectangle-1-only detection: the timing tell must ignore the optional
+  // rect2 OR-match. Toggle it off for this read, then restore.
+  bool saved = it->second.rect2_enabled;
+  it->second.rect2_enabled = false;
+  CString result;
+  bool got = p_scraper->EvaluateRegion(name, &result);
+  it->second.rect2_enabled = saved;
+  return got && p_string_match->IsStringActive(result);
+}
+
+void CSymbolEngineTimingTells::UpdateOnHeartbeat() {
+  if (p_tablemap == NULL) return;
+  unsigned long now = GetTickCount();
+  int n = p_tablemap->nchairs();
+  if (n > kMaxNumberOfPlayers) n = kMaxNumberOfPlayers;
+
+  bool changed = false;
+  for (int chair = 0; chair < n; ++chair) {
+    bool active1 = Rect1Active(chair);
+    bool rising = active1 && !_was_active[chair];
+    _was_active[chair] = active1;
+    if (rising) {
+      // A new chair just lit up: the previously-active chair's dwell (how long
+      // until this player became active) is its action-time timing tell.
+      if (_last_chair >= 0 && _last_chair != chair) {
+        _timing_seconds[_last_chair] = (double)(now - _last_tick) / 1000.0;
+        changed = true;
+      }
+      _last_chair = chair;
+      _last_tick = now;
+      changed = true;   // active anchor moved -> refresh the State box
+    }
+  }
+  if (changed) PublishStateBox();
+}
+
+void CSymbolEngineTimingTells::PublishStateBox() {
+  if (p_chat_terminal == NULL || p_tablemap == NULL) return;
+  int n = p_tablemap->nchairs();
+  if (n > kMaxNumberOfPlayers) n = kMaxNumberOfPlayers;
+  CString txt = "Timing tells (sec, rect1):\r\n";
+  for (int chair = 0; chair < n; ++chair) {
+    CString cell;
+    if (_timing_seconds[chair] > 0.0) {
+      cell.Format("p%d=%.2f", chair, _timing_seconds[chair]);
+    } else {
+      cell.Format("p%d=--", chair);
+    }
+    if (chair == _last_chair) cell += "*";   // currently the active chair
+    txt += cell;
+    txt += ((chair % 3) == 2) ? "\r\n" : "   ";
+  }
+  txt += "\r\n(* = currently active)\r\n";
+  if (txt == _last_published) return;        // avoid needless redraws
+  _last_published = txt;
+  p_chat_terminal->PinStatePublic("main", txt);
+}
+
+bool CSymbolEngineTimingTells::EvaluateSymbol(const CString name, double *result, bool log) {
+  // pNtiming -> chair N's last recorded action time, in seconds.
+  if (name.GetLength() < 7) return false;
+  if (name.Left(1) != "p") return false;
+  if (name.Right(6) != "timing") return false;
+  CString mid = name.Mid(1, name.GetLength() - 7);   // digits between 'p' and 'timing'
+  if (mid.IsEmpty()) return false;
+  for (int i = 0; i < mid.GetLength(); ++i) {
+    if (mid[i] < '0' || mid[i] > '9') return false;
+  }
+  int chair = atoi(mid.GetString());
+  if (chair < 0 || chair >= kMaxNumberOfPlayers) return false;
+  if (result != NULL) *result = _timing_seconds[chair];
+  return true;
+}
+
+CString CSymbolEngineTimingTells::SymbolsProvided() {
+  CString s;
+  for (int i = 0; i < kMaxNumberOfPlayers; ++i) {
+    CString one;
+    one.Format("p%dtiming ", i);
+    s += one;
+  }
+  return s;
+}

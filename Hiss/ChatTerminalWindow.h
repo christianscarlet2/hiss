@@ -73,6 +73,9 @@ public:
 	void AppendMessage(CString screen, int section, CString text, bool stream = false);
 	void ClearTerminal(void);
 	void ClearScreen(CString screen);
+	// Public wrapper so other modules (e.g. the timing-tells engine) can pin a
+	// persistent line into a screen's State section.
+	void PinStatePublic(CString screen, CString text) { SetPinnedState(screen, text); }
 	void AttachToOwner(bool force = false);
 	void MaybeUpdatePotOddsFromTableState(void);
 	void ShowOpponentRangeWindow(bool visible);

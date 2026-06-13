@@ -32,6 +32,7 @@
 
 #include "CSessionCounter.h"
 #include "CSymbolEngineActiveDealtPlaying.h"
+#include "CSymbolEngineTimingTells.h"
 #include "CSymbolEngineAutoplayer.h"
 #include "CSymbolEngineBlinds.h"
 #include "CSymbolEngineCallers.h"
@@ -163,6 +164,9 @@ void CEngineContainer::CreateSymbolEngines() {
   // CSymbolEngineActiveDealtPlaying
   p_symbol_engine_active_dealt_playing = new CSymbolEngineActiveDealtPlaying();
   AddSymbolEngine(p_symbol_engine_active_dealt_playing);
+  // CSymbolEngineTimingTells (pNtiming: per-chair action time from pNactive rect1)
+  p_symbol_engine_timing_tells = new CSymbolEngineTimingTells();
+  AddSymbolEngine(p_symbol_engine_timing_tells);
   // CSymbolEnginePositions
   p_symbol_engine_positions = new CSymbolEnginePositions();
   AddSymbolEngine(p_symbol_engine_positions);
