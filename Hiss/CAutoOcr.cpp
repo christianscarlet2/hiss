@@ -195,6 +195,10 @@ int CAutoOcr::AutoOcrIndex(const CString &transform) {
 // Read the per-transform OCR settings (model/threshold/mode/no_preprocess/no_whitelist/
 // no_char_spacing) for A0 (autoocr0), A1 (autoocr1) and A2 (autoocr2) from the settings table.
 void CAutoOcr::LoadModelSettings() {
+	// Serialize against get_ocr_result()/GetDetectTemplate* (which hold m_critsec).
+	// CCritSec is a CRITICAL_SECTION, so this is re-entrant if we were called from
+	// within a locked OCR call during first-time init.
+	CSLock lock(m_critsec);
 	for (int i = 0; i < kNumAutoOcr; ++i) {
 		_model[i] = "my_model";
 		_thr[i]   = kDefaultAutoOcrThreshold;
@@ -222,6 +226,26 @@ void CAutoOcr::LoadModelSettings() {
 		}
 	}
 	_models_loaded = true;
+
+	// Flush the per-model engine pool so the (possibly changed) models are reloaded
+	// from disk on next use. This makes a live settings change in Vision take effect
+	// WITHOUT a Hiss restart -- including retraining/overwriting a model file at the
+	// SAME path, which the path-keyed pool would otherwise keep serving from memory.
+	// On first-time init the pool is empty, so this is a harmless no-op.
+	for (std::map<CString, TessBaseAPI*>::iterator it = _api_pool.begin(); it != _api_pool.end(); ++it) {
+		if (it->second != NULL) { SafeTessEnd(it->second); delete it->second; }
+	}
+	for (std::map<CString, TessBaseAPI*>::iterator it = _api2_pool.begin(); it != _api2_pool.end(); ++it) {
+		if (it->second != NULL) { SafeTessEnd(it->second); delete it->second; }
+	}
+	_api_pool.clear();
+	_api2_pool.clear();
+	api = NULL;
+	api2 = NULL;
+	_current_model = "";
+	_api_initialized = false;
+	_api2_initialized = false;
+	_api_init_failed = false;
 }
 
 // Switch api/api2 to `model` if not already loaded. Tesseract supports

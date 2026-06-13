@@ -59,6 +59,9 @@ class CScraper : public CSpaceOptimizedGlobalObject {
   // When enabled it OCRs all AutoOcr ("A") regions across worker threads up-front
   // into _ocr_cache, which EvaluateRegion then reads instead of OCRing serially.
   void PreOcrParallel();
+  // Discard the parallel-OCR worker engines so they reload model settings on the
+  // next pre-pass (used when OCR models change live, no restart needed).
+  void InvalidateParallelOcrEngines();
   // Scarlet Beast server-scrape: pull the configured table's live state from
   // poker.scarletbeast.com and write players/cards/bets/board/pot directly into
   // CTableState (so the React display and the whole symbol pipeline see it),

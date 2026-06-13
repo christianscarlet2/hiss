@@ -258,6 +258,9 @@ void CTableMapLoader::ReloadConnectedTablemapIfSettingsChanged() {
     if (p_scraper != NULL) p_scraper->CreateBitmaps();
   }
   AutoOcr()->LoadModelSettings();
+  // Also drop the parallel-OCR worker engines so they reload the new models on the
+  // next pre-pass (the serial p_auto_ocr pool was already flushed by LoadModelSettings).
+  if (p_scraper != NULL) p_scraper->InvalidateParallelOcrEngines();
   // Refresh the Scraper Output dialog's region list if it is open.
   if (m_ScraperOutputDlg != NULL) {
     m_ScraperOutputDlg->UpdateDisplay();

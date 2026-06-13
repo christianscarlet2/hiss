@@ -304,6 +304,18 @@ void CScraper::EvaluateTrueFalseRegion(bool *result, const CString name) {
 	}
 }
 
+// Drop the parallel-OCR worker engines so they are rebuilt (with freshly read
+// model settings) on the next PreOcrParallel(). Called when the OCR model settings
+// change live, so the worker engines pick up the new models without a restart -
+// matching the serial p_auto_ocr pool flush in CAutoOcr::LoadModelSettings().
+// Safe to call from the live-reload path: it runs under the heartbeat lock, so no
+// PreOcrParallel() is in flight.
+void CScraper::InvalidateParallelOcrEngines() {
+	for (size_t i = 0; i < g_ocr_engines.size(); ++i) delete g_ocr_engines[i];
+	g_ocr_engines.clear();
+	g_ocr_pool_size = 0;   // forces rebuild (want != size) next PreOcrParallel()
+}
+
 // Optional parallel OCR pre-pass: OCR every AutoOcr ("A") region across worker
 // threads up-front into _ocr_cache (read by EvaluateRegion). OFF by default; the
 // default path is unchanged. Runs on the heartbeat thread; GDI capture is serial
