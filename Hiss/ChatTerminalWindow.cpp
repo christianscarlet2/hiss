@@ -428,6 +428,32 @@ HBRUSH CChatTerminalWindow::OnCtlColor(CDC *pDC, CWnd *pWnd, UINT nCtlColor) {
 	return CWnd::OnCtlColor(pDC, pWnd, nCtlColor);
 }
 
+BOOL CChatTerminalWindow::PreTranslateMessage(MSG *pMsg) {
+	// Make the chat box behave like a command prompt: Enter sends, Up/Down recall.
+	if (pMsg->message == WM_KEYDOWN && pMsg->hwnd == _chat_input.GetSafeHwnd()) {
+		if (pMsg->wParam == VK_RETURN) {
+			SendChatText();
+			return TRUE;
+		}
+		if ((pMsg->wParam == VK_UP || pMsg->wParam == VK_DOWN) && !_input_history.empty()) {
+			if (pMsg->wParam == VK_UP) {
+				if (_history_index > 0) --_history_index;
+			} else {
+				if (_history_index < (int)_input_history.size()) ++_history_index;
+			}
+			if (_history_index >= (int)_input_history.size()) {
+				_chat_input.SetWindowText("");
+			} else {
+				_chat_input.SetWindowText(_input_history[_history_index]);
+			}
+			int len = _chat_input.GetWindowTextLength();
+			_chat_input.SetSel(len, len);
+			return TRUE;
+		}
+	}
+	return CWnd::PreTranslateMessage(pMsg);
+}
+
 BOOL CChatTerminalWindow::OnEraseBkgnd(CDC *pDC) {
 	CRect rc;
 	GetClientRect(&rc);
@@ -436,11 +462,87 @@ BOOL CChatTerminalWindow::OnEraseBkgnd(CDC *pDC) {
 	return TRUE;
 }
 
+// Map an ANSI SGR parameter list (e.g. "1;32") to a text colour for the dark
+// console. Unhandled codes leave the colour unchanged; 0/39 reset to green.
+static COLORREF AnsiSgrColor(const CString &params, COLORREF current) {
+	int start = 0;
+	while (start <= params.GetLength()) {
+		int semi = params.Find(';', start);
+		CString tok = (semi < 0) ? params.Mid(start) : params.Mid(start, semi - start);
+		int code = atoi(tok.GetString());
+		switch (code) {
+			case 0: case 39: current = RGB(0x3D, 0xF5, 0x7A); break;  // reset -> green
+			case 30: current = RGB(0x6A, 0x70, 0x7A); break;          // black -> gray (visible)
+			case 31: case 91: current = RGB(0xFF, 0x55, 0x55); break; // red
+			case 32: case 92: current = RGB(0x50, 0xFA, 0x7B); break; // green
+			case 33: case 93: current = RGB(0xF1, 0xFA, 0x8C); break; // yellow
+			case 34: case 94: current = RGB(0x6C, 0xB6, 0xFF); break; // blue
+			case 35: case 95: current = RGB(0xFF, 0x79, 0xC6); break; // magenta
+			case 36: case 96: current = RGB(0x8B, 0xE9, 0xFD); break; // cyan
+			case 37: case 97: current = RGB(0xF8, 0xF8, 0xF2); break; // white
+			default: break;
+		}
+		if (semi < 0) break;
+		start = semi + 1;
+	}
+	return current;
+}
+
+static void AppendColoredRun(CRichEditCtrl &rec, const CString &run, COLORREF color) {
+	if (run.IsEmpty()) return;
+	long len = rec.GetWindowTextLength();
+	rec.SetSel(len, len);
+	CHARFORMAT cf; ZeroMemory(&cf, sizeof(cf));
+	cf.cbSize = sizeof(cf);
+	cf.dwMask = CFM_COLOR;
+	cf.crTextColor = color;
+	rec.SetSelectionCharFormat(cf);
+	rec.ReplaceSel(run);
+}
+
+void CChatTerminalWindow::AppendAnsi(int section, const CString &text) {
+	if (section < 0 || section >= kChatTerminalSectionCount) return;
+	CRichEditCtrl &rec = _sections[section];
+	// EM_REPLACESEL is ignored on a read-only rich edit, so drop read-only for the
+	// programmatic write, then restore it (the user still can't type in it).
+	rec.SetReadOnly(FALSE);
+	COLORREF cur = RGB(0x3D, 0xF5, 0x7A);
+	CString run;
+	int i = 0, n = text.GetLength();
+	while (i < n) {
+		if (text[i] == 27 && (i + 1) < n && text[i + 1] == '[') {  // ESC '['
+			AppendColoredRun(rec, run, cur);
+			run.Empty();
+			int j = i + 2;
+			CString params;
+			while (j < n && (text[j] == ';' || (text[j] >= '0' && text[j] <= '9'))) {
+				params += text[j];
+				++j;
+			}
+			if (j < n && text[j] == 'm') {       // a colour (SGR) sequence
+				cur = AnsiSgrColor(params, cur);
+				i = j + 1;
+			} else {                              // some other CSI; drop it
+				i = (j < n) ? (j + 1) : n;
+			}
+			continue;
+		}
+		run += text[i];
+		++i;
+	}
+	AppendColoredRun(rec, run, cur);
+	rec.SetReadOnly(TRUE);
+	long end = rec.GetWindowTextLength();
+	rec.SetSel(end, end);
+	rec.SendMessage(EM_SCROLLCARET, 0, 0);     // keep the newest line in view
+}
+
 CChatTerminalWindow::CChatTerminalWindow()
 {
 	_owner = NULL;
 	_attach_left = false;
 	_active_screen = 0;
+	_history_index = 0;
 	_layout_ready = false;
 	_pot_odds_enabled = false;
 	_implied_pot_odds_enabled = false;
@@ -522,14 +624,24 @@ int CChatTerminalWindow::OnCreate(LPCREATESTRUCT lpCreateStruct)
 		CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN, "Consolas");
 	for (int i = 0; i < kChatTerminalSectionCount; ++i) {
 		_section_labels[i].Create(labels[i], WS_CHILD | WS_VISIBLE | SS_LEFT, CRect(0, 0, 0, 0), this);
+		// Rich-edit console: scrollback, selectable/copyable, per-run ANSI colour.
 		_sections[i].Create(
 			WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL |
-			ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
+			ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | ES_SAVESEL,
 			CRect(0, 0, 0, 0),
 			this,
 			25000 + i);
-		_sections[i].SetLimitText(0);
-		_sections[i].SetFont(&_terminal_font);
+		_sections[i].LimitText(0x7FFFFFFF);                 // big scrollback
+		_sections[i].SetBackgroundColor(FALSE, RGB(0x0A, 0x0E, 0x12));
+		_sections[i].SetEventMask(_sections[i].GetEventMask() | ENM_NONE);
+		// Default run format: green Consolas (10pt -> 200 twips).
+		CHARFORMAT cf; ZeroMemory(&cf, sizeof(cf));
+		cf.cbSize = sizeof(cf);
+		cf.dwMask = CFM_COLOR | CFM_FACE | CFM_SIZE | CFM_BOLD;
+		cf.crTextColor = RGB(0x3D, 0xF5, 0x7A);
+		cf.yHeight = 200;
+		lstrcpyn(cf.szFaceName, "Consolas", LF_FACESIZE);
+		_sections[i].SetDefaultCharFormat(cf);
 		_section_labels[i].SetFont(&_terminal_font);
 	}
 	_chat_input.SetFont(&_terminal_font);
@@ -723,8 +835,10 @@ void CChatTerminalWindow::RefreshVisibleSections(void)
 		if (i == kChatTerminalState && !_screens[_active_screen].pinned_state.IsEmpty()) {
 			text = _screens[_active_screen].pinned_state + text;
 		}
-		_sections[i].SetWindowText(text);
-		_sections[i].LineScroll(_sections[i].GetLineCount());
+		_sections[i].SetReadOnly(FALSE);
+		_sections[i].SetWindowText("");          // clear, then re-render with colour
+		_sections[i].SetReadOnly(TRUE);
+		AppendAnsi(i, text);
 	}
 }
 
@@ -746,10 +860,7 @@ void CChatTerminalWindow::AppendToSection(CString screen, int section, CString t
 		RefreshVisibleSections();
 		return;
 	}
-	int length = _sections[section].GetWindowTextLength();
-	_sections[section].SetSel(length, length);
-	_sections[section].ReplaceSel(text);
-	_sections[section].LineScroll(_sections[section].GetLineCount());
+	AppendAnsi(section, text);
 }
 
 void CChatTerminalWindow::SetPinnedState(CString screen, CString text)
@@ -895,6 +1006,9 @@ void CChatTerminalWindow::SendChatText(void)
 		return;
 	}
 	_chat_input.SetWindowText("");
+	// Remember the command for Up/Down recall (terminal-style history).
+	_input_history.push_back(text);
+	_history_index = (int)_input_history.size();
 	CString line;
 	line.Format("You: %s", text.GetString());
 	CString screen = "main";

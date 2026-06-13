@@ -1,6 +1,7 @@
 #ifndef INC_CHAT_TERMINAL_WINDOW_H
 #define INC_CHAT_TERMINAL_WINDOW_H
 
+#include <afxcmn.h>   // CRichEditCtrl
 #include <vector>
 
 enum ChatTerminalSection {
@@ -103,6 +104,7 @@ protected:
 	afx_msg LRESULT OnClearTerminal(WPARAM wParam, LPARAM lParam);
 	afx_msg HBRUSH OnCtlColor(CDC *pDC, CWnd *pWnd, UINT nCtlColor);
 	afx_msg BOOL OnEraseBkgnd(CDC *pDC);
+	virtual BOOL PreTranslateMessage(MSG *pMsg);   // chat prompt: Enter sends, Up/Down recall
 
 private:
 	friend class COpponentRangeWindow;
@@ -138,9 +140,16 @@ private:
 	CStatic _title;
 	CStatic _hole_cards_label;
 	CStatic _section_labels[kChatTerminalSectionCount];
-	CEdit _sections[kChatTerminalSectionCount];
+	// Rich-edit consoles: per-line ANSI colour, scrollback, selection/copy.
+	CRichEditCtrl _sections[kChatTerminalSectionCount];
 	CFont _terminal_font;     // monospace console font for the section displays
-	CBrush _term_bg_brush;    // dark background brush for the terminal widgets
+	CBrush _term_bg_brush;    // dark background brush for the input boxes / labels
+	// Command prompt history (Up/Down recall on the chat input).
+	std::vector<CString> _input_history;
+	int _history_index;
+	// Append `text` (which may contain ANSI SGR colour codes) to a rich-edit
+	// console, rendering coloured runs and auto-scrolling to the bottom.
+	void AppendAnsi(int section, const CString &text);
 	COpponentRangeWindow _opponent_range_window;
 	std::vector<SChatTerminalScreen> _screens;
 	int _active_screen;
