@@ -93,6 +93,8 @@ CScraper::CScraper(void) {
   _leaking_GDI_objects = 0;
   total_region_counter = 0;
   identical_region_counter = 0;
+  _ocr_recognitions = 0;
+  _ocr_reuses = 0;
   _observer_active = false;
 }
 
@@ -213,29 +215,45 @@ bool CScraper::EvaluateRegion(CString name, CString *result) {
 	CTransform	trans;
 	RMapCI		r_iter = p_tablemap->r$()->find(name.GetString());
 	if (r_iter != p_tablemap->r$()->end()) {
-    // Potential for optimization here
     ++total_region_counter;
-		if (ProcessRegion(r_iter)) {
+    // ProcessRegion() captures the region's pixels and returns TRUE when they
+    // changed since the previous frame, FALSE when identical.
+    bool region_changed = ProcessRegion(r_iter);
+    if (region_changed) {
+      write_log(Preferences()->debug_scraper(),
+        "[CScraper] Region %s NOT identical\n", name);
+    } else {
       ++identical_region_counter;
       write_log(Preferences()->debug_scraper(),
         "[CScraper] Region %s identical\n", name);
-    } else {
-      write_log(Preferences()->debug_scraper(),
-        "[CScraper] Region %s NOT identical\n", name);
     }
 		old_bitmap = (HBITMAP) SelectObject(hdcCompatible, r_iter->second.cur_bmp);
 		if (r_iter->second.transform[0] == 'A') {
-			// Use the parallel pre-pass result if one was computed this cycle.
+			// 1) Parallel pre-pass result (freshly OCR'd this cycle) wins.
 			std::map<CString, CString>::const_iterator cached = _ocr_cache.find(name);
+			std::map<CString, CString>::const_iterator last = _last_ocr_result.find(name);
 			if (cached != _ocr_cache.end()) {
 				*result = cached->second;
-			} else {
+				_last_ocr_result[name] = *result;
+				++_ocr_recognitions;
+			}
+			// 2) Region unchanged AND we have a prior result -> reuse it, skip OCR.
+			//    This is the main speed win: Tesseract is the dominant scrape cost
+			//    and most regions don't change frame-to-frame.
+			else if (!region_changed && last != _last_ocr_result.end()) {
+				*result = last->second;
+				++_ocr_reuses;
+			}
+			// 3) Changed (or never seen before) -> run OCR now and remember it.
+			else {
 				int w = r_iter->second.right - r_iter->second.left + 1;
 				int h = r_iter->second.bottom - r_iter->second.top + 1;
 				Mat input(h, w, CV_8UC4);
 				BITMAPINFOHEADER bi = { sizeof(bi), w, -h, 1, 32, BI_RGB };
 				GetDIBits(hdcCompatible, r_iter->second.cur_bmp, 0, h, input.data, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
 				*result = AutoOcr()->get_ocr_result(input, r_iter).GetString();
+				_last_ocr_result[name] = *result;
+				++_ocr_recognitions;
 			}
 		}
 		else

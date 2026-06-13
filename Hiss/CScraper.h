@@ -122,11 +122,23 @@ class CScraper : public CSpaceOptimizedGlobalObject {
   // Used for potential optimizations
   int total_region_counter;
   int identical_region_counter;
+ public:
+  // Per-scrape-cycle OCR profiling (reset/read by CLazyScraper::DoScrape):
+  // how many AutoOcr regions were freshly recognised this frame vs reused
+  // unchanged from the previous frame. The dominant scrape cost is OCR, so
+  // reusing unchanged regions is the main speed lever for live phone play.
+  long _ocr_recognitions;
+  long _ocr_reuses;
+  void ResetOcrProfile() { _ocr_recognitions = 0; _ocr_reuses = 0; }
  private:
 	HBITMAP			_entire_window_last;
 	HBITMAP			_entire_window_cur;
 	// Parallel-OCR pre-pass results for this scrape cycle (region name -> text).
 	std::map<CString, CString> _ocr_cache;
+	// Last OCR result per AutoOcr region, kept ACROSS frames. When a region's
+	// pixels are identical to the previous frame (ProcessRegion() == false) we
+	// reuse this instead of re-running Tesseract - the big scrape-speed win.
+	std::map<CString, CString> _last_ocr_result;
 	// Cached per-frame result of the "p3observer" region (see RefreshObserverState).
 	bool			_observer_active;
 	// Map a p3<x>/u3<x> region name to "p3observer_<x>" when observer mode is active

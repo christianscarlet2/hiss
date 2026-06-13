@@ -28,6 +28,7 @@
 #include "CSymbolEngineTime.h"
 #include "CSymbolEngineUserchair.h"
 #include "CTableState.h"
+#include "..\DLLs\Files_DLL\Files.h"
 
 
 CLazyScraper *p_lazyscraper = NULL;
@@ -93,6 +94,11 @@ void CLazyScraper::DoScrape() {
     return;
 	}
   _is_identical_scrape = false;
+	// Per-cycle scrape profiling (written to logs\scrape_perf.log). The dominant
+	// cost is Tesseract OCR; this shows how long the whole scrape took and how
+	// many AutoOcr regions were freshly recognised vs reused unchanged.
+	DWORD scrape_start_ms = GetTickCount();
+	p_scraper->ResetOcrProfile();
 	// Observer mode: refresh the cached "p3observer" state BEFORE any p3 region is
 	// scraped, so EvaluateRegion redirects p3<x> -> p3observer_<x> this frame.
 	p_scraper->RefreshObserverState();
@@ -193,6 +199,18 @@ void CLazyScraper::DoScrape() {
   }
   if (NeedMTTRegions()) {
     p_scraper->ScrapeMTTRegions();
+  }
+
+  // --- per-cycle scrape profile ----------------------------------------------
+  DWORD elapsed = GetTickCount() - scrape_start_ms;
+  CString perf_path = LogsDirectory() + "scrape_perf.log";
+  FILE *pf = fopen(perf_path.GetString(), "a");
+  if (pf != NULL) {
+    SYSTEMTIME st; GetLocalTime(&st);
+    fprintf(pf, "%02d:%02d:%02d.%03d  scrape=%lu ms  ocr_recognised=%ld  ocr_reused=%ld\n",
+      st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
+      (unsigned long)elapsed, p_scraper->_ocr_recognitions, p_scraper->_ocr_reuses);
+    fclose(pf);
   }
 }
 
