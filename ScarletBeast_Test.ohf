@@ -146,51 +146,21 @@ AA KK QQ AKs AKo
 
 ##f$preflop##
 
-// --- Facing a 3-bet or more (Raises >= 2): 4-bet premiums, else fold ---------
-WHEN Raises >= 2 AND list4betValue RaiseBy 100% FORCE
-WHEN Raises >= 2 AND listPremium AND StackSize < 25 RaiseMax FORCE
-WHEN Raises >= 2 Fold FORCE
-
-// --- Facing a single raise (Raises = 1) --------------------------------------
-WHEN Raises = 1 AND list3betValue RaiseBy 100% FORCE
-// 3-bet bluff more vs nits who over-fold; never vs calling stations.
-WHEN Raises = 1 AND list3betBluff AND f$Opp_IsNit AND NOT InSmallBlind RaiseBy 100% FORCE
-// Flat the rest of our continuing range, mostly in position.
-WHEN Raises = 1 AND listCallOpen AND (InButton OR InCutOff OR InBigBlind) Call FORCE
-WHEN Raises = 1 AND listStrong Call FORCE
-WHEN Raises = 1 Fold FORCE
-
-// --- Limped pot: isolate limpers with a raise ---------------------------------
-WHEN Calls >= 1 AND Raises = 0 AND (listStrong OR listPremium) RaiseTo 4 FORCE
-WHEN Calls >= 1 AND Raises = 0 AND listOpenLP AND InLatePosition RaiseTo 4 FORCE
-WHEN Calls >= 1 AND Raises = 0 AND listOpenBTN AND InButton RaiseTo 4 FORCE
-
-// --- Unopened pot: open by position ------------------------------------------
-WHEN Raises = 0 AND Calls = 0 AND InEarlyPosition AND listOpenEP RaiseTo 4 FORCE
-WHEN Raises = 0 AND Calls = 0 AND InMiddlePosition AND listOpenMP RaiseTo 3.5 FORCE
-WHEN Raises = 0 AND Calls = 0 AND InCutOff AND listOpenLP RaiseTo 3 FORCE
-WHEN Raises = 0 AND Calls = 0 AND InButton AND listOpenBTN RaiseTo 3 FORCE
-WHEN Raises = 0 AND Calls = 0 AND InSmallBlind AND listOpenLP RaiseTo 3.5 FORCE
-// Big blind gets a walk / checks its option.
-WHEN Raises = 0 AND Calls = 0 AND InBigBlind Check FORCE
-
-WHEN Others Fold FORCE
+// TEST OVERRIDE: always raise to 3 big blinds.
+WHEN Others RaiseTo 3 FORCE
 
 //=============================================================================
 //  POSTFLOP - dispatch by "is there a bet to us?"
 //=============================================================================
 
 ##f$flop##
-WHEN AmountToCall > 0 RETURN f$postflop_vs_bet FORCE
-WHEN Others RETURN f$postflop_bet FORCE
+WHEN Others RaiseTo 3 FORCE
 
 ##f$turn##
-WHEN AmountToCall > 0 RETURN f$postflop_vs_bet FORCE
-WHEN Others RETURN f$postflop_bet FORCE
+WHEN Others RaiseTo 3 FORCE
 
 ##f$river##
-WHEN AmountToCall > 0 RETURN f$river_vs_bet FORCE
-WHEN Others RETURN f$river_bet FORCE
+WHEN Others RaiseTo 3 FORCE
 
 //=============================================================================
 //  Postflop helpers
