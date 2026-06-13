@@ -110,10 +110,18 @@ const bool CStringMatch::IsStringAllin(const CString s) {
   s_lower_case = s_lower_case.Left(5);
   return (s_lower_case == "allin"
 	  || s_lower_case == "all"      // a button labelled exactly "All" means All-In
+	  // OCR confuses l <-> i <-> 1 in "All In"; accept the common misreads.
 	  || s_lower_case == "a11in"
 	  || s_lower_case == "allln"
 	  || s_lower_case == "a111n"
 	  || s_lower_case == "aiiin"
+	  || s_lower_case == "aliin"
+	  || s_lower_case == "ailin"
+	  || s_lower_case == "al1in"
+	  || s_lower_case == "a1lin"
+	  || s_lower_case == "ai1in"
+	  || s_lower_case == "aii1n"
+	  || s_lower_case == "all1n"
 	  || s_lower_case == "buyin"
 	  || s_lower_case.Left(3) == "max");
 }

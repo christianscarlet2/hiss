@@ -28,6 +28,10 @@ protected: // create from serialization only
 	CMainFrame();
 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
  public:
+	// Global panic hotkey (Win+H+Q from any window): broadcasts to every running
+	// Hiss instance and shuts off the autoplayer on all of them.
+	afx_msg LRESULT OnPanicAutoplayerOff(WPARAM wParam, LPARAM lParam);
+ public:
   void AppendScarletBeastMenu();
   afx_msg LRESULT OnSbInitMenu(WPARAM wParam, LPARAM lParam);
   afx_msg void OnSbConnect();
@@ -107,6 +111,12 @@ private:
 private:
 	// private functions and variables - not available via accessors or mutators
 	int CreateStatusBar(void);
+
+	// Global Win+H+Q panic hotkey (low-level keyboard hook).
+	void InstallPanicHotkey();
+	void RemovePanicHotkey();
+	static HHOOK s_panic_kbd_hook;
+	static LRESULT CALLBACK PanicKeyboardProc(int code, WPARAM wParam, LPARAM lParam);
 
 	RECT			_prev_att_rect, _prev_wrect;
 

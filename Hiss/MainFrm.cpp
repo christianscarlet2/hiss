@@ -85,8 +85,17 @@
 
 IMPLEMENT_DYNCREATE(CMainFrame, CFrameWnd)
 
+// Cross-instance broadcast: the same string resolves to the same message id in
+// every Hiss process, so a HWND_BROADCAST reaches all instances' main windows.
+static UINT WM_HISS_PANIC_AUTOPLAYER_OFF =
+	::RegisterWindowMessage("HissPanicAutoplayerOff_v1");
+
+// Low-level keyboard hook handle (one main window per process).
+HHOOK CMainFrame::s_panic_kbd_hook = NULL;
+
 BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
 	ON_WM_CREATE()
+	ON_REGISTERED_MESSAGE(WM_HISS_PANIC_AUTOPLAYER_OFF, &CMainFrame::OnPanicAutoplayerOff)
 
 	// Menu updates
 	ON_UPDATE_COMMAND_UI(ID_FILE_NEW, &CMainFrame::OnUpdateMenuFileNew)
@@ -318,8 +327,56 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct) {
 	SetTimer(ENABLE_BUTTONS_TIMER, 50, 0);
 	// Start timer that updates status bar
 	SetTimer(UPDATE_STATUS_BAR_TIMER, 500, 0);
-  // Start timer that checks for continued existence of attached HWND 		
+  // Start timer that checks for continued existence of attached HWND
   SetTimer(HWND_CHECK_TIMER, 200, 0);
+	// Global Win+H+Q panic kill-switch (works from any window).
+	InstallPanicHotkey();
+	return 0;
+}
+
+// Low-level keyboard hook: when Q is pressed while both Win and H are held down,
+// broadcast the panic message to every Hiss instance and swallow the Q so it does
+// not leak into whatever window has focus.
+LRESULT CALLBACK CMainFrame::PanicKeyboardProc(int code, WPARAM wParam, LPARAM lParam) {
+	if (code == HC_ACTION && (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN)) {
+		KBDLLHOOKSTRUCT *k = (KBDLLHOOKSTRUCT *)lParam;
+		if (k != NULL && k->vkCode == 'Q') {
+			bool win = ((GetAsyncKeyState(VK_LWIN) & 0x8000) != 0)
+			        || ((GetAsyncKeyState(VK_RWIN) & 0x8000) != 0);
+			bool h = ((GetAsyncKeyState('H') & 0x8000) != 0);
+			if (win && h) {
+				::PostMessage(HWND_BROADCAST, WM_HISS_PANIC_AUTOPLAYER_OFF, 0, 0);
+				return 1;  // swallow Q
+			}
+		}
+	}
+	return CallNextHookEx(s_panic_kbd_hook, code, wParam, lParam);
+}
+
+void CMainFrame::InstallPanicHotkey() {
+	if (s_panic_kbd_hook != NULL) return;
+	s_panic_kbd_hook = SetWindowsHookEx(WH_KEYBOARD_LL, PanicKeyboardProc,
+		GetModuleHandle(NULL), 0);
+	write_log(k_always_log_basic_information,
+		"[MainFrame] Panic hotkey (Win+H+Q) %s\n",
+		s_panic_kbd_hook != NULL ? "installed" : "FAILED to install");
+}
+
+void CMainFrame::RemovePanicHotkey() {
+	if (s_panic_kbd_hook != NULL) {
+		UnhookWindowsHookEx(s_panic_kbd_hook);
+		s_panic_kbd_hook = NULL;
+	}
+}
+
+// Handler for the broadcast: shut off this instance's autoplayer.
+LRESULT CMainFrame::OnPanicAutoplayerOff(WPARAM wParam, LPARAM lParam) {
+	if (p_autoplayer != NULL && p_autoplayer->autoplayer_engaged()) {
+		p_autoplayer->EngageAutoplayer(false);
+		write_log(k_always_log_basic_information,
+			"[MainFrame] PANIC Win+H+Q -> autoplayer DISENGAGED.\n");
+		ChatTerminalAppend(kChatTerminalContext, "PANIC (Win+H+Q): autoplayer disengaged.");
+	}
 	return 0;
 }
 
@@ -607,6 +664,7 @@ void CMainFrame::RestoreWindowPlacementFromDb() {
 }
 
 BOOL CMainFrame::DestroyWindow() {
+	RemovePanicHotkey();
 	// Remember the connected table window's position+size (shared DB) BEFORE the
 	// threads stop / we disconnect, so the next launch restores it instead of forcing
 	// it onto monitor 1.
