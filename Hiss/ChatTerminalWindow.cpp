@@ -3,9 +3,25 @@
 #include "CEngineContainer.h"
 #include "CSymbolEngineChipAmounts.h"
 #include "CTableState.h"
+#include "ChatTerminalServer.h"
 #include "HudManager.h"
 #include "inlines/eval.h"
+#include "..\Shared\CCritSec\CCritSec.h"
+#include <shellapi.h>
 #include <algorithm>
+
+// ---- Thread-safe mirror of the active screen for the browser extension --------
+// The HTTP server runs on its own thread; it reads this snapshot, which the UI
+// thread refreshes whenever terminal content changes.
+static CCritSec g_browser_snap_cs;
+static CString  g_browser_sec[kChatTerminalSectionCount];
+static CString  g_browser_pinned;
+
+void TerminalBrowserGetSnapshot(CString out_sections[kChatTerminalSectionCount], CString *out_pinned) {
+	CSLock lock(g_browser_snap_cs);
+	for (int i = 0; i < kChatTerminalSectionCount; ++i) out_sections[i] = g_browser_sec[i];
+	if (out_pinned) *out_pinned = g_browser_pinned;
+}
 
 const UINT WM_CHAT_TERMINAL_APPEND = WM_APP + 410;
 const UINT WM_CHAT_TERMINAL_CLEAR = WM_APP + 411;
@@ -32,6 +48,7 @@ const UINT ID_TERMINAL_FEATURE_IMPLIED_POT_ODDS = 24102;
 const UINT ID_TERMINAL_FEATURE_REVERSE_IMPLIED_ODDS = 24103;
 const UINT ID_TERMINAL_FEATURE_OPPONENT_RANGE = 24104;
 const UINT ID_TERMINAL_FEATURE_LOAD_HUD_PROFILE = 24105;
+const UINT ID_TERMINAL_EXTEND_BROWSER = 24106;
 
 struct SChatTerminalMessage {
 	CString screen;
@@ -388,6 +405,7 @@ BEGIN_MESSAGE_MAP(CChatTerminalWindow, CWnd)
 	ON_COMMAND(ID_TERMINAL_FEATURE_REVERSE_IMPLIED_ODDS, &CChatTerminalWindow::OnFeatureReverseImpliedOdds)
 	ON_UPDATE_COMMAND_UI(ID_TERMINAL_FEATURE_REVERSE_IMPLIED_ODDS, &CChatTerminalWindow::OnUpdateFeatureReverseImpliedOdds)
 	ON_COMMAND(ID_TERMINAL_FEATURE_LOAD_HUD_PROFILE, &CChatTerminalWindow::OnFeatureLoadHudProfile)
+	ON_COMMAND(ID_TERMINAL_EXTEND_BROWSER, &CChatTerminalWindow::OnExtendBrowser)
 	ON_COMMAND(ID_TERMINAL_FEATURE_OPPONENT_RANGE, &CChatTerminalWindow::OnFeatureOpponentRange)
 	ON_UPDATE_COMMAND_UI(ID_TERMINAL_FEATURE_OPPONENT_RANGE, &CChatTerminalWindow::OnUpdateFeatureOpponentRange)
 	ON_EN_KILLFOCUS(IDC_TERMINAL_HOLE_CARDS, &CChatTerminalWindow::OnHoleCardsChanged)
@@ -530,6 +548,8 @@ int CChatTerminalWindow::OnCreate(LPCREATESTRUCT lpCreateStruct)
 	features_menu.AppendMenu(MF_STRING, ID_TERMINAL_FEATURE_OPPONENT_RANGE, "Show Opponent Range");
 	features_menu.AppendMenu(MF_SEPARATOR);
 	features_menu.AppendMenu(MF_STRING, ID_TERMINAL_FEATURE_LOAD_HUD_PROFILE, "Load HUD Profile...");
+	features_menu.AppendMenu(MF_SEPARATOR);
+	features_menu.AppendMenu(MF_STRING, ID_TERMINAL_EXTEND_BROWSER, "Extend this to your browser");
 	_menu.AppendMenu(MF_POPUP, (UINT_PTR)features_menu.Detach(), "Features");
 	SetMenu(&_menu);
 
@@ -785,6 +805,7 @@ void CChatTerminalWindow::AppendToSection(CString screen, int section, CString t
 		return;
 	}
 	_sections[section].FeedAnsi(text);   // append to the terminal (scrolls)
+	UpdateBrowserSnapshot();
 }
 
 void CChatTerminalWindow::SetPinnedState(CString screen, CString text)
@@ -798,6 +819,35 @@ void CChatTerminalWindow::SetPinnedState(CString screen, CString text)
 		// In-place "progress-bar" block: overwrite the State terminal screen.
 		_sections[kChatTerminalState].SetScreenAnsi(text);
 	}
+	UpdateBrowserSnapshot();
+}
+
+void CChatTerminalWindow::UpdateBrowserSnapshot(void)
+{
+	if (_active_screen < 0 || _active_screen >= (int)_screens.size()) return;
+	CSLock lock(g_browser_snap_cs);
+	for (int i = 0; i < kChatTerminalSectionCount; ++i) {
+		g_browser_sec[i] = _screens[_active_screen].sections[i];
+	}
+	g_browser_pinned = _screens[_active_screen].pinned_state;
+}
+
+void CChatTerminalWindow::OnExtendBrowser()
+{
+	unsigned short port = (p_chat_terminal_server != NULL) ? p_chat_terminal_server->port() : 27654;
+	CString url;
+	url.Format("http://127.0.0.1:%u/terminal/", (unsigned)port);
+	::ShellExecute(GetSafeHwnd(), "open", url, NULL, NULL, SW_SHOWNORMAL);
+}
+
+// Called from the HTTP server thread when a command is typed in the browser
+// prompt. Echo it into the Chat pane (thread-safe; AppendMessage posts to the UI).
+void TerminalBrowserInject(const CString &cmd)
+{
+	if (p_chat_terminal == NULL || cmd.IsEmpty()) return;
+	CString line;
+	line.Format("\x1b[35m[web]\x1b[0m %s", cmd.GetString());
+	p_chat_terminal->AppendMessage("main", kChatTerminalChat, line, false);
 }
 
 void CChatTerminalWindow::OnClearClicked()
@@ -818,6 +868,7 @@ void CChatTerminalWindow::OnScreenChanged()
 	if (sel != CB_ERR) {
 		_active_screen = (int)_screen_combo.GetItemData(sel);
 		RefreshVisibleSections();
+		UpdateBrowserSnapshot();
 	}
 }
 

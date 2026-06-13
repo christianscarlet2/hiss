@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hiss Terminal</title>
+    <link rel="stylesheet" href="/terminal/assets/terminal.css?v=2" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <span class="brand">HISS&nbsp;TERMINAL</span>
+        <span class="status" id="status">connecting&hellip;</span>
+      </header>
+      <main class="grid">
+        <section class="pane" data-pane="0">
+          <div class="pane-label">Context</div>
+          <pre class="pane-body" id="pane-0"></pre>
+        </section>
+        <section class="pane" data-pane="1">
+          <div class="pane-label">State</div>
+          <pre class="pane-body" id="pane-1"></pre>
+        </section>
+        <section class="pane" data-pane="2">
+          <div class="pane-label">Decisions</div>
+          <pre class="pane-body" id="pane-2"></pre>
+        </section>
+        <section class="pane" data-pane="3">
+          <div class="pane-label">Chat</div>
+          <pre class="pane-body" id="pane-3"></pre>
+        </section>
+      </main>
+      <form class="prompt" id="prompt-form" autocomplete="off">
+        <span class="prompt-sign">&gt;</span>
+        <input type="text" id="prompt-input" placeholder="type a command and press Enter&hellip;" spellcheck="false" />
+      </form>
+    </div>
+    <script src="/terminal/assets/terminal.js?v=2"></script>
+  </body>
+</html>

@@ -45,6 +45,9 @@ private:
 	// Verbose per-cadence dump of button detection + decision state to
 	// logs\button_debug.log (diagnoses why an action isn't clicking).
 	void DumpButtonDebug();
+	// Concise OpenPPL decision trace into the Terminal's Decisions window
+	// (betround + chosen action + size), one line per decision change.
+	void EmitDecisionTrace();
 	bool ExecutePrimaryFormulasIfNecessary();
 	// Scarlet Beast server-scrape: decide via the f$-formulas and POST the action to
 	// poker.scarletbeast.com (/act) instead of clicking screen buttons.
@@ -77,6 +80,8 @@ private:
 	bool	_already_executing_allin_adjustment;
 	// Last server table-state version we acted on (act exactly once per state).
 	long	_last_server_act_version;
+	// Dedup for the Decisions-window trace (only emit when the decision changes).
+	CString	_last_decision_line;
 
 	CCritSec	m_critsec;
 };

@@ -27,6 +27,8 @@
 #include "CFunctionCollection.h"
 #include "CHeartbeatThread.h"
 #include "CIteratorThread.h"
+#include "CBetroundCalculator.h"
+#include "ChatTerminalWindow.h"
 
 #include "CRebuyManagement.h"
 #include "CReplayFrame.h"
@@ -604,9 +606,42 @@ void CAutoplayer::DumpButtonDebug() {
 	fclose(f);
 }
 
+void CAutoplayer::EmitDecisionTrace() {
+	// One concise line per decision change into the Terminal's Decisions pane:
+	//   [betround] ACTION [size]   -- shows how the .ohf decision resolved.
+	if (p_function_collection == NULL || p_engine_container == NULL) return;
+	CSymbolEngineAutoplayer *ap = p_engine_container->symbol_engine_autoplayer();
+	if (ap == NULL || !ap->ismyturn() || !ap->isfinalanswer()) return;
+	double f_fold  = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_fold]);
+	double f_check = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_check]);
+	double f_call  = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_call]);
+	double f_raise = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_raise]);
+	double f_allin = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_allin]);
+	double f_bet   = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_betsize]);
+	int br = (p_betround_calculator != NULL) ? p_betround_calculator->betround() : 0;
+	const char *brn = (br == 1) ? "preflop" : (br == 2) ? "flop" : (br == 3) ? "turn"
+		: (br == 4) ? "river" : "?";
+	CString action;
+	if (f_allin != 0)            action = "\x1b[31mALL-IN\x1b[0m";
+	else if (f_raise != 0 || f_bet > 0) action.Format("\x1b[33mRAISE\x1b[0m \x1b[1;37m%.2f\x1b[0m", f_bet);
+	else if (f_call != 0)        action = "\x1b[36mCALL\x1b[0m";
+	else if (f_check != 0)       action = "\x1b[32mCHECK\x1b[0m";
+	else if (f_fold != 0)        action = "\x1b[90mFOLD\x1b[0m";
+	else                         action = "(none)";
+	CString line;
+	line.Format("\x1b[36m[%s]\x1b[0m %s", brn, action.GetString());
+	if (line == _last_decision_line) return;     // only on change
+	_last_decision_line = line;
+	SYSTEMTIME st; GetLocalTime(&st);
+	CString stamped;
+	stamped.Format("\x1b[90m%02d:%02d:%02d\x1b[0m %s\r\n", st.wHour, st.wMinute, st.wSecond, line.GetString());
+	ChatTerminalAppendToScreen("main", kChatTerminalDecisions, stamped);
+}
+
 void CAutoplayer::DoAutoplayer(void) {
 	write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Starting Autoplayer cadence...\n");
 	DumpButtonDebug();
+	EmitDecisionTrace();
 	// Scarlet Beast server-scrape: there are no screen buttons to click; decide via
 	// the formulas and POST the action to poker.scarletbeast.com instead.
 	if (p_scarlet_beast != NULL && p_scarlet_beast->ScrapeFromServer()) {

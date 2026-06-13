@@ -189,6 +189,49 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		return;
 	}
 
+	// --- Browser-extended Terminal: page, live state poll, and prompt input -----
+	if (path.CompareNoCase("/terminal") == 0 || path.CompareNoCase("/terminal/") == 0) {
+		ServeFile(client, "terminal.html");
+		return;
+	}
+	if (path.Left(10).CompareNoCase("/terminal/") == 0) {
+		CString relative(path.Mid(10));
+		if (relative.IsEmpty()) relative = "terminal.html";
+		ServeFile(client, relative);
+		return;
+	}
+	if (path.CompareNoCase("/api/terminal-state") == 0) {
+		CString sec[kChatTerminalSectionCount];
+		CString pinned;
+		TerminalBrowserGetSnapshot(sec, &pinned);
+		CStringA body = "{\"sections\":[";
+		for (int i = 0; i < kChatTerminalSectionCount; ++i) {
+			if (i > 0) body += ",";
+			body += "\"";
+			body += JsonEscape(sec[i]);
+			body += "\"";
+		}
+		body += "],\"pinned\":\"";
+		body += JsonEscape(pinned);
+		body += "\"}";
+		CStringA response;
+		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+			body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+	if (path.CompareNoCase("/api/terminal-input") == 0) {
+		CStringA cmd = text;   // already URL-decoded above (text/body)
+		if (!cmd.IsEmpty()) TerminalBrowserInject(CString(cmd));
+		CStringA body = "{\"ok\":true}";
+		CStringA response;
+		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+			"Content-Length: %d\r\nConnection: close\r\n\r\n%s", body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
 	// Mappings verification UI: page + static assets + JSON API.
 	if (path.CompareNoCase("/mappings") == 0 || path.CompareNoCase("/mappings/") == 0) {
 		ServeFile(client, "mappings.html");
