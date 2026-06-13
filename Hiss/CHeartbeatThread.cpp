@@ -46,6 +46,7 @@
 #include "MemoryLogging.h"
 
 #include "OpenHoldem.h"
+#include "..\DLLs\Files_DLL\Files.h"
 
 CHeartbeatThread	 *p_heartbeat_thread = NULL;
 CRITICAL_SECTION	 CHeartbeatThread::cs_update_in_progress;
@@ -176,12 +177,16 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
 	// Scrape window
   p_table_title->UpdateTitle();
   write_log(Preferences()->debug_heartbeat(), "[HeartBeatThread] Calling DoScrape.\n");
+  DWORD t_scrape0 = GetTickCount();
   p_lazyscraper->DoScrape();
+  DWORD t_scrape_ms = GetTickCount() - t_scrape0;
   // We must not check if the scrape of the table changed, because:
   //   * some symbol-engines must be evaluated no matter what
   //   * we might need to act (sitout, ...) on empty/non-changing tables
   //   * auto-player needs stable frames too
+  DWORD t_eval0 = GetTickCount();
 	p_engine_container->EvaluateAll();
+  DWORD t_eval_ms = GetTickCount() - t_eval0;
 	// Reply-frames no longer here in the heartbeat.
   // we have a "ReplayFrameController for that.
   LeaveCriticalSection(&pParent->cs_update_in_progress);
@@ -204,9 +209,25 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
 	write_log(Preferences()->debug_heartbeat(), "[HeartBeatThread] p_engine_container->symbol_engine_userchair()->userchair()_confirmed(): %s\n", 
 		Bool2CString(p_engine_container->symbol_engine_userchair()->userchair_confirmed()));
 	// If autoplayer is engaged, we know our chair, and the DLL hasn't told us to wait, then go do it!
+	DWORD t_act0 = GetTickCount();
 	if (p_autoplayer->autoplayer_engaged()) {
 		write_log(Preferences()->debug_heartbeat(), "[HeartBeatThread] Calling DoAutoplayer.\n");
 		p_autoplayer->DoAutoplayer();
+	}
+	DWORD t_act_ms = GetTickCount() - t_act0;
+
+	// Per-cycle heartbeat timing: scrape vs symbol-engine (EvaluateAll) vs
+	// validate+autoplayer. Tells us whether remaining lag is scrape or evaluate.
+	{
+		CString path = LogsDirectory() + "scrape_perf.log";
+		FILE *f = fopen(path.GetString(), "a");
+		if (f != NULL) {
+			SYSTEMTIME st; GetLocalTime(&st);
+			fprintf(f, "%02d:%02d:%02d.%03d  [heartbeat] scrape=%lu ms  evaluate=%lu ms  validate+act=%lu ms\n",
+				st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
+				(unsigned long)t_scrape_ms, (unsigned long)t_eval_ms, (unsigned long)t_act_ms);
+			fclose(f);
+		}
 	}
 }
 
