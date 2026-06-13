@@ -504,18 +504,23 @@ void CAutoplayer::DumpButtonDebug() {
 	CSymbolEngineAutoplayer *ap = p_engine_container->symbol_engine_autoplayer();
 	CFunctionCollection *fc = p_function_collection;
 	int visible = p_casino_interface->NumberOfVisibleAutoplayerButtons();
+
+	// Only log the interesting cadences. NOTE: do NOT gate on "any f$ decision is
+	// true" - a forcing .ohf (e.g. WHEN Others Fold FORCE) makes f$fold=1 every
+	// heartbeat, which would log (and OCR) on every single scrape and lag the bot.
+	if (!(visible > 0 || ap->ismyturn() || ap->isfinalanswer())) {
+		return;
+	}
+
+	// Formula values are cached per-heartbeat (cheap); region OCR is NOT, so below
+	// we read button state/label from the already-scraped CAutoplayerButton objects
+	// instead of calling p_scraper->EvaluateRegion() (which re-runs OCR).
 	double f_fold  = fc->Evaluate(k_standard_function_names[k_autoplayer_function_fold]);
 	double f_check = fc->Evaluate(k_standard_function_names[k_autoplayer_function_check]);
 	double f_call  = fc->Evaluate(k_standard_function_names[k_autoplayer_function_call]);
 	double f_raise = fc->Evaluate(k_standard_function_names[k_autoplayer_function_raise]);
 	double f_allin = fc->Evaluate(k_standard_function_names[k_autoplayer_function_allin]);
 	double f_bet   = fc->Evaluate(k_standard_function_names[k_autoplayer_function_betsize]);
-	bool any_decision = (f_fold != 0 || f_check != 0 || f_call != 0 || f_raise != 0 || f_allin != 0);
-
-	// Only log the interesting cadences (something visible / my turn / a decision true).
-	if (!(visible > 0 || ap->ismyturn() || ap->isfinalanswer() || any_decision)) {
-		return;
-	}
 
 	CString path = LogsDirectory() + "button_debug.log";
 	FILE *f = fopen(path.GetString(), "a");
@@ -539,26 +544,18 @@ void CAutoplayer::DumpButtonDebug() {
 
 	for (int i = 0; i < k_max_number_of_buttons; ++i) {
 		char hc = (i < 10) ? (char)('0' + i) : (char)('a' + i - 10);
-		CString sname, lname, sres, lres;
-		sname.Format("i%cstate", hc);
-		lname.Format("i%clabel", hc);
-		bool has_state = p_scraper->EvaluateRegion(sname, &sres);
-		bool has_label = p_scraper->EvaluateRegion(lname, &lres);
-		if (!has_state && !has_label) continue;
 		CAutoplayerButton *b = &p_casino_interface->_technical_autoplayer_buttons[i];
+		CString label = b->Label();   // cached scrape result, no OCR
+		// Skip empty/uninteresting buttons to keep the dump short.
+		if (label.IsEmpty() && !b->IsClickable()) continue;
 		const char *type = b->IsFold() ? "FOLD" : b->IsCall() ? "CALL" : b->IsCheck() ? "CHECK"
 			: b->IsRaise() ? "RAISE" : b->IsAllin() ? "ALLIN" : "(unclassified)";
-		fprintf(f, "  i%c: state=\"%s\" label=\"%s\" -> type=%s clickable=%d\n",
-			hc, sres.GetString(), lres.GetString(), type, b->IsClickable() ? 1 : 0);
+		fprintf(f, "  i%c: label=\"%s\" -> type=%s clickable=%d\n",
+			hc, label.GetString(), type, b->IsClickable() ? 1 : 0);
 	}
 
 	fprintf(f, "  decision: f$fold=%.0f f$check=%.0f f$call=%.0f f$raise=%.0f f$allin=%.0f f$betsize=%.2f\n",
 		f_fold, f_check, f_call, f_raise, f_allin, f_bet);
-
-	CString tcl;
-	p_scraper->EvaluateRegion("two_successive_clicks_label", &tcl);
-	fprintf(f, "  two_successive_clicks_label OCR=\"%s\" (raise gate=%d)\n",
-		tcl.GetString(), (f_raise != 0) ? 1 : 0);
 
 	fclose(f);
 }

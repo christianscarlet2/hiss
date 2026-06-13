@@ -27,6 +27,9 @@ class CAutoplayerButton {
   void Reset();
   bool Click();
   bool IsClickable() { return _clickable; }
+  // Cheap accessors (already-scraped values, no OCR) for diagnostics.
+  CString Label() { return _label; }
+  CString TechnicalName() { return _technical_name; }
 
   bool IsAllin()    { return _button_type == k_autoplayer_function_allin; }
   bool IsRaise()    { return _button_type == k_autoplayer_function_raise; }

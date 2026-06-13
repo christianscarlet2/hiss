@@ -228,7 +228,7 @@ void CPreferences::InitDefaults(void) {
   prefs_numerical_values[k_prefs_swag_delay_1] = 400;
   prefs_numerical_values[k_prefs_swag_delay_2] = 400;
   prefs_numerical_values[k_prefs_swag_delay_3] = 700;
-  prefs_numerical_values[k_prefs_scrape_delay] = 750;
+  prefs_numerical_values[k_prefs_scrape_delay] = 300;  // faster cadence for live phone-mirror play
   prefs_numerical_values[k_prefs_scraper_zoom] = 2;			// 4x
   prefs_numerical_values[k_prefs_replay_max_frames] = 100;
   prefs_numerical_values[k_prefs_chat_min_delay] = 600;		//  seconds
