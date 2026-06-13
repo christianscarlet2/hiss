@@ -326,11 +326,15 @@ bool CAutoplayer::HandleTwoSuccessiveClicksBetRaise() {
 	// keypad receives the big-blind amount this BB-only bot expects (bblind == 1 ->
 	// dollars == big blinds; bblind == 0 -> fall back to the BB decision directly).
 	double betsize = (f_betsize > 0) ? f_betsize : decision_bb;
+	write_log(k_always_log_basic_information,
+		"[TwoClicks] BetRaise entry: wants_raise=%d f$betsize=%.2f decision_bb=%.2f -> keypad betsize=%.2f\n",
+		wants_raise ? 1 : 0, f_betsize, decision_bb, betsize);
 	if (betsize <= 0) {
 		APTrace("two-successive-clicks: SKIP, no positive size (f$betsize=0 AND OpenPPL decision<=0)");
 		return false;
 	}
 	if (!p_two_successive_clicks->HandleCycle(true)) {
+		APTrace("two-successive-clicks: HandleCycle returned false (see [TwoClicks] SKIP/label line for why)");
 		return false;
 	}
 	write_log(k_always_log_basic_information, "[AutoPlayer] Two-successive-clicks handled (primary path), betsize=%.2f\n", betsize);

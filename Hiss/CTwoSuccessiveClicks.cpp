@@ -128,30 +128,39 @@ bool CTwoSuccessiveClicks::HandleCycle(bool decision_is_raise) {
   bool box2_active = enable2 && !text2.IsEmpty();
   // Disabled when neither text box is enabled with text.
   if (!box1_active && !box2_active) {
+    write_log(k_always_log_basic_information,
+      "[TwoClicks] SKIP: neither text box configured (en1=%d txt1=\"%s\" en2=%d txt2=\"%s\")\n",
+      enable1 ? 1 : 0, text1.GetString(), enable2 ? 1 : 0, text2.GetString());
     _was_matching = false;
     return false;
   }
   // Only act when the .ohf decision is to RAISE.
   if (!decision_is_raise) {
+    write_log(k_always_log_basic_information, "[TwoClicks] SKIP: decision is not raise\n");
     _was_matching = false;
     return false;
   }
   if (p_tablemap == NULL || p_scraper == NULL
       || p_casino_interface == NULL || p_tablemap_access == NULL) {
+    write_log(k_always_log_basic_information, "[TwoClicks] SKIP: a required singleton is NULL\n");
     return false;
   }
   // The trigger region must exist and define BOTH rectangles.
   RECT rect1;
   if (!p_tablemap_access->GetTableMapRect("two_successive_clicks", &rect1)) {
+    write_log(k_always_log_basic_information,
+      "[TwoClicks] SKIP: no rect for region \"two_successive_clicks\" in tablemap\n");
     return false;
   }
   RMapCI region = p_tablemap->r$()->find("two_successive_clicks");
   if (region == p_tablemap->r$()->end()) {
+    write_log(k_always_log_basic_information,
+      "[TwoClicks] SKIP: region \"two_successive_clicks\" not found\n");
     return false;
   }
   if (!region->second.rect2_enabled) {
-    write_log(Preferences()->debug_autoplayer(),
-      "[TwoClicks] Region two_successive_clicks has no second rectangle (rect2_enabled=false).\n");
+    write_log(k_always_log_basic_information,
+      "[TwoClicks] SKIP: region two_successive_clicks has no second rectangle (rect2_enabled=false)\n");
     return false;
   }
   RECT rect2;
@@ -166,6 +175,10 @@ bool CTwoSuccessiveClicks::HandleCycle(bool decision_is_raise) {
   ocr.Trim();
   bool matching = (box1_active && ocr.CompareNoCase(text1) == 0)
                || (box2_active && ocr.CompareNoCase(text2) == 0);
+  write_log(k_always_log_basic_information,
+    "[TwoClicks] label OCR=\"%s\" vs text1=\"%s\"/text2=\"%s\" -> matching=%d was_matching=%d%s\n",
+    ocr.GetString(), text1.GetString(), text2.GetString(), matching ? 1 : 0, _was_matching ? 1 : 0,
+    (matching && !_was_matching) ? " (RISING EDGE -> will click)" : "");
 
   bool clicked = false;
   // Edge-triggered: fire once when the label starts matching.
