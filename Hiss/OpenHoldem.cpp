@@ -33,6 +33,7 @@
 #include "OpenHoldemView.h"
 #include "Singletons.h"
 #include "COcrWorker.h"
+#include "CrashHandler.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -71,6 +72,10 @@ COpenHoldemApp theApp;
 
 // COpenHoldemApp initialization
 BOOL COpenHoldemApp::InitInstance() {
+  // Always-on crash interception: capture a symbolicated stack + minidump to
+  // logs\crash_*.log / .dmp for any SEH crash, unhandled C++ exception, or abort.
+  // Installed first thing so even early-startup crashes are caught.
+  InstallCrashHandler("hiss");
   // InitCommonControlsEx() is required on Windows XP if an application
 	// manifest specifies use of ComCtl32.dll version 6 or later to enable
 	// visual styles.  Otherwise, any window creation will fail.
@@ -147,7 +152,8 @@ BOOL COpenHoldemApp::InitInstance() {
   {
     CString worker_pipe, worker_tm;
     if (ParseOcrWorkerCommandLine(&worker_pipe, &worker_tm)) {
-      RunOcrWorker(worker_pipe, worker_tm);   // never returns (ExitProcess)
+      InstallCrashHandler("ocrworker");        // tag worker crashes distinctly
+      RunOcrWorker(worker_pipe, worker_tm);     // never returns (ExitProcess)
       return FALSE;
     }
   }
