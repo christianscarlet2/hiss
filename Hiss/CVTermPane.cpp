@@ -41,7 +41,7 @@ static VTermScreenCallbacks g_screen_cbs = {
 CVTermPane::CVTermPane()
 	: _vt(NULL), _screen(NULL), _char_w(8), _line_h(15), _rows(24), _cols(80),
 	  _bg(RGB(0x0A, 0x0E, 0x12)), _fg(RGB(0x3D, 0xF5, 0x7A)),
-	  _max_sb(8000), _scroll_off(0), _stick(true) {
+	  _max_sb(8000), _scroll_off(0), _stick(true), _is_screen_mode(false) {
 }
 
 CVTermPane::~CVTermPane() {
@@ -117,6 +117,9 @@ void CVTermPane::OnDestroy() {
 
 void CVTermPane::FeedAnsi(const CString &text) {
 	if (_vt == NULL || text.IsEmpty()) return;
+	// Switching to append/scroll mode: a pinned screen block no longer applies.
+	_is_screen_mode = false;
+	_screen_text.Empty();
 	CStringA a(text);
 	vterm_input_write(_vt, a.GetString(), a.GetLength());
 	if (_stick) _scroll_off = 0;
@@ -124,21 +127,32 @@ void CVTermPane::FeedAnsi(const CString &text) {
 	if (::IsWindow(GetSafeHwnd())) Invalidate(FALSE);
 }
 
-void CVTermPane::SetScreenAnsi(const CString &text) {
+// Home + clear screen + clear scrollback, then write _screen_text -> overwrites in
+// place. Used both by SetScreenAnsi() and after any reflow (resize/rebuild) so the
+// fixed block can never be left blank by a layout pass.
+void CVTermPane::WriteScreenText() {
 	if (_vt == NULL) return;
-	// Home + clear screen + clear scrollback, then write -> overwrites in place.
 	static const char kHomeClear[] = "\x1b[H\x1b[2J";
 	vterm_input_write(_vt, kHomeClear, (size_t)(sizeof(kHomeClear) - 1));
-	CStringA a(text);
+	CStringA a(_screen_text);
 	if (a.GetLength() > 0) vterm_input_write(_vt, a.GetString(), a.GetLength());
 	_scrollback.clear();
 	_scroll_off = 0;
 	_stick = true;
+}
+
+void CVTermPane::SetScreenAnsi(const CString &text) {
+	if (_vt == NULL) return;
+	_is_screen_mode = true;
+	_screen_text = text;
+	WriteScreenText();
 	UpdateScrollBar();
 	if (::IsWindow(GetSafeHwnd())) Invalidate(FALSE);
 }
 
 void CVTermPane::ResetTerminal() {
+	_is_screen_mode = false;
+	_screen_text.Empty();
 	_scrollback.clear();
 	_scroll_off = 0;
 	_stick = true;
@@ -272,6 +286,9 @@ void CVTermPane::OnSize(UINT nType, int cx, int cy) {
 	if (cols != _cols || rows != _rows) {
 		_cols = cols; _rows = rows;
 		vterm_set_size(_vt, rows, cols);
+		// A reflow can scroll/blank the live screen. If this pane is showing a
+		// pinned fixed block, re-write it so the resize can't leave it blank.
+		if (_is_screen_mode) WriteScreenText();
 	}
 	if (_stick) _scroll_off = 0;
 	UpdateScrollBar();

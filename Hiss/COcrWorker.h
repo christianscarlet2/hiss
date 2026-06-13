@@ -61,10 +61,16 @@ class COcrWorkerPool {
  private:
   void StartOne(int index);
   void StopOne(int index);
+  void EnsureJob();             // lazily create the kill-on-close job object
   std::vector<HANDLE> _pipes;   // duplex pipe to each worker (server end)
   std::vector<HANDLE> _procs;   // worker process handles
   CString _tablemap_name;
   int _size;
+  // All workers are assigned to this job; it is created with
+  // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE so that when the main Hiss process dies --
+  // even by a hard crash -- the OS terminates every worker. This is what prevents
+  // orphaned "Hiss.exe --ocr-worker" processes from piling up across crashes.
+  HANDLE _job;
 };
 
 #endif  // INC_COCRWORKER_H

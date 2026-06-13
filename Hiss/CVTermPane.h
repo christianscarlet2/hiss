@@ -58,6 +58,7 @@ class CVTermPane : public CWnd {
 
   void EnsureFonts();
   void RebuildVTerm();           // (re)create the VTerm sized to the client
+  void WriteScreenText();        // home+clear, then (re)write _screen_text in place
   void ApplyDefaultColors();
   int  VisibleRows() const;
   int  TotalHistory() const { return (int)_scrollback.size(); }
@@ -75,6 +76,11 @@ class CVTermPane : public CWnd {
   size_t  _max_sb;
   int     _scroll_off;              // lines scrolled up from the bottom (0 = live)
   bool    _stick;
+  // "Screen mode": SetScreenAnsi() pins a fixed block that must survive vterm
+  // reflows (resize/rebuild). We remember the text and re-apply it ourselves so a
+  // layout pass can never blank the pane (the owner dedups updates and won't re-pin).
+  bool    _is_screen_mode;
+  CString _screen_text;
 };
 
 #endif  // INC_CVTERMPANE_H

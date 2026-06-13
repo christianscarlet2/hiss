@@ -155,9 +155,9 @@ WHEN NOT issittingin RETURN true FORCE
 //=============================================================================
 
 ##f$preflop##
-// TEST OVERRIDE: always raise by 3 BB. Delete the next line to use the real
+// TEST OVERRIDE: always raise TO 3 BB. Delete the next line to use the real
 // position strategy below it.
-WHEN Others RaiseBy 3 FORCE
+WHEN Others RaiseTo 3 FORCE
 // Raises = number of raises this round (the big blind is not a raise), so:
 //   Raises == 0  -> unopened pot (we open by position)
 //   Raises == 1  -> facing a single open (3-bet value / flat / fold)
@@ -190,20 +190,20 @@ WHEN Others Fold FORCE
 //=============================================================================
 
 ##f$flop##
-// TEST OVERRIDE: always raise by 3 BB (delete this line to use the strategy below).
-WHEN Others RaiseBy 3 FORCE
+// TEST OVERRIDE: always raise TO 3 BB (delete this line to use the strategy below).
+WHEN Others RaiseTo 3 FORCE
 WHEN AmountToCall == 0 RETURN f$postflop_bet FORCE
 WHEN Others RETURN f$postflop_vs_bet FORCE
 
 ##f$turn##
-// TEST OVERRIDE: always raise by 3 BB (delete this line to use the strategy below).
-WHEN Others RaiseBy 3 FORCE
+// TEST OVERRIDE: always raise TO 3 BB (delete this line to use the strategy below).
+WHEN Others RaiseTo 3 FORCE
 WHEN AmountToCall == 0 RETURN f$postflop_bet FORCE
 WHEN Others RETURN f$postflop_vs_bet FORCE
 
 ##f$river##
-// TEST OVERRIDE: always raise by 3 BB (delete this line to use the strategy below).
-WHEN Others RaiseBy 3 FORCE
+// TEST OVERRIDE: always raise TO 3 BB (delete this line to use the strategy below).
+WHEN Others RaiseTo 3 FORCE
 WHEN AmountToCall == 0 RETURN f$river_bet FORCE
 WHEN Others RETURN f$river_vs_bet FORCE
 

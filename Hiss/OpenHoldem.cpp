@@ -127,35 +127,39 @@ BOOL COpenHoldemApp::InitInstance() {
   free((void*)m_pszProfileName);
   m_pszProfileName = _strdup(IniFilePath().GetString());
   Preferences()->LoadPreferences();
-	if (!p_sessioncounter) p_sessioncounter = new CSessionCounter();
-	// Start logging immediatelly after the loading the preferences
-	// and initializing the sessioncounter, which is necessary for 
-	// the filename of the log (oh_0.log, etc).
-  /*fn.Format("%s\\oh%d.log", _startup_path, theApp.sessionnum);
-  struct stat file_stats = { 0 };
-  if (stat(fn.GetString(), &file_stats) == 0) {
-    unsigned long int max_file_size = 1E06 * Preferences()->log_max_logsize();
-    size_t file_size = file_stats.st_size;
-    if (file_size > max_file_size) {
-      delete_log();
-    }*/
-	start_log(p_sessioncounter->session_id(), false); //!!!!!
-  // ...then re-Load the preferences immediately after creation 
-  // of the log-file again, as We might want to log the preferences too,
-  // which was not yet possible some lines above.
-  // http://www.maxinmontreal.com/forums/viewtopic.php?f=124&t=20281&p=142334#p142334
-  Preferences()->LoadPreferences();
+
+  // OCR-worker mode detection MUST happen before we grab a session slot. Worker
+  // processes ("Hiss.exe --ocr-worker") are short-lived helpers; if they grabbed
+  // a session id like a real instance they would exhaust the session counter and
+  // make every later launch (workers AND the main app) fail with "too many
+  // instances on sessioncounter". So workers skip the session counter entirely.
+  CString worker_pipe, worker_tm;
+  bool is_ocr_worker = ParseOcrWorkerCommandLine(&worker_pipe, &worker_tm);
+
+	if (!is_ocr_worker) {
+		if (!p_sessioncounter) p_sessioncounter = new CSessionCounter();
+		// Start logging immediatelly after the loading the preferences
+		// and initializing the sessioncounter, which is necessary for
+		// the filename of the log (oh_0.log, etc).
+		start_log(p_sessioncounter->session_id(), false); //!!!!!
+		// ...then re-Load the preferences immediately after creation
+		// of the log-file again, as We might want to log the preferences too,
+		// which was not yet possible some lines above.
+		// http://www.maxinmontreal.com/forums/viewtopic.php?f=124&t=20281&p=142334#p142334
+		Preferences()->LoadPreferences();
+	} else {
+		// Worker: start a log under a fixed pseudo-id (no session slot grabbed) so
+		// any write_log() during singleton construction has a valid target.
+		start_log(9000 + (int)(GetCurrentProcessId() % 1000), false);
+	}
 	InstantiateAllSingletons();
   // Process-level OCR worker: if launched as "Hiss.exe --ocr-worker", do NOT
   // start the GUI/heartbeat/autoconnector. Just load the tablemap and service
   // recognition requests over the pipe in this isolated process, then exit.
-  {
-    CString worker_pipe, worker_tm;
-    if (ParseOcrWorkerCommandLine(&worker_pipe, &worker_tm)) {
-      InstallCrashHandler("ocrworker");        // tag worker crashes distinctly
-      RunOcrWorker(worker_pipe, worker_tm);     // never returns (ExitProcess)
-      return FALSE;
-    }
+  if (is_ocr_worker) {
+    InstallCrashHandler("ocrworker");        // tag worker crashes distinctly
+    RunOcrWorker(worker_pipe, worker_tm);     // never returns (ExitProcess)
+    return FALSE;
   }
   write_log(Preferences()->debug_openholdem(), "[OpenHoldem] Going to load mouse.DLL\n");
 	// mouse.dll - failure in load is fatal

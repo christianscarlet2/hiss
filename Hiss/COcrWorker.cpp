@@ -140,8 +140,23 @@ void RunOcrWorker(const CString& pipe_name, const CString& tablemap_name) {
 //  Coordinator side
 //==============================================================================
 
-COcrWorkerPool::COcrWorkerPool() : _size(0) {}
-COcrWorkerPool::~COcrWorkerPool() { Stop(); }
+COcrWorkerPool::COcrWorkerPool() : _size(0), _job(NULL) {}
+COcrWorkerPool::~COcrWorkerPool() {
+  Stop();
+  if (_job) { CloseHandle(_job); _job = NULL; }   // closing the job kills survivors
+}
+
+void COcrWorkerPool::EnsureJob() {
+  if (_job != NULL) return;
+  _job = CreateJobObject(NULL, NULL);
+  if (_job == NULL) return;
+  JOBOBJECT_EXTENDED_LIMIT_INFORMATION info;
+  ZeroMemory(&info, sizeof(info));
+  // Kill every assigned worker when the last handle to the job closes -- which
+  // happens automatically when the main Hiss process exits or crashes.
+  info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+  SetInformationJobObject(_job, JobObjectExtendedLimitInformation, &info, sizeof(info));
+}
 
 void COcrWorkerPool::StartOne(int index) {
   CString pname;
@@ -159,14 +174,20 @@ void COcrWorkerPool::StartOne(int index) {
   std::vector<char> buf(cmd.GetString(), cmd.GetString() + cmd.GetLength());
   buf.push_back(0);
 
+  EnsureJob();
   STARTUPINFOA si; ZeroMemory(&si, sizeof(si)); si.cb = sizeof(si);
   PROCESS_INFORMATION pi; ZeroMemory(&pi, sizeof(pi));
-  if (!CreateProcessA(NULL, buf.data(), NULL, NULL, FALSE, CREATE_NO_WINDOW,
+  // Create suspended so we can assign it to the kill-on-close job BEFORE it runs
+  // (no window where a crash could orphan it).
+  if (!CreateProcessA(NULL, buf.data(), NULL, NULL, FALSE,
+                      CREATE_NO_WINDOW | CREATE_SUSPENDED,
                       NULL, NULL, &si, &pi)) {
     CloseHandle(pipe);
     _pipes[index] = NULL; _procs[index] = NULL;
     return;
   }
+  if (_job) AssignProcessToJobObject(_job, pi.hProcess);
+  ResumeThread(pi.hThread);
   if (pi.hThread) CloseHandle(pi.hThread);
   // Wait for the worker to connect (it loads the tablemap first, so allow time).
   BOOL connected = ConnectNamedPipe(pipe, NULL);
