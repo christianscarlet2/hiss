@@ -103,7 +103,9 @@ void CLazyScraper::DoScrape() {
 	// scraped, so EvaluateRegion redirects p3<x> -> p3observer_<x> this frame.
 	p_scraper->RefreshObserverState();
 	// Optional: OCR all AutoOcr regions in parallel up-front (no-op unless enabled).
+	DWORD t_prepass_start = GetTickCount();
 	p_scraper->PreOcrParallel();
+	DWORD prepass_ms = GetTickCount() - t_prepass_start;
 	p_scraper->ScrapeLimits();
 	if (NeedDealerChair()) {
 		p_scraper->ScrapeDealer();
@@ -207,9 +209,10 @@ void CLazyScraper::DoScrape() {
   FILE *pf = fopen(perf_path.GetString(), "a");
   if (pf != NULL) {
     SYSTEMTIME st; GetLocalTime(&st);
-    fprintf(pf, "%02d:%02d:%02d.%03d  scrape=%lu ms  ocr_recognised=%ld  ocr_reused=%ld\n",
+    fprintf(pf, "%02d:%02d:%02d.%03d  scrape=%lu ms  (ocr_prepass=%lu ms, rest=%lu ms)  ocr_recognised=%ld  ocr_reused=%ld\n",
       st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
-      (unsigned long)elapsed, p_scraper->_ocr_recognitions, p_scraper->_ocr_reuses);
+      (unsigned long)elapsed, (unsigned long)prepass_ms, (unsigned long)(elapsed - prepass_ms),
+      p_scraper->_ocr_recognitions, p_scraper->_ocr_reuses);
     fclose(pf);
   }
 }
