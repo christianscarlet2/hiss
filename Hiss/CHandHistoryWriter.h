@@ -66,6 +66,8 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
   void ObserveResult();
   void Flush();                  // write the finished hand to disk
 
+  // ---- tournament identity (scraped once, cached for the session) ----
+  void    ScrapeTourneyInfo();         // c0tourney_title / c0tourney_id
   // ---- name handling (avoid scraping the "ANTE"/"posts SB" status overlays) ----
   void    ObserveNames();              // cache real names continuously
   bool    LooksLikeStatus(CString n);  // is this an action/status label, not a name?
@@ -90,6 +92,9 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
   // ---- output ----
   CString _output_complete;      // <exedir>\handhistory\complete\...   (PT4-import folder)
   CString _output_incomplete;    // <exedir>\handhistory\incomplete\... (review folder)
+  // Tournament identity, scraped once and kept for the whole session.
+  CString _tourney_title;        // c0tourney_title (commas stripped)
+  CString _tourney_id;           // c0tourney_id    (parentheses stripped)
 
   // ---- per-hand state ----
   bool    _meta_captured;        // metadata for the current hand recorded

@@ -54,6 +54,8 @@ CHandHistoryWriter::CHandHistoryWriter() {
   // and therefore must be executed after all the rest (it is registered last).
   _output_complete = "";
   _output_incomplete = "";
+  _tourney_title = "";
+  _tourney_id = "";
   for (int i = 0; i < kMaxNumberOfPlayers; ++i) _known_name[i] = "";
   ResetHand();
 }
@@ -85,6 +87,8 @@ void CHandHistoryWriter::UpdateOnHeartbeat() {
   // Cache real names every heartbeat (when no status overlay is showing) so the
   // hand history never names a player "ANTE" / "PostSB" / "PostBB".
   ObserveNames();
+  // Scrape the tournament name/id once (cheap: only until both are found).
+  ScrapeTourneyInfo();
   if (!_meta_captured) {
     // Wait until at least two players are dealt (blinds posted) before we
     // open a hand. If we joined mid-hand we still open it, with placeholders.
@@ -437,9 +441,13 @@ CString CHandHistoryWriter::AcrHeader() {
   CString hid = _hand_number;
   hid.Trim();
   if (hid.IsEmpty()) hid = "0";
+  // Use the scraped tournament id when available, else the session id.
+  CString tid = _tourney_id;
+  tid.Trim();
+  if (tid.IsEmpty()) tid.Format("%d", sid);
   CString s;
-  s.Format("Game Hand #%s - Tournament #%d - Holdem (No Limit) - Level 1 (%s/%s) - %s UTC",
-           hid.GetString(), sid,
+  s.Format("Game Hand #%s - Tournament #%s - Holdem (No Limit) - Level 1 (%s/%s) - %s UTC",
+           hid.GetString(), tid.GetString(),
            FmtMoney(_sb).GetString(), FmtMoney(_bb).GetString(),
            AcrTimestampUtc().GetString());
   return s;
@@ -474,6 +482,30 @@ bool CHandHistoryWriter::LooksLikeStatus(CString n) {
     "EMPTY","SEAT","WAITING","JOIN","RESERVED","ANTE", NULL };
   for (int i = 0; words[i] != NULL; ++i) if (u == words[i]) return true;
   return false;
+}
+
+void CHandHistoryWriter::ScrapeTourneyInfo() {
+  if (p_scraper == NULL || p_tablemap == NULL) return;
+  // Tournament NAME -> filename TN- field. Strip commas (they break the ACR
+  // filename / are unwanted in the name).
+  if (_tourney_title.IsEmpty() && RegionExists("c0tourney_title")) {
+    CString t;
+    if (p_scraper->EvaluateRegion("c0tourney_title", &t)) {
+      t.Remove(',');
+      t.Trim();
+      if (!t.IsEmpty()) _tourney_title = t;
+    }
+  }
+  // Tournament ID -> "Tournament #<id>" header. Strip parentheses.
+  if (_tourney_id.IsEmpty() && RegionExists("c0tourney_id")) {
+    CString id;
+    if (p_scraper->EvaluateRegion("c0tourney_id", &id)) {
+      id.Remove('(');
+      id.Remove(')');
+      id.Trim();
+      if (!id.IsEmpty()) _tourney_id = id;
+    }
+  }
 }
 
 void CHandHistoryWriter::ObserveNames() {
@@ -568,11 +600,18 @@ void CHandHistoryWriter::EnsureOutputPath() {
   CreateDirectory(complete_dir, NULL);
   CreateDirectory(incomplete_dir, NULL);
   int sid = (p_sessioncounter != NULL) ? p_sessioncounter->session_id() : 0;
-  // ACR-style filename so PokerTracker's ACR importer recognises it.
+  // ACR-style filename so PokerTracker's ACR importer recognises it. The tournament
+  // NAME goes in the "TN-" field (where PT4 reads it); fall back when not scraped.
+  CString tn = _tourney_title;
+  tn.Trim();
+  if (tn.IsEmpty()) tn = "ScarletBeast";
+  // Strip characters that are illegal in a Windows filename.
+  const char *illegal = "\\/:*?\"<>|";
+  for (const char *p = illegal; *p; ++p) tn.Remove(*p);
   SYSTEMTIME st; GetSystemTime(&st);
   CString fname;
-  fname.Format("HH%04d%02d%02d ScarletBeast T%d GAMETYPE-Hold'em LIMIT-no CUR-REAL.txt",
-               st.wYear, st.wMonth, st.wDay, sid);
+  fname.Format("HH%04d%02d%02d T%d TN-%s GAMETYPE-Hold'em LIMIT-no CUR-REAL.txt",
+               st.wYear, st.wMonth, st.wDay, sid, tn.GetString());
   _output_complete.Format("%s\\%s", complete_dir.GetString(), fname.GetString());
   _output_incomplete.Format("%s\\%s", incomplete_dir.GetString(), fname.GetString());
 }

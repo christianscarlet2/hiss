@@ -154,6 +154,11 @@ CString ListOfRegions() {
   list += "c0bigblind ";
   list += "c0bigbet ";
   list += "c0ante ";
+  // Tournament identity for the hand-history generator (PokerTracker 4 import):
+  //   c0tourney_title -> tournament NAME (commas stripped; written to the filename TN- field)
+  //   c0tourney_id    -> tournament ID   (parentheses stripped; written to the "Tournament #" header)
+  list += "c0tourney_title ";
+  list += "c0tourney_id ";
   list += "betsize ";
   // On-screen numpad for betsize entry (phone / screen-scraped tables that can't
   // take keyboard input): clear with 5x nBackspace, click n0..n9 / nDecimalPoint
