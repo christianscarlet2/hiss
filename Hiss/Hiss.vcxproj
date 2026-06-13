@@ -145,7 +145,7 @@
       <OmitFramePointers>false</OmitFramePointers>
       <EnableFiberSafeOptimizations>true</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
-      <AdditionalIncludeDirectories>..\packages\Microsoft.Web.WebView2\build\native\include;..\spirit-1.8.5-miniboost;..\pokereval\include;..\postgres;..\winmgr;..\hscroll-list-box;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\packages\Microsoft.Web.WebView2\build\native\include;..\spirit-1.8.5-miniboost;..\pokereval\include;..\postgres;..\winmgr;..\hscroll-list-box;..\third_party\libvterm\include;..\third_party\libvterm\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;_WINDOWS;NDEBUG;OEMRESOURCE;_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MinimalRebuild>false</MinimalRebuild>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -411,7 +411,18 @@
     <ClCompile Include="COcrWorker.cpp" />
     <ClCompile Include="CrashHandler.cpp" />
     <ClCompile Include="CSymbolEngineTimingTells.cpp" />
+    <ClCompile Include="CVTermPane.cpp" />
     <ClCompile Include="CScraper.cpp" />
+    <!-- libvterm (vendored, compiled as C, no PCH) -->
+    <ClCompile Include="..\third_party\libvterm\src\vterm.c"><PrecompiledHeader>NotUsing</PrecompiledHeader><CompileAs>CompileAsC</CompileAs></ClCompile>
+    <ClCompile Include="..\third_party\libvterm\src\encoding.c"><PrecompiledHeader>NotUsing</PrecompiledHeader><CompileAs>CompileAsC</CompileAs></ClCompile>
+    <ClCompile Include="..\third_party\libvterm\src\keyboard.c"><PrecompiledHeader>NotUsing</PrecompiledHeader><CompileAs>CompileAsC</CompileAs></ClCompile>
+    <ClCompile Include="..\third_party\libvterm\src\mouse.c"><PrecompiledHeader>NotUsing</PrecompiledHeader><CompileAs>CompileAsC</CompileAs></ClCompile>
+    <ClCompile Include="..\third_party\libvterm\src\parser.c"><PrecompiledHeader>NotUsing</PrecompiledHeader><CompileAs>CompileAsC</CompileAs></ClCompile>
+    <ClCompile Include="..\third_party\libvterm\src\pen.c"><PrecompiledHeader>NotUsing</PrecompiledHeader><CompileAs>CompileAsC</CompileAs></ClCompile>
+    <ClCompile Include="..\third_party\libvterm\src\screen.c"><PrecompiledHeader>NotUsing</PrecompiledHeader><CompileAs>CompileAsC</CompileAs></ClCompile>
+    <ClCompile Include="..\third_party\libvterm\src\state.c"><PrecompiledHeader>NotUsing</PrecompiledHeader><CompileAs>CompileAsC</CompileAs></ClCompile>
+    <ClCompile Include="..\third_party\libvterm\src\unicode.c"><PrecompiledHeader>NotUsing</PrecompiledHeader><CompileAs>CompileAsC</CompileAs></ClCompile>
     <ClCompile Include="CScarletBeast.cpp" />
     <ClCompile Include="CSymbolEngineScarletBeast.cpp" />
     <ClCompile Include="ScarletBeastMenu.cpp" />
@@ -744,6 +755,7 @@
     <ClInclude Include="COcrWorker.h" />
     <ClInclude Include="CrashHandler.h" />
     <ClInclude Include="CSymbolEngineTimingTells.h" />
+    <ClInclude Include="CVTermPane.h" />
     <ClInclude Include="CScraper.h" />
     <ClInclude Include="CScarletBeast.h" />
     <ClInclude Include="CSymbolEngineScarletBeast.h" />

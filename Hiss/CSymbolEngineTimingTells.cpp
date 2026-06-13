@@ -109,9 +109,21 @@ void CSymbolEngineTimingTells::PublishStateBox() {
     txt += cell;
     txt += ((chair % 3) == 2) ? "\r\n" : "   ";
   }
-  if (txt == _last_published) return;        // nothing changed since last update
+  // Dedup on the VALUES only (exclude the timestamp, which changes every second).
+  if (txt == _last_published) return;        // values unchanged since last update
   _last_published = txt;
-  p_chat_terminal->SetPinnedStateAsync("main", txt);
+
+  // Stamp WHEN these values were last updated: a human-readable 12-hour time in
+  // YELLOW, and the actual 24-hour clock time in WHITE underneath, for reference.
+  SYSTEMTIME st; GetLocalTime(&st);
+  int hr12 = st.wHour % 12; if (hr12 == 0) hr12 = 12;
+  const char *ampm = (st.wHour < 12) ? "AM" : "PM";
+  CString stamp;
+  stamp.Format("\r\n\x1b[33mlast updated %d:%02d:%02d %s\x1b[0m\r\n"
+               "\x1b[1;37m%02d:%02d:%02d\x1b[0m\r\n",
+               hr12, st.wMinute, st.wSecond, ampm,
+               st.wHour, st.wMinute, st.wSecond);
+  p_chat_terminal->SetPinnedStateAsync("main", txt + stamp);
 }
 
 bool CSymbolEngineTimingTells::EvaluateSymbol(const CString name, double *result, bool log) {

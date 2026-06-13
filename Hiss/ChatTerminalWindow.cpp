@@ -407,13 +407,9 @@ HBRUSH CChatTerminalWindow::OnCtlColor(CDC *pDC, CWnd *pWnd, UINT nCtlColor) {
 	if (_term_bg_brush.GetSafeHandle() == NULL) {
 		_term_bg_brush.CreateSolidBrush(kTermBg);
 	}
-	// The 4 section displays: dark console with green monospace text.
+	// The 4 section displays are CVTermPane (self-drawn) -- no WM_CTLCOLOR. Only the
+	// labels need dark styling here.
 	for (int i = 0; i < kChatTerminalSectionCount; ++i) {
-		if (pWnd == &_sections[i]) {
-			pDC->SetTextColor(kTermText);
-			pDC->SetBkColor(kTermBg);
-			return (HBRUSH)_term_bg_brush.GetSafeHandle();
-		}
 		if (pWnd == &_section_labels[i]) {
 			pDC->SetTextColor(kTermLabel);
 			pDC->SetBkColor(kTermBg);
@@ -463,108 +459,6 @@ BOOL CChatTerminalWindow::OnEraseBkgnd(CDC *pDC) {
 	return TRUE;
 }
 
-// Apply an ANSI SGR parameter list (e.g. "1;37") to the current colour + bold
-// state. 0 resets (green, not bold); 1 = bold on; 22 = bold off; 30-37/90-97 set
-// the foreground colour; 39 resets the colour to green.
-static void ApplySgr(const CString &params, COLORREF &color, bool &bold) {
-	int start = 0;
-	while (start <= params.GetLength()) {
-		int semi = params.Find(';', start);
-		CString tok = (semi < 0) ? params.Mid(start) : params.Mid(start, semi - start);
-		int code = atoi(tok.GetString());
-		switch (code) {
-			case 0:  color = RGB(0x3D, 0xF5, 0x7A); bold = false; break;  // reset
-			case 1:  bold = true; break;                                  // bold on
-			case 22: bold = false; break;                                 // bold off
-			case 39: color = RGB(0x3D, 0xF5, 0x7A); break;                // default fg
-			case 30: color = RGB(0x6A, 0x70, 0x7A); break;
-			case 31: case 91: color = RGB(0xFF, 0x55, 0x55); break;
-			case 32: case 92: color = RGB(0x50, 0xFA, 0x7B); break;
-			case 33: case 93: color = RGB(0xF1, 0xFA, 0x8C); break;
-			case 34: case 94: color = RGB(0x6C, 0xB6, 0xFF); break;
-			case 35: case 95: color = RGB(0xFF, 0x79, 0xC6); break;
-			case 36: case 96: color = RGB(0x8B, 0xE9, 0xFD); break;
-			case 37: case 97: color = RGB(0xF8, 0xF8, 0xF2); break;
-			default: break;
-		}
-		if (semi < 0) break;
-		start = semi + 1;
-	}
-}
-
-static void AppendColoredRun(CRichEditCtrl &rec, const CString &run, COLORREF color, bool bold) {
-	if (run.IsEmpty()) return;
-	long len = rec.GetWindowTextLength();
-	rec.SetSel(len, len);
-	CHARFORMAT cf; ZeroMemory(&cf, sizeof(cf));
-	cf.cbSize = sizeof(cf);
-	cf.dwMask = CFM_COLOR | CFM_BOLD;
-	cf.crTextColor = color;
-	cf.dwEffects = bold ? CFE_BOLD : 0;
-	rec.SetSelectionCharFormat(cf);
-	rec.ReplaceSel(run);
-}
-
-void CChatTerminalWindow::AppendAnsi(int section, const CString &text) {
-	if (section < 0 || section >= kChatTerminalSectionCount) return;
-	CRichEditCtrl &rec = _sections[section];
-
-	// Auto-scroll ONLY if the view is already at the bottom -- i.e. the LAST line is
-	// currently visible. This is unit-agnostic (no reliance on rich-edit scrollbar
-	// metrics), so auto-scroll reliably RESUMES the moment the user scrolls back
-	// down to the bottom, and stays off while they're scrolled up reading history.
-	bool was_at_bottom = true;
-	{
-		CRect rc; rec.GetClientRect(&rc);
-		POINTL ptl; ptl.x = rc.left + 1; ptl.y = (rc.bottom > 2) ? (rc.bottom - 2) : 0;
-		long ch = (long)rec.SendMessage(EM_CHARFROMPOS, 0, (LPARAM)&ptl);
-		long last_visible_line = (long)rec.SendMessage(EM_EXLINEFROMCHAR, 0, (LPARAM)ch);
-		long total_lines = rec.GetLineCount();
-		was_at_bottom = (last_visible_line >= total_lines - 1);
-	}
-	int first_before = rec.GetFirstVisibleLine();
-
-	// NOTE: do NOT SetRedraw(FALSE/TRUE) here. On this rich-edit it leaves the
-	// control showing only the erased (black) background instead of repainting the
-	// text, especially under rapid updates -- that was the "black State window".
-	// EM_REPLACESEL is ignored on a read-only rich edit, so drop read-only for the
-	// programmatic write, then restore it (the user still can't type in it).
-	rec.SetReadOnly(FALSE);
-	COLORREF cur = RGB(0x3D, 0xF5, 0x7A);
-	bool bold = false;
-	CString run;
-	int i = 0, n = text.GetLength();
-	while (i < n) {
-		if (text[i] == 27 && (i + 1) < n && text[i + 1] == '[') {  // ESC '['
-			AppendColoredRun(rec, run, cur, bold);
-			run.Empty();
-			int j = i + 2;
-			CString params;
-			while (j < n && (text[j] == ';' || (text[j] >= '0' && text[j] <= '9'))) {
-				params += text[j];
-				++j;
-			}
-			if (j < n && text[j] == 'm') {       // a colour/bold (SGR) sequence
-				ApplySgr(params, cur, bold);
-				i = j + 1;
-			} else {                              // some other CSI; drop it
-				i = (j < n) ? (j + 1) : n;
-			}
-			continue;
-		}
-		run += text[i];
-		++i;
-	}
-	AppendColoredRun(rec, run, cur, bold);
-	rec.SetReadOnly(TRUE);
-
-	if (was_at_bottom) {
-		rec.SendMessage(WM_VSCROLL, SB_BOTTOM, 0);   // follow the newest content
-	} else {
-		int first_after = rec.GetFirstVisibleLine();
-		if (first_after != first_before) rec.LineScroll(first_before - first_after);
-	}
-}
 
 CChatTerminalWindow::CChatTerminalWindow()
 {
@@ -653,24 +547,9 @@ int CChatTerminalWindow::OnCreate(LPCREATESTRUCT lpCreateStruct)
 		CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN, "Consolas");
 	for (int i = 0; i < kChatTerminalSectionCount; ++i) {
 		_section_labels[i].Create(labels[i], WS_CHILD | WS_VISIBLE | SS_LEFT, CRect(0, 0, 0, 0), this);
-		// Rich-edit console: scrollback, selectable/copyable, per-run ANSI colour.
-		_sections[i].Create(
-			WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL |
-			ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | ES_SAVESEL,
-			CRect(0, 0, 0, 0),
-			this,
-			25000 + i);
-		_sections[i].LimitText(0x7FFFFFFF);                 // big scrollback
-		_sections[i].SetBackgroundColor(FALSE, RGB(0x0A, 0x0E, 0x12));
-		_sections[i].SetEventMask(_sections[i].GetEventMask() | ENM_NONE);
-		// Default run format: green Consolas (10pt -> 200 twips).
-		CHARFORMAT cf; ZeroMemory(&cf, sizeof(cf));
-		cf.cbSize = sizeof(cf);
-		cf.dwMask = CFM_COLOR | CFM_FACE | CFM_SIZE | CFM_BOLD;
-		cf.crTextColor = RGB(0x3D, 0xF5, 0x7A);
-		cf.yHeight = 200;
-		lstrcpyn(cf.szFaceName, "Consolas", LF_FACESIZE);
-		_sections[i].SetDefaultCharFormat(cf);
+		// libvterm-backed terminal pane (double-buffered, flicker-free, ANSI/scrollback).
+		_sections[i].Create(this, 25000 + i, CRect(0, 0, 0, 0));
+		_sections[i].SetColors(RGB(0x0A, 0x0E, 0x12), RGB(0x3D, 0xF5, 0x7A));
 		_section_labels[i].SetFont(&_terminal_font);
 	}
 	_chat_input.SetFont(&_terminal_font);
@@ -877,14 +756,13 @@ void CChatTerminalWindow::RefreshSection(int i)
 {
 	if (_active_screen < 0 || _active_screen >= (int)_screens.size()) return;
 	if (i < 0 || i >= kChatTerminalSectionCount) return;
-	CString text = _screens[_active_screen].sections[i];
+	// Full re-render (used on screen switch): reset the terminal and replay.
+	_sections[i].ResetTerminal();
 	if (i == kChatTerminalState && !_screens[_active_screen].pinned_state.IsEmpty()) {
-		text = _screens[_active_screen].pinned_state + text;
+		_sections[i].SetScreenAnsi(_screens[_active_screen].pinned_state);  // in-place block
+	} else {
+		_sections[i].FeedAnsi(_screens[_active_screen].sections[i]);
 	}
-	_sections[i].SetReadOnly(FALSE);
-	_sections[i].SetWindowText("");          // clear, then re-render with colour
-	_sections[i].SetReadOnly(TRUE);
-	AppendAnsi(i, text);
 }
 
 void CChatTerminalWindow::RefreshVisibleSections(void)
@@ -906,11 +784,7 @@ void CChatTerminalWindow::AppendToSection(CString screen, int section, CString t
 		RefreshScreenList();
 		return;
 	}
-	if (section == kChatTerminalState && !_screens[screen_index].pinned_state.IsEmpty()) {
-		RefreshSection(kChatTerminalState);   // only the State window
-		return;
-	}
-	AppendAnsi(section, text);
+	_sections[section].FeedAnsi(text);   // append to the terminal (scrolls)
 }
 
 void CChatTerminalWindow::SetPinnedState(CString screen, CString text)
@@ -921,7 +795,8 @@ void CChatTerminalWindow::SetPinnedState(CString screen, CString text)
 	}
 	_screens[screen_index].pinned_state = text;
 	if (screen_index == _active_screen) {
-		RefreshSection(kChatTerminalState);   // pinned timing block lives in State only
+		// In-place "progress-bar" block: overwrite the State terminal screen.
+		_sections[kChatTerminalState].SetScreenAnsi(text);
 	}
 }
 
@@ -1097,11 +972,12 @@ LRESULT CChatTerminalWindow::OnAppendMessage(WPARAM wParam, LPARAM lParam)
 LRESULT CChatTerminalWindow::OnClearTerminal(WPARAM wParam, LPARAM lParam)
 {
 	for (int i = 0; i < kChatTerminalSectionCount; ++i) {
-		_sections[i].SetWindowText("");
+		_sections[i].ResetTerminal();
 	}
 	for (size_t s = 0; s < _screens.size(); ++s) {
 		for (int i = 0; i < kChatTerminalSectionCount; ++i) {
 			_screens[s].sections[i] = "";
+			_screens[s].pinned_state = "";
 		}
 	}
 	RefreshVisibleSections();

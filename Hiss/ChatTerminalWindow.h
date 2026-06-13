@@ -1,8 +1,9 @@
 #ifndef INC_CHAT_TERMINAL_WINDOW_H
 #define INC_CHAT_TERMINAL_WINDOW_H
 
-#include <afxcmn.h>   // CRichEditCtrl
+#include <afxcmn.h>
 #include <vector>
+#include "CVTermPane.h"   // libvterm-backed terminal control
 
 enum ChatTerminalSection {
 	kChatTerminalContext = 0,
@@ -144,16 +145,13 @@ private:
 	CStatic _title;
 	CStatic _hole_cards_label;
 	CStatic _section_labels[kChatTerminalSectionCount];
-	// Rich-edit consoles: per-line ANSI colour, scrollback, selection/copy.
-	CRichEditCtrl _sections[kChatTerminalSectionCount];
-	CFont _terminal_font;     // monospace console font for the section displays
+	// libvterm-backed terminal consoles: full VT engine, scrollback, ANSI colour.
+	CVTermPane _sections[kChatTerminalSectionCount];
+	CFont _terminal_font;     // monospace font for the labels / input boxes
 	CBrush _term_bg_brush;    // dark background brush for the input boxes / labels
 	// Command prompt history (Up/Down recall on the chat input).
 	std::vector<CString> _input_history;
 	int _history_index;
-	// Append `text` (which may contain ANSI SGR colour codes) to a rich-edit
-	// console, rendering coloured runs and auto-scrolling to the bottom.
-	void AppendAnsi(int section, const CString &text);
 	COpponentRangeWindow _opponent_range_window;
 	std::vector<SChatTerminalScreen> _screens;
 	int _active_screen;
