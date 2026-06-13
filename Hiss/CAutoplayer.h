@@ -42,6 +42,9 @@ public:
 private:
 	// private functions and variables - not available via accessors or mutators
 	void DoRebuyIfNeccessary();
+	// Verbose per-cadence dump of button detection + decision state to
+	// logs\button_debug.log (diagnoses why an action isn't clicking).
+	void DumpButtonDebug();
 	bool ExecutePrimaryFormulasIfNecessary();
 	// Scarlet Beast server-scrape: decide via the f$-formulas and POST the action to
 	// poker.scarletbeast.com (/act) instead of clicking screen buttons.

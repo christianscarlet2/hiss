@@ -47,6 +47,7 @@
 #include "OpenHoldem.h"
 #include "PokerChat.hpp"
 #include "..\DLLs\StringFunctions_DLL\string_functions.h"
+#include "..\DLLs\Files_DLL\Files.h"
 #include "CMyMutex.h"
 
 CAutoplayer	*p_autoplayer = NULL;
@@ -459,8 +460,71 @@ bool CAutoplayer::DoAllin(void) {
 	return false;
 }
 
+// Verbose, self-contained dump of the whole button-decision state to its own file
+// (logs\button_debug.log), one block per cadence. Written to diagnose why an action
+// (fold/call/check/all-in) isn't clicking: shows what buttons Hiss sees (i#state /
+// i#label / classified type / clickable), my-turn/final-answer, and the f$ decisions.
+void CAutoplayer::DumpButtonDebug() {
+	if (p_casino_interface == NULL || p_engine_container == NULL
+			|| p_function_collection == NULL || p_scraper == NULL) {
+		return;
+	}
+	CSymbolEngineAutoplayer *ap = p_engine_container->symbol_engine_autoplayer();
+	CFunctionCollection *fc = p_function_collection;
+	int visible = p_casino_interface->NumberOfVisibleAutoplayerButtons();
+	double f_fold  = fc->Evaluate(k_standard_function_names[k_autoplayer_function_fold]);
+	double f_check = fc->Evaluate(k_standard_function_names[k_autoplayer_function_check]);
+	double f_call  = fc->Evaluate(k_standard_function_names[k_autoplayer_function_call]);
+	double f_raise = fc->Evaluate(k_standard_function_names[k_autoplayer_function_raise]);
+	double f_allin = fc->Evaluate(k_standard_function_names[k_autoplayer_function_allin]);
+	double f_bet   = fc->Evaluate(k_standard_function_names[k_autoplayer_function_betsize]);
+	bool any_decision = (f_fold != 0 || f_check != 0 || f_call != 0 || f_raise != 0 || f_allin != 0);
+
+	// Only log the interesting cadences (something visible / my turn / a decision true).
+	if (!(visible > 0 || ap->ismyturn() || ap->isfinalanswer() || any_decision)) {
+		return;
+	}
+
+	CString path = LogsDirectory() + "button_debug.log";
+	FILE *f = fopen(path.GetString(), "a");
+	if (f == NULL) return;
+
+	SYSTEMTIME st; GetLocalTime(&st);
+	fprintf(f, "==== %02d:%02d:%02d.%03d  cadence (engaged=%d) ====\n",
+		st.wHour, st.wMinute, st.wSecond, st.wMilliseconds, autoplayer_engaged() ? 1 : 0);
+	fprintf(f, "ismyturn=%d isfinalanswer=%d myturnbits=0x%02x visible=%d FCKRA=\"%s\"\n",
+		ap->ismyturn() ? 1 : 0, ap->isfinalanswer() ? 1 : 0, ap->myturnbits(),
+		visible, ap->GetFCKRAString().GetString());
+
+	for (int i = 0; i < k_max_number_of_buttons; ++i) {
+		char hc = (i < 10) ? (char)('0' + i) : (char)('a' + i - 10);
+		CString sname, lname, sres, lres;
+		sname.Format("i%cstate", hc);
+		lname.Format("i%clabel", hc);
+		bool has_state = p_scraper->EvaluateRegion(sname, &sres);
+		bool has_label = p_scraper->EvaluateRegion(lname, &lres);
+		if (!has_state && !has_label) continue;
+		CAutoplayerButton *b = &p_casino_interface->_technical_autoplayer_buttons[i];
+		const char *type = b->IsFold() ? "FOLD" : b->IsCall() ? "CALL" : b->IsCheck() ? "CHECK"
+			: b->IsRaise() ? "RAISE" : b->IsAllin() ? "ALLIN" : "(unclassified)";
+		fprintf(f, "  i%c: state=\"%s\" label=\"%s\" -> type=%s clickable=%d\n",
+			hc, sres.GetString(), lres.GetString(), type, b->IsClickable() ? 1 : 0);
+	}
+
+	fprintf(f, "  decision: f$fold=%.0f f$check=%.0f f$call=%.0f f$raise=%.0f f$allin=%.0f f$betsize=%.2f\n",
+		f_fold, f_check, f_call, f_raise, f_allin, f_bet);
+
+	CString tcl;
+	p_scraper->EvaluateRegion("two_successive_clicks_label", &tcl);
+	fprintf(f, "  two_successive_clicks_label OCR=\"%s\" (raise gate=%d)\n",
+		tcl.GetString(), (f_raise != 0) ? 1 : 0);
+
+	fclose(f);
+}
+
 void CAutoplayer::DoAutoplayer(void) {
 	write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Starting Autoplayer cadence...\n");
+	DumpButtonDebug();
 	// Scarlet Beast server-scrape: there are no screen buttons to click; decide via
 	// the formulas and POST the action to poker.scarletbeast.com instead.
 	if (p_scarlet_beast != NULL && p_scarlet_beast->ScrapeFromServer()) {
