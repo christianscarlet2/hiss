@@ -129,6 +129,10 @@ void CTablePositioner::SaveCurrentPlacement() {
 
 // To be called once per heartbeat
 void CTablePositioner::AlwaysKeepPositionIfEnabled() {
+  // Disabled: the connected window is intentionally never repositioned (we don't
+  // set a target position on connect, so re-pinning here would snap it to 0,0 /
+  // monitor 1). Leave the scrcpy/phone-mirror window wherever the user put it.
+  return;
   if (!Preferences()->table_positioner_always_keep_position()
     || (p_autoconnector->attached_hwnd() == NULL)) {
     write_log(Preferences()->debug_table_positioner(), "[CTablePositioner] AlwaysKeepPositionIfEnabled() disabled or not connected\n");

@@ -322,13 +322,10 @@ bool CAutoConnector::Connect(HWND targetHWnd) {
 			PMainframe()->ResetDisplay();
       // log OH title bar text and table reset
       WriteLogTableReset("NEW CONNECTION");
-      // Prefer the table window's saved position+size (shared DB). Only fall back to
-      // the forced resize/reposition (which can shove it onto monitor 1) when there
-      // is no valid saved placement.
-      if (!p_table_positioner->RestoreSavedPlacement()) {
-        p_table_positioner->ResizeToTargetSize();
-        p_table_positioner->PositionMyWindow();
-      }
+      // Leave the connected window EXACTLY where it is on connect: do NOT resize,
+      // reposition, or restore a saved placement (any of which could shove a
+      // scrcpy/phone-mirror window onto monitor 1). This holds regardless of the
+      // "engage autoplayer on startup" preference, which uses this same connect path.
 			p_autoplayer->EngageAutoPlayerUponConnectionIfNeeded();
 		}
 	}
