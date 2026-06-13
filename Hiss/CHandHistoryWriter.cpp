@@ -56,6 +56,7 @@ CHandHistoryWriter::CHandHistoryWriter() {
   _output_incomplete = "";
   _tourney_title = "";
   _tourney_id = "";
+  _table_name = "";
   for (int i = 0; i < kMaxNumberOfPlayers; ++i) _known_name[i] = "";
   ResetHand();
 }
@@ -343,9 +344,15 @@ void CHandHistoryWriter::Flush() {
   // Table + button line. ACR seats are 1-based; the button must be a seat number.
   int button_seat = (_have_dealer && _button >= 0 && _button < _nchairs)
                   ? AcrSeat(_button) : 1;
+  // Use the scraped table name when available, else the session id.
+  CString table_label = _table_name;
+  table_label.Trim();
+  if (table_label.IsEmpty()) {
+    table_label.Format("%d", (p_sessioncounter != NULL) ? p_sessioncounter->session_id() : 0);
+  }
   CString table_line;
-  table_line.Format("Table '%d' %d-max Seat #%d is the button\n",
-                    (p_sessioncounter != NULL) ? p_sessioncounter->session_id() : 0,
+  table_line.Format("Table '%s' %d-max Seat #%d is the button\n",
+                    table_label.GetString(),
                     (_nchairs > 0 ? _nchairs : kMaxNumberOfPlayers), button_seat);
   out += table_line;
 
@@ -506,6 +513,16 @@ void CHandHistoryWriter::ScrapeTourneyInfo() {
       if (!id.IsEmpty()) _tourney_id = id;
     }
   }
+  // Table NAME -> "Table '<name>'" header line + filename. Strip single quotes so
+  // they don't break the quoted Table line.
+  if (_table_name.IsEmpty() && RegionExists("c0table_name")) {
+    CString tn;
+    if (p_scraper->EvaluateRegion("c0table_name", &tn)) {
+      tn.Remove('\'');
+      tn.Trim();
+      if (!tn.IsEmpty()) _table_name = tn;
+    }
+  }
 }
 
 void CHandHistoryWriter::ObserveNames() {
@@ -605,13 +622,16 @@ void CHandHistoryWriter::EnsureOutputPath() {
   CString tn = _tourney_title;
   tn.Trim();
   if (tn.IsEmpty()) tn = "ScarletBeast";
+  CString tbl = _table_name;
+  tbl.Trim();
+  if (tbl.IsEmpty()) tbl.Format("T%d", sid);
   // Strip characters that are illegal in a Windows filename.
   const char *illegal = "\\/:*?\"<>|";
-  for (const char *p = illegal; *p; ++p) tn.Remove(*p);
+  for (const char *p = illegal; *p; ++p) { tn.Remove(*p); tbl.Remove(*p); }
   SYSTEMTIME st; GetSystemTime(&st);
   CString fname;
-  fname.Format("HH%04d%02d%02d T%d TN-%s GAMETYPE-Hold'em LIMIT-no CUR-REAL.txt",
-               st.wYear, st.wMonth, st.wDay, sid, tn.GetString());
+  fname.Format("HH%04d%02d%02d %s TN-%s GAMETYPE-Hold'em LIMIT-no CUR-REAL.txt",
+               st.wYear, st.wMonth, st.wDay, tbl.GetString(), tn.GetString());
   _output_complete.Format("%s\\%s", complete_dir.GetString(), fname.GetString());
   _output_incomplete.Format("%s\\%s", incomplete_dir.GetString(), fname.GetString());
 }
