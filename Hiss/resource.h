@@ -70,6 +70,9 @@
 #define IDC_OCR_DCORR0                  1440
 #define IDC_OCR_DCORR1                  1441
 #define IDC_OCR_DCORR2                  1442
+#define IDC_OCR_MODEL3                  1450
+#define IDC_OCR_BROWSE3                 1451
+#define IDC_OCR_DCORR3                  1452
 #define IDC_NEW                         1006
 #define IDC_DELETE                      1007
 #define IDC_RENAME                      1013
@@ -589,7 +592,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        194
 #define _APS_NEXT_COMMAND_VALUE         33001
-#define _APS_NEXT_CONTROL_VALUE         1450
+#define _APS_NEXT_CONTROL_VALUE         1453
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

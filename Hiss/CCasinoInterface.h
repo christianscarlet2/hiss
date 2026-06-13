@@ -34,6 +34,8 @@ class CCasinoInterface: public CSpaceOptimizedGlobalObject {
  public:
 	bool ClickButtonSequence(int first_button, int second_button, int delay_in_milli_seconds);
 	bool EnterBetsize(double total_betsize_in_dollars);
+  // Numpad-only amount entry (after the two-successive-clicks opened the keypad).
+  bool EnterBetsizeNumpad(double total_betsize_in_dollars);
   bool EnterBetsizeForAllin();
 	bool UseSliderForAllin();
 	bool UseSliderForBetsize(double betsize, double betsize_for_allin);

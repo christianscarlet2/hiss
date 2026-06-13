@@ -929,19 +929,23 @@ IDD_SAPREFS23 DIALOGEX 0, 0, 237, 213
 STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_SYSMENU
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
-    LTEXT           "AutoOcr0 model (.traineddata):",IDC_STATIC,4,10,160,8
-    EDITTEXT        IDC_OCR_MODEL0,4,22,170,14,ES_AUTOHSCROLL
-    PUSHBUTTON      "Browse...",IDC_OCR_BROWSE0,178,22,52,14
-    CONTROL         "Decimal correction (re-insert a dropped decimal point)",IDC_OCR_DCORR0,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,38,226,10
-    LTEXT           "AutoOcr1 model (.traineddata):",IDC_STATIC,4,56,160,8
-    EDITTEXT        IDC_OCR_MODEL1,4,68,170,14,ES_AUTOHSCROLL
-    PUSHBUTTON      "Browse...",IDC_OCR_BROWSE1,178,68,52,14
-    CONTROL         "Decimal correction (re-insert a dropped decimal point)",IDC_OCR_DCORR1,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,84,226,10
-    LTEXT           "AutoOcr2 model (.traineddata):",IDC_STATIC,4,102,160,8
-    EDITTEXT        IDC_OCR_MODEL2,4,114,170,14,ES_AUTOHSCROLL
-    PUSHBUTTON      "Browse...",IDC_OCR_BROWSE2,178,114,52,14
-    CONTROL         "Decimal correction (re-insert a dropped decimal point)",IDC_OCR_DCORR2,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,130,226,10
-    LTEXT           "Pick the Tesseract .traineddata model for each AutoOcr engine. The full path is stored; leave blank to use the default ""my_model"" in the tessdata folder. ""Decimal correction"" re-inserts a decimal point (1-2 places) detected in the image when OCR drops it.",IDC_STATIC,4,148,226,44
+    LTEXT           "AutoOcr0 model (.traineddata):",IDC_STATIC,4,6,160,8
+    EDITTEXT        IDC_OCR_MODEL0,4,16,170,13,ES_AUTOHSCROLL
+    PUSHBUTTON      "Browse...",IDC_OCR_BROWSE0,178,16,52,13
+    CONTROL         "Decimal correction (re-insert a dropped decimal point)",IDC_OCR_DCORR0,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,31,226,10
+    LTEXT           "AutoOcr1 model (.traineddata):",IDC_STATIC,4,46,160,8
+    EDITTEXT        IDC_OCR_MODEL1,4,56,170,13,ES_AUTOHSCROLL
+    PUSHBUTTON      "Browse...",IDC_OCR_BROWSE1,178,56,52,13
+    CONTROL         "Decimal correction (re-insert a dropped decimal point)",IDC_OCR_DCORR1,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,71,226,10
+    LTEXT           "AutoOcr2 model (.traineddata):",IDC_STATIC,4,86,160,8
+    EDITTEXT        IDC_OCR_MODEL2,4,96,170,13,ES_AUTOHSCROLL
+    PUSHBUTTON      "Browse...",IDC_OCR_BROWSE2,178,96,52,13
+    CONTROL         "Decimal correction (re-insert a dropped decimal point)",IDC_OCR_DCORR2,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,111,226,10
+    LTEXT           "AutoOcr3 model (.traineddata):",IDC_STATIC,4,126,160,8
+    EDITTEXT        IDC_OCR_MODEL3,4,136,170,13,ES_AUTOHSCROLL
+    PUSHBUTTON      "Browse...",IDC_OCR_BROWSE3,178,136,52,13
+    CONTROL         "Decimal correction (re-insert a dropped decimal point)",IDC_OCR_DCORR3,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,151,226,10
+    LTEXT           "Pick the Tesseract .traineddata model for each AutoOcr engine. The full path is stored; leave blank to use the default ""my_model"". ""Decimal correction"" re-inserts a dropped decimal point.",IDC_STATIC,4,167,226,40
 END
 
 IDD_SAPREFS24 DIALOGEX 0, 0, 237, 213

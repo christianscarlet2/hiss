@@ -36,10 +36,11 @@ protected:
 	afx_msg void OnBnClickedBrowse0();
 	afx_msg void OnBnClickedBrowse1();
 	afx_msg void OnBnClickedBrowse2();
+	afx_msg void OnBnClickedBrowse3();
 
 	enum { IDD = IDD_SAPREFS23 };
-	CEdit m_model0, m_model1, m_model2;
-	CButton m_dcorr0, m_dcorr1, m_dcorr2;
+	CEdit m_model0, m_model1, m_model2, m_model3;
+	CButton m_dcorr0, m_dcorr1, m_dcorr2, m_dcorr3;
 
 	void BrowseForModel(CEdit *target);
 

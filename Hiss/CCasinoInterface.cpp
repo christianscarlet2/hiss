@@ -268,6 +268,10 @@ bool CCasinoInterface::EnterBetsize(double total_betsize_in_dollars) {
   return false;
 }
 
+bool CCasinoInterface::EnterBetsizeNumpad(double total_betsize_in_dollars) {
+  return _betsize_input_box.EnterAmountViaNumpad(total_betsize_in_dollars);
+}
+
 bool CCasinoInterface::UseSliderForAllin() {
   return _bet_slider.SlideAllin();
 }

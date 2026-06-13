@@ -42,6 +42,7 @@ protected:
 	afx_msg void OnBnClickedSelectModel();    // AutoOcr0 model
 	afx_msg void OnBnClickedSelectModel1();   // AutoOcr1 model
 	afx_msg void OnBnClickedSelectModel2();   // AutoOcr2 model
+	afx_msg void OnBnClickedSelectModel3();   // AutoOcr3 model
 	afx_msg void OnSelchangeTransform();
 	afx_msg void OnChangeSplitMargin();
 	afx_msg void OnBnClickedDecimalSplit();

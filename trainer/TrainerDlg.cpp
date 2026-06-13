@@ -239,6 +239,7 @@ BEGIN_MESSAGE_MAP(CTrainerDlg, CDialog)
 	ON_BN_CLICKED(IDC_SELECT_MODEL, &CTrainerDlg::OnBnClickedSelectModel)
 	ON_BN_CLICKED(IDC_SELECT_MODEL1, &CTrainerDlg::OnBnClickedSelectModel1)
 	ON_BN_CLICKED(IDC_SELECT_MODEL2, &CTrainerDlg::OnBnClickedSelectModel2)
+	ON_BN_CLICKED(IDC_SELECT_MODEL3, &CTrainerDlg::OnBnClickedSelectModel3)
 	ON_CBN_SELCHANGE(IDC_TRANSFORM, &CTrainerDlg::OnSelchangeTransform)
 	ON_EN_CHANGE(IDC_SPLIT_MARGIN, &CTrainerDlg::OnChangeSplitMargin)
 	ON_BN_CLICKED(IDC_USE_DECIMAL_SPLIT, &CTrainerDlg::OnBnClickedDecimalSplit)
@@ -281,6 +282,7 @@ void CTrainerDlg::PopulateModeCombos()
 	m_transform.AddString("AutoOcr0");
 	m_transform.AddString("AutoOcr1");
 	m_transform.AddString("AutoOcr2");
+	m_transform.AddString("AutoOcr3");
 	m_transform.SetCurSel(0);
 
 	for (int i = 0; i < kNumPsmModes; ++i) {
@@ -527,6 +529,7 @@ void CTrainerDlg::SelectModelForKey(const CString &key)
 void CTrainerDlg::OnBnClickedSelectModel()  { SelectModelForKey("autoocr0"); }
 void CTrainerDlg::OnBnClickedSelectModel1() { SelectModelForKey("autoocr1"); }
 void CTrainerDlg::OnBnClickedSelectModel2() { SelectModelForKey("autoocr2"); }
+void CTrainerDlg::OnBnClickedSelectModel3() { SelectModelForKey("autoocr3"); }
 
 // Push the desktop "Transform" combo into the shared engine selection so picking
 // AutoOcr0/AutoOcr1 actually takes effect (it drives CaptureTick + the web UI's

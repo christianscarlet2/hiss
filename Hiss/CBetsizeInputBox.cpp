@@ -29,6 +29,7 @@
 #include "OpenHoldem.h"
 #include "..\DLLs\WindowFunctions_DLL\window_functions.h"
 #include "CMyMutex.h"
+#include "CTwoSuccessiveClicks.h"   // shared "delay (ms)" between clicks
 
 CBetsizeInputBox::CBetsizeInputBox() {
 	// dummy point for mouse and keyboard DLL
@@ -249,9 +250,12 @@ bool CBetsizeInputBox::ClickNumpadRegion(CString region_name) {
 // Enter the betsize by tapping the on-screen numpad: clear with 5x nBackspace,
 // "type" each character by clicking n0..n9 / nDecimalPoint, then click nOkay.
 void CBetsizeInputBox::EnterBetsizeByNumpad(CString amount) {
-	const int kNumpadClickDelayMs = 120;
-	write_log(k_always_log_basic_information, "[CBetsizeInputBox] Entering betsize \"%s\" via on-screen numpad.\n",
-		amount.GetString());
+	// Use the configurable "delay (ms)" from the two-successive-clicks settings
+	// between each numpad click.
+	int kNumpadClickDelayMs = (p_two_successive_clicks != NULL) ? p_two_successive_clicks->DelayMs() : 120;
+	if (kNumpadClickDelayMs < 0) kNumpadClickDelayMs = 0;
+	write_log(k_always_log_basic_information, "[CBetsizeInputBox] Entering betsize \"%s\" via on-screen numpad (%d ms/click).\n",
+		amount.GetString(), kNumpadClickDelayMs);
 	// 1) Clear the field: click nBackspace 5 times.
 	for (int i = 0; i < 5; i++) {
 		ClickNumpadRegion("nBackspace");
@@ -276,6 +280,22 @@ void CBetsizeInputBox::EnterBetsizeByNumpad(CString amount) {
 		ClickNumpadRegion("nOkay");
 		Sleep(kNumpadClickDelayMs);
 	}
+}
+
+// Numpad-only amount entry. Used after the two-successive-clicks have already
+// opened the on-screen keypad: no keyboard, no i3edit/select, no raise-button
+// confirmation -- just adjust the amount and tap it in (+ nOkay).
+bool CBetsizeInputBox::EnterAmountViaNumpad(double total_betsize_in_dollars) {
+	if (!UseNumpad()) {
+		write_log(k_always_log_errors, "[CBetsizeInputBox] EnterAmountViaNumpad: no n0 region defined.\n");
+		return false;
+	}
+	double adjusted = AdjustedBetsize(total_betsize_in_dollars);
+	// Adapt f$betsize for correct logging later-on.
+	p_function_collection->SetAutoplayerFunctionValue(k_autoplayer_function_betsize, adjusted);
+	CString amount = Number2CString(adjusted);
+	EnterBetsizeByNumpad(amount);
+	return true;
 }
 
 bool CBetsizeInputBox::GetI3EditRegion() {

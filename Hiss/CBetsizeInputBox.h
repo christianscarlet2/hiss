@@ -21,6 +21,10 @@ class CBetsizeInputBox {
   ~CBetsizeInputBox();
  public:
   bool EnterBetsize(double total_betsize_in_dollars);
+  // Numpad-only amount entry (no keyboard, no i3edit/select): used after the
+  // two-successive-clicks have opened the on-screen keypad. Adjusts the betsize,
+  // clears with 5x nBackspace, clicks n0..n9 / nDecimalPoint, then clicks nOkay.
+  bool EnterAmountViaNumpad(double total_betsize_in_dollars);
   // Depends on complete tablemap
   // and maybe visible betsize-confirmation-button
   bool IsReadyToBeUsed();

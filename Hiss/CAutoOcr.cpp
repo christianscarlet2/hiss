@@ -193,7 +193,7 @@ void CAutoOcr::LoadModelSettings() {
 		p_tablemap_db->GetSettingArray("decimal_split_fields", "fields", &_decimal_fields);
 	}
 	if (p_tablemap_db != NULL) {
-		const char *keys[kNumAutoOcr] = { "autoocr0", "autoocr1", "autoocr2" };
+		const char *keys[kNumAutoOcr] = { "autoocr0", "autoocr1", "autoocr2", "autoocr3" };
 		for (int g = 0; g < kNumAutoOcr; ++g) {
 			CString model = p_tablemap_db->GetSettingString(keys[g], "model");
 			CString thr   = p_tablemap_db->GetSettingString(keys[g], "threshold");

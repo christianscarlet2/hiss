@@ -67,12 +67,15 @@
 #define IDC_T2I_NAME_MODEL              1048
 #define IDC_T2I_NAME_BROWSE             1049
 #define IDC_T2I_DECIMAL_LIST            1050
+#define IDC_T2I_A3_MODEL                1056
+#define IDC_T2I_A3_BROWSE               1057
+#define IDC_SELECT_MODEL3               1058
 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        134
 #define _APS_NEXT_COMMAND_VALUE         32774
-#define _APS_NEXT_CONTROL_VALUE         1056
+#define _APS_NEXT_CONTROL_VALUE         1059
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

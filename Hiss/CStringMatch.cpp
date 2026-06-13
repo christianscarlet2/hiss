@@ -109,6 +109,7 @@ const bool CStringMatch::IsStringAllin(const CString s) {
   s_lower_case.Remove('-');
   s_lower_case = s_lower_case.Left(5);
   return (s_lower_case == "allin"
+	  || s_lower_case == "all"      // a button labelled exactly "All" means All-In
 	  || s_lower_case == "a11in"
 	  || s_lower_case == "allln"
 	  || s_lower_case == "a111n"

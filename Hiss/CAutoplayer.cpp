@@ -475,6 +475,13 @@ void CAutoplayer::DoAutoplayer(void) {
       && (p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_raise]) != 0);
     if (p_two_successive_clicks != NULL && p_two_successive_clicks->HandleCycle(two_clicks_wants_raise)) {
       write_log(k_always_log_basic_information, "[AutoPlayer] Two-successive-clicks handled\n");
+      // After the two clicks open the on-screen keypad, type the bet/raise amount
+      // (f$betsize) on the numpad and press nOkay.
+      double betsize = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_betsize]);
+      if (betsize > 0) {
+        Sleep(p_two_successive_clicks->DelayMs());
+        p_casino_interface->EnterBetsizeNumpad(betsize);
+      }
       action_sequence_needs_to_be_finished = true;
       goto AutoPlayerCleanupAndFinalization;
     }

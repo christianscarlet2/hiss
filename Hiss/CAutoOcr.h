@@ -99,9 +99,9 @@ private:
 	// worker threads (each owns its own api/api2 and result state).
 	TessBaseAPI *api;
 	TessBaseAPI *api2;
-	// Per-transform OCR settings, indexed by AutoOcr engine number (A0=0, A1=1, A2=2).
-	// (settings table keys autoocr0 / autoocr1 / autoocr2.)
-	static const int kNumAutoOcr = 3;
+	// Per-transform OCR settings, indexed by AutoOcr engine number (A0=0..A3=3).
+	// (settings table keys autoocr0 / autoocr1 / autoocr2 / autoocr3.)
+	static const int kNumAutoOcr = 4;
 	CString     _model[kNumAutoOcr];
 	CString     _current_model;   // model currently loaded into api/api2
 	int         _thr[kNumAutoOcr];    // binarize threshold

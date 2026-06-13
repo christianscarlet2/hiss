@@ -920,7 +920,7 @@
     var addOpt = function (v) {
       var o = document.createElement('option'); o.value = v; o.textContent = v; fontTransform.appendChild(o);
     };
-    addOpt('AutoOcr0'); addOpt('AutoOcr1');
+    addOpt('AutoOcr0'); addOpt('AutoOcr1'); addOpt('AutoOcr2'); addOpt('AutoOcr3');
     for (var ti = 0; ti < 10; ti++) addOpt('Text' + ti);
     fontTransform.value = currentTransform;
     fontTransform.addEventListener('change', function () {
