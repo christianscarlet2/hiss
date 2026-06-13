@@ -90,10 +90,10 @@ void CSymbolEngineTimingTells::UpdateOnHeartbeat() {
 }
 
 void CSymbolEngineTimingTells::PublishStateBox() {
-  if (p_chat_terminal == NULL || p_tablemap == NULL) return;
+  if (p_tablemap == NULL) return;
   int n = p_tablemap->nchairs();
   if (n > kMaxNumberOfPlayers) n = kMaxNumberOfPlayers;
-  CString txt = "Timing tells (sec, rect1):\r\n";
+  CString txt;
   for (int chair = 0; chair < n; ++chair) {
     CString cell;
     if (_timing_seconds[chair] > 0.0) {
@@ -105,10 +105,15 @@ void CSymbolEngineTimingTells::PublishStateBox() {
     txt += cell;
     txt += ((chair % 3) == 2) ? "\r\n" : "   ";
   }
-  txt += "\r\n(* = currently active)\r\n";
-  if (txt == _last_published) return;        // avoid needless redraws
+  if (txt == _last_published) return;        // skip identical consecutive snapshots
   _last_published = txt;
-  p_chat_terminal->PinStatePublic("main", txt);
+  // Don't CLEAR the State box -- append each snapshot under a timestamped
+  // separator so the history accumulates. Posted (thread-safe) to the UI thread.
+  SYSTEMTIME st; GetLocalTime(&st);
+  CString block;
+  block.Format("---- %02d:%02d:%02d  timing tells (sec, rect1, * = active) ----\r\n%s\r\n",
+    st.wHour, st.wMinute, st.wSecond, txt.GetString());
+  ChatTerminalAppendToScreen("main", kChatTerminalState, block);
 }
 
 bool CSymbolEngineTimingTells::EvaluateSymbol(const CString name, double *result, bool log) {

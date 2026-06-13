@@ -503,6 +503,18 @@ static void AppendColoredRun(CRichEditCtrl &rec, const CString &run, COLORREF co
 void CChatTerminalWindow::AppendAnsi(int section, const CString &text) {
 	if (section < 0 || section >= kChatTerminalSectionCount) return;
 	CRichEditCtrl &rec = _sections[section];
+
+	// Auto-scroll ONLY if the view is already at (essentially) the bottom. If the
+	// user has scrolled up to read history, leave their position alone.
+	bool was_at_bottom = true;
+	SCROLLINFO si; ZeroMemory(&si, sizeof(si)); si.cbSize = sizeof(si); si.fMask = SIF_ALL;
+	if (rec.GetScrollInfo(SB_VERT, &si) && si.nPage != 0) {
+		// "scrolled up a bit" = more than ~one line from the bottom.
+		was_at_bottom = ((int)(si.nPos + (int)si.nPage) >= ((int)si.nMax - 24));
+	}
+	int first_before = rec.GetFirstVisibleLine();
+
+	rec.SetRedraw(FALSE);
 	// EM_REPLACESEL is ignored on a read-only rich edit, so drop read-only for the
 	// programmatic write, then restore it (the user still can't type in it).
 	rec.SetReadOnly(FALSE);
@@ -532,9 +544,19 @@ void CChatTerminalWindow::AppendAnsi(int section, const CString &text) {
 	}
 	AppendColoredRun(rec, run, cur);
 	rec.SetReadOnly(TRUE);
-	long end = rec.GetWindowTextLength();
-	rec.SetSel(end, end);
-	rec.SendMessage(EM_SCROLLCARET, 0, 0);     // keep the newest line in view
+
+	if (was_at_bottom) {
+		long end = rec.GetWindowTextLength();
+		rec.SetSel(end, end);
+		rec.SendMessage(EM_SCROLLCARET, 0, 0);   // follow the newest line
+	} else {
+		// Appending moved the caret to the end (which would scroll); put the user's
+		// view back where it was so they can keep reading scrollback.
+		int first_after = rec.GetFirstVisibleLine();
+		if (first_after != first_before) rec.LineScroll(first_before - first_after);
+	}
+	rec.SetRedraw(TRUE);
+	rec.Invalidate();
 }
 
 CChatTerminalWindow::CChatTerminalWindow()
