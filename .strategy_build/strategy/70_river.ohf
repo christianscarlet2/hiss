@@ -1,0 +1,41 @@
+//*****************************************************************************
+//  70_river - river play.  No draws left: made-hand value + bluff-catching.
+//  Negreanu keeps the bluff frequency LOW (a wild image gets you called); size
+//  every bet by what THIS opponent will call. [N pp.138-160]
+//*****************************************************************************
+
+##f$river##
+WHEN AmountToCall == 0 RETURN f$river_nobet FORCE
+WHEN Others RETURN f$river_vs_bet FORCE
+
+//-----------------------------------------------------------------------------
+//  No bet to us: value-bet / thin value / occasional bluff, else check.
+//-----------------------------------------------------------------------------
+
+##f$river_nobet##
+// Value-bet made hands; thinner & smaller vs stations, fuller vs non-passive.
+WHEN f$HaveBigMade RaiseBy f$BetPctRiver % FORCE
+WHEN (HaveSet OR HaveTwoPair) AND NOT f$Opp_IsPassive RaiseBy f$BetPctRiver % FORCE
+// Thin value with one pair vs a calling station. [N p.147]
+WHEN f$HaveOnePair AND f$Opp_IsStation RaiseBy f$BetPctRiver % FORCE
+// Power-style value-bets one pair heads-up vs a non-aggressive opponent. [B]
+WHEN f$HaveOnePair AND f$Style = 1 AND f$HeadsUpPot AND NOT f$Opp_IsAggro RaiseBy f$BetPctRiver % FORCE
+// Low-frequency triple-barrel bluff: only as the flop+turn aggressor, busted,
+// heads-up vs a foldy opponent. [N low bluff freq]
+WHEN f$WasPreflopRaiser AND BotRaisedOnTurn AND f$HeadsUpPot AND f$Opp_Foldy AND randomround < 0.22 RaiseBy f$BetPctRiver % FORCE
+WHEN Others Check FORCE
+
+//-----------------------------------------------------------------------------
+//  Facing a bet on the river.
+//-----------------------------------------------------------------------------
+
+##f$river_vs_bet##
+// Value-raise the near-nuts vs a non-passive bettor.
+WHEN f$HaveBigMade AND NOT f$Opp_IsPassive RaiseBy f$BetPctRiver % FORCE
+// Pay off with strong made hands (bluff-catch).
+WHEN f$HaveBigMade Call FORCE
+WHEN (HaveSet OR HaveTwoPair) Call FORCE
+// Bluff-catch one pair only vs bluffy players at a price; fold vs passive value. [N]
+WHEN f$HaveOnePair AND f$Opp_IsAggro AND f$DecentPrice Call FORCE
+WHEN f$HaveOnePair AND NOT f$Opp_IsPassive AND f$CheapDraw Call FORCE
+WHEN Others Fold FORCE

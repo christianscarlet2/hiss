@@ -1,0 +1,57 @@
+##f$notes##
+//*****************************************************************************
+//
+//  ScarletBeast - POWER HOLD'EM   (OpenPPL, No-Limit Texas Hold'em)
+//  ===========================================================================
+//
+//  A complete NLHE strategy distilled from TWO source texts:
+//
+//    [N]  Daniel Negreanu - "Small Ball"   (Power Hold'em Strategy, 2008)
+//    [B]  Doyle Brunson   - "Power Poker"   (Super System, NLHE section)
+//
+//  The two philosophies are deliberately blended and made selectable through a
+//  single STYLE dial (see 05_config / f$Style):
+//
+//    Style 0  SMALL BALL  [N] - small bets (2.5x opens, ~60% c-bets), wide but
+//             positional, pot control, never stack off without the near-nuts,
+//             "don't go broke with one pair", low river-bluff frequency.
+//    Style 1  POWER POKER [B] - aggressive, ~pot-sized bets, c-bet ~90% as the
+//             pre-flop raiser, semi-bluff strong draws all-in, lead big hands
+//             into the raiser, "bet with an out".
+//    Style 2  HYBRID (default) - small-ball sizing/discipline with Brunson's
+//             draw aggression and high c-bet frequency.
+//
+//  Both authors agree on the engine of the strategy and that agreement is the
+//  spine of this profile:
+//    * Position is power - play more, and more aggressively, in position. [N,B]
+//    * Speculative hands (suited connectors, small pairs, suited aces) win the
+//      big pots; play them cheaply to flop a monster.                     [N,B]
+//    * Be the aggressor; pick up the many small uncontested pots.         [N,B]
+//    * Play the OPPONENT'S hand, not just your own - so this profile is
+//      opponent-aware via the PokerTracker HUD stats (see 10_opponents).  [N,B]
+//    * Mix it up / stay unpredictable - balanced frequencies via randomround. [N,B]
+//
+//  Bet amounts are expressed as RaiseTo <big blinds> (pre-flop) or
+//  RaiseBy <pct> % (post-flop pot-fractions). Hiss converts the resulting
+//  f$betsize into the table's chip amount.
+//
+//  This file is SEGMENTED across several .ohf files for maintainability
+//  (00_notes, 05_config, 10_opponents, 20_lists, 30_classify, 40_preflop,
+//   50_flop, 60_turn, 70_river, 80_betsize, 90_table). They share one f$
+//   namespace. They are either concatenated into one master .ohf, or dropped
+//   into Hiss's bot_logic\Strategy\ folder and auto-loaded (see release notes).
+//
+//  TUNE the STYLE dial and the thresholds in 05_config to taste.
+//
+//*****************************************************************************
+
+//=============================================================================
+//  prwin (Monte-Carlo equity) configuration
+//=============================================================================
+
+##f$prwin_number_of_iterations##
+20000
+
+##f$prwin_number_of_opponents##
+// Simulate against the opponents still contesting the pot.
+WHEN Others RETURN nopponentsplaying FORCE

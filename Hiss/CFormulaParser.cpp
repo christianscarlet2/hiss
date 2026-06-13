@@ -93,6 +93,31 @@ void CFormulaParser::LoadDefaultBot() {
   LoadOptionalFunctionLibrary(DefaultLogicDirectory() + "Gecko_NL_6Max_FR_BSS.ohf");
   LoadOptionalFunctionLibrary(DefaultLogicDirectory() + "Termita_SNG.ohf");
   LoadOptionalFunctionLibrary(DefaultLogicDirectory() + "Winngy_PT_Limit.ohf");
+  // Auto-load every *.ohf in bot_logic\Strategy\ ("call this file" support):
+  // a strategy can be split across many files that share one f$ namespace.
+  LoadStrategyFolder();
+}
+
+void CFormulaParser::LoadStrategyFolder() {
+  // Each *.ohf in bot_logic\Strategy\ is loaded as an additional function
+  // library. Parsing order is irrelevant: cross-file f$ references are resolved
+  // by the single ParseAll() pass after all libraries are loaded. This lets a
+  // user segment one big strategy into maintainable pieces (00_notes, 05_config,
+  // 40_preflop, ...) instead of one monolithic .ohf.
+  CString wildcard = StrategyDirectory() + "*.ohf";
+  CFileFind finder;
+  BOOL found = finder.FindFile(wildcard);
+  while (found) {
+    found = finder.FindNextFile();
+    if (finder.IsDots() || finder.IsDirectory()) {
+      continue;
+    }
+    write_log(Preferences()->debug_parser(),
+      "[FormulaParser] Auto-loading strategy file %s\n",
+      finder.GetFilePath().GetString());
+    LoadOptionalFunctionLibrary(finder.GetFilePath());
+  }
+  finder.Close();
 }
 
 void CFormulaParser::ParseFormulaFileWithUserDefinedBotLogic(CArchive& formula_file) {

@@ -1,0 +1,46 @@
+//*****************************************************************************
+//  60_turn - turn play.  The street where small ball "takes the pot away",
+//  and where one-pair hands slow down to keep the pot small. [N pp.75-130]
+//*****************************************************************************
+
+##f$turn##
+WHEN AmountToCall == 0 RETURN f$turn_nobet FORCE
+WHEN Others RETURN f$turn_vs_bet FORCE
+
+//-----------------------------------------------------------------------------
+//  No bet to us.
+//-----------------------------------------------------------------------------
+
+##f$turn_nobet##
+// Value with strong made hands.
+WHEN f$HaveStrongMade RaiseBy f$BetPctTurn % FORCE
+// Keep semi-bluffing strong / combo draws.
+WHEN f$HaveComboDraw RaiseBy f$BetPctTurn % FORCE
+WHEN f$HaveBigDraw AND (f$Style = 1 OR f$InPositionPost) AND NOT f$Opp_IsStation RaiseBy f$BetPctTurn % FORCE
+// Float-the-turn take-away: in position, we called the flop, now checked to,
+// vs a non-station. [N pp.75-78]
+WHEN f$InPositionPost AND f$HeadsUpPot AND BotCalledOnFlop AND NOT f$Opp_IsStation AND randomround < 0.70 RaiseBy f$BetPctTurn % FORCE
+// Double-barrel as the flop aggressor on a non-scary card vs a foldy opponent.
+WHEN f$WasPreflopRaiser AND BotRaisedOnFlop AND f$HeadsUpPot AND f$Opp_Foldy AND NOT f$ScaryBoard AND randomround < 0.50 RaiseBy f$BetPctTurn % FORCE
+// One pair: thin value vs a station; power-style barrels heads-up; else POT CONTROL (check). [N]
+WHEN f$HaveOnePair AND f$Opp_IsStation RaiseBy f$BetPctTurn % FORCE
+WHEN f$HaveOnePair AND f$Style = 1 AND f$HeadsUpPot RaiseBy f$BetPctTurn % FORCE
+WHEN Others Check FORCE
+
+//-----------------------------------------------------------------------------
+//  Facing a bet on the turn.
+//-----------------------------------------------------------------------------
+
+##f$turn_vs_bet##
+WHEN f$HaveBigMade RaiseBy f$BetPctTurn % FORCE
+WHEN HaveSet OR HaveTwoPair RaiseBy f$BetPctTurn % FORCE
+// Combo draw -> get it in.
+WHEN f$HaveComboDraw RaiseMax FORCE
+// Big draws: continue at a price; in position can peel a bit wider.
+WHEN f$HaveBigDraw AND f$CheapDraw Call FORCE
+WHEN f$HaveBigDraw AND f$DecentPrice AND f$InPositionPost Call FORCE
+// One pair: call as a bluff-catcher only at a price vs non-passive players; never
+// stack off. [N "don't go broke with one pair"]
+WHEN f$HaveOnePair AND f$Opp_IsAggro AND f$DecentPrice Call FORCE
+WHEN f$HaveOnePair AND NOT f$Opp_IsPassive AND f$CheapDraw Call FORCE
+WHEN Others Fold FORCE

@@ -59,6 +59,7 @@ FILES_DLL_API CString OpenPPLLibraryDirectory();
 FILES_DLL_API CString PathOfExecutable();
 FILES_DLL_API CString ReplaySessionDirectory(int session_ID);
 FILES_DLL_API CString ScraperDirectory();
+FILES_DLL_API CString StrategyDirectory();
 FILES_DLL_API CString ToolsDirectory();
 // Filenames
 FILES_DLL_API CString ExecutableFilename();

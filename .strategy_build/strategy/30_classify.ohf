@@ -1,0 +1,85 @@
+//*****************************************************************************
+//  30_classify - made-hand / draw / board-texture classification.
+//  Wraps the built-in Have* and board symbols into the concepts the two
+//  strategies reason about.
+//*****************************************************************************
+
+//-----------------------------------------------------------------------------
+//  Made-hand tiers
+//-----------------------------------------------------------------------------
+
+##f$HaveBigMade##
+// Straight or better - the hands you commit with. [N "near-nuts"][B set+]
+WHEN HaveStraight OR HaveFlush OR HaveFullHouse OR HaveQuads RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$HaveStrongMade##
+// Two pair / set / big made, or a clean overpair-top-pair on a dry board.
+WHEN HaveSet OR HaveTwoPair OR f$HaveBigMade RETURN true FORCE
+WHEN (HaveOverPair OR HaveTopPair) AND NOT FlushPossible AND NOT StraightPossible RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$HaveOnePair##
+// The classic trap class: one pair, however big. "Don't go broke with one pair." [N p.125]
+WHEN HaveOverPair OR HaveTopPair RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$HaveDecentMade##
+WHEN HaveOverPair OR HaveTopPair OR HaveTwoPair OR HaveSet OR f$HaveBigMade RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$HaveMarginalMade##
+// Weak pair / second pair / bottom pair - showdown value, not betting value.
+WHEN f$HaveDecentMade RETURN false FORCE
+WHEN HavePair OR HaveBottomPair RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  Draws
+//-----------------------------------------------------------------------------
+
+##f$HaveBigDraw##
+// The draws Brunson plays FAST (semi-bluff / shove). [B D6.1-D6.2]
+WHEN HaveNutFlushDraw OR HaveFlushDraw OR HaveOpenEndedStraightDraw RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$HaveComboDraw##
+// Pair+draw or two draws - "two ways to win", get it in. [B D6.6]
+WHEN f$HaveBigDraw AND (HavePair OR HaveInsideStraightDraw) RETURN true FORCE
+WHEN HaveFlushDraw AND HaveOpenEndedStraightDraw RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$HaveWeakDraw##
+WHEN HaveInsideStraightDraw OR HaveBackdoorFlushDraw RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$HaveAnyDraw##
+WHEN f$HaveBigDraw OR f$HaveWeakDraw RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  Board texture
+//-----------------------------------------------------------------------------
+
+##f$BoardWet##
+// Draw-heavy / coordinated: charge draws, slow down marginal hands.
+WHEN FlushPossible OR StraightPossible OR FlushDrawPossible RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$BoardDry##
+// Hit-or-miss board: your pair is likely still good; cheap to give a free card. [N p.63]
+WHEN NOT FlushPossible AND NOT StraightPossible AND NOT FlushDrawPossible RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$ScaryBoard##
+// Brunson "frightening flop": someone surely connected - don't bluff into it. [B R5.3]
+WHEN FlushPossible OR StraightOnBoard OR MoreThanOneStraightPossibleOnFlop RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  Initiative
+//-----------------------------------------------------------------------------
+
+##f$WasPreflopRaiser##
+WHEN BotRaisedBeforeFlop RETURN true FORCE
+WHEN Others RETURN false FORCE

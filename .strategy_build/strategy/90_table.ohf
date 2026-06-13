@@ -1,0 +1,17 @@
+//*****************************************************************************
+//  90_table - secondary / hopper functions (table management).
+//*****************************************************************************
+
+##f$sitin##
+// Sit back in whenever we are sitting out. issittingin is true when the Sit-In
+// button is NOT clickable, so we click it only when currently sitting out.
+WHEN NOT issittingin RETURN true FORCE
+
+##f$sitout##
+WHEN Others RETURN false FORCE
+
+##f$leave##
+WHEN Others RETURN false FORCE
+
+##f$rebuy##
+WHEN Others RETURN false FORCE

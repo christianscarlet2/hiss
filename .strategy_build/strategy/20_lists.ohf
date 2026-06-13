@@ -1,0 +1,90 @@
+//*****************************************************************************
+//  20_lists - hand ranges (synthesis of [N] and [B]).
+//  Shared ground: both love SUITED CONNECTORS and SMALL PAIRS (flop a monster,
+//  win a big pot) [N pp.15-16][B p.487]; Brunson adds "ace/king + any suited =
+//  two shots" [B p.508]; Negreanu adds wide late-position steals [N listOpenBTN].
+//*****************************************************************************
+
+##listPremium##
+// Get-it-in-pre tier.
+AA  KK  QQ  AKs  AKo
+
+##listBigPair##
+AA  KK  QQ  JJ
+
+##listSetMine##
+// Small/medium pairs we flat to flop a set (never reraise pre). [N p.21][B p.481]
+22 33 44 55 66 77 88 99 TT
+
+//-----------------------------------------------------------------------------
+//  Open-raise ranges (first in), widening by position.
+//-----------------------------------------------------------------------------
+
+##listOpenEP##
+// Early position (~16%): pairs, suited broadways, the better suited connectors.
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+ATs AJs AQs AKs KTs KJs KQs QTs QJs JTs T9s 98s 87s 76s
+AJo AQo AKo KQo
+
+##listOpenMP##
+// Middle position (~22%): add suited aces, more suited gappers/connectors.
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+K9s KTs KJs KQs Q9s QTs QJs J9s JTs T8s T9s 97s 98s 87s 76s 65s 54s
+ATo AJo AQo AKo KJo KQo
+
+##listOpenLP##
+// Cutoff / late (~32%): all suited aces, suited kings, more connectors & gappers.
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+K5s K6s K7s K8s K9s KTs KJs KQs Q8s Q9s QTs QJs J8s J9s JTs T7s T8s T9s 96s 97s 98s 86s 87s 75s 76s 65s 54s 43s
+A8o A9o ATo AJo AQo AKo K9o KTo KJo KQo Q9o QTo QJo J9o JTo T9o
+
+##listOpenBTN##
+// Button (~48%, very wide). Position + "any two" pressure. [N][B p.509]
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+K2s K3s K4s K5s K6s K7s K8s K9s KTs KJs KQs
+Q4s Q5s Q6s Q7s Q8s Q9s QTs QJs J6s J7s J8s J9s JTs T6s T7s T8s T9s 95s 96s 97s 98s 85s 86s 87s 74s 75s 76s 64s 65s 53s 54s 43s
+A2o A3o A4o A5o A6o A7o A8o A9o ATo AJo AQo AKo K7o K8o K9o KTo KJo KQo Q8o Q9o QTo QJo J8o J9o JTo T8o T9o 98o 87o
+
+##listOpenSB##
+// Small blind, folded to us: late-position width but a touch more cautious OOP.
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+K6s K7s K8s K9s KTs KJs KQs Q8s Q9s QTs QJs J8s J9s JTs T7s T8s T9s 96s 97s 98s 86s 87s 75s 76s 65s 54s
+A7o A8o A9o ATo AJo AQo AKo K9o KTo KJo KQo Q9o QTo QJo J9o JTo T9o
+
+//-----------------------------------------------------------------------------
+//  Facing aggression.
+//-----------------------------------------------------------------------------
+
+##list3betValue##
+// 3-bet for value vs an open.
+AA KK QQ JJ AKs AKo AQs
+
+##list3betBluff##
+// 3-bet bluff candidates: ace blockers + playable suited hands. [N p.17,26]
+A5s A4s A3s A2s K9s KTs KJs Q9s QJs J9s JTs T8s T9s 76s 65s
+
+##listCallOpen##
+// Flat an open (set-mine + suited playables, mostly in position). [N p.21][B]
+22 33 44 55 66 77 88 99 TT
+ATs AJs AQs KTs KJs KQs QTs QJs JTs T9s 98s 87s 76s 65s
+AJo AQo KQo
+
+##listCall3bet##
+// Flat a 3-bet (in position) to outplay rather than 4-bet-or-fold. [N p.22]
+QQ JJ TT AKo AQs AJs KQs
+
+##list4betValue##
+// 4-bet for value vs a 3-bet.
+AA KK AKs
+
+##list4betValuePower##
+// Brunson power-style adds QQ / A-K to the value 4-bet. [B]
+AA KK QQ AKs AKo
+
+##listTroubleOffsuit##
+// Brunson "trouble hands" - offsuit big cards: playable but fold to a raise. [B p.505]
+AQo AJo ATo KQo KJo KTo QJo QTo JTo

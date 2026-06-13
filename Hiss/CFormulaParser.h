@@ -54,6 +54,7 @@ class CFormulaParser : public CSpaceOptimizedGlobalObject {
   void LeaveParserCode();
  private:
   void LoadDefaultBot();
+  void LoadStrategyFolder();
   void LoadFunctionLibrary(CString library_path);
   void LoadOptionalFunctionLibrary(CString library_path);
   void LoadArchive(CArchive & formula_file);

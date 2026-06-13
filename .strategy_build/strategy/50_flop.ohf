@@ -1,0 +1,55 @@
+//*****************************************************************************
+//  50_flop - flop play.  "The flop is practically the whole game." [B R5.1]
+//  Dispatch by whether there is a bet to us.
+//*****************************************************************************
+
+##f$flop##
+WHEN AmountToCall == 0 RETURN f$flop_nobet FORCE
+WHEN Others RETURN f$flop_vs_bet FORCE
+
+//-----------------------------------------------------------------------------
+//  No bet to us: value-bet / c-bet / semi-bluff, else check.
+//-----------------------------------------------------------------------------
+
+##f$flop_nobet##
+// Value & protection with strong made hands (bigger on wet boards - see f$BetPctFlop).
+WHEN f$HaveStrongMade RaiseBy f$BetPctFlop % FORCE
+// Semi-bluff strong & combo draws - two ways to win. [B D6]
+WHEN f$HaveComboDraw RaiseBy f$BetPctFlop % FORCE
+WHEN f$HaveBigDraw AND NOT f$Opp_IsStation RaiseBy f$BetPctFlop % FORCE
+// One pair: bet to protect on wet boards or for thin value vs a station; as the
+// pre-flop raiser take the small pot now; otherwise pot-control. [N p.125]
+WHEN f$HaveOnePair AND f$BoardWet RaiseBy f$BetPctFlop % FORCE
+WHEN f$HaveOnePair AND f$Opp_IsStation RaiseBy f$BetPctFlop % FORCE
+WHEN f$HaveOnePair AND f$WasPreflopRaiser RaiseBy f$BetPctFlop % FORCE
+// Continuation-bet with air as the pre-flop raiser. Skip scary boards & stations;
+// bias to heads-up / foldy opponents; frequency set by style. [B R1.3][N ~60%]
+WHEN f$WasPreflopRaiser AND f$ScaryBoard Check FORCE
+WHEN f$WasPreflopRaiser AND f$Opp_IsStation Check FORCE
+WHEN f$WasPreflopRaiser AND f$HeadsUpPot AND randomround < f$CbetFreq RaiseBy f$BetPctFlop % FORCE
+WHEN f$WasPreflopRaiser AND f$Opp_Foldy AND randomround < f$CbetFreq RaiseBy f$BetPctFlop % FORCE
+// In-position stab to set up a turn take-away with a weak draw. [N float doctrine]
+WHEN f$InPositionPost AND f$HeadsUpPot AND f$HaveWeakDraw AND randomround < 0.50 RaiseBy f$BetPctFlop % FORCE
+WHEN Others Check FORCE
+
+//-----------------------------------------------------------------------------
+//  Facing a bet on the flop.
+//-----------------------------------------------------------------------------
+
+##f$flop_vs_bet##
+// Value-raise the big made hands (charge draws; build the pot). [B R5.5]
+WHEN f$HaveBigMade RaiseBy f$BetPctFlop % FORCE
+WHEN HaveSet OR HaveTwoPair RaiseBy f$BetPctFlop % FORCE
+// Combo draw -> get it all in (two ways to win). [B D6.6]
+WHEN f$HaveComboDraw RaiseMax FORCE
+// Brunson plays big draws fast even facing a bet; otherwise call at a price.
+WHEN f$HaveBigDraw AND f$Style = 1 RaiseBy f$BetPctFlop % FORCE
+WHEN f$HaveBigDraw AND f$CheapDraw Call FORCE
+WHEN f$HaveBigDraw AND f$DecentPrice AND f$InPositionPost Call FORCE
+// Peel one pair at a reasonable price - but never go broke with it. [N p.125]
+WHEN f$HaveOnePair AND f$DecentPrice Call FORCE
+// Weak draws only at a cheap price.
+WHEN f$HaveWeakDraw AND f$CheapDraw Call FORCE
+// Float a single c-bet-happy opponent in position with some equity.
+WHEN f$InPositionPost AND f$HeadsUpPot AND f$Opp_IsAggro AND prwin > 0.40 AND f$CheapDraw Call FORCE
+WHEN Others Fold FORCE

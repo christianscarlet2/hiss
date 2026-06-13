@@ -109,6 +109,12 @@ CString OpenPPLLibraryDirectory() {
   return BotlogicDirectory() + "OpenPPL_Library\\";
 }
 
+CString StrategyDirectory() {
+  // User strategy files, segmented across several .ohf files and auto-loaded
+  // ("call this file" support). All files here share one f$ namespace.
+  return BotlogicDirectory() + "Strategy\\";
+}
+
 void OpenFileInExternalSoftware(CString file_name) {
   long long int RetValue = long long int(ShellExecute(
     NULL, 

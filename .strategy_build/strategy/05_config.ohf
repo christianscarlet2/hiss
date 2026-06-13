@@ -1,0 +1,128 @@
+//*****************************************************************************
+//  05_config - the STYLE dial and all tunable thresholds.
+//  Edit the single RETURN line in f$Style to switch playing styles.
+//*****************************************************************************
+
+##f$Style##
+// 0 = Small Ball [N]   1 = Power Poker [B]   2 = Hybrid (default)
+WHEN Others RETURN 2 FORCE
+
+//-----------------------------------------------------------------------------
+//  Stack-depth regime (in big blinds).  Small ball requires depth; once short,
+//  both authors revert to a tight raise/limp-or-push game. [N pp.33-34][B S8.3]
+//-----------------------------------------------------------------------------
+
+##f$EffStack##
+// Effective stack in big blinds (capped at the largest opponent we can lose to).
+WHEN EffectiveMaxStacksizeOfActiveOpponents < StackSize RETURN EffectiveMaxStacksizeOfActiveOpponents FORCE
+WHEN Others RETURN StackSize FORCE
+
+##f$DeepStack##
+// Above ~60bb: full small-ball / speculative play is profitable.
+WHEN f$EffStack >= 60 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$ShortStack##
+// Below ~25bb: stop limping speculative hands, tighten, prefer raise-or-fold.
+WHEN f$EffStack <= 25 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$PushFoldStack##
+// Below ~10bb: push/fold only. [N p.34 "below 10 bets"]
+WHEN f$EffStack <= 10 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  Position helpers (relative to the field still to act / the raiser).
+//-----------------------------------------------------------------------------
+
+##f$InPositionPre##
+// We are last (or near-last) to act before the flop.
+WHEN InButton OR InCutOff RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$InPositionPost##
+// We are last (or near-last) to act after the flop.
+WHEN InButton OR InCutOff RETURN true FORCE
+WHEN HandIsHeadsup AND NOT InSmallBlind RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$HeadsUpPot##
+// Exactly one opponent left contesting this pot.
+WHEN nopponentsplaying <= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  Pre-flop sizing (RaiseTo, in big blinds).  Both authors raise BIGGER over
+//  limpers (isolation) - we add 1bb per limper. [N p.24][B]
+//-----------------------------------------------------------------------------
+
+##f$OpenBase##
+// Standard first-in open size.
+WHEN f$Style = 1 RETURN 3.5 FORCE
+WHEN f$Style = 0 RETURN 2.5 FORCE
+WHEN Others RETURN 2.5 FORCE
+
+##f$Open_RaiseTo##
+// Add one big blind for each limper we are isolating.
+WHEN Others RETURN f$OpenBase + Calls FORCE
+
+##f$ThreeBet_RaiseTo##
+// 3-bet sizing (to N big blinds). Larger out of position. [N pp.26-27]
+WHEN f$Style = 1 RETURN 13 FORCE
+WHEN f$InPositionPre RETURN 9 FORCE
+WHEN Others RETURN 11 FORCE
+
+##f$FourBet_RaiseTo##
+// 4-bet for value vs a 3-bet.
+WHEN f$Style = 1 RETURN 26 FORCE
+WHEN Others RETURN 22 FORCE
+
+//-----------------------------------------------------------------------------
+//  Post-flop bet sizing (as a percentage of the pot).  Same size for value and
+//  for bluffs - never telegraph. [N p.37-38][B "reasonable bet"]
+//  Wet (draw-heavy) boards get a larger bet to charge draws. [N p.231 analog]
+//-----------------------------------------------------------------------------
+
+##f$BetPctFlop##
+WHEN f$Style = 1 RETURN 85 FORCE
+WHEN f$Style = 0 AND (FlushPossible OR StraightPossible) RETURN 66 FORCE
+WHEN f$Style = 0 RETURN 55 FORCE
+WHEN (FlushPossible OR StraightPossible) RETURN 75 FORCE
+WHEN Others RETURN 60 FORCE
+
+##f$BetPctTurn##
+WHEN f$Style = 1 RETURN 90 FORCE
+WHEN f$Style = 0 RETURN 60 FORCE
+WHEN Others RETURN 70 FORCE
+
+##f$BetPctRiver##
+WHEN f$Style = 1 RETURN 90 FORCE
+WHEN f$Style = 0 RETURN 55 FORCE
+WHEN Others RETURN 66 FORCE
+
+##f$CbetFreq##
+// How often we fire a continuation bet with air as the pre-flop raiser. [B ~90%][N ~60%]
+WHEN f$Style = 1 RETURN 0.90 FORCE
+WHEN f$Style = 0 RETURN 0.60 FORCE
+WHEN Others RETURN 0.72 FORCE
+
+//-----------------------------------------------------------------------------
+//  Draw / pot-odds thresholds.
+//-----------------------------------------------------------------------------
+
+##f$CheapDraw##
+// The price to continue is small relative to the pot (<= ~25%): call draws.
+WHEN AmountToCall * 4 <= PotSize RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$DecentPrice##
+// A reasonable price to continue (<= ~33% of pot).
+WHEN AmountToCall * 3 <= PotSize RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$WithinSpecRisk##
+// We risk no more than ~10% of our stack on a speculative "bust 'em" call
+// (set-mining / suited connectors vs a raise or 3-bet). [N pp.29-30][B S8.6]
+WHEN AmountToCall * 10 <= f$EffStack RETURN true FORCE
+WHEN Others RETURN false FORCE

@@ -1,0 +1,74 @@
+//*****************************************************************************
+//  10_opponents - opponent model from the PokerTracker HUD stats.
+//  Both books insist you "play the opponent's hand, not your own" [N P1][B P7.1]
+//  and that you adjust to player TYPE (tight/loose/station/aggressive). A bot
+//  cannot read physical tells or table image, but it CAN read aggregated stats,
+//  so this is our machine-observable substitute. Stats describe the LAST RAISER
+//  (the player we must react to) and default to neutral when the sample is thin.
+//*****************************************************************************
+
+##f$Opp_Hands##
+pt_hands_raischair
+
+##f$Opp_Known##
+// Trust a read only with a meaningful sample.
+WHEN f$Opp_Hands >= 30 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_VPIP##
+WHEN f$Opp_Known RETURN pt_vpip_raischair FORCE
+WHEN Others RETURN 25 FORCE
+
+##f$Opp_PFR##
+WHEN f$Opp_Known RETURN pt_pfr_raischair FORCE
+WHEN Others RETURN 18 FORCE
+
+##f$Opp_AF##
+WHEN f$Opp_Known RETURN pt_flop_af_raischair FORCE
+WHEN Others RETURN 2 FORCE
+
+##f$Opp_WTSD##
+WHEN f$Opp_Known RETURN pt_wtsd_raischair FORCE
+WHEN Others RETURN 28 FORCE
+
+//-----------------------------------------------------------------------------
+//  Player archetypes -> map to the books' adjustments.
+//-----------------------------------------------------------------------------
+
+##f$Opp_IsNit##
+// Tight: their raises mean strength -> respect them; 3-bet-bluff/steal more. [N p.30][B B9.5]
+WHEN f$Opp_Known AND f$Opp_VPIP < 17 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_IsLoose##
+// Wide opener -> isolate / value 3-bet wider. [N p.19]
+WHEN f$Opp_Known AND f$Opp_VPIP > 32 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_IsStation##
+// Calls down too much -> value-bet thin, NEVER bluff. [N p.158][B B9.3]
+WHEN f$Opp_Known AND f$Opp_WTSD > 34 RETURN true FORCE
+WHEN f$Opp_Known AND f$Opp_AF < 1.0 AND f$Opp_VPIP > 40 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_IsPassive##
+// Low aggression -> their bets/raises mean a real hand. [N]
+WHEN f$Opp_Known AND f$Opp_AF < 1.3 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_IsAggro##
+// High aggression / will barrel & bluff -> induce, trap, bluff-catch wider. [N p.53]
+WHEN f$Opp_Known AND f$Opp_AF > 3.0 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_ThreeBetsLight##
+// Reraises light (3-bets far more than he value-opens) -> just call, don't 3-bet
+// into him; flat JJ/QQ/AK and outplay post-flop. [N p.22]
+WHEN f$Opp_Known AND (f$Opp_PFR - f$Opp_VPIP) > -4 AND f$Opp_PFR > 22 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_Foldy##
+// Folds a lot pre/post -> our c-bets and steals print money. [B R1.2]
+WHEN f$Opp_IsNit RETURN true FORCE
+WHEN f$Opp_Known AND f$Opp_WTSD < 24 AND f$Opp_VPIP < 22 RETURN true FORCE
+WHEN Others RETURN false FORCE
