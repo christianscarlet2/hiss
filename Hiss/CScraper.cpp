@@ -19,7 +19,8 @@
 using namespace std;
 #include "CScraper.h"
 
-#include "Bitmaps.h" 
+#include "..\DLLs\Files_DLL\Files.h"
+#include "Bitmaps.h"
 #include "CardFunctions.h"
 #include "CAutoconnector.h"
 #include "CCasinoInterface.h"
@@ -52,6 +53,17 @@ using namespace std;
 #include <tlhelp32.h>
 
 CScraper *p_scraper = NULL;
+bool g_dump_scrapes_once = false;
+
+// Make a region name safe for a filename (region names are normally alphanumeric).
+static CString SanitizeRegionFilename(CString name) {
+  CString out;
+  for (int i = 0; i < name.GetLength(); ++i) {
+    char c = (char)name[i];
+    out += (isalnum((unsigned char)c) || c == '_' || c == '-') ? c : '_';
+  }
+  return out;
+}
 
 // --- Optional parallel OCR (gated by "parallel_workers"/"hiss_ocr") ------------
 // Recognition runs OUT OF PROCESS in worker processes (g_ocr_worker_pool); the
@@ -1573,6 +1585,39 @@ BOOL CScraper::SaveHBITMAPToFile(HBITMAP hBitmap, LPCTSTR lpszFileName)
 	GlobalFree(hDib);
 	CloseHandle(fh);
 	return TRUE;
+}
+
+void CScraper::DumpScrapesIfRequested() {
+	if (!g_dump_scrapes_once) return;
+	g_dump_scrapes_once = false;
+	if (p_tablemap == NULL) return;
+	CString dir = LogsDirectory() + "scrapes";
+	CreateDirectory(dir, NULL);
+	// Full-table screenshot (the table window as the bot sees it).
+	if (_entire_window_cur != NULL) {
+		CString table_path = dir + "\\_table.bmp";
+		SaveHBITMAPToFile(_entire_window_cur, table_path.GetString());
+	}
+	// Per region: the raw scrape image (_raw.bmp) + its recognised text (.txt).
+	for (RMapCI it = p_tablemap->r$()->begin(); it != p_tablemap->r$()->end(); ++it) {
+		CString safe = SanitizeRegionFilename(it->second.name);
+		if (safe.IsEmpty()) continue;
+		if (it->second.cur_bmp != NULL) {
+			CString raw_path = dir + "\\" + safe + "_raw.bmp";
+			SaveHBITMAPToFile(it->second.cur_bmp, raw_path.GetString());
+		}
+		CString txt;
+		if (EvaluateRegion(it->second.name, &txt)) {
+			CString txt_path = dir + "\\" + safe + ".txt";
+			FILE *f = NULL;
+			if (fopen_s(&f, txt_path.GetString(), "w") == 0 && f != NULL) {
+				CStringA a(txt);
+				fputs(a.GetString(), f);
+				fclose(f);
+			}
+		}
+	}
+	write_log(k_always_log_basic_information, "[CScraper] Dumped region scrapes to %s\n", dir.GetString());
 }
 
 void CScraper::CreateBitmaps(void) {

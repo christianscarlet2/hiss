@@ -10,6 +10,7 @@
 
 #include "CEngineContainer.h"
 #include "ChatTerminalWindow.h"
+#include "CScraper.h"
 #include "..\DLLs\Files_DLL\Files.h"
 
 bool   COpenAiAdvisor::_paused       = false;
@@ -152,6 +153,10 @@ void COpenAiAdvisor::ConsultIfNoFit() {
 
 void COpenAiAdvisor::ProposeImprovement(const CString &instruction) {
   ToDecisions("\x1b[35m[improve]\x1b[0m " + instruction);
+  // Capture the table screenshot + every region scrape/result so the MCP server
+  // (and Claude) can see exactly what the bot saw when /improve was issued.
+  g_dump_scrapes_once = true;
+  ToDecisions("\x1b[33m[improve]\x1b[0m captured table screenshot + region scrapes to logs\\scrapes\\.");
   CString answer = Ask("improve_ohf", instruction);
   // Safety: NEVER overwrite the live strategy. Write any proposal to a side file
   // for the operator to review and apply manually.

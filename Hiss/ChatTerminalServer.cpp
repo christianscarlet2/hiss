@@ -15,6 +15,7 @@
 #include "COCRNameMapping.h"
 #include "HudManager.h"
 #include "..\CTablemap\CTablemap.h"
+#include "..\DLLs\Files_DLL\Files.h"
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -94,6 +95,16 @@ bool CChatTerminalServer::Start(unsigned short port)
 	CString ready;
 	ready.Format("Terminal API server listening on http://127.0.0.1:%u", _port);
 	ChatTerminalAppend(kChatTerminalContext, ready);
+	// Publish the chosen port so the MCP server (and any external tool) can attach
+	// to this hiss.exe without guessing.
+	CString port_dir = OpenHoldemDirectory() + "\\logs";
+	CreateDirectory(port_dir, NULL);
+	CString port_file = port_dir + "\\terminal_port.txt";
+	FILE *pf = NULL;
+	if (fopen_s(&pf, port_file.GetString(), "w") == 0 && pf != NULL) {
+		fprintf(pf, "%u\n", _port);
+		fclose(pf);
+	}
 	return true;
 }
 
@@ -300,6 +311,60 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		}
 		CStringA body;
 		body.Format("{\"ok\":%s}", ok ? "true" : "false");
+		CStringA response;
+		response.Format(
+			"HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+			body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	// Evaluate OpenPPL / engine symbols on demand: /api/symbols?names=prwin,Raises,...
+	// Returns {"name": <number-or-"string">, ...}. Used by the MCP server to expose
+	// the live internal-engine symbol values to Claude.
+	if (path.CompareNoCase("/api/symbols") == 0) {
+		CStringA names = UrlDecode(QueryValue(query, "names"));
+		CStringA body = "{";
+		int start = 0;
+		bool first = true;
+		while (start <= names.GetLength()) {
+			int comma = names.Find(',', start);
+			CStringA one = comma >= 0 ? names.Mid(start, comma - start) : names.Mid(start);
+			one.Trim();
+			if (!one.IsEmpty() && p_engine_container != NULL) {
+				CString name(one);
+				if (!first) body += ",";
+				first = false;
+				double dval = 0.0;
+				CString sval;
+				if (p_engine_container->EvaluateSymbol(name, &dval, false)) {
+					CStringA num; num.Format("%.4f", dval);
+					body += "\"" + JsonEscape(CString(one)) + "\":" + num;
+				} else if (p_engine_container->EvaluateSymbol(name, &sval, false)) {
+					body += "\"" + JsonEscape(CString(one)) + "\":\"" + JsonEscape(sval) + "\"";
+				} else {
+					body += "\"" + JsonEscape(CString(one)) + "\":null";
+				}
+			}
+			if (comma < 0) break;
+			start = comma + 1;
+		}
+		body += "}";
+		CStringA response;
+		response.Format(
+			"HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+			body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	// Trigger a one-shot dump of all region scrapes + results to logs\scrapes\
+	// (the MCP server calls this, then reads the files).
+	if (path.CompareNoCase("/api/dump-scrapes") == 0) {
+		g_dump_scrapes_once = true;
+		CStringA body = "{\"ok\":true,\"dir\":\"logs/scrapes\"}";
 		CStringA response;
 		response.Format(
 			"HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"

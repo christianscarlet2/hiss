@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "hiss-bot": {
+      "command": "C:\\Users\\scarl\\AppData\\Local\\Programs\\Python\\Python310\\python.exe",
+      "args": ["C:\\www\\openholdembot_old\\mcp\\hiss_mcp_server.py"],
+      "env": {
+        "HISS_REPO": "C:\\www\\openholdembot_old",
+        "PGPASSWORD": "dbpass"
+      }
+    }
+  }
+}

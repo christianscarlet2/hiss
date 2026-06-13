@@ -218,6 +218,8 @@ void CLazyScraper::DoScrape() {
       fclose(pf);
     }
   }
+  // MCP feed: dump full-table + per-region scrapes/results when requested.
+  p_scraper->DumpScrapesIfRequested();
 }
 
 bool CLazyScraper::NeedDealerChair() {

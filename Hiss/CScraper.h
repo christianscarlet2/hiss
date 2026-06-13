@@ -105,6 +105,10 @@ class CScraper : public CSpaceOptimizedGlobalObject {
 	void ScrapePots();
 	void ScrapeLimits();
 	const double DoChipScrape(RMapCI r_iter);
+	// MCP feed: when g_dump_scrapes_once is set, dump the full-table bitmap plus each
+	// region's raw scrape (<name>_raw.bmp) and its OCR/recognition result (<name>.txt)
+	// to logs\scrapes\, then clear the flag. Called once per heartbeat scrape.
+	void DumpScrapesIfRequested();
  private:
 	bool ProcessRegion(RMapCI r_iter);
 	bool IsExtendedNumberic(CString text);
@@ -158,6 +162,9 @@ class CScraper : public CSpaceOptimizedGlobalObject {
 };
 
 extern CScraper *p_scraper;
+// One-shot trigger: set true to make the next heartbeat scrape dump all region
+// images + results to logs\scrapes\ (for the MCP server / Claude /improve).
+extern bool g_dump_scrapes_once;
 
 #endif // INC_CSCRAPER_H
 
