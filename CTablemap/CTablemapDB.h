@@ -20,6 +20,7 @@
 #include <atlstr.h>
 #include <vector>
 #include "CTablemap.h"
+#include "..\Shared\CCritSec\CCritSec.h"
 
 // Lightweight summary of a tablemap row, used for the picker UI and for
 // Hiss' connection matching.
@@ -89,6 +90,12 @@ private:
 	void   *_conn;          // PGconn* (opaque so libpq stays out of the header)
 	CString _last_error;
 	static CString s_conn_str;
+	// libpq is NOT thread-safe on a single connection. Hiss touches this shared
+	// connection from the heartbeat thread (scrape + settings live-reload probe)
+	// and from the GUI/autoconnector, so every method that uses _conn serialises
+	// through this (recursive) lock. Without it, concurrent PQexec corrupts the
+	// PGresult and crashes in PQgetisnull. Recursive, so nested Connect() is fine.
+	CCritSec _db_cs;
 };
 
 extern CTablemapDB *p_tablemap_db;

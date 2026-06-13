@@ -99,10 +99,12 @@ void CTablemapDB::SetConnString(const CString &conn_str) {
 }
 
 bool CTablemapDB::IsConnected() {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	return (_conn != NULL) && (PQstatus((PGconn *)_conn) == CONNECTION_OK);
 }
 
 bool CTablemapDB::Connect() {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	if (IsConnected()) {
 		return true;
 	}
@@ -125,6 +127,7 @@ bool CTablemapDB::Connect() {
 }
 
 void CTablemapDB::Disconnect() {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	if (_conn != NULL) {
 		PQfinish((PGconn *)_conn);
 		_conn = NULL;
@@ -132,6 +135,7 @@ void CTablemapDB::Disconnect() {
 }
 
 bool CTablemapDB::ExecCommand(const CString &sql) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	if (!IsConnected()) {
 		_last_error = "Not connected to the hiss database.";
 		return false;
@@ -147,6 +151,7 @@ bool CTablemapDB::ExecCommand(const CString &sql) {
 }
 
 bool CTablemapDB::EnsureSchema() {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	// Idempotent: matches postgres/hiss_schema.sql (without CREATE DATABASE).
 	const char *ddl =
 		"CREATE TABLE IF NOT EXISTS settings ("
@@ -228,6 +233,7 @@ bool CTablemapDB::EnsureSchema() {
 }
 
 long CTablemapDB::GetTablemapId(const CString name) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	if (!Connect()) {
 		return -1;
 	}
@@ -249,10 +255,12 @@ long CTablemapDB::GetTablemapId(const CString name) {
 }
 
 bool CTablemapDB::TablemapExists(const CString name) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	return GetTablemapId(name) >= 0;
 }
 
 bool CTablemapDB::ListTablemaps(std::vector<STablemapDBInfo> *out) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	if (out == NULL) {
 		return false;
 	}
@@ -281,6 +289,7 @@ bool CTablemapDB::ListTablemaps(std::vector<STablemapDBInfo> *out) {
 }
 
 bool CTablemapDB::DeleteTablemap(const CString name) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	if (!Connect()) {
 		return false;
 	}
@@ -308,6 +317,7 @@ static CString EscapeJsonString(const CString &value) {
 }
 
 CString CTablemapDB::GetSettingString(const CString key, const CString field) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	CString result;
 	if (!Connect()) return result;
 	CString sql;
@@ -323,6 +333,7 @@ CString CTablemapDB::GetSettingString(const CString key, const CString field) {
 }
 
 CString CTablemapDB::GetSettingsRevision() {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	CString result;
 	if (!Connect()) return result;
 	// GREATEST of the newest settings row and the newest tablemap row. OCR/scrape
@@ -341,6 +352,7 @@ CString CTablemapDB::GetSettingsRevision() {
 }
 
 bool CTablemapDB::GetSettingArray(const CString key, const CString field, std::vector<CString> *out) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	if (out == NULL) return false;
 	out->clear();
 	if (!Connect()) return false;
@@ -360,6 +372,7 @@ bool CTablemapDB::GetSettingArray(const CString key, const CString field, std::v
 }
 
 bool CTablemapDB::SetSettingString(const CString key, const CString field, const CString value) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	if (!Connect()) return false;
 	CString sql;
 	sql.Format(
@@ -375,6 +388,7 @@ bool CTablemapDB::SetSettingString(const CString key, const CString field, const
 }
 
 bool CTablemapDB::SetSettingArray(const CString key, const CString field, const std::vector<CString> &values) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	if (!Connect()) return false;
 	// Build a JSON array literal: ["a","b",...]
 	CString arr = "[";
@@ -403,6 +417,7 @@ bool CTablemapDB::SetSettingArray(const CString key, const CString field, const 
 //*******************************************************************************
 
 int CTablemapDB::LoadTablemapFromDB(const CString name, CTablemap *tm) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	if (tm == NULL) {
 		return ERR_SYNTAX;
 	}
@@ -647,6 +662,7 @@ int CTablemapDB::LoadTablemapFromDB(const CString name, CTablemap *tm) {
 //*******************************************************************************
 
 int CTablemapDB::SaveTablemapToDB(const CString name, CTablemap *tm) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	if (tm == NULL) {
 		return ERR_SYNTAX;
 	}
@@ -847,6 +863,7 @@ CString CTablemapDB::NameFromPath(const CString path) {
 }
 
 bool CTablemapDB::ImportTmFileToDB(const CString path, CString *out_name) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	CTablemap temp;
 	int ret = temp.LoadTablemap(path);
 	if (ret != SUCCESS) {
@@ -914,6 +931,7 @@ static void ImportFolderRecursive(CTablemapDB *db, const CString folder,
 }
 
 int CTablemapDB::ImportFolderToDB(const CString folder, int *imported, int *failed, CString *report) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	if (imported) *imported = 0;
 	if (failed) *failed = 0;
 	if (report) *report = "";
