@@ -217,7 +217,7 @@ void CPreferences::InitDefaults(void) {
   // Ints
   prefs_numerical_values[k_prefs_formula_dx] = 640;
   prefs_numerical_values[k_prefs_formula_dy] = 400;
-  prefs_numerical_values[k_prefs_frame_delay] = 2;
+  prefs_numerical_values[k_prefs_frame_delay] = 0;  // 0 = no stable-frame wait (phone/scrcpy captures jitter and never settle)
   prefs_numerical_values[k_prefs_click_delay] = 250;
   prefs_numerical_values[k_prefs_swag_delay_1] = 400;
   prefs_numerical_values[k_prefs_swag_delay_2] = 400;

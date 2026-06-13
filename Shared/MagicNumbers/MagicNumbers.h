@@ -118,7 +118,7 @@ const int k_max_number_of_i86X_buttons = 10;
 const int k_max_betpot_buttons = 7;				   // 2/1, 1/1, 3/4, 2/3, 1/2, 1/3, 1/4
 const int k_max_action_buttons = 14;	// betsize (i3), fold, allin, bet, raise, call, check, sitin, sitout, leave, rematch, prefold, autopost, undefined
 const int k_max_area_buttons_zone = 10;
-const int k_min_buttons_needed_for_my_turn = 2;
+const int k_min_buttons_needed_for_my_turn = 1;  // 1 so check-only spots (single button) count as my turn
 const int k_my_turn_bits_fold_call_raise = 0x07;
 
 // button codes
