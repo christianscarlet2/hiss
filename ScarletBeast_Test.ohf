@@ -141,6 +141,16 @@ AJo AQo KQo
 AA KK QQ AKs AKo
 
 //=============================================================================
+//  TABLE MANAGEMENT (secondary / hopper functions)
+//=============================================================================
+
+##f$sitin##
+// Sit back in whenever we are sitting out (the Sit-In / "I am back" button is
+// shown). issittingin is true when the Sit-In button is NOT clickable, so we
+// click it only when we are currently sitting out.
+WHEN NOT issittingin RETURN true FORCE
+
+//=============================================================================
 //  PREFLOP
 //=============================================================================
 
