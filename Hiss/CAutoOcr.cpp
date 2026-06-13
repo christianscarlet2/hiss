@@ -89,6 +89,17 @@ static void SplitModelSpec(const CString &spec, CString *dir, CString *lang)
 	*dir = d; *lang = l;
 }
 
+// Tesseract/leptonica Init() touches process-global state that is NOT thread-safe.
+// When the parallel OCR pre-pass warms up many engines at once they would Init
+// concurrently and corrupt that state (intermittent crashes). Serialize just the
+// Init calls; per-engine recognition still runs fully in parallel afterwards.
+struct TessInitLock {
+	CRITICAL_SECTION cs;
+	TessInitLock()  { InitializeCriticalSection(&cs); }
+	~TessInitLock() { DeleteCriticalSection(&cs); }
+};
+static TessInitLock g_tess_init_lock;
+
 static int SafeTessInit(TessBaseAPI *tess, const char *model_spec)
 {
 	if (tess == NULL) {
@@ -96,7 +107,10 @@ static int SafeTessInit(TessBaseAPI *tess, const char *model_spec)
 	}
 	CString dir, lang;
 	SplitModelSpec(CString(model_spec), &dir, &lang);
-	return tess->Init(CStringA(dir).GetString(), CStringA(lang).GetString());
+	EnterCriticalSection(&g_tess_init_lock.cs);
+	int rc = tess->Init(CStringA(dir).GetString(), CStringA(lang).GetString());
+	LeaveCriticalSection(&g_tess_init_lock.cs);
+	return rc;
 }
 
 static void SafeTessEnd(TessBaseAPI *tess)

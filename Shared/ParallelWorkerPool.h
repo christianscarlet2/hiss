@@ -107,7 +107,17 @@ class ParallelWorkerPool {
       if (_stop) { LeaveCriticalSection(&_cs); return; }
       if (!_jobs.empty()) { job = _jobs.front(); _jobs.pop(); }
       LeaveCriticalSection(&_cs);
-      if (job) job();
+      // A job MUST NOT let an exception escape this thread: an unhandled C++
+      // exception on a worker thread calls std::terminate() and kills the whole
+      // process (seen as a 0xC0000409 / BEX crash with no logged error). OpenCV
+      // and Tesseract can both throw on an odd frame, so swallow everything here.
+      if (job) {
+        try {
+          job();
+        } catch (...) {
+          // Intentionally ignore; the job is responsible for its own result.
+        }
+      }
     }
   }
 

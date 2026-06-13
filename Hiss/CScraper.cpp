@@ -386,7 +386,16 @@ void CScraper::PreOcrParallel() {
 			if (!avail.empty()) { eng = avail.back(); avail.pop_back(); }
 			LeaveCriticalSection(&ecs);
 			CString r;
-			if (eng != NULL) r = eng->get_ocr_result(mat, reg);
+			// OCR can throw (OpenCV cv::Exception / std::bad_alloc on an odd frame).
+			// Catch here so we ALWAYS return the engine and decrement the counter -
+			// otherwise the wait below would block and an engine would leak.
+			if (eng != NULL) {
+				try {
+					r = eng->get_ocr_result(mat, reg);
+				} catch (...) {
+					r = "";
+				}
+			}
 			EnterCriticalSection(&ecs);
 			if (eng != NULL) avail.push_back(eng);
 			LeaveCriticalSection(&ecs);
