@@ -27,6 +27,16 @@
 CTablemapDB *p_tablemap_db = NULL;
 CString CTablemapDB::s_conn_str = "";
 
+// NULL-safe wrapper around libpq's PQgetvalue. PQgetvalue can hand back NULL
+// (out-of-range indices, a result in an error state, a dropped connection), and
+// atoi/atol/strtoul/strcmp + CString assignment all CRASH on a NULL pointer
+// (CRT invalid-parameter fault -> 0xC0000409). This was crashing Hiss on every
+// live tablemap reload. Returning "" degrades gracefully to empty/zero values.
+static const char *PgVal(PGresult *res, int row, int col) {
+	const char *v = PQgetvalue(res, row, col);
+	return v ? v : "";
+}
+
 // Escape a string for safe inclusion inside a single-quoted SQL literal
 // by doubling any embedded single quotes. (Same approach as COCRNameMapping.)
 static CString EscapeSqlLiteral(const char *value) {
@@ -232,7 +242,7 @@ long CTablemapDB::GetTablemapId(const CString name) {
 	}
 	long id = -1;
 	if (PQntuples(res) > 0) {
-		id = atol(PQgetvalue(res, 0, 0));
+		id = atol(PgVal(res, 0, 0));
 	}
 	PQclear(res);
 	return id;
@@ -261,9 +271,9 @@ bool CTablemapDB::ListTablemaps(std::vector<STablemapDBInfo> *out) {
 	int rows = PQntuples(res);
 	for (int i = 0; i < rows; ++i) {
 		STablemapDBInfo info;
-		info.name = PQgetvalue(res, i, 0);
-		info.sitename = PQgetvalue(res, i, 1);
-		info.titletext = PQgetvalue(res, i, 2);
+		info.name = PgVal(res, i, 0);
+		info.sitename = PgVal(res, i, 1);
+		info.titletext = PgVal(res, i, 2);
 		out->push_back(info);
 	}
 	PQclear(res);
@@ -306,7 +316,7 @@ CString CTablemapDB::GetSettingString(const CString key, const CString field) {
 	PGresult *res = PQexec((PGconn *)_conn, sql.GetString());
 	if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) > 0
 			&& !PQgetisnull(res, 0, 0)) {
-		result = PQgetvalue(res, 0, 0);
+		result = PgVal(res, 0, 0);
 	}
 	if (res) PQclear(res);
 	return result;
@@ -324,7 +334,7 @@ CString CTablemapDB::GetSettingsRevision() {
 	PGresult *res = PQexec((PGconn *)_conn, sql);
 	if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) > 0
 			&& !PQgetisnull(res, 0, 0)) {
-		result = PQgetvalue(res, 0, 0);
+		result = PgVal(res, 0, 0);
 	}
 	if (res) PQclear(res);
 	return result;
@@ -342,7 +352,7 @@ bool CTablemapDB::GetSettingArray(const CString key, const CString field, std::v
 	if (ok) {
 		int rows = PQntuples(res);
 		for (int i = 0; i < rows; ++i) {
-			out->push_back(CString(PQgetvalue(res, i, 0)));
+			out->push_back(CString(PgVal(res, i, 0)));
 		}
 	}
 	if (res) PQclear(res);
@@ -418,9 +428,9 @@ int CTablemapDB::LoadTablemapFromDB(const CString name, CTablemap *tm) {
 		n = PQntuples(res);
 		for (i = 0; i < n; ++i) {
 			STablemapSize s;
-			s.name = PQgetvalue(res, i, 0);
-			s.width = atoi(PQgetvalue(res, i, 1));
-			s.height = atoi(PQgetvalue(res, i, 2));
+			s.name = PgVal(res, i, 0);
+			s.width = atoi(PgVal(res, i, 1));
+			s.height = atoi(PgVal(res, i, 2));
 			tm->z$_insert(s);
 		}
 	}
@@ -433,8 +443,8 @@ int CTablemapDB::LoadTablemapFromDB(const CString name, CTablemap *tm) {
 		n = PQntuples(res);
 		for (i = 0; i < n; ++i) {
 			STablemapSymbol s;
-			s.name = PQgetvalue(res, i, 0);
-			s.text = PQgetvalue(res, i, 1);
+			s.name = PgVal(res, i, 0);
+			s.text = PgVal(res, i, 1);
 			tm->s$_insert(s);
 		}
 	}
@@ -458,42 +468,42 @@ int CTablemapDB::LoadTablemapFromDB(const CString name, CTablemap *tm) {
 		n = PQntuples(res);
 		for (i = 0; i < n; ++i) {
 			STablemapRegion r;
-			r.name = PQgetvalue(res, i, 0);
-			r.left = (unsigned int)atol(PQgetvalue(res, i, 1));
-			r.top = (unsigned int)atol(PQgetvalue(res, i, 2));
-			r.right = (unsigned int)atol(PQgetvalue(res, i, 3));
-			r.bottom = (unsigned int)atol(PQgetvalue(res, i, 4));
-			r.color = (COLORREF)strtoul(PQgetvalue(res, i, 5), 0, 10);
-			r.radius = atoi(PQgetvalue(res, i, 6));
-			r.transform = PQgetvalue(res, i, 7);
+			r.name = PgVal(res, i, 0);
+			r.left = (unsigned int)atol(PgVal(res, i, 1));
+			r.top = (unsigned int)atol(PgVal(res, i, 2));
+			r.right = (unsigned int)atol(PgVal(res, i, 3));
+			r.bottom = (unsigned int)atol(PgVal(res, i, 4));
+			r.color = (COLORREF)strtoul(PgVal(res, i, 5), 0, 10);
+			r.radius = atoi(PgVal(res, i, 6));
+			r.transform = PgVal(res, i, 7);
 			r.cur_bmp = NULL;
 			r.last_bmp = NULL;
-			r.use_default = (strcmp(PQgetvalue(res, i, 8), "t") == 0);
-			r.threshold = atoi(PQgetvalue(res, i, 9));
-			r.use_cropping = (strcmp(PQgetvalue(res, i, 10), "t") == 0);
-			r.crop_size = atoi(PQgetvalue(res, i, 11));
-			r.match_mode = atoi(PQgetvalue(res, i, 12));
-			r.sharpen = atoi(PQgetvalue(res, i, 13));
-			r.color2 = (COLORREF)strtoul(PQgetvalue(res, i, 14), 0, 10);
-			r.color2_enabled = (strcmp(PQgetvalue(res, i, 15), "t") == 0);
-			r.color3 = (COLORREF)strtoul(PQgetvalue(res, i, 16), 0, 10);
-			r.color3_enabled = (strcmp(PQgetvalue(res, i, 17), "t") == 0);
-			r.left2 = (unsigned int)atol(PQgetvalue(res, i, 18));
-			r.top2 = (unsigned int)atol(PQgetvalue(res, i, 19));
-			r.right2 = (unsigned int)atol(PQgetvalue(res, i, 20));
-			r.bottom2 = (unsigned int)atol(PQgetvalue(res, i, 21));
-			r.rect2_enabled = (strcmp(PQgetvalue(res, i, 22), "t") == 0);
-			r.autocrop_enabled = (strcmp(PQgetvalue(res, i, 23), "t") == 0);
-			r.autocrop_color1 = (COLORREF)strtoul(PQgetvalue(res, i, 24), 0, 10);
-			r.autocrop_tol1 = atoi(PQgetvalue(res, i, 25));
-			r.autocrop_c1_enabled = (strcmp(PQgetvalue(res, i, 26), "t") == 0);
-			r.autocrop_color2 = (COLORREF)strtoul(PQgetvalue(res, i, 27), 0, 10);
-			r.autocrop_tol2 = atoi(PQgetvalue(res, i, 28));
-			r.autocrop_c2_enabled = (strcmp(PQgetvalue(res, i, 29), "t") == 0);
-			r.autocrop_color3 = (COLORREF)strtoul(PQgetvalue(res, i, 30), 0, 10);
-			r.autocrop_tol3 = atoi(PQgetvalue(res, i, 31));
-			r.autocrop_c3_enabled = (strcmp(PQgetvalue(res, i, 32), "t") == 0);
-			r.autocrop_blank = (strcmp(PQgetvalue(res, i, 33), "t") == 0);
+			r.use_default = (strcmp(PgVal(res, i, 8), "t") == 0);
+			r.threshold = atoi(PgVal(res, i, 9));
+			r.use_cropping = (strcmp(PgVal(res, i, 10), "t") == 0);
+			r.crop_size = atoi(PgVal(res, i, 11));
+			r.match_mode = atoi(PgVal(res, i, 12));
+			r.sharpen = atoi(PgVal(res, i, 13));
+			r.color2 = (COLORREF)strtoul(PgVal(res, i, 14), 0, 10);
+			r.color2_enabled = (strcmp(PgVal(res, i, 15), "t") == 0);
+			r.color3 = (COLORREF)strtoul(PgVal(res, i, 16), 0, 10);
+			r.color3_enabled = (strcmp(PgVal(res, i, 17), "t") == 0);
+			r.left2 = (unsigned int)atol(PgVal(res, i, 18));
+			r.top2 = (unsigned int)atol(PgVal(res, i, 19));
+			r.right2 = (unsigned int)atol(PgVal(res, i, 20));
+			r.bottom2 = (unsigned int)atol(PgVal(res, i, 21));
+			r.rect2_enabled = (strcmp(PgVal(res, i, 22), "t") == 0);
+			r.autocrop_enabled = (strcmp(PgVal(res, i, 23), "t") == 0);
+			r.autocrop_color1 = (COLORREF)strtoul(PgVal(res, i, 24), 0, 10);
+			r.autocrop_tol1 = atoi(PgVal(res, i, 25));
+			r.autocrop_c1_enabled = (strcmp(PgVal(res, i, 26), "t") == 0);
+			r.autocrop_color2 = (COLORREF)strtoul(PgVal(res, i, 27), 0, 10);
+			r.autocrop_tol2 = atoi(PgVal(res, i, 28));
+			r.autocrop_c2_enabled = (strcmp(PgVal(res, i, 29), "t") == 0);
+			r.autocrop_color3 = (COLORREF)strtoul(PgVal(res, i, 30), 0, 10);
+			r.autocrop_tol3 = atoi(PgVal(res, i, 31));
+			r.autocrop_c3_enabled = (strcmp(PgVal(res, i, 32), "t") == 0);
+			r.autocrop_blank = (strcmp(PgVal(res, i, 33), "t") == 0);
 			tm->r$_insert(r);
 		}
 	}
@@ -506,11 +516,11 @@ int CTablemapDB::LoadTablemapFromDB(const CString name, CTablemap *tm) {
 		n = PQntuples(res);
 		for (i = 0; i < n; ++i) {
 			STablemapFont f;
-			int font_group = atoi(PQgetvalue(res, i, 0));
-			CString ch = PQgetvalue(res, i, 1);
+			int font_group = atoi(PgVal(res, i, 0));
+			CString ch = PgVal(res, i, 1);
 			f.ch = ch.IsEmpty() ? ' ' : ch.GetAt(0);
-			f.hexmash = PQgetvalue(res, i, 2);
-			CString xvals = PQgetvalue(res, i, 3);
+			f.hexmash = PgVal(res, i, 2);
+			CString xvals = PgVal(res, i, 3);
 			int pos = 0, count = 0;
 			CString token = xvals.Tokenize(" \t", pos);
 			while (!token.IsEmpty() && count < MAX_SINGLE_CHAR_WIDTH) {
@@ -530,9 +540,9 @@ int CTablemapDB::LoadTablemapFromDB(const CString name, CTablemap *tm) {
 		n = PQntuples(res);
 		for (i = 0; i < n; ++i) {
 			STablemapHashPoint p;
-			int hash_group = atoi(PQgetvalue(res, i, 0));
-			p.x = atoi(PQgetvalue(res, i, 1));
-			p.y = atoi(PQgetvalue(res, i, 2));
+			int hash_group = atoi(PgVal(res, i, 0));
+			p.x = atoi(PgVal(res, i, 1));
+			p.y = atoi(PgVal(res, i, 2));
 			tm->p$_insert(hash_group, p);
 		}
 	}
@@ -545,9 +555,9 @@ int CTablemapDB::LoadTablemapFromDB(const CString name, CTablemap *tm) {
 		n = PQntuples(res);
 		for (i = 0; i < n; ++i) {
 			STablemapHashValue h;
-			int hash_group = atoi(PQgetvalue(res, i, 0));
-			h.name = PQgetvalue(res, i, 1);
-			h.hash = (uint32_t)strtoul(PQgetvalue(res, i, 2), 0, 10);
+			int hash_group = atoi(PgVal(res, i, 0));
+			h.name = PgVal(res, i, 1);
+			h.hash = (uint32_t)strtoul(PgVal(res, i, 2), 0, 10);
 			tm->h$_insert(hash_group, h);
 		}
 	}
@@ -560,13 +570,13 @@ int CTablemapDB::LoadTablemapFromDB(const CString name, CTablemap *tm) {
 		n = PQntuples(res);
 		for (i = 0; i < n; ++i) {
 			STablemapImage img;
-			img.name = PQgetvalue(res, i, 0);
-			img.width = atoi(PQgetvalue(res, i, 1));
-			img.height = atoi(PQgetvalue(res, i, 2));
+			img.name = PgVal(res, i, 0);
+			img.width = atoi(PgVal(res, i, 1));
+			img.height = atoi(PgVal(res, i, 2));
 			CString t = img.name + ".ppm";
 			img.image = new RGBAImage(img.width, img.height, t.GetString());
 			std::vector<CString> rows;
-			SplitLines(PQgetvalue(res, i, 3), &rows);
+			SplitLines(PgVal(res, i, 3), &rows);
 			for (int y = 0; y < img.height; ++y) {
 				CString row = (y < (int)rows.size()) ? rows[y] : CString("");
 				for (int x = 0; x < img.width; ++x) {
@@ -593,20 +603,20 @@ int CTablemapDB::LoadTablemapFromDB(const CString name, CTablemap *tm) {
 		n = PQntuples(res);
 		for (i = 0; i < n; ++i) {
 			STablemapTemplate tpl;
-			tpl.name = PQgetvalue(res, i, 0);
-			tpl.left = (unsigned int)atol(PQgetvalue(res, i, 1));
-			tpl.top = (unsigned int)atol(PQgetvalue(res, i, 2));
-			tpl.right = (unsigned int)atol(PQgetvalue(res, i, 3));
-			tpl.bottom = (unsigned int)atol(PQgetvalue(res, i, 4));
-			tpl.width = atoi(PQgetvalue(res, i, 5));
-			tpl.height = atoi(PQgetvalue(res, i, 6));
-			tpl.use_default = (strcmp(PQgetvalue(res, i, 7), "t") == 0);
-			tpl.match_mode = (unsigned int)atol(PQgetvalue(res, i, 8));
-			tpl.created = (strcmp(PQgetvalue(res, i, 9), "t") == 0);
+			tpl.name = PgVal(res, i, 0);
+			tpl.left = (unsigned int)atol(PgVal(res, i, 1));
+			tpl.top = (unsigned int)atol(PgVal(res, i, 2));
+			tpl.right = (unsigned int)atol(PgVal(res, i, 3));
+			tpl.bottom = (unsigned int)atol(PgVal(res, i, 4));
+			tpl.width = atoi(PgVal(res, i, 5));
+			tpl.height = atoi(PgVal(res, i, 6));
+			tpl.use_default = (strcmp(PgVal(res, i, 7), "t") == 0);
+			tpl.match_mode = (unsigned int)atol(PgVal(res, i, 8));
+			tpl.created = (strcmp(PgVal(res, i, 9), "t") == 0);
 			CString t = tpl.name + ".ppm";
 			tpl.image = new RGBAImage(tpl.width, tpl.height, t.GetString());
 			std::vector<CString> rows;
-			SplitLines(PQgetvalue(res, i, 10), &rows);
+			SplitLines(PgVal(res, i, 10), &rows);
 			for (int y = 0; y < tpl.height; ++y) {
 				CString row = (y < (int)rows.size()) ? rows[y] : CString("");
 				for (int x = 0; x < tpl.width; ++x) {

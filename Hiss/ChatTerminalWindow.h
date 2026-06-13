@@ -77,6 +77,9 @@ public:
 	// Public wrapper so other modules (e.g. the timing-tells engine) can pin a
 	// persistent line into a screen's State section.
 	void PinStatePublic(CString screen, CString text) { SetPinnedState(screen, text); }
+	// Thread-safe version (posts to the UI thread). Use this from worker/heartbeat
+	// threads to update the fixed (pinned) State block in place.
+	void SetPinnedStateAsync(CString screen, CString text);
 	void AttachToOwner(bool force = false);
 	void MaybeUpdatePotOddsFromTableState(void);
 	void ShowOpponentRangeWindow(bool visible);

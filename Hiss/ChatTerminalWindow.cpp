@@ -39,6 +39,7 @@ struct SChatTerminalMessage {
 	CString text;
 	bool stream;
 	bool clear_screen;
+	bool set_pinned;   // replace the screen's pinned (fixed) State block, in place
 };
 
 CChatTerminalWindow *p_chat_terminal = NULL;
@@ -462,40 +463,44 @@ BOOL CChatTerminalWindow::OnEraseBkgnd(CDC *pDC) {
 	return TRUE;
 }
 
-// Map an ANSI SGR parameter list (e.g. "1;32") to a text colour for the dark
-// console. Unhandled codes leave the colour unchanged; 0/39 reset to green.
-static COLORREF AnsiSgrColor(const CString &params, COLORREF current) {
+// Apply an ANSI SGR parameter list (e.g. "1;37") to the current colour + bold
+// state. 0 resets (green, not bold); 1 = bold on; 22 = bold off; 30-37/90-97 set
+// the foreground colour; 39 resets the colour to green.
+static void ApplySgr(const CString &params, COLORREF &color, bool &bold) {
 	int start = 0;
 	while (start <= params.GetLength()) {
 		int semi = params.Find(';', start);
 		CString tok = (semi < 0) ? params.Mid(start) : params.Mid(start, semi - start);
 		int code = atoi(tok.GetString());
 		switch (code) {
-			case 0: case 39: current = RGB(0x3D, 0xF5, 0x7A); break;  // reset -> green
-			case 30: current = RGB(0x6A, 0x70, 0x7A); break;          // black -> gray (visible)
-			case 31: case 91: current = RGB(0xFF, 0x55, 0x55); break; // red
-			case 32: case 92: current = RGB(0x50, 0xFA, 0x7B); break; // green
-			case 33: case 93: current = RGB(0xF1, 0xFA, 0x8C); break; // yellow
-			case 34: case 94: current = RGB(0x6C, 0xB6, 0xFF); break; // blue
-			case 35: case 95: current = RGB(0xFF, 0x79, 0xC6); break; // magenta
-			case 36: case 96: current = RGB(0x8B, 0xE9, 0xFD); break; // cyan
-			case 37: case 97: current = RGB(0xF8, 0xF8, 0xF2); break; // white
+			case 0:  color = RGB(0x3D, 0xF5, 0x7A); bold = false; break;  // reset
+			case 1:  bold = true; break;                                  // bold on
+			case 22: bold = false; break;                                 // bold off
+			case 39: color = RGB(0x3D, 0xF5, 0x7A); break;                // default fg
+			case 30: color = RGB(0x6A, 0x70, 0x7A); break;
+			case 31: case 91: color = RGB(0xFF, 0x55, 0x55); break;
+			case 32: case 92: color = RGB(0x50, 0xFA, 0x7B); break;
+			case 33: case 93: color = RGB(0xF1, 0xFA, 0x8C); break;
+			case 34: case 94: color = RGB(0x6C, 0xB6, 0xFF); break;
+			case 35: case 95: color = RGB(0xFF, 0x79, 0xC6); break;
+			case 36: case 96: color = RGB(0x8B, 0xE9, 0xFD); break;
+			case 37: case 97: color = RGB(0xF8, 0xF8, 0xF2); break;
 			default: break;
 		}
 		if (semi < 0) break;
 		start = semi + 1;
 	}
-	return current;
 }
 
-static void AppendColoredRun(CRichEditCtrl &rec, const CString &run, COLORREF color) {
+static void AppendColoredRun(CRichEditCtrl &rec, const CString &run, COLORREF color, bool bold) {
 	if (run.IsEmpty()) return;
 	long len = rec.GetWindowTextLength();
 	rec.SetSel(len, len);
 	CHARFORMAT cf; ZeroMemory(&cf, sizeof(cf));
 	cf.cbSize = sizeof(cf);
-	cf.dwMask = CFM_COLOR;
+	cf.dwMask = CFM_COLOR | CFM_BOLD;
 	cf.crTextColor = color;
+	cf.dwEffects = bold ? CFE_BOLD : 0;
 	rec.SetSelectionCharFormat(cf);
 	rec.ReplaceSel(run);
 }
@@ -509,7 +514,6 @@ void CChatTerminalWindow::AppendAnsi(int section, const CString &text) {
 	bool was_at_bottom = true;
 	SCROLLINFO si; ZeroMemory(&si, sizeof(si)); si.cbSize = sizeof(si); si.fMask = SIF_ALL;
 	if (rec.GetScrollInfo(SB_VERT, &si) && si.nPage != 0) {
-		// "scrolled up a bit" = more than ~one line from the bottom.
 		was_at_bottom = ((int)(si.nPos + (int)si.nPage) >= ((int)si.nMax - 24));
 	}
 	int first_before = rec.GetFirstVisibleLine();
@@ -519,11 +523,12 @@ void CChatTerminalWindow::AppendAnsi(int section, const CString &text) {
 	// programmatic write, then restore it (the user still can't type in it).
 	rec.SetReadOnly(FALSE);
 	COLORREF cur = RGB(0x3D, 0xF5, 0x7A);
+	bool bold = false;
 	CString run;
 	int i = 0, n = text.GetLength();
 	while (i < n) {
 		if (text[i] == 27 && (i + 1) < n && text[i + 1] == '[') {  // ESC '['
-			AppendColoredRun(rec, run, cur);
+			AppendColoredRun(rec, run, cur, bold);
 			run.Empty();
 			int j = i + 2;
 			CString params;
@@ -531,8 +536,8 @@ void CChatTerminalWindow::AppendAnsi(int section, const CString &text) {
 				params += text[j];
 				++j;
 			}
-			if (j < n && text[j] == 'm') {       // a colour (SGR) sequence
-				cur = AnsiSgrColor(params, cur);
+			if (j < n && text[j] == 'm') {       // a colour/bold (SGR) sequence
+				ApplySgr(params, cur, bold);
 				i = j + 1;
 			} else {                              // some other CSI; drop it
 				i = (j < n) ? (j + 1) : n;
@@ -542,20 +547,17 @@ void CChatTerminalWindow::AppendAnsi(int section, const CString &text) {
 		run += text[i];
 		++i;
 	}
-	AppendColoredRun(rec, run, cur);
+	AppendColoredRun(rec, run, cur, bold);
 	rec.SetReadOnly(TRUE);
+	rec.SetRedraw(TRUE);
 
+	// Scroll AFTER re-enabling redraw so it actually takes visible effect.
 	if (was_at_bottom) {
-		long end = rec.GetWindowTextLength();
-		rec.SetSel(end, end);
-		rec.SendMessage(EM_SCROLLCARET, 0, 0);   // follow the newest line
+		rec.SendMessage(WM_VSCROLL, SB_BOTTOM, 0);   // follow the newest content
 	} else {
-		// Appending moved the caret to the end (which would scroll); put the user's
-		// view back where it was so they can keep reading scrollback.
 		int first_after = rec.GetFirstVisibleLine();
 		if (first_after != first_before) rec.LineScroll(first_before - first_after);
 	}
-	rec.SetRedraw(TRUE);
 	rec.Invalidate();
 }
 
@@ -592,7 +594,7 @@ BOOL CChatTerminalWindow::Create(CWnd *owner)
 	BOOL created = CWnd::CreateEx(
 		ex_style,
 		class_name,
-		"OpenHoldem Terminal",
+		"Terminal",
 		style,
 		CW_USEDEFAULT,
 		CW_USEDEFAULT,
@@ -612,7 +614,7 @@ int CChatTerminalWindow::OnCreate(LPCREATESTRUCT lpCreateStruct)
 		return -1;
 	}
 
-	_title.Create("OpenHoldem Terminal", WS_CHILD | WS_VISIBLE | SS_LEFT, CRect(0, 0, 0, 0), this);
+	_title.Create("Terminal", WS_CHILD | WS_VISIBLE | SS_LEFT, CRect(0, 0, 0, 0), this);
 	_clear_button.Create("Clear", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, CRect(0, 0, 0, 0), this, IDC_TERMINAL_CLEAR);
 	_send_button.Create("Send", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, CRect(0, 0, 0, 0), this, IDC_TERMINAL_SEND);
 	_screen_combo.Create(WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST, CRect(0, 0, 0, 0), this, IDC_TERMINAL_SCREEN);
@@ -786,6 +788,24 @@ void CChatTerminalWindow::AppendMessage(CString screen, int section, CString tex
 	message->text = text;
 	message->stream = stream;
 	message->clear_screen = false;
+	message->set_pinned = false;
+	PostMessage(WM_CHAT_TERMINAL_APPEND, 0, (LPARAM)message);
+}
+
+// Thread-safe: replace a screen's fixed (pinned) State block in place. Posts to
+// the UI thread, so it's safe to call from the heartbeat/symbol-engine threads.
+void CChatTerminalWindow::SetPinnedStateAsync(CString screen, CString text)
+{
+	if (!::IsWindow(GetSafeHwnd())) {
+		return;
+	}
+	SChatTerminalMessage *message = new SChatTerminalMessage;
+	message->screen = screen;
+	message->section = kChatTerminalState;
+	message->text = text;
+	message->stream = false;
+	message->clear_screen = false;
+	message->set_pinned = true;
 	PostMessage(WM_CHAT_TERMINAL_APPEND, 0, (LPARAM)message);
 }
 
@@ -806,6 +826,7 @@ void CChatTerminalWindow::ClearScreen(CString screen)
 	message->section = 0;
 	message->stream = false;
 	message->clear_screen = true;
+	message->set_pinned = false;
 	PostMessage(WM_CHAT_TERMINAL_APPEND, 0, (LPARAM)message);
 }
 
@@ -1044,7 +1065,12 @@ LRESULT CChatTerminalWindow::OnAppendMessage(WPARAM wParam, LPARAM lParam)
 {
 	SChatTerminalMessage *message = (SChatTerminalMessage *)lParam;
 	if (message != NULL) {
-		if (message->clear_screen) {
+		if (message->set_pinned) {
+			// Fixed, in-place "progress-bar" block at the top of its section
+			// (replaces, never accumulates).
+			SetPinnedState(message->screen, message->text);
+		}
+		else if (message->clear_screen) {
 			int screen_index = EnsureScreen(message->screen);
 			for (int i = 0; i < kChatTerminalSectionCount; ++i) {
 				_screens[screen_index].sections[i] = "";

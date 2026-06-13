@@ -90,30 +90,28 @@ void CSymbolEngineTimingTells::UpdateOnHeartbeat() {
 }
 
 void CSymbolEngineTimingTells::PublishStateBox() {
-  if (p_tablemap == NULL) return;
+  if (p_tablemap == NULL || p_chat_terminal == NULL) return;
   int n = p_tablemap->nchairs();
   if (n > kMaxNumberOfPlayers) n = kMaxNumberOfPlayers;
-  CString txt;
+  // FIXED in-place block (pinned at the top of the State section, replaced -- not
+  // appended -- each update, like a terminal progress bar). The LABELS ("pN=")
+  // stay in the default colour; only the VALUES are bold white (ANSI 1;37), so
+  // visually only the numbers change as the action passes around the table.
+  CString txt = "timing tells (sec, rect1):\r\n";
   for (int chair = 0; chair < n; ++chair) {
+    CString val;
+    if (_timing_seconds[chair] > 0.0) val.Format("%.2f", _timing_seconds[chair]);
+    else                              val = "--";
+    if (chair == _last_chair) val += "*";    // currently the active chair
     CString cell;
-    if (_timing_seconds[chair] > 0.0) {
-      cell.Format("p%d=%.2f", chair, _timing_seconds[chair]);
-    } else {
-      cell.Format("p%d=--", chair);
-    }
-    if (chair == _last_chair) cell += "*";   // currently the active chair
+    // label (default colour) + bold-white value + reset
+    cell.Format("p%d=\x1b[1;37m%s\x1b[0m", chair, val.GetString());
     txt += cell;
     txt += ((chair % 3) == 2) ? "\r\n" : "   ";
   }
-  if (txt == _last_published) return;        // skip identical consecutive snapshots
+  if (txt == _last_published) return;        // nothing changed since last update
   _last_published = txt;
-  // Don't CLEAR the State box -- append each snapshot under a timestamped
-  // separator so the history accumulates. Posted (thread-safe) to the UI thread.
-  SYSTEMTIME st; GetLocalTime(&st);
-  CString block;
-  block.Format("---- %02d:%02d:%02d  timing tells (sec, rect1, * = active) ----\r\n%s\r\n",
-    st.wHour, st.wMinute, st.wSecond, txt.GetString());
-  ChatTerminalAppendToScreen("main", kChatTerminalState, block);
+  p_chat_terminal->SetPinnedStateAsync("main", txt);
 }
 
 bool CSymbolEngineTimingTells::EvaluateSymbol(const CString name, double *result, bool log) {
