@@ -17,6 +17,7 @@
 
 #include <vector>
 #include <regex>
+#include <map>
 
 #include "..\CTablemap\CTablemap.h"
 #include "CSpaceOptimizedGlobalObject.h"
@@ -99,6 +100,13 @@ private:
 	// worker threads (each owns its own api/api2 and result state).
 	TessBaseAPI *api;
 	TessBaseAPI *api2;
+	// One PERSISTENT engine pair per model (keyed by model spec). A model is read
+	// from disk and Init'd exactly once; switching models mid-scrape is then just a
+	// pointer swap of api/api2, not a multi-hundred-ms Tesseract re-Init. Re-Init
+	// per region (when a tablemap mixes A0/A1/A2/A3 models) was the dominant scrape
+	// cost. api/api2 always alias the entries owned by these maps.
+	std::map<CString, TessBaseAPI*> _api_pool;
+	std::map<CString, TessBaseAPI*> _api2_pool;
 	// Per-transform OCR settings, indexed by AutoOcr engine number (A0=0..A3=3).
 	// (settings table keys autoocr0 / autoocr1 / autoocr2 / autoocr3.)
 	static const int kNumAutoOcr = 4;

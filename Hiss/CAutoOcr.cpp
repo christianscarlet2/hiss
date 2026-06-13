@@ -213,37 +213,61 @@ void CAutoOcr::LoadModelSettings() {
 // Switch api/api2 to `model` if not already loaded. Tesseract supports
 // re-Init to change the model/language.
 bool CAutoOcr::EnsureModelLoaded(const CString &model) {
-	if (!EnsureTesseractInitialized()) {
+	if (!_models_loaded) {
+		LoadModelSettings();
+	}
+	if (_api_init_failed) {
 		return false;
 	}
 	CString m = model.IsEmpty() ? CString("my_model") : model;
-	if (m == _current_model) {
+	if (m == _current_model && api != NULL && api2 != NULL) {
 		return true;
 	}
-	if (SafeTessInit(api, m.GetString()) == -1 || SafeTessInit(api2, m.GetString()) == -1) {
+	// Already initialised for this model? Just switch the active pointers - no
+	// disk read, no re-Init. This is the speed fix: a tablemap that mixes models
+	// (A0/A1/A2/A3) used to re-Init Tesseract on every model switch within a single
+	// scrape (~100ms+ each), turning a fast OCR pass into multi-second lag.
+	std::map<CString, TessBaseAPI*>::iterator it = _api_pool.find(m);
+	if (it != _api_pool.end()) {
+		api = it->second;
+		api2 = _api2_pool[m];
+		_current_model = m;
+		return true;
+	}
+	// First time we see this model: create + Init a dedicated engine pair. This is
+	// the ONLY place a model is read from disk for the lifetime of the process.
+	TessBaseAPI *e1 = SafeCreateTessBaseAPI();
+	TessBaseAPI *e2 = SafeCreateTessBaseAPI();
+	if (e1 == NULL || e2 == NULL
+		|| SafeTessInit(e1, m.GetString()) == -1
+		|| SafeTessInit(e2, m.GetString()) == -1) {
+		if (e1 != NULL) delete e1;
+		if (e2 != NULL) delete e2;
 		_api_init_failed = true;
 		return false;
 	}
+	_api_pool[m] = e1;
+	_api2_pool[m] = e2;
+	api = e1;
+	api2 = e2;
 	_current_model = m;
+	_api_initialized = true;
+	_api2_initialized = true;
 	return true;
 }
 
 CAutoOcr::~CAutoOcr() {
-	// Unload network
-	if (api != NULL) {
-		if (_api_initialized) {
-			SafeTessEnd(api);
-		}
-		delete api;
-		api = NULL;
+	// api/api2 only alias entries owned by the pools; free each engine once.
+	for (std::map<CString, TessBaseAPI*>::iterator it = _api_pool.begin(); it != _api_pool.end(); ++it) {
+		if (it->second != NULL) { SafeTessEnd(it->second); delete it->second; }
 	}
-	if (api2 != NULL) {
-		if (_api2_initialized) {
-			SafeTessEnd(api2);
-		}
-		delete api2;
-		api2 = NULL;
+	for (std::map<CString, TessBaseAPI*>::iterator it = _api2_pool.begin(); it != _api2_pool.end(); ++it) {
+		if (it->second != NULL) { SafeTessEnd(it->second); delete it->second; }
 	}
+	_api_pool.clear();
+	_api2_pool.clear();
+	api = NULL;
+	api2 = NULL;
 }
 
 bool CAutoOcr::EnsureTesseractInitialized() {
@@ -277,44 +301,13 @@ bool CAutoOcr::EnsureTesseractInitialized() {
 		}
 	}
 
-	// New automatic OCR based on tesseract-ocr. Load the recognition network
-	// lazily so Hiss startup does not depend on Tesseract being ready.
-	if (!_api_initialized) {
-		if (api == NULL) {
-			api = SafeCreateTessBaseAPI();
-			if (api == NULL) {
-				_api_init_failed = true;
-				MessageBox(NULL, "Failed to create Tesseract OCR instance.", "AutoOcr error", MB_OK);
-				return false;
-			}
-		}
-		if (SafeTessInit(api, _model[0].GetString()) == -1) {		// OEM_LSTM_ONLY
-			_api_init_failed = true;
-			MessageBox(NULL, "Failed to load tessdata files.\nMake sure tessdata folder is present and/or datas are not corrupted.", "AutoOcr error", MB_OK);
-			return false;
-		}
-		_api_initialized = true;
-		_current_model = _model[0];
+	// New automatic OCR based on tesseract-ocr. Load lazily through the per-model
+	// pool (EnsureModelLoaded) so each model is read from disk exactly once and
+	// Hiss startup never blocks on Tesseract being ready.
+	if (!EnsureModelLoaded(_model[0])) {
+		MessageBox(NULL, "Failed to load tessdata files.\nMake sure tessdata folder is present and/or datas are not corrupted.", "AutoOcr error", MB_OK);
+		return false;
 	}
-
-	if (!_api2_initialized) {
-		if (api2 == NULL) {
-			api2 = SafeCreateTessBaseAPI();
-			if (api2 == NULL) {
-				_api_init_failed = true;
-				MessageBox(NULL, "Failed to create Tesseract OCR instance.", "AutoOcr error", MB_OK);
-				return false;
-			}
-		}
-		if (SafeTessInit(api2, _model[0].GetString()) == -1) {		// OEM_LSTM_ONLY
-			_api_init_failed = true;
-			MessageBox(NULL, "Failed to load tessdata files.\nMake sure tessdata folder is present and/or datas are not corrupted.", "AutoOcr error", MB_OK);
-			return false;
-		}
-		_api2_initialized = true;
-		_current_model = _model[0];
-	}
-
 	return true;
 }
 
