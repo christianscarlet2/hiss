@@ -254,7 +254,16 @@ double CSymbolEngineTableLimits::sblind() {
 }
 
 double CSymbolEngineTableLimits::bblind(){
-	return BestTableLimitsToBeUsed().bblind;
+	double bb = BestTableLimitsToBeUsed().bblind;
+	// BB-only model: this bot scrapes and reasons entirely in big blinds, so a big
+	// blind IS the unit (bblind == 1 is the identity). When the blind-guesser
+	// can't settle a value yet it returns 0, which would zero every dollar-based
+	// quantity (f$betsize = decision * bblind, pot-odds, etc.) and break actions
+	// like "RaiseTo 3". Fall back to 1 so big-blind amounts pass through unchanged
+	// instead of collapsing to 0. (We don't lock or store this; the guesser still
+	// overrides as soon as it produces a real value.)
+	if (bb <= 0) return 1.0;
+	return bb;
 }
 
 double CSymbolEngineTableLimits::bigbet(){
