@@ -104,25 +104,29 @@ void CSymbolEngineTimingTells::PublishStateBox() {
     else                              val = "--";
     if (chair == _last_chair) val += "*";    // currently the active chair
     CString cell;
-    // label (default colour) + bold-white value + reset
-    cell.Format("p%d=\x1b[1;37m%s\x1b[0m", chair, val.GetString());
+    // label (default colour) + bold-white value (padded to a fixed width) + reset.
+    // The fixed-width value keeps every cell the same length so the trailing TAB
+    // always lands on the same tab stop -> the columns line up vertically in both
+    // the libvterm pane and the browser (tab-size 8 in each).
+    cell.Format("p%d=\x1b[1;37m%-6s\x1b[0m", chair, val.GetString());
     txt += cell;
-    txt += ((chair % 3) == 2) ? "\r\n" : "   ";
+    txt += ((chair % 3) == 2) ? "\r\n" : "\t";
   }
   // Dedup on the VALUES only (exclude the timestamp, which changes every second).
   if (txt == _last_published) return;        // values unchanged since last update
   _last_published = txt;
 
-  // Stamp WHEN these values were last updated: a human-readable 12-hour time in
-  // YELLOW, and the actual 24-hour clock time in WHITE underneath, for reference.
+  // Stamp WHEN these values were last updated: the time first (so it lines up
+  // with the actual-time line below it) followed by "(last updated)" in YELLOW,
+  // and the actual clock time in WHITE underneath -- both in 12-hour format.
   SYSTEMTIME st; GetLocalTime(&st);
   int hr12 = st.wHour % 12; if (hr12 == 0) hr12 = 12;
   const char *ampm = (st.wHour < 12) ? "AM" : "PM";
   CString stamp;
-  stamp.Format("\r\n\x1b[33mlast updated %d:%02d:%02d %s\x1b[0m\r\n"
-               "\x1b[1;37m%02d:%02d:%02d\x1b[0m\r\n",
+  stamp.Format("\r\n\x1b[33m%d:%02d:%02d %s (last updated)\x1b[0m\r\n"
+               "\x1b[1;37m%d:%02d:%02d %s\x1b[0m\r\n",
                hr12, st.wMinute, st.wSecond, ampm,
-               st.wHour, st.wMinute, st.wSecond);
+               hr12, st.wMinute, st.wSecond, ampm);
   p_chat_terminal->SetPinnedStateAsync("main", txt + stamp);
 }
 
