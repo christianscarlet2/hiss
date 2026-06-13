@@ -216,9 +216,11 @@ void CHandHistoryWriter::CaptureMetadata() {
   // Hero hole cards.
   _body += "*** HOLE CARDS ***\n";
   if (_hero >= 0 && _hero < _nchairs) {
-    _body += "Dealt to " + FmtName(_hero) + " [" + FmtHoleCards(_hero) + "]\n";
+    // Use a token for the hero cards; the deal may not be scraped yet at this first
+    // heartbeat, so resolve it at Flush from the best cards seen during the hand.
+    _body += "Dealt to " + FmtName(_hero) + " [\x01HOLE\x01]\n";
   } else {
-    _body += "Dealt to hero [??] (hero seat unknown)\n";
+    _body += "Dealt to hero [? ?] (hero seat unknown)\n";
   }
 }
 
@@ -383,6 +385,10 @@ void CHandHistoryWriter::Flush() {
     token.Format("\x01P%d\x01", i);
     out.Replace(token, ResolveName(i));
   }
+  // Resolve the hero hole-cards token to the best cards seen this hand.
+  CString hero_cards = (_hero >= 0 && _hero < kMaxNumberOfPlayers && !_hole[_hero].IsEmpty())
+                     ? _hole[_hero] : FmtHoleCards(_hero);
+  out.Replace("\x01HOLE\x01", hero_cards);
 
   // ---- route to complete\ or incomplete\ depending on import quality ----
   bool complete = HandLooksComplete();
@@ -504,7 +510,11 @@ CString CHandHistoryWriter::FmtMoney(double v) {
 }
 
 CString CHandHistoryWriter::FmtHoleCards(int chair) {
-  if (!_have_cards) return "??";
+  // Read the ACTUAL scraped cards via IsKnownCard(), not the _have_cards region-name
+  // heuristic (which can miss a tablemap's real card-region naming even though the
+  // cards are scraped fine -- the hero's cards are always known, since the bot plays
+  // with them, and shown opponent cards are known at showdown).
+  if (chair < 0 || chair >= kMaxNumberOfPlayers || p_table_state == NULL) return "? ?";
   CString result;
   for (int j = 0; j < kMaxNumberOfCardsPerPlayer; ++j) {
     Card *c = p_table_state->Player(chair)->hole_cards(j);
