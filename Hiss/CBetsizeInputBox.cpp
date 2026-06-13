@@ -280,6 +280,13 @@ void CBetsizeInputBox::EnterBetsizeByNumpad(CString amount) {
 		ClickNumpadRegion("nOkay");
 		Sleep(kNumpadClickDelayMs);
 	}
+	// 4) Optional second confirmation tap: some casinos require an extra "Confirm"
+	// button after Okay. Click nConfirm (if defined) after a delay.
+	if (p_tablemap->ItemExists("nConfirm")) {
+		Sleep(kNumpadClickDelayMs);
+		ClickNumpadRegion("nConfirm");
+		Sleep(kNumpadClickDelayMs);
+	}
 }
 
 // Numpad-only amount entry. Used after the two-successive-clicks have already

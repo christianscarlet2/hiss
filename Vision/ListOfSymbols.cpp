@@ -157,9 +157,10 @@ CString ListOfRegions() {
   list += "betsize ";
   // On-screen numpad for betsize entry (phone / screen-scraped tables that can't
   // take keyboard input): clear with 5x nBackspace, click n0..n9 / nDecimalPoint
-  // to "type" the amount, then click nOkay to submit.
+  // to "type" the amount, then click nOkay to submit, then (after a delay) nConfirm
+  // for casinos that need a second confirmation tap after Okay.
   list += RangeOfSymbols("n%i", 0, 9);
-  list += "nDecimalPoint nBackspace nOkay ";
+  list += "nDecimalPoint nBackspace nOkay nConfirm ";
   list += "i3edit ";
   list += "i3handle ";
   list += "i3slider ";
