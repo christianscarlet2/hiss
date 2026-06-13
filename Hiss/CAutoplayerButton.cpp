@@ -20,6 +20,25 @@
 
 #include "CStringMatch.h"
 #include "..\CTablemap\CTablemap.h"
+#include "..\DLLs\Files_DLL\Files.h"
+#include "CAutoconnector.h"
+
+// Always-on one-liner into logs\button_debug.log so we can see, for every
+// autoplayer button click, the exact rect/method/hwnd that was used
+// (diagnoses "isfinalanswer is true but nothing happens on the phone").
+static void ButtonDebugLog(const char *fmt, ...) {
+  CString path = LogsDirectory() + "button_debug.log";
+  FILE *f = fopen(path.GetString(), "a");
+  if (f == NULL) return;
+  SYSTEMTIME st; GetLocalTime(&st);
+  fprintf(f, "  [click] %02d:%02d:%02d.%03d ", st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+  va_list args;
+  va_start(args, fmt);
+  vfprintf(f, fmt, args);
+  va_end(args);
+  fprintf(f, "\n");
+  fclose(f);
+}
 
 
 CAutoplayerButton::CAutoplayerButton() {
@@ -80,6 +99,15 @@ bool CAutoplayerButton::Click() {
 	}
 	if (!area_found)
 		p_tablemap->GetTMRegion(_technical_name, &button_region);
+    HWND hwnd = (p_autoconnector != NULL) ? p_autoconnector->attached_hwnd() : NULL;
+    bool empty_rect = EqualRect(&button_region, &zero_rect);
+    const char *method = (BUTTON_NOTHING == _click_method) ? "NOTHING"
+                       : (BUTTON_DOUBLECLICK == _click_method) ? "DOUBLE" : "SINGLE";
+    ButtonDebugLog("name=%s label=\"%s\" method=%s rect=(%d,%d,%d,%d) center=(%d,%d) empty=%d hwnd=0x%p",
+      _technical_name.GetString(), _label.GetString(), method,
+      button_region.left, button_region.top, button_region.right, button_region.bottom,
+      (button_region.left + button_region.right) / 2, (button_region.top + button_region.bottom) / 2,
+      empty_rect ? 1 : 0, hwnd);
     if (BUTTON_NOTHING == _click_method) {
       write_log(Preferences()->debug_autoplayer(), "[CAutoplayerButton] Doing nothing on this button [%s] [%s]\n", _label, _technical_name);
     } else if (BUTTON_DOUBLECLICK == _click_method) {
@@ -93,6 +121,8 @@ bool CAutoplayerButton::Click() {
     }
     return true;
   } else {
+    ButtonDebugLog("name=%s label=\"%s\" NOT CLICKABLE -> Click() returns false",
+      _technical_name.GetString(), _label.GetString());
     write_log(Preferences()->debug_autoplayer(), "[CAutoplayerButton] Could not click button %s. Either undefined or not visible.\n", _label);
     return false;
   }

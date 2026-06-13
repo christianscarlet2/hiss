@@ -52,6 +52,22 @@
 
 CAutoplayer	*p_autoplayer = NULL;
 
+// Always-on breadcrumb into logs\button_debug.log so we can see exactly where
+// the autoplayer decision path stops before a click ("isfinalanswer is true but
+// nothing happens"). Pairs with the [click] lines emitted by CAutoplayerButton.
+static void APTrace(const char *fmt, ...) {
+  CString path = LogsDirectory() + "button_debug.log";
+  FILE *f = fopen(path.GetString(), "a");
+  if (f == NULL) return;
+  fprintf(f, "  [path] ");
+  va_list args;
+  va_start(args, fmt);
+  vfprintf(f, fmt, args);
+  va_end(args);
+  fprintf(f, "\n");
+  fclose(f);
+}
+
 CAutoplayer::CAutoplayer(void) {
 	// Autoplayer is not enabled at startup.
 	// We can't call EngageAutoplayer() here,
@@ -228,9 +244,11 @@ bool CAutoplayer::AnySecondaryFormulaTrue() {
 bool CAutoplayer::ExecutePrimaryFormulasIfNecessary() {
 	write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] ExecutePrimaryFormulasIfNecessary()\n");
 	if (!AnyPrimaryFormulaTrue())	{
+		APTrace("ExecutePrimaryFormulas -> STOP: AnyPrimaryFormulaTrue()=false (no f$ action true)");
 		write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] No primary formula true. Nothing to do\n");
 		return false;
 	}
+	APTrace("ExecutePrimaryFormulas -> AnyPrimaryFormulaTrue()=true");
 	// Execute beep (if necessary) independent of all other conditions (mutex, etc.)
 	// and with autoplayer-actions.
 	ExecuteBeep();
@@ -245,21 +263,26 @@ bool CAutoplayer::ExecutePrimaryFormulasIfNecessary() {
 	// so we can handle the preparation once at the very beginning.
 	CMyMutex mutex;
   if (!mutex.IsLocked()) {
+		APTrace("ExecutePrimaryFormulas -> STOP: anti-collision mutex NOT locked (another OH/Hiss holds it?)");
 		return false;
 	}
 	PrepareActionSequence();
 	if (p_function_collection->EvaluateAutoplayerFunction(k_autoplayer_function_allin))	{
 		if (DoAllin()) {
+			APTrace("ExecutePrimaryFormulas -> handled by DoAllin()");
 			return true;
 		}
 		// Else continue with swag and betpot
 	}
 	if (DoBetPot())	{
+		APTrace("ExecutePrimaryFormulas -> handled by DoBetPot()");
 		return true;
 	}
 	if (DoBetsize()) {
+		APTrace("ExecutePrimaryFormulas -> handled by DoBetsize()");
 		return true;
 	}
+	APTrace("ExecutePrimaryFormulas -> falling through to ExecuteRaiseCallCheckFold()");
 	return ExecuteRaiseCallCheckFold();
 }
 
@@ -272,18 +295,27 @@ bool CAutoplayer::ExecuteRaiseCallCheckFold() {
   assert(p_function_collection->Exists(k_standard_function_names[k_autoplayer_function_fold]));
 	for (int i=k_autoplayer_function_raise; i<=k_autoplayer_function_fold; i++)	{
     if ((i == k_autoplayer_function_check) && p_engine_container->symbol_engine_chip_amounts()->call() > 0) {
-      write_log(k_always_log_errors, 
+      APTrace("ExecuteRaiseCallCheckFold -> skipping f$check (there is a bet to call)");
+      write_log(k_always_log_errors,
         "[AutoPlayer] WARNING! Can't execute f$check because there is a bet to call\n");
       continue;
     }
-		if (p_function_collection->Evaluate(k_standard_function_names[i])) 	{
-			if (p_casino_interface->LogicalAutoplayerButton(i)->Click()) 			{				
+		double v = p_function_collection->Evaluate(k_standard_function_names[i]);
+		APTrace("ExecuteRaiseCallCheckFold -> %s = %.2f", k_standard_function_names[i], v);
+		if (v) 	{
+			CAutoplayerButton *btn = p_casino_interface->LogicalAutoplayerButton(i);
+			APTrace("ExecuteRaiseCallCheckFold -> %s is TRUE; resolved button clickable=%d, calling Click()",
+				k_standard_function_names[i], (btn != NULL && btn->IsClickable()) ? 1 : 0);
+			if (btn->Click()) 			{
         p_engine_container->UpdateAfterAutoplayerAction(i);
         p_autoplayer_trace->Print(ActionConstantNames(i), kAlwaysLogAutoplayerFunctions);
 				return true;
 			}
+			APTrace("ExecuteRaiseCallCheckFold -> Click() returned false for %s (button not clickable / no rect)",
+				k_standard_function_names[i]);
 		}
 	}
+	APTrace("ExecuteRaiseCallCheckFold -> nothing clicked (no true f$ matched a clickable button)");
 	return false;
 }
 
@@ -537,6 +569,7 @@ void CAutoplayer::DoAutoplayer(void) {
 	// Scarlet Beast server-scrape: there are no screen buttons to click; decide via
 	// the formulas and POST the action to poker.scarletbeast.com instead.
 	if (p_scarlet_beast != NULL && p_scarlet_beast->ScrapeFromServer()) {
+		APTrace("DoAutoplayer -> SERVER mode (ScrapeFromServer=1): POSTing to API, NOT clicking screen buttons");
 		DoAutoplayerServer();
 		return;
 	}
@@ -587,14 +620,17 @@ void CAutoplayer::DoAutoplayer(void) {
 		// without the need to know the userchair to act on secondary formulas.
 		// However: for primary formulas (f$alli, f$rais, etc.)
 		// knowing the userchair (combination of cards and buttons) is a must.
+		APTrace("DoAutoplayer -> STOP: userchair not confirmed, skipping primary formulas");
 		write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Skipping primary formulas because userchair unknown\n");
 		goto AutoPlayerCleanupAndFinalization;
   }
 	write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Going to evaluate primary formulas.\n");
 	if (p_engine_container->symbol_engine_autoplayer()->isfinalanswer())	{
+		APTrace("DoAutoplayer -> isfinalanswer=1, calling ExecutePrimaryFormulasIfNecessary()");
 		p_autoplayer_functions->CalcPrimaryFormulas();
 		ExecutePrimaryFormulasIfNecessary();
 	}	else {
+		APTrace("DoAutoplayer -> STOP: isfinalanswer=0 at action time, not executing autoplayer logic");
 		write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] No final answer, therefore not executing autoplayer-logic.\n");
 	}
   // Gotos are usually considered bad code.
