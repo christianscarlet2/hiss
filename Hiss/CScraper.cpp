@@ -48,14 +48,18 @@ using namespace std;
 #include "..\Shared\WindowCapture.h"
 #include "..\Shared\ParallelWorkerPool.h"
 #include "..\CTablemap\CTablemapDB.h"
+#include "COcrWorker.h"
 #include <tlhelp32.h>
 
 CScraper *p_scraper = NULL;
 
-// --- Optional parallel OCR (gated; default OFF) --------------------------------
+// --- Optional parallel OCR (gated by "parallel_workers"/"hiss_ocr") ------------
+// Recognition runs OUT OF PROCESS in worker processes (g_ocr_worker_pool); the
+// in-process thread pool (g_ocr_pool) only does blocking pipe I/O, one I/O thread
+// per worker. This keeps thread-unsafe Tesseract/leptonica out of Hiss's heap.
 static ParallelWorkerPool g_ocr_pool;
 static int g_ocr_pool_size = 0;
-static std::vector<CAutoOcr*> g_ocr_engines;
+static COcrWorkerPool g_ocr_worker_pool;
 
 static bool HissParallelOcrEnabled() {
 	if (p_tablemap_db == NULL) return false;
@@ -311,9 +315,10 @@ void CScraper::EvaluateTrueFalseRegion(bool *result, const CString name) {
 // Safe to call from the live-reload path: it runs under the heartbeat lock, so no
 // PreOcrParallel() is in flight.
 void CScraper::InvalidateParallelOcrEngines() {
-	for (size_t i = 0; i < g_ocr_engines.size(); ++i) delete g_ocr_engines[i];
-	g_ocr_engines.clear();
-	g_ocr_pool_size = 0;   // forces rebuild (want != size) next PreOcrParallel()
+	// Stop the worker processes so they respawn and reload the (changed) models on
+	// the next pre-pass. g_ocr_pool_size reset forces the I/O thread-pool rebuild too.
+	g_ocr_worker_pool.Stop();
+	g_ocr_pool_size = 0;
 }
 
 // Optional parallel OCR pre-pass: OCR every AutoOcr ("A") region across worker
@@ -325,7 +330,7 @@ void CScraper::PreOcrParallel() {
 	_ocr_cache.clear();
 	if (!HissParallelOcrEnabled() || p_tablemap == NULL) return;
 
-	// Size the worker pool + engine pool from settings, split across Hiss instances.
+	// Size the worker pool from settings, split across running Hiss instances.
 	int cpus = 0, wpc = 1;
 	if (p_tablemap_db != NULL) {
 		CString c = p_tablemap_db->GetSettingString("parallel_workers", "num_cpus");
@@ -334,18 +339,20 @@ void CScraper::PreOcrParallel() {
 		if (!w.IsEmpty()) wpc = atoi(w.GetString());
 	}
 	int want = ParallelWorkerCountForInstances(cpus, wpc, CountHissInstances());
+
+	// Spawn/respawn the OUT-OF-PROCESS OCR workers for the connected tablemap, and
+	// size the I/O thread-pool to match (one blocking pipe I/O thread per worker).
+	g_ocr_worker_pool.EnsureStarted(want, p_tablemap->filename());
 	if (want != g_ocr_pool_size) {
 		g_ocr_pool.Start(want);
-		for (size_t i = 0; i < g_ocr_engines.size(); ++i) delete g_ocr_engines[i];
-		g_ocr_engines.clear();
-		for (int i = 0; i < want; ++i) {
-			CAutoOcr *e = new CAutoOcr();
-			e->LoadModelSettings();
-			g_ocr_engines.push_back(e);
-		}
 		g_ocr_pool_size = want;
 	}
-	if (g_ocr_engines.empty()) return;
+	std::vector<HANDLE> worker_pipes = g_ocr_worker_pool.Pipes();
+	if (worker_pipes.empty()) {
+		// No workers available: leave _ocr_cache empty so EvaluateRegion falls back
+		// to its own (single-threaded, in-process) OCR -- the stable serial path.
+		return;
+	}
 
 	// Capture each "A" region's pixels (serial GDI on this thread).
 	HDC screen = CreateDC("DISPLAY", NULL, NULL, NULL);
@@ -359,7 +366,7 @@ void CScraper::PreOcrParallel() {
 		bool region_changed = ProcessRegion(it);   // capture + tolerance-aware change check
 		// Unchanged region with a known prior result: serve the cached text and
 		// skip OCR entirely (the whole point of the speed-up). Only freshly-changed
-		// or never-seen regions get queued for Tesseract below.
+		// or never-seen regions get shipped to a worker below.
 		CString rname = it->second.name;
 		std::map<CString, CString>::const_iterator prev = _last_ocr_result.find(rname);
 		if (!region_changed && prev != _last_ocr_result.end()) {
@@ -380,36 +387,36 @@ void CScraper::PreOcrParallel() {
 	DeleteDC(screen);
 	if (regs.empty()) return;
 
-	// Parallel recognition: each job borrows a free engine from the pool.
+	// Dispatch: each job borrows a free worker pipe, ships the region image to that
+	// worker PROCESS for recognition (Tesseract runs in the worker's own heap), and
+	// reads the text back. The I/O thread only blocks on the pipe -- no in-process
+	// Tesseract, so no heap corruption can reach Hiss. A pipe failure yields ""
+	// (the region then keeps its previous value via change-detection next frame).
 	CRITICAL_SECTION rcs, ecs;
 	InitializeCriticalSection(&rcs);
 	InitializeCriticalSection(&ecs);
-	std::vector<CAutoOcr*> avail = g_ocr_engines;
+	std::vector<HANDLE> avail = worker_pipes;
 	std::map<CString, CString> *cache = &_ocr_cache;
 	HANDLE done = CreateEvent(NULL, TRUE, FALSE, NULL);
 	volatile LONG remaining = (LONG)regs.size();
 	for (size_t i = 0; i < regs.size(); ++i) {
-		RMapCI reg = regs[i];
 		Mat mat = mats[i];
-		CString name = reg->second.name;
-		g_ocr_pool.Submit([reg, mat, name, &rcs, &ecs, &avail, &remaining, done, cache]() {
-			CAutoOcr *eng = NULL;
+		CString name = regs[i]->second.name;
+		g_ocr_pool.Submit([mat, name, &rcs, &ecs, &avail, &remaining, done, cache]() {
+			HANDLE pipe = NULL;
 			EnterCriticalSection(&ecs);
-			if (!avail.empty()) { eng = avail.back(); avail.pop_back(); }
+			if (!avail.empty()) { pipe = avail.back(); avail.pop_back(); }
 			LeaveCriticalSection(&ecs);
 			CString r;
-			// OCR can throw (OpenCV cv::Exception / std::bad_alloc on an odd frame).
-			// Catch here so we ALWAYS return the engine and decrement the counter -
-			// otherwise the wait below would block and an engine would leak.
-			if (eng != NULL) {
-				try {
-					r = eng->get_ocr_result(mat, reg);
-				} catch (...) {
-					r = "";
+			if (pipe != NULL) {
+				CStringA name_a(name);
+				if (!COcrWorkerPool::Recognize(pipe, name_a.GetString(), mat.data,
+				                               mat.cols, mat.rows, &r)) {
+					r = "";   // pipe failure -> no result this frame
 				}
 			}
 			EnterCriticalSection(&ecs);
-			if (eng != NULL) avail.push_back(eng);
+			if (pipe != NULL) avail.push_back(pipe);
 			LeaveCriticalSection(&ecs);
 			EnterCriticalSection(&rcs);
 			(*cache)[name] = r;

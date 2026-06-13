@@ -32,6 +32,7 @@
 #include "OpenHoldemDoc.h"
 #include "OpenHoldemView.h"
 #include "Singletons.h"
+#include "COcrWorker.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -140,6 +141,16 @@ BOOL COpenHoldemApp::InitInstance() {
   // http://www.maxinmontreal.com/forums/viewtopic.php?f=124&t=20281&p=142334#p142334
   Preferences()->LoadPreferences();
 	InstantiateAllSingletons();
+  // Process-level OCR worker: if launched as "Hiss.exe --ocr-worker", do NOT
+  // start the GUI/heartbeat/autoconnector. Just load the tablemap and service
+  // recognition requests over the pipe in this isolated process, then exit.
+  {
+    CString worker_pipe, worker_tm;
+    if (ParseOcrWorkerCommandLine(&worker_pipe, &worker_tm)) {
+      RunOcrWorker(worker_pipe, worker_tm);   // never returns (ExitProcess)
+      return FALSE;
+    }
+  }
   write_log(Preferences()->debug_openholdem(), "[OpenHoldem] Going to load mouse.DLL\n");
 	// mouse.dll - failure in load is fatal
 	_mouse_dll = LoadLibrary("mouse.dll");

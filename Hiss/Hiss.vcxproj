@@ -407,6 +407,7 @@
     <ClCompile Include="CReplayFrame.cpp" />
     <ClCompile Include="Bitmaps.cpp" />
     <ClCompile Include="CLazyScraper.cpp" />
+    <ClCompile Include="COcrWorker.cpp" />
     <ClCompile Include="CScraper.cpp" />
     <ClCompile Include="CScarletBeast.cpp" />
     <ClCompile Include="CSymbolEngineScarletBeast.cpp" />
@@ -737,6 +738,7 @@
     <ClInclude Include="PrWinHandranges.h" />
     <ClInclude Include="CReplayFrame.h" />
     <ClInclude Include="Bitmaps.h" />
+    <ClInclude Include="COcrWorker.h" />
     <ClInclude Include="CScraper.h" />
     <ClInclude Include="CScarletBeast.h" />
     <ClInclude Include="CSymbolEngineScarletBeast.h" />
