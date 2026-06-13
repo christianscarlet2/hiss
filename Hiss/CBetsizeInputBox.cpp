@@ -298,6 +298,21 @@ bool CBetsizeInputBox::EnterAmountViaNumpad(double total_betsize_in_dollars) {
 	return true;
 }
 
+bool CBetsizeInputBox::EnterAmountViaNumpadRaw(double amount) {
+	if (!UseNumpad()) {
+		write_log(k_always_log_errors, "[CBetsizeInputBox] EnterAmountViaNumpadRaw: no n0 region defined.\n");
+		return false;
+	}
+	// NO AdjustedBetsize(): type the big-blind amount exactly as decided. The casino
+	// min-raise/balance/rounding adjustments clamp a small BB value (e.g. 3) down to
+	// 0 when the balance/blind scrape is in big-blind scale -- the "typed 0" bug.
+	p_function_collection->SetAutoplayerFunctionValue(k_autoplayer_function_betsize, amount);
+	CString s = Number2CString(amount);
+	write_log(k_always_log_basic_information, "[CBetsizeInputBox] Raw numpad entry (no adjustment): \"%s\"\n", s.GetString());
+	EnterBetsizeByNumpad(s);
+	return true;
+}
+
 bool CBetsizeInputBox::GetI3EditRegion() {
   CString	area_name;
   bool area_found = false;

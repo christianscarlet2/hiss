@@ -36,6 +36,7 @@ class CCasinoInterface: public CSpaceOptimizedGlobalObject {
 	bool EnterBetsize(double total_betsize_in_dollars);
   // Numpad-only amount entry (after the two-successive-clicks opened the keypad).
   bool EnterBetsizeNumpad(double total_betsize_in_dollars);
+  bool EnterBetsizeNumpadRaw(double amount);   // type the BB amount as-is (no adjustment)
   bool EnterBetsizeForAllin();
 	bool UseSliderForAllin();
 	bool UseSliderForBetsize(double betsize, double betsize_for_allin);

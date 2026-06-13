@@ -25,6 +25,10 @@ class CBetsizeInputBox {
   // two-successive-clicks have opened the on-screen keypad. Adjusts the betsize,
   // clears with 5x nBackspace, clicks n0..n9 / nDecimalPoint, then clicks nOkay.
   bool EnterAmountViaNumpad(double total_betsize_in_dollars);
+  // Like EnterAmountViaNumpad but types the amount AS-IS, skipping AdjustedBetsize
+  // (min-raise / balance caps / "beautiful number" rounding). For the BB-only phone
+  // keypad where the .ohf already gives the exact big-blind amount to type.
+  bool EnterAmountViaNumpadRaw(double amount);
   // Depends on complete tablemap
   // and maybe visible betsize-confirmation-button
   bool IsReadyToBeUsed();

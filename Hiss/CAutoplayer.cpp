@@ -323,11 +323,13 @@ bool CAutoplayer::HandleTwoSuccessiveClicksBetRaise() {
 	if (!wants_raise && f_betsize <= 0 && decision_bb <= 0) {
 		return false;
 	}
-	// Keypad amount: prefer the dollar-betsize when the guesser has settled (bblind
-	// known); otherwise type the raw big-blind decision. Either way the on-screen
-	// keypad receives the big-blind amount this BB-only bot expects (bblind == 1 ->
-	// dollars == big blinds; bblind == 0 -> fall back to the BB decision directly).
-	double betsize = (f_betsize > 0) ? f_betsize : decision_bb;
+	// Keypad amount: PREFER the raw big-blind decision (decision_bb). f$betsize is
+	// decision * bblind, and the blind-guesser is unreliable on this BB-only setup
+	// (it has reported bblind = 0 and even 0.02, which makes f$betsize round down to
+	// 0 on the numpad -- the "typed 0" bug). The on-screen keypad wants the big-blind
+	// amount directly, so type decision_bb (e.g. RaiseTo 3 -> 3); only fall back to
+	// f$betsize if the OpenPPL decision somehow isn't a positive bet/raise size.
+	double betsize = (decision_bb > 0) ? decision_bb : f_betsize;
 	write_log(k_always_log_basic_information,
 		"[TwoClicks] BetRaise entry: wants_raise=%d f$betsize=%.2f decision_bb=%.2f -> keypad betsize=%.2f\n",
 		wants_raise ? 1 : 0, f_betsize, decision_bb, betsize);
@@ -340,10 +342,12 @@ bool CAutoplayer::HandleTwoSuccessiveClicksBetRaise() {
 		return false;
 	}
 	write_log(k_always_log_basic_information, "[AutoPlayer] Two-successive-clicks handled (primary path), betsize=%.2f\n", betsize);
-	// After the two clicks open the on-screen keypad, type the bet/raise amount
-	// (f$betsize, in big blinds) on the numpad and press nOkay.
+	// After the two clicks open the on-screen keypad, type the bet/raise amount on
+	// the numpad and press nOkay. Use the RAW entry: betsize is already the exact
+	// big-blind amount from the .ohf decision; the casino AdjustedBetsize() would
+	// clamp it to 0 against a BB-scale balance/min-raise (the "typed 0" bug).
 	Sleep(p_two_successive_clicks->DelayMs());
-	p_casino_interface->EnterBetsizeNumpad(betsize);
+	p_casino_interface->EnterBetsizeNumpadRaw(betsize);
 	action_sequence_needs_to_be_finished = true;
 	return true;
 }
