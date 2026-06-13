@@ -262,7 +262,17 @@ function Player(props) {
   var isCardBack = function (c) { return c === 'BACK' || c === '??' || c === 'CARD_BACK'; };
   var hasBackCard = cards.some(isCardBack);
   var hasKnownCard = cards.some(function (c) { return !isCardBack(c); });
-  var isOut = player.seated && !player.active && hasKnownCard && !hasBackCard;
+  var knownFaceCount = cards.filter(function (c) { return !isCardBack(c); }).length;
+  var isOut;
+  if (isHero) {
+    // Hero seat: do NOT grey based on the cardback. It is live whenever it shows
+    // no cardback (p3cardback=false) AND both of its face-up hole cards are present
+    // (p3cardface0/1 nocard=false). Grey only when those face cards are gone.
+    var heroShowingOwnCards = !hasBackCard && knownFaceCount >= 2;
+    isOut = player.seated && !heroShowingOwnCards;
+  } else {
+    isOut = player.seated && !player.active && hasKnownCard && !hasBackCard;
+  }
   // The green "active" indicator should mark only the player whose TURN it is
   // (to act), not everyone still in the hand. The backend sends toact (the chair
   // to act); fall back to the in-hand flag only when toact is unknown (-1).
