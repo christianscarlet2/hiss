@@ -154,6 +154,7 @@ CString ListOfRegions() {
   list += "c0bigblind ";
   list += "c0bigbet ";
   list += "c0ante ";
+  list += "betsize ";
   list += "i3edit ";
   list += "i3handle ";
   list += "i3slider ";
