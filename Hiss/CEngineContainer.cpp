@@ -12,6 +12,8 @@
 //******************************************************************************
 
 #include "stdafx.h"
+#include <typeinfo>
+#include "..\DLLs\Files_DLL\Files.h"
 #include "CEngineContainer.h"
 
 #include <assert.h>
@@ -353,6 +355,7 @@ void CEngineContainer::EvaluateAll() {
   // no longer using a separate loop for every update-function().
   // http://www.maxinmontreal.com/forums/viewtopic.php?f=117&t=21955
   for (int i = 0; i < _symbol_engines.GetCount(); ++i) {
+    DWORD e0 = GetTickCount();
     if (is_handreset) {
       _symbol_engines[i]->UpdateOnHandreset();
     }
@@ -364,6 +367,20 @@ void CEngineContainer::EvaluateAll() {
     }
     // And finally UpdateOnHeartbeat() gets always called.
     _symbol_engines[i]->UpdateOnHeartbeat();
+    DWORD e_ms = GetTickCount() - e0;
+    // A single symbol-engine should be sub-ms. Anything that blocks (DB/network)
+    // for >200ms is the lag culprit; name it in scrape_perf.log.
+    if (e_ms > 200) {
+      CString path = LogsDirectory() + "scrape_perf.log";
+      FILE *f = fopen(path.GetString(), "a");
+      if (f != NULL) {
+        SYSTEMTIME st; GetLocalTime(&st);
+        fprintf(f, "%02d:%02d:%02d.%03d  [SLOW ENGINE] %s took %lu ms\n",
+          st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
+          typeid(*_symbol_engines[i]).name(), (unsigned long)e_ms);
+        fclose(f);
+      }
+    }
   }
   for (int i = 0; i < _string_symbol_engines.GetCount(); ++i) {
 	  if (is_handreset) {
