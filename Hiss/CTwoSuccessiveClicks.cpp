@@ -181,8 +181,13 @@ bool CTwoSuccessiveClicks::HandleCycle(bool decision_is_raise) {
     (matching && !_was_matching) ? " (RISING EDGE -> will click)" : "");
 
   bool clicked = false;
-  // Edge-triggered: fire once when the label starts matching.
-  if (matching && !_was_matching) {
+  // Fire whenever the label matches and the decision is a raise. We deliberately do
+  // NOT require a rising edge (matching && !_was_matching): on phone tables the
+  // "BetOptions"/"RaiseOptions" button stays on screen across turns, so the label is
+  // continuously matching and a rising edge would only ever fire ONCE per connect.
+  // The autoplayer's once-per-turn FCKRA latch already guarantees at most one click
+  // per turn, so firing on "matching" is correct and re-arms every turn.
+  if (matching) {
     CMyMutex mutex;
     if (!mutex.IsLocked()) {
       return false;
