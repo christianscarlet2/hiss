@@ -304,17 +304,27 @@ bool CAutoplayer::HandleTwoSuccessiveClicksBetRaise() {
 	bool wants_bet_or_raise =
 		(p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_raise]) != 0)
 		|| (p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_betsize]) > 0);
-	if (!p_two_successive_clicks->HandleCycle(wants_bet_or_raise)) {
+	if (!wants_bet_or_raise) {
 		return false;
 	}
-	write_log(k_always_log_basic_information, "[AutoPlayer] Two-successive-clicks handled (primary path)\n");
-	// After the two clicks open the on-screen keypad, type the bet/raise amount
-	// (f$betsize) on the numpad and press nOkay.
+	// Guard: f$betsize = decision * bblind. Until the blind-guesser has settled on a
+	// real big blind, bblind (and therefore betsize) is 0 -- acting now would open
+	// the keypad and type "0" (the "raise by 0" bug). Skip until the size is known;
+	// we don't even click the two region-centres, so HandleCycle's edge-trigger is
+	// preserved and fires cleanly once a real betsize is available.
 	double betsize = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_betsize]);
-	if (betsize > 0) {
-		Sleep(p_two_successive_clicks->DelayMs());
-		p_casino_interface->EnterBetsizeNumpad(betsize);
+	if (betsize <= 0) {
+		APTrace("two-successive-clicks: SKIP, f$betsize<=0 (blind not known yet / guesser not settled)");
+		return false;
 	}
+	if (!p_two_successive_clicks->HandleCycle(true)) {
+		return false;
+	}
+	write_log(k_always_log_basic_information, "[AutoPlayer] Two-successive-clicks handled (primary path), betsize=%.2f\n", betsize);
+	// After the two clicks open the on-screen keypad, type the bet/raise amount
+	// (f$betsize, in big blinds) on the numpad and press nOkay.
+	Sleep(p_two_successive_clicks->DelayMs());
+	p_casino_interface->EnterBetsizeNumpad(betsize);
 	action_sequence_needs_to_be_finished = true;
 	return true;
 }
