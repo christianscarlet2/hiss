@@ -81,6 +81,8 @@ CAutoplayer::CAutoplayer(void) {
 	action_sequence_needs_to_be_finished = false;
   _already_executing_allin_adjustment = false;
   _last_server_act_version = 0;
+  _acted_this_turn = false;
+  _was_my_turn = false;
 }
 
 
@@ -715,11 +717,28 @@ void CAutoplayer::DoAutoplayer(void) {
 		write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Skipping primary formulas because userchair unknown\n");
 		goto AutoPlayerCleanupAndFinalization;
   }
+	// FCKRA once-per-turn: a turn is one contiguous stretch of ismyturn. On the
+	// rising edge (it just became my turn) clear the latch; once we take a primary
+	// action this turn we won't take another until the next turn.
+	bool my_turn_now = p_engine_container->symbol_engine_autoplayer()->ismyturn();
+	if (my_turn_now && !_was_my_turn) {
+		_acted_this_turn = false;
+		APTrace("DoAutoplayer -> new turn detected (ismyturn rising edge), FCKRA latch cleared");
+	}
+	_was_my_turn = my_turn_now;
+
 	write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Going to evaluate primary formulas.\n");
 	if (p_engine_container->symbol_engine_autoplayer()->isfinalanswer())	{
-		APTrace("DoAutoplayer -> isfinalanswer=1, calling ExecutePrimaryFormulasIfNecessary()");
-		p_autoplayer_functions->CalcPrimaryFormulas();
-		ExecutePrimaryFormulasIfNecessary();
+		if (_acted_this_turn) {
+			APTrace("DoAutoplayer -> STOP: already took an FCKRA action this turn (once-per-turn latch)");
+		} else {
+			APTrace("DoAutoplayer -> isfinalanswer=1, calling ExecutePrimaryFormulasIfNecessary()");
+			p_autoplayer_functions->CalcPrimaryFormulas();
+			if (ExecutePrimaryFormulasIfNecessary()) {
+				_acted_this_turn = true;   // latch: no more FCKRA actions until next turn
+				APTrace("DoAutoplayer -> primary action taken; FCKRA latch set for this turn");
+			}
+		}
 	}	else {
 		APTrace("DoAutoplayer -> STOP: isfinalanswer=0 at action time, not executing autoplayer logic");
 		write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] No final answer, therefore not executing autoplayer-logic.\n");

@@ -82,6 +82,11 @@ private:
 	long	_last_server_act_version;
 	// Dedup for the Decisions-window trace (only emit when the decision changes).
 	CString	_last_decision_line;
+	// FCKRA once-per-turn latch: we take at most ONE primary action (fold / check /
+	// call / raise / allin) per turn. Set when a primary action executes; cleared
+	// when a fresh turn begins (ismyturn rising edge).
+	bool	_acted_this_turn;
+	bool	_was_my_turn;
 
 	CCritSec	m_critsec;
 };
