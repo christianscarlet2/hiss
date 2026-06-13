@@ -95,7 +95,22 @@ CScraper::CScraper(void) {
   identical_region_counter = 0;
   _ocr_recognitions = 0;
   _ocr_reuses = 0;
+  _chg_pixel_delta = 0;   // 0 = exact match (off) until LoadChangeThresholds() runs
+  _chg_min_pixels = 0;
   _observer_active = false;
+}
+
+// Read change-detection tolerance from the `scrape_tuning` DB setting (fields
+// "pixel_delta" and "min_pixels"). Called once per scrape cycle so it can be
+// tuned live without restarting Hiss. Defaults keep it OFF (exact match).
+void CScraper::LoadChangeThresholds() {
+  _chg_pixel_delta = 0;
+  _chg_min_pixels = 0;
+  if (p_tablemap_db == NULL) return;
+  CString d = p_tablemap_db->GetSettingString("scrape_tuning", "pixel_delta");
+  CString m = p_tablemap_db->GetSettingString("scrape_tuning", "min_pixels");
+  if (!d.IsEmpty()) _chg_pixel_delta = atoi(d.GetString());
+  if (!m.IsEmpty()) _chg_min_pixels = atoi(m.GetString());
 }
 
 CScraper::~CScraper(void) {
@@ -149,8 +164,11 @@ bool CScraper::ProcessRegion(RMapCI r_iter) {
 	}
 	//SaveHBITMAPToFile(r_iter->second.cur_bmp, "output.bmp");
 
-	// If the bitmaps are different, then continue on
-	if (!BitmapsAreEqual(r_iter->second.last_bmp, r_iter->second.cur_bmp)) {
+	// If the bitmaps are different, then continue on. Use a tolerance-aware
+	// compare so capture jitter (phone mirror) doesn't count as a change and
+	// force needless re-OCR; with _chg_pixel_delta<=0 this is exact-match.
+	if (!BitmapsAreSimilar(r_iter->second.last_bmp, r_iter->second.cur_bmp,
+	                       _chg_pixel_delta, _chg_min_pixels)) {
     // Copy into "last" bitmap
 		old_bitmap = (HBITMAP) SelectObject(hdcCompatible, r_iter->second.last_bmp);
 		/*if (r_iter->second.transform[0] == 'A') {
@@ -326,7 +344,17 @@ void CScraper::PreOcrParallel() {
 		int rw = it->second.right - it->second.left + 1;
 		int rh = it->second.bottom - it->second.top + 1;
 		if (rw <= 0 || rh <= 0 || it->second.cur_bmp == NULL) continue;
-		ProcessRegion(it);   // capture the region into its cur_bmp from the window snapshot
+		bool region_changed = ProcessRegion(it);   // capture + tolerance-aware change check
+		// Unchanged region with a known prior result: serve the cached text and
+		// skip OCR entirely (the whole point of the speed-up). Only freshly-changed
+		// or never-seen regions get queued for Tesseract below.
+		CString rname = it->second.name;
+		std::map<CString, CString>::const_iterator prev = _last_ocr_result.find(rname);
+		if (!region_changed && prev != _last_ocr_result.end()) {
+			_ocr_cache[rname] = prev->second;
+			++_ocr_reuses;
+			continue;
+		}
 		HDC mdc = CreateCompatibleDC(screen);
 		HBITMAP ob = (HBITMAP)SelectObject(mdc, it->second.cur_bmp);
 		Mat input(rh, rw, CV_8UC4);
@@ -372,6 +400,15 @@ void CScraper::PreOcrParallel() {
 	CloseHandle(done);
 	DeleteCriticalSection(&rcs);
 	DeleteCriticalSection(&ecs);
+
+	// Remember this frame's freshly recognised text so the next frame can reuse it
+	// for any region that didn't change (see the skip check above).
+	for (size_t i = 0; i < regs.size(); ++i) {
+		CString name = regs[i]->second.name;
+		std::map<CString, CString>::const_iterator c = _ocr_cache.find(name);
+		if (c != _ocr_cache.end()) _last_ocr_result[name] = c->second;
+		++_ocr_recognitions;
+	}
 }
 
 void CScraper::ScrapeButtons(CString area_name, CString needed_buttons) {

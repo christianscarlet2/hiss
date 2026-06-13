@@ -99,6 +99,7 @@ void CLazyScraper::DoScrape() {
 	// many AutoOcr regions were freshly recognised vs reused unchanged.
 	DWORD scrape_start_ms = GetTickCount();
 	p_scraper->ResetOcrProfile();
+	p_scraper->LoadChangeThresholds();   // live-tunable jitter tolerance (scrape_tuning DB)
 	// Observer mode: refresh the cached "p3observer" state BEFORE any p3 region is
 	// scraped, so EvaluateRegion redirects p3<x> -> p3observer_<x> this frame.
 	p_scraper->RefreshObserverState();

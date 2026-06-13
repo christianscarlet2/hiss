@@ -20,4 +20,13 @@
 
 bool BitmapsAreEqual(HBITMAP HBitmapLeft, HBITMAP HBitmapRight) ;
 
+// Tolerance-aware compare for change-detection on a noisy/jittery capture
+// (phone mirror / scrcpy). Returns true when the two bitmaps are "effectively
+// the same": a pixel only counts as changed when its largest per-channel
+// difference exceeds pixel_delta, and the bitmaps are still considered equal
+// unless MORE THAN min_changed_pixels such pixels exist. With pixel_delta <= 0
+// it falls back to exact equality (identical to BitmapsAreEqual).
+bool BitmapsAreSimilar(HBITMAP HBitmapLeft, HBITMAP HBitmapRight,
+                       int pixel_delta, int min_changed_pixels);
+
 #endif INC_BITMAPS_H

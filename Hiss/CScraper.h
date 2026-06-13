@@ -130,6 +130,14 @@ class CScraper : public CSpaceOptimizedGlobalObject {
   long _ocr_recognitions;
   long _ocr_reuses;
   void ResetOcrProfile() { _ocr_recognitions = 0; _ocr_reuses = 0; }
+  // Change-detection tolerance for a jittery capture (phone mirror). A region is
+  // "changed" only when more than _chg_min_pixels pixels differ by more than
+  // _chg_pixel_delta per channel; below that it's treated as unchanged and its
+  // previous OCR result is reused (skipping Tesseract). _chg_pixel_delta <= 0
+  // means exact match (off). Tuned live via the `scrape_tuning` DB setting.
+  int _chg_pixel_delta;
+  int _chg_min_pixels;
+  void LoadChangeThresholds();
  private:
 	HBITMAP			_entire_window_last;
 	HBITMAP			_entire_window_cur;
