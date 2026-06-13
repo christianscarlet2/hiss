@@ -30,6 +30,10 @@ approve the `hiss-bot` MCP server.
 | `list_tesseract_models` | repo + settings | tesseract `.traineddata`/`.checkpoint` models + AutoOcr model settings |
 | `dump_tablemap` | postgres | dump the tablemap(s) from the DB to `logs/tablemap_dump.json` |
 | `read_settings` | postgres | the `settings` table (key → jsonb) |
+| `pg_query` | postgres | run **arbitrary SQL** on any database (read-only by default; `allow_write=true` to modify) |
+| `pg_databases` | postgres | list all databases on the server (e.g. `hiss`, `PT4 DB`) |
+| `pg_tables` | postgres | list tables in a database |
+| `pg_describe` | postgres | a table's columns and types |
 
 ## The `/improve` flow
 When you issue `/improve <text>` in the Hiss terminal, the bot captures the table

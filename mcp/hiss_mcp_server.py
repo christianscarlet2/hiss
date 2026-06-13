@@ -85,13 +85,27 @@ def hiss_get(path):
         return r.read().decode("utf-8", errors="replace")
 
 # --- postgres via psql ------------------------------------------------------
-def psql_query(sql):
+def psql_query(sql, database=None, tuples_only=True):
     env = dict(os.environ); env["PGPASSWORD"] = PGPASS
-    proc = subprocess.run([PSQL, "-U", PGUSER, "-d", PGDB, "-t", "-A", "-c", sql],
-                          capture_output=True, text=True, env=env, timeout=30)
+    flags = ["-A"] + (["-t"] if tuples_only else [])   # unaligned; headers unless tuples_only
+    cmd = [PSQL, "-U", PGUSER, "-d", database or PGDB] + flags + ["-c", sql]
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=60)
     if proc.returncode != 0:
         raise RuntimeError("psql failed: %s" % (proc.stderr.strip() or proc.stdout.strip()))
     return proc.stdout
+
+# Statements that are safe in read-only mode (Claude can't DROP/DELETE without opt-in).
+_READONLY_PREFIXES = ("select", "with", "explain", "show", "table", "values")
+def is_readonly_sql(sql):
+    s = sql.strip()
+    # strip leading line/block comments
+    while s.startswith("--") or s.startswith("/*"):
+        if s.startswith("--"):
+            nl = s.find("\n"); s = s[nl + 1:].strip() if nl >= 0 else ""
+        else:
+            end = s.find("*/"); s = s[end + 2:].strip() if end >= 0 else ""
+    first = (s.lower().split(None, 1) or [""])[0]
+    return first in _READONLY_PREFIXES
 
 # --- image content ----------------------------------------------------------
 def image_content(path):
@@ -148,6 +162,18 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {"name": {"type": "string", "description": "optional tablemap name filter (ILIKE)"}}}},
     {"name": "read_settings", "description": "Read the postgres settings table (key -> jsonb value). Optional key filter.",
      "inputSchema": {"type": "object", "properties": {"key": {"type": "string", "description": "optional key filter (ILIKE)"}}}},
+    {"name": "pg_query", "description": "Run a SQL query against a postgres database (default 'hiss'). Read-only by default (SELECT/WITH/EXPLAIN/SHOW); set allow_write=true to permit data-modifying statements.",
+     "inputSchema": {"type": "object", "properties": {
+         "sql": {"type": "string"},
+         "database": {"type": "string", "description": "database name (default hiss)"},
+         "allow_write": {"type": "boolean", "default": False}},
+      "required": ["sql"]}},
+    {"name": "pg_databases", "description": "List the postgres databases on the server.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "pg_tables", "description": "List tables (schema.table) in a database (default 'hiss').",
+     "inputSchema": {"type": "object", "properties": {"database": {"type": "string"}}}},
+    {"name": "pg_describe", "description": "Describe a table's columns and types.",
+     "inputSchema": {"type": "object", "properties": {"table": {"type": "string"}, "database": {"type": "string"}}, "required": ["table"]}},
 ]
 
 def call_tool(name, args):
@@ -264,6 +290,29 @@ def call_tool(name, args):
         except Exception as e:
             return [{"type": "text", "text": "settings query failed: %s" % e}]
         return [{"type": "text", "text": out[:200000] or "(no rows)"}]
+    if name == "pg_query":
+        sql = args["sql"]
+        if not args.get("allow_write") and not is_readonly_sql(sql):
+            return [{"type": "text", "text": "Refused: non-read-only SQL. Pass allow_write=true to run data-modifying statements."}]
+        try:
+            out = psql_query(sql, database=args.get("database"), tuples_only=False)
+        except Exception as e:
+            return [{"type": "text", "text": "query failed: %s" % e}]
+        return [{"type": "text", "text": out[:200000] or "(no rows)"}]
+    if name == "pg_databases":
+        out = psql_query("SELECT datname FROM pg_database WHERE datistemplate=false ORDER BY datname;")
+        return [{"type": "text", "text": out or "(none)"}]
+    if name == "pg_tables":
+        out = psql_query("SELECT schemaname||'.'||tablename FROM pg_tables "
+                         "WHERE schemaname NOT IN ('pg_catalog','information_schema') "
+                         "ORDER BY 1;", database=args.get("database"))
+        return [{"type": "text", "text": out or "(none)"}]
+    if name == "pg_describe":
+        t = args["table"].split(".")[-1].replace("'", "''")
+        out = psql_query("SELECT column_name||E'\\t'||data_type FROM information_schema.columns "
+                         "WHERE table_name='%s' ORDER BY ordinal_position;" % t,
+                         database=args.get("database"))
+        return [{"type": "text", "text": out or "(no such table / no columns)"}]
     raise ValueError("unknown tool: %s" % name)
 
 # ===========================================================================
