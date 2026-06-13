@@ -614,6 +614,21 @@ void CAutoplayer::DumpButtonDebug() {
 	fprintf(f, "  decision: f$fold=%.0f f$check=%.0f f$call=%.0f f$raise=%.0f f$allin=%.0f f$betsize=%.2f\n",
 		f_fold, f_check, f_call, f_raise, f_allin, f_bet);
 
+	// Raw OpenPPL decision for this betround + bblind, to diagnose RaiseTo/RaiseBy:
+	//   positive  -> bet/raise size in big blinds (e.g. RaiseTo 3 -> 3.00)
+	//   <= -1000  -> elementary action constant (Raise/Call/Check/Fold)
+	{
+		int dbr = (p_betround_calculator != NULL) ? p_betround_calculator->betround() : 0;
+		double raw_decision = 0.0;
+		if (dbr >= kBetroundPreflop && dbr <= kBetroundRiver) {
+			raw_decision = p_function_collection->Evaluate(k_OpenPPL_function_names[dbr]);
+		}
+		double bb = (p_engine_container->symbol_engine_tablelimits() != NULL)
+			? p_engine_container->symbol_engine_tablelimits()->bblind() : -1.0;
+		fprintf(f, "  openppl: betround=%d raw_decision=%.3f bblind=%.3f (positive=>raise-to-BB, <=-1000=>elementary)\n",
+			dbr, raw_decision, bb);
+	}
+
 	fclose(f);
 }
 

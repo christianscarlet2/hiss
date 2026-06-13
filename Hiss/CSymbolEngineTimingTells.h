@@ -48,7 +48,9 @@ class CSymbolEngineTimingTells : public CVirtualSymbolEngine {
   bool          _was_active[kMaxNumberOfPlayers];       // rect1-active state last frame
   int           _last_chair;        // chair that most recently became active (-1 = none)
   unsigned long _last_tick;         // GetTickCount() when _last_chair became active
-  CString       _last_published;    // last text pinned to the State box (avoid redraw spam)
+  CString       _last_published;    // last VALUES block pinned to State (avoid redraw spam)
+  CString       _last_updated_str;  // frozen "H:MM:SS AM/PM (last updated)" line
+  unsigned long _last_publish_tick; // GetTickCount() of the last State-box publish
 };
 
 #endif  // INC_CSYMBOLENGINETIMINGTELLS_H

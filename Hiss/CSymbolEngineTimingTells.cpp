@@ -35,6 +35,8 @@ void CSymbolEngineTimingTells::UpdateOnConnection() {
     _was_active[i] = false;
   }
   _last_published = "";
+  _last_updated_str = "\x1b[33m-- (last updated)\x1b[0m";
+  _last_publish_tick = 0;
 }
 
 void CSymbolEngineTimingTells::UpdateOnHandreset() {
@@ -86,7 +88,12 @@ void CSymbolEngineTimingTells::UpdateOnHeartbeat() {
       changed = true;   // active anchor moved -> refresh the State box
     }
   }
-  if (changed) PublishStateBox();
+  // Publish when the timing values changed, OR at least once per second so the
+  // "current time" clock line in the State box keeps ticking even when no chair
+  // has become active.
+  if (changed || (now - _last_publish_tick) >= 1000) {
+    PublishStateBox();
+  }
 }
 
 void CSymbolEngineTimingTells::PublishStateBox() {
@@ -112,22 +119,26 @@ void CSymbolEngineTimingTells::PublishStateBox() {
     txt += cell;
     txt += ((chair % 3) == 2) ? "\r\n" : "\t";
   }
-  // Dedup on the VALUES only (exclude the timestamp, which changes every second).
-  if (txt == _last_published) return;        // values unchanged since last update
-  _last_published = txt;
-
-  // Stamp WHEN these values were last updated: the time first (so it lines up
-  // with the actual-time line below it) followed by "(last updated)" in YELLOW,
-  // and the actual clock time in WHITE underneath -- both in 12-hour format.
   SYSTEMTIME st; GetLocalTime(&st);
   int hr12 = st.wHour % 12; if (hr12 == 0) hr12 = 12;
   const char *ampm = (st.wHour < 12) ? "AM" : "PM";
+
+  // The "(last updated)" line FREEZES at the moment the VALUES last changed; the
+  // "current time" line below it ticks every second. So only refresh the frozen
+  // line when the timing values actually changed.
+  if (txt != _last_published) {
+    _last_published = txt;
+    _last_updated_str.Format("\x1b[33m%d:%02d:%02d %s (last updated)\x1b[0m",
+                             hr12, st.wMinute, st.wSecond, ampm);
+  }
+  // Yellow frozen "(last updated)" line, then the live white current-time line --
+  // both 12-hour, time-first so the two times align vertically.
   CString stamp;
-  stamp.Format("\r\n\x1b[33m%d:%02d:%02d %s (last updated)\x1b[0m\r\n"
-               "\x1b[1;37m%d:%02d:%02d %s\x1b[0m\r\n",
-               hr12, st.wMinute, st.wSecond, ampm,
+  stamp.Format("\r\n%s\r\n\x1b[1;37m%d:%02d:%02d %s\x1b[0m\r\n",
+               _last_updated_str.GetString(),
                hr12, st.wMinute, st.wSecond, ampm);
   p_chat_terminal->SetPinnedStateAsync("main", txt + stamp);
+  _last_publish_tick = GetTickCount();
 }
 
 bool CSymbolEngineTimingTells::EvaluateSymbol(const CString name, double *result, bool log) {
