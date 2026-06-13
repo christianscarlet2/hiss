@@ -47,6 +47,9 @@ class COcrWorkerPool {
   // Rebuilds from scratch if the requested size or tablemap changed.
   void EnsureStarted(int n, const CString& tablemap_name);
   void Stop();
+  // Number of workers this pool intends to run (the worker Hiss.exe processes we
+  // spawned). Used to exclude our own workers from the Hiss-instance count.
+  int Size() const { return _size; }
   // Snapshot of the currently-live worker pipe handles (for borrow/return).
   std::vector<HANDLE> Pipes();
   // Send one BGRA region image to a worker pipe and read back the recognized

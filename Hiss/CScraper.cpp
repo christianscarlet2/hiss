@@ -338,7 +338,12 @@ void CScraper::PreOcrParallel() {
 		if (!c.IsEmpty()) cpus = atoi(c.GetString());
 		if (!w.IsEmpty()) wpc = atoi(w.GetString());
 	}
-	int want = ParallelWorkerCountForInstances(cpus, wpc, CountHissInstances());
+	// Our OCR workers are also Hiss.exe processes, so exclude the ones we already
+	// spawned from the instance count (otherwise they inflate it and thrash the
+	// pool size). On the first cycle Size()==0, so instances == real Hiss count.
+	int instances = CountHissInstances() - g_ocr_worker_pool.Size();
+	if (instances < 1) instances = 1;
+	int want = ParallelWorkerCountForInstances(cpus, wpc, instances);
 
 	// Spawn/respawn the OUT-OF-PROCESS OCR workers for the connected tablemap, and
 	// size the I/O thread-pool to match (one blocking pipe I/O thread per worker).
