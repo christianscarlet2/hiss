@@ -367,18 +367,21 @@ void CEngineContainer::EvaluateAll() {
     }
     // And finally UpdateOnHeartbeat() gets always called.
     _symbol_engines[i]->UpdateOnHeartbeat();
-    DWORD e_ms = GetTickCount() - e0;
     // A single symbol-engine should be sub-ms. Anything that blocks (DB/network)
-    // for >200ms is the lag culprit; name it in scrape_perf.log.
-    if (e_ms > 200) {
-      CString path = LogsDirectory() + "scrape_perf.log";
-      FILE *f = fopen(path.GetString(), "a");
-      if (f != NULL) {
-        SYSTEMTIME st; GetLocalTime(&st);
-        fprintf(f, "%02d:%02d:%02d.%03d  [SLOW ENGINE] %s took %lu ms\n",
-          st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
-          typeid(*_symbol_engines[i]).name(), (unsigned long)e_ms);
-        fclose(f);
+    // for >200ms is a lag culprit; name it in scrape_perf.log when heartbeat-
+    // debugging is enabled.
+    if (Preferences()->debug_heartbeat()) {
+      DWORD e_ms = GetTickCount() - e0;
+      if (e_ms > 200) {
+        CString path = LogsDirectory() + "scrape_perf.log";
+        FILE *f = fopen(path.GetString(), "a");
+        if (f != NULL) {
+          SYSTEMTIME st; GetLocalTime(&st);
+          fprintf(f, "%02d:%02d:%02d.%03d  [SLOW ENGINE] %s took %lu ms\n",
+            st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
+            typeid(*_symbol_engines[i]).name(), (unsigned long)e_ms);
+          fclose(f);
+        }
       }
     }
   }

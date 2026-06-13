@@ -27,6 +27,7 @@
 // autoplayer button click, the exact rect/method/hwnd that was used
 // (diagnoses "isfinalanswer is true but nothing happens on the phone").
 static void ButtonDebugLog(const char *fmt, ...) {
+  if (!Preferences()->debug_autoplayer()) return;
   CString path = LogsDirectory() + "button_debug.log";
   FILE *f = fopen(path.GetString(), "a");
   if (f == NULL) return;

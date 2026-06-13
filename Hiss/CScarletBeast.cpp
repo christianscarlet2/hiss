@@ -174,6 +174,12 @@ std::string CScarletBeast::Request(const std::wstring& method, const std::wstrin
                                    WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
   if (!hSession) { _last_error = L"WinHttpOpen failed"; return response; }
 
+  // Cap every phase so an unreachable/slow server can never stall the caller for
+  // WinHTTP's ~30s defaults. These calls run on the heartbeat thread; a hung
+  // request used to freeze the whole bot ~31s per cycle. (ms: resolve, connect,
+  // send, receive.)
+  WinHttpSetTimeouts(hSession, 2000, 2000, 2000, 3000);
+
   HINTERNET hConnect = WinHttpConnect(hSession, _base_url.c_str(), INTERNET_DEFAULT_HTTPS_PORT, 0);
   if (!hConnect) { _last_error = L"WinHttpConnect failed"; WinHttpCloseHandle(hSession); return response; }
 

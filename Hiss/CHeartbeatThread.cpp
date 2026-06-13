@@ -217,8 +217,8 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
 	DWORD t_act_ms = GetTickCount() - t_act0;
 
 	// Per-cycle heartbeat timing: scrape vs symbol-engine (EvaluateAll) vs
-	// validate+autoplayer. Tells us whether remaining lag is scrape or evaluate.
-	{
+	// validate+autoplayer. Only when heartbeat-debugging is enabled.
+	if (Preferences()->debug_heartbeat()) {
 		CString path = LogsDirectory() + "scrape_perf.log";
 		FILE *f = fopen(path.GetString(), "a");
 		if (f != NULL) {

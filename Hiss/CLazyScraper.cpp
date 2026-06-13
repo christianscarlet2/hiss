@@ -204,17 +204,19 @@ void CLazyScraper::DoScrape() {
     p_scraper->ScrapeMTTRegions();
   }
 
-  // --- per-cycle scrape profile ----------------------------------------------
-  DWORD elapsed = GetTickCount() - scrape_start_ms;
-  CString perf_path = LogsDirectory() + "scrape_perf.log";
-  FILE *pf = fopen(perf_path.GetString(), "a");
-  if (pf != NULL) {
-    SYSTEMTIME st; GetLocalTime(&st);
-    fprintf(pf, "%02d:%02d:%02d.%03d  scrape=%lu ms  (ocr_prepass=%lu ms, rest=%lu ms)  ocr_recognised=%ld  ocr_reused=%ld\n",
-      st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
-      (unsigned long)elapsed, (unsigned long)prepass_ms, (unsigned long)(elapsed - prepass_ms),
-      p_scraper->_ocr_recognitions, p_scraper->_ocr_reuses);
-    fclose(pf);
+  // --- per-cycle scrape profile (only when scraper-debugging is enabled) ------
+  if (Preferences()->debug_scraper()) {
+    DWORD elapsed = GetTickCount() - scrape_start_ms;
+    CString perf_path = LogsDirectory() + "scrape_perf.log";
+    FILE *pf = fopen(perf_path.GetString(), "a");
+    if (pf != NULL) {
+      SYSTEMTIME st; GetLocalTime(&st);
+      fprintf(pf, "%02d:%02d:%02d.%03d  scrape=%lu ms  (ocr_prepass=%lu ms, rest=%lu ms)  ocr_recognised=%ld  ocr_reused=%ld\n",
+        st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
+        (unsigned long)elapsed, (unsigned long)prepass_ms, (unsigned long)(elapsed - prepass_ms),
+        p_scraper->_ocr_recognitions, p_scraper->_ocr_reuses);
+      fclose(pf);
+    }
   }
 }
 

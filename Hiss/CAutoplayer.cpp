@@ -56,6 +56,7 @@ CAutoplayer	*p_autoplayer = NULL;
 // the autoplayer decision path stops before a click ("isfinalanswer is true but
 // nothing happens"). Pairs with the [click] lines emitted by CAutoplayerButton.
 static void APTrace(const char *fmt, ...) {
+  if (!Preferences()->debug_autoplayer()) return;
   CString path = LogsDirectory() + "button_debug.log";
   FILE *f = fopen(path.GetString(), "a");
   if (f == NULL) return;
@@ -497,6 +498,7 @@ bool CAutoplayer::DoAllin(void) {
 // (fold/call/check/all-in) isn't clicking: shows what buttons Hiss sees (i#state /
 // i#label / classified type / clickable), my-turn/final-answer, and the f$ decisions.
 void CAutoplayer::DumpButtonDebug() {
+	if (!Preferences()->debug_autoplayer()) return;
 	if (p_casino_interface == NULL || p_engine_container == NULL
 			|| p_function_collection == NULL || p_scraper == NULL) {
 		return;
