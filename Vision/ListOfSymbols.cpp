@@ -164,6 +164,10 @@ CString ListOfRegions() {
   list += "mtt_paid_places ";
   list += "mtt_players_remaining ";
   list += "mtt_smallest_stack ";
+  // Two-successive-clicks auto-action: the trigger region (uses BOTH rectangles
+  // as the two click targets) and its OCR label.
+  list += "two_successive_clicks ";
+  list += "two_successive_clicks_label ";
   return list;
 }
 

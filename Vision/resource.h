@@ -274,11 +274,19 @@
 #define IDC_CAPTURE_COUNT               1264
 #define IDC_SET_PW_HISS_OCR             1265
 #define IDC_CAPTURE_INDEX               1266
+// Two-successive-clicks editor (modal) + launch button on the tablemap dialog
+#define IDD_TWO_CLICKS                  156
+#define IDC_TWOCLICKS_OPEN              1299
+#define IDC_TC_EN1                      1300
+#define IDC_TC_TEXT1                    1301
+#define IDC_TC_EN2                      1302
+#define IDC_TC_TEXT2                    1303
+#define IDC_TC_DELAY                    1304
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        156
+#define _APS_NEXT_RESOURCE_VALUE        157
 #define _APS_NEXT_COMMAND_VALUE         32808
-#define _APS_NEXT_CONTROL_VALUE         1299
+#define _APS_NEXT_CONTROL_VALUE         1305
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

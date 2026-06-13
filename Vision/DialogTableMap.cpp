@@ -42,6 +42,7 @@
 
 #include "..\CTablemap\CTablemap.h"
 #include "..\CTablemap\CTablemapDB.h"   // p_tablemap_db (shared OCR-model settings)
+#include "DlgTwoClicks.h"               // two-successive-clicks per-tablemap editor
 #include "DecimalSplit.h"               // FindDecimalSplitX (balance decimal-split OCR)
 #include "..\Hiss\NumericalFunctions.h"
 #include "..\Shared\WindowCapture.h"
@@ -384,6 +385,7 @@ BEGIN_MESSAGE_MAP(CDlgTableMap, CDialog)
 	ON_EN_KILLFOCUS(IDC_RIGHT2, &CDlgTableMap::OnRegionChange)
 	ON_EN_KILLFOCUS(IDC_BOTTOM2, &CDlgTableMap::OnRegionChange)
 	ON_BN_CLICKED(IDC_RECT2_ENABLE, &CDlgTableMap::OnRegionChange)
+	ON_BN_CLICKED(IDC_TWOCLICKS_OPEN, &CDlgTableMap::OnBnClickedTwoClicksOpen)
 	ON_BN_CLICKED(IDC_AC_ENABLE, &CDlgTableMap::OnRegionChange)
 	ON_BN_CLICKED(IDC_AC_C1EN, &CDlgTableMap::OnRegionChange)
 	ON_BN_CLICKED(IDC_AC_C2EN, &CDlgTableMap::OnRegionChange)
@@ -4104,10 +4106,13 @@ void CDlgTableMap::update_r$_display(bool dont_update_spinners)
 	text.Format("%02x", (sel_region->second.color3 >> 16) & 0xff);
 	m_Blue3.SetWindowText(text);
 
-	// Second rectangle: editable only for the Color transform when "Enabled" is ticked.
+	// Second rectangle: editable for the Color transform, OR for the
+	// "two_successive_clicks" region (whose two rectangles are the click targets),
+	// when "Enabled" is ticked.
 	bool rect2_is_color = (selected_transform == "Color");
-	bool rect2_on = rect2_is_color && sel_region->second.rect2_enabled;
-	m_Rect2Enable.EnableWindow(rect2_is_color);
+	bool rect2_allowed = rect2_is_color || (sel_region->first == "two_successive_clicks");
+	bool rect2_on = rect2_allowed && sel_region->second.rect2_enabled;
+	m_Rect2Enable.EnableWindow(rect2_allowed);
 	m_Rect2Enable.SetCheck(sel_region->second.rect2_enabled ? BST_CHECKED : BST_UNCHECKED);
 	m_Left2.EnableWindow(rect2_on);
 	m_Top2.EnableWindow(rect2_on);
@@ -4625,6 +4630,13 @@ void CDlgTableMap::OnDeltaposSharpenSpin(NMHDR* pNMHDR, LRESULT* pResult)
 	OnOcrRegionChange();
 
 	*pResult = 0;
+}
+
+void CDlgTableMap::OnBnClickedTwoClicksOpen() {
+	// Per-tablemap editor for the two-successive-clicks auto-action. Loads/saves
+	// the match texts + delay to the loaded tablemap (postgres settings).
+	CDlgTwoClicks dlg(this);
+	dlg.DoModal();
 }
 
 void CDlgTableMap::OnBnClickedNew() {

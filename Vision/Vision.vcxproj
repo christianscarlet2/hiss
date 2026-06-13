@@ -181,6 +181,7 @@
       <UseUnicodeForAssemblerListing Condition="'$(Configuration)|$(Platform)'=='Release|Win32'"></UseUnicodeForAssemblerListing>
       <UseUnicodeForAssemblerListing Condition="'$(Configuration)|$(Platform)'=='Template|Win32'"></UseUnicodeForAssemblerListing>
     </ClCompile>
+    <ClCompile Include="DlgTwoClicks.cpp" />
     <ClCompile Include="global.cpp" />
     <ClCompile Include="HScrollListBox.cpp" />
     <ClCompile Include="ListOfSymbols.cpp" />
@@ -226,6 +227,7 @@
     <ClInclude Include="DecimalSplit.h" />
     <ClInclude Include="..\trainer\TrainerOcr.h" />
     <ClInclude Include="DialogTableMap.h" />
+    <ClInclude Include="DlgTwoClicks.h" />
     <ClInclude Include="global.h" />
     <ClInclude Include="HScrollListBox.h" />
     <ClInclude Include="ListOfSymbols.h" />

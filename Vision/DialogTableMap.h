@@ -67,6 +67,7 @@ protected:
 	afx_msg void OnBnClickedNew();
 	afx_msg void OnBnClickedDelete();
 	afx_msg void OnBnClickedEdit();
+	afx_msg void OnBnClickedTwoClicksOpen();
 	afx_msg void OnBnClickedCreateGroup();
 	afx_msg void OnBnClickedGroupBox();
 	afx_msg void OnGroupColorChange();
