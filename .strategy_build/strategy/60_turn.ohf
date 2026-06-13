@@ -39,8 +39,12 @@ WHEN f$HaveComboDraw RaiseMax FORCE
 // Big draws: continue at a price; in position can peel a bit wider.
 WHEN f$HaveBigDraw AND f$CheapDraw Call FORCE
 WHEN f$HaveBigDraw AND f$DecentPrice AND f$InPositionPost Call FORCE
+// Timing tell: a tanked turn bet is usually strength -> release a bare one pair. [Caro]
+WHEN f$HaveOnePair AND f$TimingSaysStrong Fold FORCE
 // One pair: call as a bluff-catcher only at a price vs non-passive players; never
 // stack off. [N "don't go broke with one pair"]
 WHEN f$HaveOnePair AND f$Opp_IsAggro AND f$DecentPrice Call FORCE
 WHEN f$HaveOnePair AND NOT f$Opp_IsPassive AND f$CheapDraw Call FORCE
+// Timing tell: a snap turn bet leans weak -> bluff-catch one pair a bit wider. [Caro]
+WHEN f$HaveOnePair AND f$TimingSaysWeak AND f$DecentPrice Call FORCE
 WHEN Others Fold FORCE

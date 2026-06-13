@@ -126,3 +126,41 @@ WHEN Others RETURN false FORCE
 // (set-mining / suited connectors vs a raise or 3-bet). [N pp.29-30][B S8.6]
 WHEN AmountToCall * 10 <= f$EffStack RETURN true FORCE
 WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  Bet-timing tells.  Hiss measures how long each chair dwells on its to-act
+//  highlight (pNactive rect1) and exposes lastraiseractiontime = the seconds the
+//  player we must react to took on his bet/raise. Classic Caro/Negreanu reads:
+//  a SNAP (instant) bet leans weak/automatic; a long TANK then a bet leans strong.
+//  Reads are noisy, so they are used only as soft modifiers, only heads-up, only
+//  when a reading exists. Set f$UseTimingTells = 0 to disable entirely.
+//-----------------------------------------------------------------------------
+
+##f$UseTimingTells##
+WHEN Others RETURN 1 FORCE
+
+##f$SnapSeconds##
+// At or below this, the bet was effectively instant.
+WHEN Others RETURN 1.5 FORCE
+
+##f$TankSeconds##
+// At or above this, the player tanked before betting.
+WHEN Others RETURN 6 FORCE
+
+##f$TimingKnown##
+// A sane, fresh reading exists for the player we are reacting to.
+WHEN f$UseTimingTells = 0 RETURN false FORCE
+WHEN lastraiseractiontime > 0 AND lastraiseractiontime < 90 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$TimingSaysWeak##
+// Snap bet/raise, heads-up: lean toward it being weak/automatic. (Caro: a fast
+// bet is often a weak bet.) Continue/bluff-catch a touch wider against it.
+WHEN f$TimingKnown AND f$HeadsUpPot AND lastraiseractiontime <= f$SnapSeconds RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$TimingSaysStrong##
+// Long tank then a bet/raise, heads-up: lean toward genuine strength. Fold the
+// marginal hands we would otherwise pay off; do not bluff-raise into it.
+WHEN f$TimingKnown AND f$HeadsUpPot AND lastraiseractiontime >= f$TankSeconds RETURN true FORCE
+WHEN Others RETURN false FORCE

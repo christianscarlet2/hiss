@@ -50,6 +50,7 @@ betround nplayersdealt
 Raises Calls Folds Bets AmountToCall PotSize BetSize BigBlindSize StackSize
 EffectiveMaxStacksizeOfActiveOpponents MaxStacksizeOfActiveOpponents
 nopponentscalled nopponentsraising
+lastraiseractiontime myactiontime
 """.split())
 
 # keywords / actions / operators that are not symbols

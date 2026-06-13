@@ -46,6 +46,21 @@ Everything tunable lives here. Edit one line, reload, done.
 | `f$CheapDraw` | bool | Price ≤ ~25% of pot. |
 | `f$DecentPrice` | bool | Price ≤ ~33% of pot. |
 | `f$WithinSpecRisk` | bool | Speculative call risks ≤ ~10% of stack. [N pp.29-30][B S8.6] |
+| `f$UseTimingTells` | 1/0 | master enable for the bet-timing reads |
+| `f$SnapSeconds` / `f$TankSeconds` | 1.5 / 6 | snap vs tank thresholds (seconds) |
+| `f$TimingKnown` | bool | a sane, fresh `lastraiseractiontime` reading exists |
+| `f$TimingSaysWeak` | bool | snap bet, heads-up → lean weak (Caro: a fast bet is often weak) |
+| `f$TimingSaysStrong` | bool | long tank then a bet, heads-up → lean strong |
+
+> **Bet-timing tells.** `CSymbolEngineTimingTells` (Hiss-side) measures how long each
+> chair dwells on its to-act highlight (`pNactive` rect 1) and exposes
+> `lastraiseractiontime` — the seconds the player we must react to took on his
+> bet/raise (already recorded by the time it's our turn). The flop/turn/river
+> vs-bet logic then **folds a bare one pair to a tanked bet** and
+> **bluff-catches / floats wider against a snap bet**. It is a *soft modifier*:
+> heads-up only, only when a reading exists, and easily disabled with
+> `f$UseTimingTells = 0`. Reads are noisy, so it never overrides a strong made hand
+> or a real draw — it only tips close one-pair decisions.
 
 ---
 

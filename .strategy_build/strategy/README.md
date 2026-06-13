@@ -98,6 +98,8 @@ All knobs live in [`05_config.ohf`](05_config.ohf):
 | `f$CbetFreq` | 0.60–0.90 | how often to c-bet air as the pre-flop raiser |
 | `f$DeepStack` / `f$ShortStack` / `f$PushFoldStack` | 60 / 25 / 10 BB | stack-depth regime cutoffs |
 | `f$WithinSpecRisk` | 10% of stack | max risk on a speculative set-mine / connector call |
+| `f$UseTimingTells` | 1 | bet-timing reads on/off (snap = weak, tank = strong) |
+| `f$SnapSeconds` / `f$TankSeconds` | 1.5 / 6 | timing-tell thresholds in seconds |
 
 Ranges live in [`20_lists.ohf`](20_lists.ohf) — widen or tighten the `listOpen*`
 lists to taste.

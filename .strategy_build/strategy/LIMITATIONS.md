@@ -15,7 +15,7 @@ is, and **how it was handled** — ✅ built a substitute, ⚠️ partial/approx
 | **Physical tells** — speed of action, chip handling, body language, "reverse tells", the Gus/French-player reads [N pp.49-50,131-134][B p.466] | No camera, no timing data on a phone-scraped table | ❌ **Not implementable.** Reported. None of the tell-based decisions are coded. |
 | **"Feel" / subconscious reads** ("something told me he was weak") [N p.131][B p.430] | Not a computable signal | ❌ Not implementable. Reported. |
 | **Tilt detection** (opponent steaming after a beat) [B p.431] | Needs session-long behavioural modelling Hiss doesn't track | ❌ Not implementable. Reported. (PokerTracker AF/VPIP give a *static* aggression read, not a tilt delta.) |
-| **Bet-timing / "weak-looking bet" reads** [B p.102] | Hiss does not expose opponent action latency to OpenPPL | ❌ Not implementable. Reported. |
+| **Bet-timing / "weak-looking bet" reads** [B p.102][Caro] | ~~Hiss does not expose opponent action latency~~ | ✅ **NOW IMPLEMENTED.** `CSymbolEngineTimingTells` measures each chair's dwell on its `pNactive` highlight and exposes `lastraiseractiontime` (seconds the player we react to took). [`05_config.ohf`](05_config.ohf) derives `f$TimingSaysWeak` (snap ≤ 1.5s → lean weak) / `f$TimingSaysStrong` (tank ≥ 6s → lean strong); the flop/turn/river vs-bet logic folds a bare one pair to a tanked bet and bluff-catches/floats wider vs a snap. Heads-up only, soft modifier, `f$UseTimingTells = 0` to disable. |
 
 ## 2. Opponent typing & history
 
@@ -62,13 +62,13 @@ is, and **how it was handled** — ✅ built a substitute, ⚠️ partial/approx
 - The **engine** of both books — position, speculative hands, aggression, pot
   control, "don't go broke with one pair", opponent-aware adjustments, balanced
   (randomised) frequencies — **is fully implemented**.
-- What's lost is the **human read layer**: physical tells, table-image adaptation,
-  leveling wars, and true multi-street planning. Where a machine-observable proxy
-  existed (PokerTracker stats, betting-action history, board texture, `prwin`,
-  `randomround`), it was **built in**. Where none existed, the feature is **reported
-  here** rather than faked.
+- What's lost is the rest of the **human read layer**: physical tells, table-image
+  adaptation, leveling wars, tilt detection, and true multi-street planning. Where a
+  machine-observable proxy existed (PokerTracker stats, betting-action history, board
+  texture, `prwin`, `randomround`, **and now bet-timing**), it was **built in**. Where
+  none existed, the feature is **reported here** rather than faked.
 
-If you want any of the ⚠️/❌ items pursued further, the most tractable additions
-would be: (a) a self-image / recent-action memory using OpenPPL user-variables to
-enable gear-changing, and (b) an opponent-timing feed from Hiss into a new symbol
-to approximate bet-timing tells. Both require Hiss-side code, not just OpenPPL.
+**Bet-timing reads are now implemented** (see the row above). A concrete, phased
+implementation plan for the *remaining* ❌ items — physical tells, feel/soul reads,
+tilt detection, true leveling, plus the self-image / gear-changing memory — lives in
+**[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)**.

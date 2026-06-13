@@ -12,6 +12,9 @@
 #include "CStringMatch.h"
 #include "CTableState.h"
 #include "ChatTerminalWindow.h"
+#include "CEngineContainer.h"
+#include "CSymbolEngineRaisers.h"
+#include "CSymbolEngineUserchair.h"
 #include "..\CTablemap\CTablemap.h"
 
 CSymbolEngineTimingTells::CSymbolEngineTimingTells() {
@@ -142,6 +145,33 @@ void CSymbolEngineTimingTells::PublishStateBox() {
 }
 
 bool CSymbolEngineTimingTells::EvaluateSymbol(const CString name, double *result, bool log) {
+  // Derived timing tells that resolve the relevant chair automatically, so the
+  // strategy does not have to switch on raischair/userchair itself. All return
+  // SECONDS; 0.0 means "no read yet" (no dwell recorded for that chair this hand).
+  if (name == "lastraiseractiontime") {
+    // How long the player we must react to (the last raiser / the bettor) took.
+    // By the time it is our turn, that chair's dwell has already been recorded.
+    if (result != NULL) {
+      int rc = -1;
+      if (p_engine_container != NULL
+          && p_engine_container->symbol_engine_raisers() != NULL) {
+        rc = p_engine_container->symbol_engine_raisers()->raischair();
+      }
+      *result = (rc >= 0 && rc < kMaxNumberOfPlayers) ? _timing_seconds[rc] : 0.0;
+    }
+    return true;
+  }
+  if (name == "myactiontime") {
+    if (result != NULL) {
+      int uc = -1;
+      if (p_engine_container != NULL
+          && p_engine_container->symbol_engine_userchair() != NULL) {
+        uc = p_engine_container->symbol_engine_userchair()->userchair();
+      }
+      *result = (uc >= 0 && uc < kMaxNumberOfPlayers) ? _timing_seconds[uc] : 0.0;
+    }
+    return true;
+  }
   // pNtiming -> chair N's last recorded action time, in seconds.
   if (name.GetLength() < 7) return false;
   if (name.Left(1) != "p") return false;
@@ -158,7 +188,7 @@ bool CSymbolEngineTimingTells::EvaluateSymbol(const CString name, double *result
 }
 
 CString CSymbolEngineTimingTells::SymbolsProvided() {
-  CString s;
+  CString s = "lastraiseractiontime myactiontime ";
   for (int i = 0; i < kMaxNumberOfPlayers; ++i) {
     CString one;
     one.Format("p%dtiming ", i);

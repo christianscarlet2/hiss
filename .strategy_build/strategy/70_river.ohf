@@ -35,7 +35,11 @@ WHEN f$HaveBigMade AND NOT f$Opp_IsPassive RaiseBy f$BetPctRiver % FORCE
 // Pay off with strong made hands (bluff-catch).
 WHEN f$HaveBigMade Call FORCE
 WHEN (HaveSet OR HaveTwoPair) Call FORCE
+// Timing tell: a tanked river bet is usually a value hand -> fold the bluff-catchers. [Caro]
+WHEN f$HaveOnePair AND f$TimingSaysStrong Fold FORCE
 // Bluff-catch one pair only vs bluffy players at a price; fold vs passive value. [N]
 WHEN f$HaveOnePair AND f$Opp_IsAggro AND f$DecentPrice Call FORCE
 WHEN f$HaveOnePair AND NOT f$Opp_IsPassive AND f$CheapDraw Call FORCE
+// Timing tell: a snap river bet leans weak/bluffy -> bluff-catch one pair wider. [Caro]
+WHEN f$HaveOnePair AND f$TimingSaysWeak AND f$DecentPrice Call FORCE
 WHEN Others Fold FORCE
