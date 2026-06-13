@@ -275,6 +275,14 @@ bool CAutoplayer::ExecutePrimaryFormulasIfNecessary() {
 		}
 		// Else continue with swag and betpot
 	}
+	// Two-successive-clicks bet/raise (phone on-screen keypad). Same gating as the
+	// other primary actions: only reached when ismyturn && isfinalanswer (asserted
+	// above) under the action-sequence mutex. Fires only when the decision is a
+	// bet/raise and a labelled region matches the configured text.
+	if (HandleTwoSuccessiveClicksBetRaise()) {
+		APTrace("ExecutePrimaryFormulas -> handled by two-successive-clicks bet/raise");
+		return true;
+	}
 	if (DoBetPot())	{
 		APTrace("ExecutePrimaryFormulas -> handled by DoBetPot()");
 		return true;
@@ -285,6 +293,30 @@ bool CAutoplayer::ExecutePrimaryFormulasIfNecessary() {
 	}
 	APTrace("ExecutePrimaryFormulas -> falling through to ExecuteRaiseCallCheckFold()");
 	return ExecuteRaiseCallCheckFold();
+}
+
+bool CAutoplayer::HandleTwoSuccessiveClicksBetRaise() {
+	if (p_two_successive_clicks == NULL || p_function_collection == NULL) {
+		return false;
+	}
+	// Fire on a BET or RAISE decision (phone tables expose a keypad rather than a
+	// betsize textbox, so we click the two configured region-centres to open it).
+	bool wants_bet_or_raise =
+		(p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_raise]) != 0)
+		|| (p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_betsize]) > 0);
+	if (!p_two_successive_clicks->HandleCycle(wants_bet_or_raise)) {
+		return false;
+	}
+	write_log(k_always_log_basic_information, "[AutoPlayer] Two-successive-clicks handled (primary path)\n");
+	// After the two clicks open the on-screen keypad, type the bet/raise amount
+	// (f$betsize) on the numpad and press nOkay.
+	double betsize = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_betsize]);
+	if (betsize > 0) {
+		Sleep(p_two_successive_clicks->DelayMs());
+		p_casino_interface->EnterBetsizeNumpad(betsize);
+	}
+	action_sequence_needs_to_be_finished = true;
+	return true;
 }
 
 bool CAutoplayer::ExecuteRaiseCallCheckFold() {
@@ -572,25 +604,10 @@ void CAutoplayer::DoAutoplayer(void) {
 		DoAutoplayerServer();
 		return;
 	}
-  // Two-successive-clicks: fire only when the .ohf decision is to RAISE and a
-  // labelled region matches the configured text, clicking the two region-centres
-  // (rect1, delay, rect2). Handled first, like the i86 popups.
-  {
-    bool two_clicks_wants_raise = (p_function_collection != NULL)
-      && (p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_raise]) != 0);
-    if (p_two_successive_clicks != NULL && p_two_successive_clicks->HandleCycle(two_clicks_wants_raise)) {
-      write_log(k_always_log_basic_information, "[AutoPlayer] Two-successive-clicks handled\n");
-      // After the two clicks open the on-screen keypad, type the bet/raise amount
-      // (f$betsize) on the numpad and press nOkay.
-      double betsize = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_betsize]);
-      if (betsize > 0) {
-        Sleep(p_two_successive_clicks->DelayMs());
-        p_casino_interface->EnterBetsizeNumpad(betsize);
-      }
-      action_sequence_needs_to_be_finished = true;
-      goto AutoPlayerCleanupAndFinalization;
-    }
-  }
+  // NOTE: the two-successive-clicks bet/raise used to fire here, BEFORE the
+  // isfinalanswer gate. It now runs inside ExecutePrimaryFormulasIfNecessary()
+  // alongside fold/call/check/allin, so it is gated by ismyturn + isfinalanswer
+  // (and the anti-collision mutex / action-sequence) like every other action.
   CheckBringKeyboard();
   write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Number of visible buttons: %d (%s)\n", 
 		p_casino_interface->NumberOfVisibleAutoplayerButtons(),

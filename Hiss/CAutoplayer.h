@@ -51,6 +51,9 @@ private:
 	void DoAutoplayerServer();
 	bool ExecuteSecondaryFormulasIfNecessary();
 	bool ExecuteRaiseCallCheckFold();
+	// Two-successive-clicks bet/raise (phone keypad), run from the primary-formula
+	// path so it is gated by ismyturn + isfinalanswer like the other actions.
+	bool HandleTwoSuccessiveClicksBetRaise();
 	bool ExecuteBeep();
 	bool AnyPrimaryFormulaTrue();
 	bool AnySecondaryFormulaTrue();
