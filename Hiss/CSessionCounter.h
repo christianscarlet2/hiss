@@ -18,6 +18,12 @@ class CSessionCounter {
  public:
 	// public functions
 	CSessionCounter();
+	// Worker-mode ctor: an OCR worker process must NOT consume one of the limited
+	// session-ID mutex slots (that would exhaust the counter and make later
+	// launches fail). It still needs a non-NULL p_sessioncounter with a valid
+	// session_id() so singletons like the watchdog don't crash; pass
+	// worker_mode=true to take a fixed id (0) without grabbing any mutex.
+	explicit CSessionCounter(bool worker_mode);
 	~CSessionCounter();
  public:
 	// public accessors

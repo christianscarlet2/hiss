@@ -18,6 +18,7 @@
 
 #include "crc32hash.h"
 #include "CSessionCounter.h"
+#include "COcrWorker.h"   // g_ocr_worker_mode
 #include "CSymbolEngineRandom.h"
 #include "..\DLLs\WindowFunctions_DLL\window_functions.h"
 
@@ -70,6 +71,14 @@ CSharedMem::~CSharedMem() {
 }
 
 void CSharedMem::AquireOwnProcessID() {
+  // OCR-worker processes must NOT register a PID in the cross-instance shared
+  // table: they share a fixed session_id (0) and never heartbeat, so another
+  // instance's watchdog would treat them as "frozen" and kill them. Helpers are
+  // managed by their own kill-on-close job object, not the watchdog.
+  if (g_ocr_worker_mode) {
+    write_log(Preferences()->debug_sharedmem(), "[CSharedMem] OCR worker: skipping PID registration\n");
+    return;
+  }
   write_log(Preferences()->debug_sharedmem(), "[CSharedMem] Aquiring own process IG\n");
   assert(p_sessioncounter != NULL);
   AssertRange(p_sessioncounter->session_id(), 0, MAX_SESSION_IDS - 1);

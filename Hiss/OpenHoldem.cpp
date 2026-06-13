@@ -135,6 +135,7 @@ BOOL COpenHoldemApp::InitInstance() {
   // instances on sessioncounter". So workers skip the session counter entirely.
   CString worker_pipe, worker_tm;
   bool is_ocr_worker = ParseOcrWorkerCommandLine(&worker_pipe, &worker_tm);
+  g_ocr_worker_mode = is_ocr_worker;   // singletons consult this during construction
 
 	if (!is_ocr_worker) {
 		if (!p_sessioncounter) p_sessioncounter = new CSessionCounter();
@@ -148,8 +149,12 @@ BOOL COpenHoldemApp::InitInstance() {
 		// http://www.maxinmontreal.com/forums/viewtopic.php?f=124&t=20281&p=142334#p142334
 		Preferences()->LoadPreferences();
 	} else {
-		// Worker: start a log under a fixed pseudo-id (no session slot grabbed) so
-		// any write_log() during singleton construction has a valid target.
+		// Worker: a session counter that grabs NO mutex slot (so it can't exhaust
+		// the counter) but still provides a valid session_id(), which the watchdog
+		// and other singletons dereference during InstantiateAllSingletons().
+		if (!p_sessioncounter) p_sessioncounter = new CSessionCounter(true);
+		// Start a log under a fixed pseudo-id so any write_log() during singleton
+		// construction has a valid target.
 		start_log(9000 + (int)(GetCurrentProcessId() % 1000), false);
 	}
 	InstantiateAllSingletons();

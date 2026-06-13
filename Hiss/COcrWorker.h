@@ -35,6 +35,13 @@ void RunOcrWorker(const CString& pipe_name, const CString& tablemap_name);
 // Returns true if this process should run as an OCR worker.
 bool ParseOcrWorkerCommandLine(CString* pipe_name, CString* tablemap_name);
 
+// True once InitInstance has determined this process is an OCR worker. Worker
+// processes must stay out of the cross-instance machinery (session counter,
+// shared-memory PID table / watchdog) so they neither exhaust the session
+// counter nor get killed by another instance's watchdog. Set before
+// InstantiateAllSingletons() so the singletons can consult it.
+extern bool g_ocr_worker_mode;
+
 // ---- Coordinator side (main Hiss) ----
 // A warm pool of worker processes, one duplex named pipe each. PreOcrParallel
 // borrows pipe handles (one outstanding request per pipe) to OCR regions

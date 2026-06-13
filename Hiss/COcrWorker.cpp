@@ -13,6 +13,10 @@
 #include "..\CTablemap\CTablemapDB.h"
 #include "..\DLLs\Files_DLL\Files.h"
 
+// Set true in InitInstance when "--ocr-worker" is present (before singletons are
+// built). Consulted by CSharedMem so workers stay out of the shared PID table.
+bool g_ocr_worker_mode = false;
+
 // Wire protocol over the duplex byte pipe (length-prefixed, little-endian):
 //   request : u32 region_name_len, name bytes, i32 width, i32 height,
 //             width*height*4 BGRA bytes

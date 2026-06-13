@@ -47,9 +47,17 @@ CSessionCounter::CSessionCounter()
 	PostQuitMessage(-1);
 }
 
+// Worker-mode: no mutex slot grabbed, just a valid fixed id so the watchdog and
+// other singletons that call p_sessioncounter->session_id() don't NULL-deref.
+CSessionCounter::CSessionCounter(bool /*worker_mode*/)
+{
+	_session_id = 0;
+	hMutex = NULL;
+}
+
 CSessionCounter::~CSessionCounter()
 {
-	// Release the mutex for our _session_id
-	CloseHandle(hMutex);
+	// Release the mutex for our _session_id (NULL in worker-mode -> no-op).
+	if (hMutex != NULL) CloseHandle(hMutex);
 }
 
