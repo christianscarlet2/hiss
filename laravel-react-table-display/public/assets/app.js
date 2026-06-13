@@ -448,9 +448,10 @@ function App() {
   }, []);
 
   var table = state || { nchairs: 10, players: [], commonCards: [], limits: {}, pot: 0, handnumber: '' };
-  // Seat the real hero at the bottom. The backend sends userchair (the human's
-  // chair); fall back to the legacy fixed chair 3 when it isn't known.
-  HERO_CHAIR = (typeof table.userchair === 'number' && table.userchair >= 0) ? table.userchair : 3;
+  // p3 (chair 3) is the FIXED ground truth for the bottom-centre seat, so anchor
+  // the layout to chair 3 always. (The backend's userchair can drift off by one,
+  // which pushed p3 one seat to the left; pinning to 3 keeps p3 bottom-centre.)
+  HERO_CHAIR = 3;
   var limits = table.limits || {};
   var instancePort = window.location.port || '80';
   // Drive the money formatter: in "usd" mode amounts are big blinds x the big-blind size.
