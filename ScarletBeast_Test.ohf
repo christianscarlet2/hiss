@@ -145,22 +145,48 @@ AA KK QQ AKs AKo
 //=============================================================================
 
 ##f$preflop##
+// Raises = number of raises this round (the big blind is not a raise), so:
+//   Raises == 0  -> unopened pot (we open by position)
+//   Raises == 1  -> facing a single open (3-bet value / flat / fold)
+//   Raises >= 2  -> facing a 3-bet+ (4-bet value / fold)
+// Hand-list names (list4betValue, listOpenEP, ...) are defined below and
+// evaluate to true when our hole cards are a member of that list.
 
-// TEST OVERRIDE: always raise to 3 big blinds.
-WHEN Others RaiseTo 3 FORCE
+// Facing a 3-bet or more.
+WHEN Raises >= 2 AND list4betValue RaiseTo 22 FORCE
+WHEN Raises >= 2 Fold FORCE
+
+// Facing a single open raise.
+WHEN Raises == 1 AND list3betValue RaiseTo 10 FORCE
+WHEN Raises == 1 AND listCallOpen Call FORCE
+WHEN Raises == 1 Fold FORCE
+
+// Unopened pot: open by position.
+WHEN InEarlyPosition  AND listOpenEP  RaiseTo 3 FORCE
+WHEN InMiddlePosition AND listOpenMP  RaiseTo 3 FORCE
+WHEN InLatePosition   AND listOpenLP  RaiseTo 3 FORCE
+WHEN InButton         AND listOpenBTN RaiseTo 3 FORCE
+WHEN InSmallBlind     AND listOpenLP  RaiseTo 3 FORCE
+WHEN InBigBlind Check FORCE
+WHEN Others Fold FORCE
 
 //=============================================================================
 //  POSTFLOP - dispatch by "is there a bet to us?"
+//  AmountToCall = 0  -> no bet faced (value-bet / c-bet / check)
+//  otherwise         -> facing a bet (raise / call / fold)
 //=============================================================================
 
 ##f$flop##
-WHEN Others RaiseTo 3 FORCE
+WHEN AmountToCall == 0 RETURN f$postflop_bet FORCE
+WHEN Others RETURN f$postflop_vs_bet FORCE
 
 ##f$turn##
-WHEN Others RaiseTo 3 FORCE
+WHEN AmountToCall == 0 RETURN f$postflop_bet FORCE
+WHEN Others RETURN f$postflop_vs_bet FORCE
 
 ##f$river##
-WHEN Others RaiseTo 3 FORCE
+WHEN AmountToCall == 0 RETURN f$river_bet FORCE
+WHEN Others RETURN f$river_vs_bet FORCE
 
 //=============================================================================
 //  Postflop helpers
