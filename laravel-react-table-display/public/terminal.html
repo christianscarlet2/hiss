@@ -30,9 +30,14 @@
           <pre class="pane-body" id="pane-3"></pre>
         </section>
       </main>
+      <div class="steer-bar">
+        <button type="button" id="hijack-btn" class="steer-btn hijack" title="Send the current state, context, chat and decisions to OpenAI for a recommendation">&#9889; Hijack &rarr; OpenAI</button>
+        <button type="button" id="stop-btn" class="steer-btn" title="Pause the autoplayer (/stop)">&#9632; Stop</button>
+        <button type="button" id="play-btn" class="steer-btn" title="Resume (/play)">&#9654; Play</button>
+      </div>
       <form class="prompt" id="prompt-form" autocomplete="off">
         <span class="prompt-sign">&gt;</span>
-        <input type="text" id="prompt-input" placeholder="type a command and press Enter&hellip;" spellcheck="false" />
+        <input type="text" id="prompt-input" placeholder="type a command (/hijack /stop /play /strategy /goto /improve) and press Enter&hellip;" spellcheck="false" />
       </form>
     </div>
     <script src="/terminal/assets/terminal.js?v=2"></script>

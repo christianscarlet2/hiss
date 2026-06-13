@@ -108,6 +108,9 @@ for name, body in func_bodies.items():
         s_nocom = re.split(r'//', s, 1)[0].rstrip()
         if not s_nocom:
             continue
+        # strip double-quoted string literals (e.g. explanation templates) so their
+        # free text and {placeholders} are not linted as code.
+        s_nocom = re.sub(r'"[^"]*"', '""', s_nocom)
         # structural: WHEN-lines must contain an action or RETURN, and end in FORCE
         if s_nocom.startswith("WHEN"):
             if "FORCE" not in s_nocom:
@@ -124,6 +127,8 @@ for name, body in func_bodies.items():
             if is_card_token(tok): continue
             if num_re.match(tok): continue
             if tok.startswith("pt_"): continue          # any PokerTracker stat
+            if tok.startswith("explain"): continue        # dynamic explanation triggers
+            if tok.startswith("openai"): continue         # dynamic OpenAI advisor symbols
             if tok.startswith("f$"):
                 if tok not in defined_set:
                     errors.append(f"{name}:{n}: undefined function reference '{tok}'")

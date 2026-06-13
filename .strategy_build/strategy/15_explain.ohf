@@ -1,0 +1,56 @@
+//*****************************************************************************
+//  15_explain - human-readable, variable-filled decision explanations.
+//
+//  Each f$expl_<tag> below is a TEMPLATE: a single string literal whose {tokens}
+//  are replaced with live values when the matching explain_<tag> symbol is reached
+//  at the TAIL of a WHEN condition (AND short-circuits, so it fires only when that
+//  branch is actually chosen). The rendered line is printed to the Decisions pane
+//  of the Terminal window. Add explain_<tag> to any branch you want narrated, e.g.
+//
+//      WHEN f$HaveOnePair AND f$TimingSaysStrong AND explain_fold_tank Fold FORCE
+//
+//  {tokens} may be any symbol or f$function. Emission is de-duplicated and is
+//  suppressed during parsing.
+//*****************************************************************************
+
+##f$expl_open##
+"OPEN to {f$Open_RaiseTo}bb -- first-in, {nopponentsplaying} opp(s), eff {f$EffStack}bb; style {f$Style}, opening my positional range."
+
+##f$expl_iso##
+"ISO-RAISE to {f$Open_RaiseTo}bb over {Calls} limper(s) -- punishing limpers, eff {f$EffStack}bb."
+
+##f$expl_3bet_value##
+"3-BET to {f$ThreeBet_RaiseTo}bb for value -- premium vs a single open (raiser VPIP {f$Opp_VPIP}, PFR {f$Opp_PFR})."
+
+##f$expl_3bet_bluff##
+"3-BET BLUFF to {f$ThreeBet_RaiseTo}bb in position vs a foldy/loose opener (VPIP {f$Opp_VPIP}); ace-blocker / playable suited."
+
+##f$expl_call_setmine##
+"CALL to set-mine -- risking {AmountToCall}bb (<=10% of {f$EffStack}bb) for implied odds; small/medium pair."
+
+##f$expl_pushfold##
+"PUSH/FOLD mode -- eff {f$EffStack}bb <= 10; shoving a position-scaled range, pot {PotSize}bb."
+
+##f$expl_cbet##
+"C-BET ~{f$BetPctFlop}% pot -- I raised pre, board not scary, vs foldy/HU opp (VPIP {f$Opp_VPIP}); equity {prwin}."
+
+##f$expl_value_flop##
+"VALUE BET ~{f$BetPctFlop}% pot -- strong made hand; charging draws, pot {PotSize}bb, equity {prwin}."
+
+##f$expl_semibluff##
+"SEMI-BLUFF ~{f$BetPctFlop}% pot -- big/combo draw, two ways to win; pot {PotSize}bb."
+
+##f$expl_fold_tank##
+"FOLD one pair -- raiser TANKED {lastraiseractiontime}s (>= {f$TankSeconds}s) = strength; pot {PotSize}bb, call {AmountToCall}bb."
+
+##f$expl_float_snap##
+"FLOAT one pair -- raiser SNAP-bet {lastraiseractiontime}s (<= {f$SnapSeconds}s) = likely weak; call {AmountToCall}bb into {PotSize}bb."
+
+##f$expl_potcontrol##
+"CHECK for pot control -- one pair, keeping the pot small (don't go broke with one pair); pot {PotSize}bb."
+
+##f$expl_value_river##
+"RIVER VALUE ~{f$BetPctRiver}% pot -- strong made hand, equity {prwin}, vs VPIP {f$Opp_VPIP} opp."
+
+##f$expl_bluffcatch##
+"BLUFF-CATCH -- calling {AmountToCall}bb into {PotSize}bb vs an aggressive/snap bettor (AF {f$Opp_AF})."

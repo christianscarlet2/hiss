@@ -52,7 +52,8 @@ CHandHistoryWriter *p_handhistory_writer = NULL;
 CHandHistoryWriter::CHandHistoryWriter() {
   // This engine collects data from the table-state and the other engines
   // and therefore must be executed after all the rest (it is registered last).
-  _output_file = "";
+  _output_complete = "";
+  _output_incomplete = "";
   ResetHand();
 }
 
@@ -117,6 +118,7 @@ void CHandHistoryWriter::ResetHand() {
   _flop_logged = _turn_logged = _river_logged = false;
   _winner_uncontested = kUndefined;
   _showdown_logged = false;
+  _joined_midhand = false;
   _final_pot = 0.0;
   for (int i = 0; i < kMaxNumberOfPlayers; ++i) {
     _seat_name[i]    = "";
@@ -161,6 +163,7 @@ void CHandHistoryWriter::CaptureMetadata() {
   _street_max = 0.0;
   _meta_captured = true;
   _hand_dirty    = true;
+  _joined_midhand = (BETROUND > kBetroundPreflop);
 
   // Blinds / antes (only reconstructable if we can read bets and started preflop).
   if (_have_bet && (BETROUND == kBetroundPreflop)) {
@@ -180,7 +183,7 @@ void CHandHistoryWriter::CaptureMetadata() {
         continue;
       }
       if (sb_seen) {
-        _body += FmtName(i) + " posts big blind " + FmtMoney(cb) + "\n";
+        _body += FmtName(i) + " posts the big blind " + FmtMoney(cb) + "\n";
         bb_seen = true;
         _street_bet[i] = cb;
         if (cb > _street_max) _street_max = cb;
@@ -188,11 +191,11 @@ void CHandHistoryWriter::CaptureMetadata() {
       }
       // No blind seen yet: usually the small blind, possibly a lone big blind.
       if (cb <= _sb + kEpsilon) {
-        _body += FmtName(i) + " posts small blind " + FmtMoney(cb) + "\n";
+        _body += FmtName(i) + " posts the small blind " + FmtMoney(cb) + "\n";
         sb_seen = true;
       } else {
         // Big blind with a missing / dead small blind.
-        _body += FmtName(i) + " posts big blind " + FmtMoney(cb) + "\n";
+        _body += FmtName(i) + " posts the big blind " + FmtMoney(cb) + "\n";
         sb_seen = true;
         bb_seen = true;
       }
@@ -254,12 +257,19 @@ void CHandHistoryWriter::ObserveActions() {
     if (!_have_bet) continue;
     double cur = p_table_state->Player(i)->_bet.GetValue();
     if (cur > _street_bet[i] + kEpsilon) {
+      CString allin = p_table_state->Player(i)->IsAllin() ? " and is all-in" : "";
       if (cur > _street_max + kEpsilon) {
-        const char *verb = (_street_max <= kEpsilon) ? "bets " : "raises to ";
-        _body += FmtName(i) + " " + verb + FmtMoney(cur) + "\n";
+        if (_street_max <= kEpsilon) {
+          // Opening bet on this street.
+          _body += FmtName(i) + " bets " + FmtMoney(cur) + allin + "\n";
+        } else {
+          // ACR raise syntax: "raises <by> to <to>".
+          _body += FmtName(i) + " raises " + FmtMoney(cur - _street_max)
+                 + " to " + FmtMoney(cur) + allin + "\n";
+        }
         _street_max = cur;
       } else {
-        _body += FmtName(i) + " calls " + FmtMoney(cur) + "\n";
+        _body += FmtName(i) + " calls " + FmtMoney(cur - _street_bet[i]) + allin + "\n";
       }
       _street_bet[i] = cur;
     }
@@ -287,7 +297,7 @@ void CHandHistoryWriter::ObserveResult() {
     for (int i = 0; i < _nchairs; ++i) {
       if (activebits & (1 << i)) {
         _winner_uncontested = i;
-        _body += FmtName(i) + " wins the pot (" + FmtMoney(_final_pot) + ") uncontested\n";
+        _body += FmtName(i) + " collected " + FmtMoney(_final_pot) + " from pot\n";
         break;
       }
     }
@@ -315,57 +325,107 @@ void CHandHistoryWriter::ObserveResult() {
 void CHandHistoryWriter::Flush() {
   if (!_meta_captured || !_hand_dirty) return;
   EnsureOutputPath();
-  if (_output_file.IsEmpty()) return;
 
+  // ---- ACR-format hand history (Americas Cardroom layout, for PokerTracker 4) --
   CString out;
-  out += "================================================================\n";
-  CString head;
-  head.Format("Hand #%s   (approximate, reconstructed from screen-scraping)\n",
-              _hand_number.IsEmpty() ? "?" : _hand_number.GetString());
-  out += head;
-  out += "Placeholders: \"Seat N\"=name unknown, ?=card unknown, ??=amount/board unknown\n";
+  out += AcrHeader() + "\n";
 
+  // Table + button line. ACR seats are 1-based; the button must be a seat number.
+  int button_seat = (_have_dealer && _button >= 0 && _button < _nchairs)
+                  ? AcrSeat(_button) : 1;
   CString table_line;
-  CString button_text;
-  if (_have_dealer && _button >= 0 && _button < _nchairs) {
-    button_text.Format("Seat %d", _button);
-  } else {
-    button_text = "unknown";
-  }
-  table_line.Format("Table %d-max | Blinds %s/%s",
-                    _nchairs, FmtMoney(_sb).GetString(), FmtMoney(_bb).GetString());
+  table_line.Format("Table '%d' %d-max Seat #%d is the button\n",
+                    (p_sessioncounter != NULL) ? p_sessioncounter->session_id() : 0,
+                    (_nchairs > 0 ? _nchairs : kMaxNumberOfPlayers), button_seat);
   out += table_line;
-  if (_ante > kEpsilon) {
-    out += " | Ante " + FmtMoney(_ante);
-  }
-  out += " | Button: " + button_text + "\n";
 
-  out += "Seats:\n";
+  // Seat list (only players that were in the hand).
   for (int i = 0; i < _nchairs; ++i) {
     if (!_seat_in_hand[i]) continue;
     CString seat;
-    seat.Format("  Seat %d: %s (%s in chips)%s\n",
-                i, FmtName(i).GetString(), FmtStack(i).GetString(),
-                (i == _hero) ? " -- HERO" : "");
+    seat.Format("Seat %d: %s (%s)\n",
+                AcrSeat(i), FmtName(i).GetString(), FmtStack(i).GetString());
     out += seat;
   }
 
+  // Antes, blinds, hole cards, streets, actions, result (built in _body).
   out += _body;
 
+  // ---- SUMMARY ----
   out += "*** SUMMARY ***\n";
-  out += "Total pot " + FmtMoney(_final_pot) + " | Board [" + BoardTokens(5) + "]\n";
-  out += "================================================================\n\n";
+  out += "Total pot " + FmtMoney(_final_pot);
+  CString board = BoardTokens(5);
+  if (!board.IsEmpty() && board != "??") out += " | Board [" + board + "]";
+  out += "\n";
+  for (int i = 0; i < _nchairs; ++i) {
+    if (!_seat_in_hand[i]) continue;
+    CString seat;
+    CString tag;
+    if (i == _button && _have_dealer) tag = " (button)";
+    CString fate;
+    if (i == _winner_uncontested) fate.Format("collected (%s)", FmtMoney(_final_pot).GetString());
+    else if (_folded[i])          fate = "folded";
+    else if (!_hole[i].IsEmpty()) fate.Format("showed [%s]", _hole[i].GetString());
+    else                          fate = "mucked/—";
+    seat.Format("Seat %d: %s%s %s\n", AcrSeat(i), FmtName(i).GetString(),
+                tag.GetString(), fate.GetString());
+    out += seat;
+  }
+  out += "\n\n";
+
+  // ---- route to complete\ or incomplete\ depending on import quality ----
+  bool complete = HandLooksComplete();
+  CString path = complete ? _output_complete : _output_incomplete;
+  if (path.IsEmpty()) { _hand_dirty = false; return; }
 
   FILE *fp = NULL;
-  if (fopen_s(&fp, _output_file.GetString(), "a") == 0 && fp != NULL) {
+  if (fopen_s(&fp, path.GetString(), "a") == 0 && fp != NULL) {
     fwrite(out.GetString(), 1, out.GetLength(), fp);
     fclose(fp);
     write_log(k_always_log_basic_information,
-              "[CHandHistoryWriter] Wrote hand #%s to %s\n",
+              "[CHandHistoryWriter] Wrote hand #%s (%s) to %s\n",
               _hand_number.IsEmpty() ? "?" : _hand_number.GetString(),
-              _output_file.GetString());
+              complete ? "complete" : "incomplete", path.GetString());
   }
   _hand_dirty = false;
+}
+
+// A hand is import-quality ("complete") only if it has the structure PokerTracker
+// needs: real names + stacks + bet amounts + a known button + hero, blinds seen
+// from the start (not joined mid-hand), and a terminal result (someone won
+// uncontested or a showdown was recorded). Anything else goes to incomplete\.
+bool CHandHistoryWriter::HandLooksComplete() {
+  if (_joined_midhand) return false;
+  if (!_have_names || !_have_balance || !_have_bet || !_have_dealer) return false;
+  if (_hero < 0 || _hero >= _nchairs) return false;
+  if (!_blinds_done) return false;
+  if (_button < 0 || _button >= _nchairs) return false;
+  if (_winner_uncontested < 0 && !_showdown_logged) return false;
+  return true;
+}
+
+CString CHandHistoryWriter::AcrTimestampUtc() {
+  SYSTEMTIME st;
+  GetSystemTime(&st);   // UTC, matching ACR's "... UTC" stamp
+  CString s;
+  s.Format("%04d/%02d/%02d %02d:%02d:%02d", st.wYear, st.wMonth, st.wDay,
+           st.wHour, st.wMinute, st.wSecond);
+  return s;
+}
+
+CString CHandHistoryWriter::AcrHeader() {
+  // Mirror ACR's tournament header; PokerTracker reads the blinds from the
+  // parentheses. A stable per-session tournament id groups the session's hands.
+  int sid = (p_sessioncounter != NULL) ? p_sessioncounter->session_id() : 0;
+  CString hid = _hand_number;
+  hid.Trim();
+  if (hid.IsEmpty()) hid = "0";
+  CString s;
+  s.Format("Game Hand #%s - Tournament #%d - Holdem (No Limit) - Level 1 (%s/%s) - %s UTC",
+           hid.GetString(), sid,
+           FmtMoney(_sb).GetString(), FmtMoney(_bb).GetString(),
+           AcrTimestampUtc().GetString());
+  return s;
 }
 
 // ---------------------------------------------------------------------------
@@ -440,11 +500,23 @@ bool CHandHistoryWriter::RegionExists(const CString &name) {
 }
 
 void CHandHistoryWriter::EnsureOutputPath() {
-  if (!_output_file.IsEmpty()) return;
-  CString folder = OpenHoldemDirectory() + "\\handhistory";
-  CreateDirectory(folder, NULL);
+  if (!_output_complete.IsEmpty() && !_output_incomplete.IsEmpty()) return;
+  CString root = OpenHoldemDirectory() + "\\handhistory";
+  CreateDirectory(root, NULL);
+  // Complete (PT4-import) and incomplete (review) hands are kept in separate
+  // subfolders so PokerTracker 4 can be pointed at the clean folder only.
+  CString complete_dir   = root + "\\complete";
+  CString incomplete_dir = root + "\\incomplete";
+  CreateDirectory(complete_dir, NULL);
+  CreateDirectory(incomplete_dir, NULL);
   int sid = (p_sessioncounter != NULL) ? p_sessioncounter->session_id() : 0;
-  _output_file.Format("%s\\hh_session_%d.txt", folder.GetString(), sid);
+  // ACR-style filename so PokerTracker's ACR importer recognises it.
+  SYSTEMTIME st; GetSystemTime(&st);
+  CString fname;
+  fname.Format("HH%04d%02d%02d ScarletBeast T%d GAMETYPE-Hold'em LIMIT-no CUR-REAL.txt",
+               st.wYear, st.wMonth, st.wDay, sid);
+  _output_complete.Format("%s\\%s", complete_dir.GetString(), fname.GetString());
+  _output_incomplete.Format("%s\\%s", incomplete_dir.GetString(), fname.GetString());
 }
 
 // ---------------------------------------------------------------------------

@@ -76,14 +76,21 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
   bool    RegionExists(const CString &name);
   void    AddLine(const CString &line);
   void    EnsureOutputPath();
+  // ---- ACR-format helpers ----
+  int     AcrSeat(int chair) { return chair + 1; }   // ACR seats are 1-based
+  CString AcrTimestampUtc();                          // "YYYY/MM/DD HH:MM:SS"
+  CString AcrHeader();                                // "Game Hand #... - ..."
+  bool    HandLooksComplete();                        // import-quality gate
 
  private:
   // ---- output ----
-  CString _output_file;          // resolved once (per session)
+  CString _output_complete;      // <exedir>\handhistory\complete\...   (PT4-import folder)
+  CString _output_incomplete;    // <exedir>\handhistory\incomplete\... (review folder)
 
   // ---- per-hand state ----
   bool    _meta_captured;        // metadata for the current hand recorded
   bool    _hand_dirty;           // something worth writing was recorded
+  bool    _joined_midhand;       // we did not see the start of this hand
   CString _hand_number;
   int     _nchairs;
   int     _button;

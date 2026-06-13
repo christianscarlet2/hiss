@@ -411,6 +411,9 @@
     <ClCompile Include="COcrWorker.cpp" />
     <ClCompile Include="CrashHandler.cpp" />
     <ClCompile Include="CSymbolEngineTimingTells.cpp" />
+    <ClCompile Include="CSymbolEngineExplain.cpp" />
+    <ClCompile Include="CSymbolEngineOpenAI.cpp" />
+    <ClCompile Include="COpenAiAdvisor.cpp" />
     <ClCompile Include="CVTermPane.cpp" />
     <ClCompile Include="CScraper.cpp" />
     <!-- libvterm (vendored, compiled as C, no PCH) -->
@@ -755,6 +758,9 @@
     <ClInclude Include="COcrWorker.h" />
     <ClInclude Include="CrashHandler.h" />
     <ClInclude Include="CSymbolEngineTimingTells.h" />
+    <ClInclude Include="CSymbolEngineExplain.h" />
+    <ClInclude Include="CSymbolEngineOpenAI.h" />
+    <ClInclude Include="COpenAiAdvisor.h" />
     <ClInclude Include="CVTermPane.h" />
     <ClInclude Include="CScraper.h" />
     <ClInclude Include="CScarletBeast.h" />

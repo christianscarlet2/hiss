@@ -4,6 +4,7 @@
 #include "CSymbolEngineChipAmounts.h"
 #include "CTableState.h"
 #include "ChatTerminalServer.h"
+#include "COpenAiAdvisor.h"
 #include "HudManager.h"
 #include "inlines/eval.h"
 #include "..\Shared\CCritSec\CCritSec.h"
@@ -848,6 +849,8 @@ void TerminalBrowserInject(const CString &cmd)
 	CString line;
 	line.Format("\x1b[35m[web]\x1b[0m %s", cmd.GetString());
 	p_chat_terminal->AppendMessage("main", kChatTerminalChat, line, false);
+	// Steering / OpenAI console commands (/stop /play /goto /strategy /hijack /improve).
+	COpenAiAdvisor::HandleConsoleCommand(cmd);
 }
 
 void CChatTerminalWindow::OnClearClicked()
@@ -992,6 +995,8 @@ void CChatTerminalWindow::SendChatText(void)
 		screen = _screens[_active_screen].name;
 	}
 	AppendToSection(screen, kChatTerminalChat, line, false);
+	// Steering / OpenAI console commands (/stop /play /goto /strategy /hijack /improve).
+	COpenAiAdvisor::HandleConsoleCommand(text);
 }
 
 LRESULT CChatTerminalWindow::OnAppendMessage(WPARAM wParam, LPARAM lParam)

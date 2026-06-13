@@ -17,6 +17,8 @@
 
 class CSymbolEngineActiveDealtPlaying;
 class CSymbolEngineTimingTells;
+class CSymbolEngineExplain;
+class CSymbolEngineOpenAI;
 class CSymbolEngineAutoplayer;
 class CSymbolEngineBlinds;
 class CSymbolEngineCallers;
@@ -113,6 +115,10 @@ public:
     { return p_symbol_engine_active_dealt_playing; }
   CSymbolEngineTimingTells *symbol_engine_timing_tells()
     { return p_symbol_engine_timing_tells; }
+  CSymbolEngineExplain *symbol_engine_explain()
+    { return p_symbol_engine_explain; }
+  CSymbolEngineOpenAI *symbol_engine_openai()
+    { return p_symbol_engine_openai; }
   CSymbolEngineAutoplayer *symbol_engine_autoplayer()
     { return p_symbol_engine_autoplayer; }
   CSymbolEngineBlinds *symbol_engine_blinds()
@@ -206,6 +212,8 @@ public:
 private:
   CSymbolEngineActiveDealtPlaying *p_symbol_engine_active_dealt_playing;
   CSymbolEngineTimingTells *p_symbol_engine_timing_tells;
+  CSymbolEngineExplain *p_symbol_engine_explain;
+  CSymbolEngineOpenAI *p_symbol_engine_openai;
   CSymbolEngineAutoplayer *p_symbol_engine_autoplayer;
   CSymbolEngineBlinds *p_symbol_engine_blinds;
   CSymbolEngineCallers *p_symbol_engine_callers;

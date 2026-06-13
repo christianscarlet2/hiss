@@ -171,6 +171,13 @@
   var history = [];
   var histIdx = -1;
 
+  function sendCmd(cmd) {
+    if (!cmd) return;
+    fetch("/api/terminal-input?text=" + encodeURIComponent(cmd), { method: "POST" })
+      .then(function () { poll(); })
+      .catch(function () {});
+  }
+
   form.addEventListener("submit", function (e) {
     e.preventDefault();
     var cmd = input.value.trim();
@@ -178,10 +185,16 @@
     history.push(cmd);
     histIdx = history.length;
     input.value = "";
-    fetch("/api/terminal-input?text=" + encodeURIComponent(cmd), { method: "POST" })
-      .then(function () { poll(); })
-      .catch(function () {});
+    sendCmd(cmd);
   });
+
+  // Steering buttons (hijack / stop / play) -> same console-command channel.
+  var hijackBtn = document.getElementById("hijack-btn");
+  if (hijackBtn) hijackBtn.addEventListener("click", function () { sendCmd("/hijack"); });
+  var stopBtn = document.getElementById("stop-btn");
+  if (stopBtn) stopBtn.addEventListener("click", function () { sendCmd("/stop"); });
+  var playBtn = document.getElementById("play-btn");
+  if (playBtn) playBtn.addEventListener("click", function () { sendCmd("/play"); });
 
   input.addEventListener("keydown", function (e) {
     if (e.key === "ArrowUp") {

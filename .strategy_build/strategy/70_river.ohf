@@ -5,6 +5,8 @@
 //*****************************************************************************
 
 ##f$river##
+// @anchor: river (id 4)
+WHEN openai_action > -1000 RETURN openai_action FORCE
 WHEN AmountToCall == 0 RETURN f$river_nobet FORCE
 WHEN Others RETURN f$river_vs_bet FORCE
 
@@ -14,7 +16,7 @@ WHEN Others RETURN f$river_vs_bet FORCE
 
 ##f$river_nobet##
 // Value-bet made hands; thinner & smaller vs stations, fuller vs non-passive.
-WHEN f$HaveBigMade RaiseBy f$BetPctRiver % FORCE
+WHEN f$HaveBigMade AND explain_value_river RaiseBy f$BetPctRiver % FORCE
 WHEN (HaveSet OR HaveTwoPair) AND NOT f$Opp_IsPassive RaiseBy f$BetPctRiver % FORCE
 // Thin value with one pair vs a calling station. [N p.147]
 WHEN f$HaveOnePair AND f$Opp_IsStation RaiseBy f$BetPctRiver % FORCE
@@ -38,7 +40,7 @@ WHEN (HaveSet OR HaveTwoPair) Call FORCE
 // Timing tell: a tanked river bet is usually a value hand -> fold the bluff-catchers. [Caro]
 WHEN f$HaveOnePair AND f$TimingSaysStrong Fold FORCE
 // Bluff-catch one pair only vs bluffy players at a price; fold vs passive value. [N]
-WHEN f$HaveOnePair AND f$Opp_IsAggro AND f$DecentPrice Call FORCE
+WHEN f$HaveOnePair AND f$Opp_IsAggro AND f$DecentPrice AND explain_bluffcatch Call FORCE
 WHEN f$HaveOnePair AND NOT f$Opp_IsPassive AND f$CheapDraw Call FORCE
 // Timing tell: a snap river bet leans weak/bluffy -> bluff-catch one pair wider. [Caro]
 WHEN f$HaveOnePair AND f$TimingSaysWeak AND f$DecentPrice Call FORCE

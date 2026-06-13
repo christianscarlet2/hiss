@@ -4,6 +4,8 @@
 //*****************************************************************************
 
 ##f$turn##
+// @anchor: turn (id 3)
+WHEN openai_action > -1000 RETURN openai_action FORCE
 WHEN AmountToCall == 0 RETURN f$turn_nobet FORCE
 WHEN Others RETURN f$turn_vs_bet FORCE
 

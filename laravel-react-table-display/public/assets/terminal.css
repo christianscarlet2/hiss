@@ -112,3 +112,13 @@ html, body {
 .b { font-weight: bold; }
 .i { font-style: italic; }
 .u { text-decoration: underline; }
+
+/* Steering bar (hijack / stop / play) */
+.steer-bar { display: flex; gap: 8px; padding: 6px 10px; border-top: 1px solid #222; }
+.steer-btn {
+  background: #1b1b1b; color: #cfcfcf; border: 1px solid #333; border-radius: 4px;
+  padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer;
+}
+.steer-btn:hover { background: #262626; }
+.steer-btn.hijack { color: #d7a3ff; border-color: #5a3a7a; }
+.steer-btn.hijack:hover { background: #2a1f38; }

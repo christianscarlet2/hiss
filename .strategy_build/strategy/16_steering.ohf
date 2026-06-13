@@ -1,0 +1,49 @@
+//*****************************************************************************
+//  16_steering - runtime steering + OpenAI hijack hooks  (advisor DISABLED by
+//  default; these are inert until HKCU\Software\ScarletBeast\OpenAiEnabled=1).
+//
+//  ANCHORS - named entry points the Terminal console can steer to. Each major
+//  decision function is tagged with a "// @anchor: <name> (id N)" comment and the
+//  ids are mapped in COpenAiAdvisor::AnchorIdFromName():
+//      1 preflop   2 flop   3 turn   4 river
+//     11 smallball 12 power 13 hybrid   (these retune f$Style live)
+//
+//  CONSOLE COMMANDS (type into the Terminal prompt or the browser prompt):
+//     /stop                 pause (sets openai_paused = 1)
+//     /play                 resume
+//     /strategy smallball|power|hybrid   retune the profile live (via f$Style)
+//     /goto <anchor>        set openai_steer_anchor
+//     /hijack [why]         send state+context+chat+decisions to OpenAI
+//     /improve <text>       propose an .ohf edit (written to Strategy\proposed\)
+//
+//  SYMBOLS (provided by CSymbolEngineOpenAI):
+//     openai_paused        1 while /stop is active
+//     openai_steer_anchor  the steered anchor id (0 = none)
+//     openai_action        OpenAI's recommended action, or a no-opinion sentinel
+//     openai_autohijack    1 if auto-hijack-on-no-fit is enabled
+//     openai_consult       TRIGGER (true) -> consults OpenAI on a no-fit spot
+//
+//  The openai_action override is already wired at the top of f$preflop / f$flop /
+//  f$turn / f$river: when the advisor returns a concrete raise size it is taken,
+//  otherwise (the default, disabled) the sentinel keeps the bot on its own logic.
+//*****************************************************************************
+
+##f$Paused##
+// Convenience mirror of the /stop state for use in your own gating if desired.
+WHEN openai_paused RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$NoHeuristicFit##
+// Mark a spot the hand-coded strategy does not cover well. Edit this to taste;
+// when true (and auto-hijack is enabled) f$ConsultOpenAI will ask for help.
+// Example heuristics for "weird, low-confidence" spots:
+WHEN BotsActionsOnThisRound > 2 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$ConsultOpenAI##
+// Call this where you want an auto-consult on no-fit spots, e.g. add
+//   WHEN f$NoHeuristicFit AND f$ConsultOpenAI Check FORCE
+// near a fallback. openai_consult fires the (disabled-by-default) advisor and
+// returns true; we then Check as a safe default. Inert while the advisor is off.
+WHEN openai_consult RETURN true FORCE
+WHEN Others RETURN false FORCE

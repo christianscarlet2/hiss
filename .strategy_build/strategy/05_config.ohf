@@ -5,6 +5,11 @@
 
 ##f$Style##
 // 0 = Small Ball [N]   1 = Power Poker [B]   2 = Hybrid (default)
+// Runtime steering: the Terminal command "/strategy smallball|power|hybrid" sets
+// openai_steer_anchor (11/12/13) and retunes the whole profile live. [steering]
+WHEN openai_steer_anchor == 11 RETURN 0 FORCE
+WHEN openai_steer_anchor == 12 RETURN 1 FORCE
+WHEN openai_steer_anchor == 13 RETURN 2 FORCE
 WHEN Others RETURN 2 FORCE
 
 //-----------------------------------------------------------------------------

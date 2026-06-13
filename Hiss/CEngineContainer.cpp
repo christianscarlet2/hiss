@@ -33,6 +33,8 @@
 #include "CSessionCounter.h"
 #include "CSymbolEngineActiveDealtPlaying.h"
 #include "CSymbolEngineTimingTells.h"
+#include "CSymbolEngineExplain.h"
+#include "CSymbolEngineOpenAI.h"
 #include "CSymbolEngineAutoplayer.h"
 #include "CSymbolEngineBlinds.h"
 #include "CSymbolEngineCallers.h"
@@ -167,6 +169,12 @@ void CEngineContainer::CreateSymbolEngines() {
   // CSymbolEngineTimingTells (pNtiming: per-chair action time from pNactive rect1)
   p_symbol_engine_timing_tells = new CSymbolEngineTimingTells();
   AddSymbolEngine(p_symbol_engine_timing_tells);
+  // CSymbolEngineExplain (explain_<tag>: variable-filled decision explanations)
+  p_symbol_engine_explain = new CSymbolEngineExplain();
+  AddSymbolEngine(p_symbol_engine_explain);
+  // CSymbolEngineOpenAI (openai_*: advisor / steering bridge - disabled by default)
+  p_symbol_engine_openai = new CSymbolEngineOpenAI();
+  AddSymbolEngine(p_symbol_engine_openai);
   // CSymbolEnginePositions
   p_symbol_engine_positions = new CSymbolEnginePositions();
   AddSymbolEngine(p_symbol_engine_positions);

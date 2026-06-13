@@ -9,6 +9,11 @@
 //*****************************************************************************
 
 ##f$preflop##
+// @anchor: preflop (id 1)
+// OpenAI hijack override: when the advisor is enabled and returns a concrete
+// raise size, take it. Disabled -> openai_action is the kOpenAiNoOpinion sentinel
+// (<= -1000), so this never fires and play is unchanged. [steering]
+WHEN openai_action > -1000 RETURN openai_action FORCE
 WHEN f$PushFoldStack RETURN f$preflop_pushfold FORCE
 WHEN Raises >= 2 RETURN f$preflop_vs_3bet FORCE
 WHEN Raises == 1 RETURN f$preflop_vs_raise FORCE
@@ -25,7 +30,7 @@ WHEN f$ShortStack AND NOT listOpenMP Fold FORCE
 WHEN InEarlyPosition AND listOpenEP RaiseTo f$Open_RaiseTo FORCE
 WHEN InMiddlePosition AND listOpenMP RaiseTo f$Open_RaiseTo FORCE
 WHEN (InLatePosition OR InCutOff) AND listOpenLP RaiseTo f$Open_RaiseTo FORCE
-WHEN InButton AND listOpenBTN RaiseTo f$Open_RaiseTo FORCE
+WHEN InButton AND listOpenBTN AND explain_open RaiseTo f$Open_RaiseTo FORCE
 WHEN InSmallBlind AND listOpenSB RaiseTo f$Open_RaiseTo FORCE
 WHEN InBigBlind Check FORCE
 WHEN Others Fold FORCE
@@ -50,7 +55,7 @@ WHEN Others Fold FORCE
 // Vs a player who 3-bets light, just FLAT the premiums and outplay him. [N p.22]
 WHEN list3betValue AND f$Opp_ThreeBetsLight AND listCall3bet Call FORCE
 // 3-bet for value.
-WHEN list3betValue RaiseTo f$ThreeBet_RaiseTo FORCE
+WHEN list3betValue AND explain_3bet_value RaiseTo f$ThreeBet_RaiseTo FORCE
 // 3-bet bluff vs a foldy / loose opener, in position, at a mixed frequency. [N p.26]
 WHEN list3betBluff AND f$Opp_Foldy AND f$InPositionPre AND randomround < 0.60 RaiseTo f$ThreeBet_RaiseTo FORCE
 WHEN list3betBluff AND f$Opp_IsLoose AND f$InPositionPre AND randomround < 0.35 RaiseTo f$ThreeBet_RaiseTo FORCE
@@ -75,7 +80,7 @@ WHEN f$Style == 1 AND list4betValuePower RaiseTo f$FourBet_RaiseTo FORCE
 WHEN listCall3bet AND f$InPositionPre Call FORCE
 WHEN listCall3bet AND f$DecentPrice Call FORCE
 // Deep speculative set-mine vs a 3-bet only when it risks <= ~10% of stack. [N p.29-30]
-WHEN listSetMine AND f$DeepStack AND f$WithinSpecRisk Call FORCE
+WHEN listSetMine AND f$DeepStack AND f$WithinSpecRisk AND explain_call_setmine Call FORCE
 WHEN Others Fold FORCE
 
 //-----------------------------------------------------------------------------
@@ -88,7 +93,7 @@ WHEN Raises >= 1 AND listPremium RaiseMax FORCE
 WHEN Raises >= 1 AND f$EffStack <= 8 AND (listBigPair OR list3betValue) RaiseMax FORCE
 WHEN Raises >= 1 Fold FORCE
 // First in: shove a position-scaled range.
-WHEN (InButton OR InCutOff OR InLatePosition) AND listOpenMP RaiseMax FORCE
+WHEN (InButton OR InCutOff OR InLatePosition) AND listOpenMP AND explain_pushfold RaiseMax FORCE
 WHEN InMiddlePosition AND listOpenEP RaiseMax FORCE
 WHEN InEarlyPosition AND (listBigPair OR list3betValue OR listSetMine) RaiseMax FORCE
 WHEN InSmallBlind AND listOpenLP RaiseMax FORCE
