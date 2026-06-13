@@ -155,6 +155,11 @@ CString ListOfRegions() {
   list += "c0bigbet ";
   list += "c0ante ";
   list += "betsize ";
+  // On-screen numpad for betsize entry (phone / screen-scraped tables that can't
+  // take keyboard input): clear with 5x nBackspace, click n0..n9 / nDecimalPoint
+  // to "type" the amount, then click nOkay to submit.
+  list += RangeOfSymbols("n%i", 0, 9);
+  list += "nDecimalPoint nBackspace nOkay ";
   list += "i3edit ";
   list += "i3handle ";
   list += "i3slider ";

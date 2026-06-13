@@ -71,6 +71,9 @@ bool CBetsizeInputBox::EnterBetsize(double total_betsize_in_dollars) {
 		write_log(Preferences()->debug_autoplayer(), "[CBetsizeInputBox] ...ending DoBetsize early (no edit field or no i3button).\n");
 		return false;
 	}
+	// Phone / screen-scraped tables enter the amount via the on-screen numpad
+	// (clicking n0..n9) instead of keyboard input.
+	bool numpad = UseNumpad();
 	while (++swag_attempts == 1 || lost_focus) {
 		lost_focus = false;
 		SelectText();
@@ -86,7 +89,7 @@ bool CBetsizeInputBox::EnterBetsize(double total_betsize_in_dollars) {
 			lost_focus = true;
 		}
 		else {
-			Clear();
+			if (!numpad) Clear();  // numpad clears via 5x nBackspace clicks instead
 			write_log(Preferences()->debug_autoplayer(), "[CBetsizeInputBox] Sleeping %dms.\n", Preferences()->swag_delay_2());
 			Sleep(Preferences()->swag_delay_2()); // Delete to entry autoplayer delay (default 400ms)
 			SetFocus(attached_window);
@@ -104,11 +107,15 @@ bool CBetsizeInputBox::EnterBetsize(double total_betsize_in_dollars) {
 				// http://www.maxinmontreal.com/forums/viewtopic.php?f=156&t=18648
 				p_function_collection->SetAutoplayerFunctionValue(k_autoplayer_function_betsize, swag_adjusted);
 				write_log(Preferences()->debug_autoplayer(), "[CBetsizeInputBox] betsize (not adjusted): %.2f\n", total_betsize_in_dollars);
-				write_log(Preferences()->debug_autoplayer(), "[CBetsizeInputBox] calling keyboard.dll to enter betsize (adjusted): %s %d,%d %d,%d\n",
-					swag_amt, _i3_edit_region.left, _i3_edit_region.top, _i3_edit_region.right, _i3_edit_region.bottom);
-				bool use_comma_instead_of_dot = p_tablemap->use_comma_instead_of_dot();
-				(theApp._dll_keyboard_sendstring) (p_autoconnector->attached_hwnd(), _i3_edit_region,
-					swag_amt, use_comma_instead_of_dot);
+				if (numpad) {
+					EnterBetsizeByNumpad(swag_amt);
+				} else {
+					write_log(Preferences()->debug_autoplayer(), "[CBetsizeInputBox] calling keyboard.dll to enter betsize (adjusted): %s %d,%d %d,%d\n",
+						swag_amt, _i3_edit_region.left, _i3_edit_region.top, _i3_edit_region.right, _i3_edit_region.bottom);
+					bool use_comma_instead_of_dot = p_tablemap->use_comma_instead_of_dot();
+					(theApp._dll_keyboard_sendstring) (p_autoconnector->attached_hwnd(), _i3_edit_region,
+						swag_amt, use_comma_instead_of_dot);
+				}
 				// Check for stolen focus, and thus misswag
 				if (p_casino_interface->TableLostFocus()) {
 					lost_focus = true;
@@ -214,6 +221,61 @@ bool CBetsizeInputBox::EnterBetsize(double total_betsize_in_dollars) {
 	write_log(Preferences()->debug_autoplayer(), "[CBetsizeInputBox] ...ending DoBetsize, 'didbetsize' now: %d\n",
 		p_engine_container->symbol_engine_history()->didswag(betround));
 	return (!lost_focus);
+}
+
+// On-screen numpad is active when an "n0" region is defined in the tablemap.
+bool CBetsizeInputBox::UseNumpad() {
+	return p_tablemap->ItemExists("n0");
+}
+
+// Click the centre of a numpad region (n0..n9, nDecimalPoint, nBackspace, nOkay).
+bool CBetsizeInputBox::ClickNumpadRegion(CString region_name) {
+	if (!p_tablemap->ItemExists(region_name)) {
+		write_log(k_always_log_errors, "[CBetsizeInputBox] Numpad region \"%s\" is missing.\n", region_name.GetString());
+		return false;
+	}
+	RECT r = { 0 };
+	p_tablemap->GetTMRegion(region_name, &r);
+	if ((r.right <= r.left) || (r.bottom <= r.top)) {
+		write_log(k_always_log_errors, "[CBetsizeInputBox] Numpad region \"%s\" has an invalid rect.\n", region_name.GetString());
+		return false;
+	}
+	write_log(k_always_log_basic_information, "[CBetsizeInputBox] Numpad click \"%s\" (%d,%d-%d,%d)\n",
+		region_name.GetString(), r.left, r.top, r.right, r.bottom);
+	(theApp._dll_mouse_click) (p_autoconnector->attached_hwnd(), r, MouseLeft, 1);
+	return true;
+}
+
+// Enter the betsize by tapping the on-screen numpad: clear with 5x nBackspace,
+// "type" each character by clicking n0..n9 / nDecimalPoint, then click nOkay.
+void CBetsizeInputBox::EnterBetsizeByNumpad(CString amount) {
+	const int kNumpadClickDelayMs = 120;
+	write_log(k_always_log_basic_information, "[CBetsizeInputBox] Entering betsize \"%s\" via on-screen numpad.\n",
+		amount.GetString());
+	// 1) Clear the field: click nBackspace 5 times.
+	for (int i = 0; i < 5; i++) {
+		ClickNumpadRegion("nBackspace");
+		Sleep(kNumpadClickDelayMs);
+	}
+	// 2) "Type" the amount by clicking each character's region centre.
+	for (int i = 0; i < amount.GetLength(); i++) {
+		char c = amount[i];
+		CString region;
+		if ((c >= '0') && (c <= '9')) {
+			region.Format("n%c", c);
+		} else if ((c == '.') || (c == ',')) {
+			region = "nDecimalPoint";
+		} else {
+			continue;  // skip thousands separators, spaces, currency symbols, etc.
+		}
+		ClickNumpadRegion(region);
+		Sleep(kNumpadClickDelayMs);
+	}
+	// 3) Confirm the numpad entry by clicking nOkay (if defined).
+	if (p_tablemap->ItemExists("nOkay")) {
+		ClickNumpadRegion("nOkay");
+		Sleep(kNumpadClickDelayMs);
+	}
 }
 
 bool CBetsizeInputBox::GetI3EditRegion() {

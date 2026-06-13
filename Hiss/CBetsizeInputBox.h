@@ -33,6 +33,13 @@ class CBetsizeInputBox {
   void SelectText();
   void Clear();
  private:
+  // On-screen numpad entry (for phone/screen-scraped tables that can't take
+  // keyboard input). Active when an "n0" region exists. Clears with 5x nBackspace,
+  // then "types" the amount by clicking n0..n9 / nDecimalPoint region centres.
+  bool UseNumpad();
+  void EnterBetsizeByNumpad(CString amount);
+  bool ClickNumpadRegion(CString region_name);
+ private:
   // For future use
   bool VerifyEnteredBetsize();
  private:
