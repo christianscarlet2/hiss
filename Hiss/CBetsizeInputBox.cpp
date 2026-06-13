@@ -90,7 +90,7 @@ bool CBetsizeInputBox::EnterBetsize(double total_betsize_in_dollars) {
 			lost_focus = true;
 		}
 		else {
-			if (!numpad) Clear();  // numpad clears via 5x nBackspace clicks instead
+			if (!numpad) Clear();  // numpad clears via 2x nBackspace clicks instead
 			write_log(Preferences()->debug_autoplayer(), "[CBetsizeInputBox] Sleeping %dms.\n", Preferences()->swag_delay_2());
 			Sleep(Preferences()->swag_delay_2()); // Delete to entry autoplayer delay (default 400ms)
 			SetFocus(attached_window);
@@ -247,7 +247,7 @@ bool CBetsizeInputBox::ClickNumpadRegion(CString region_name) {
 	return true;
 }
 
-// Enter the betsize by tapping the on-screen numpad: clear with 5x nBackspace,
+// Enter the betsize by tapping the on-screen numpad: clear with 2x nBackspace,
 // "type" each character by clicking n0..n9 / nDecimalPoint, then click nOkay.
 void CBetsizeInputBox::EnterBetsizeByNumpad(CString amount) {
 	// Use the configurable "delay (ms)" from the two-successive-clicks settings
@@ -256,8 +256,8 @@ void CBetsizeInputBox::EnterBetsizeByNumpad(CString amount) {
 	if (kNumpadClickDelayMs < 0) kNumpadClickDelayMs = 0;
 	write_log(k_always_log_basic_information, "[CBetsizeInputBox] Entering betsize \"%s\" via on-screen numpad (%d ms/click).\n",
 		amount.GetString(), kNumpadClickDelayMs);
-	// 1) Clear the field: click nBackspace 5 times.
-	for (int i = 0; i < 5; i++) {
+	// 1) Clear the field: click nBackspace 2 times.
+	for (int i = 0; i < 2; i++) {
 		ClickNumpadRegion("nBackspace");
 		Sleep(kNumpadClickDelayMs);
 	}
