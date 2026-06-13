@@ -495,6 +495,15 @@ void CAutoplayer::DumpButtonDebug() {
 	fprintf(f, "ismyturn=%d isfinalanswer=%d myturnbits=0x%02x visible=%d FCKRA=\"%s\"\n",
 		ap->ismyturn() ? 1 : 0, ap->isfinalanswer() ? 1 : 0, ap->myturnbits(),
 		visible, ap->GetFCKRAString().GetString());
+	// Why isfinalanswer might be false (the gate that blocks fold/call/check/allin):
+	bool iter = (p_iterator_thread != NULL) && p_iterator_thread->IteratorThreadWorking();
+	bool hero_known = p_table_state->User()->HasKnownCards();
+	int stable = (p_stableframescounter != NULL) ? p_stableframescounter->NumberOfStableFrames() : -1;
+	int need_frames = Preferences()->frame_delay();
+	int uchair = p_engine_container->symbol_engine_userchair()->userchair();
+	bool uconf = p_engine_container->symbol_engine_userchair()->userchair_confirmed();
+	fprintf(f, "  finalanswer_factors: userchair=%d(confirmed=%d) hero_has_known_cards=%d iterator_working=%d stable_frames=%d (need %d)\n",
+		uchair, uconf ? 1 : 0, hero_known ? 1 : 0, iter ? 1 : 0, stable, need_frames);
 
 	for (int i = 0; i < k_max_number_of_buttons; ++i) {
 		char hc = (i < 10) ? (char)('0' + i) : (char)('a' + i - 10);
