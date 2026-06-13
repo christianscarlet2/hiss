@@ -54,6 +54,7 @@ CHandHistoryWriter::CHandHistoryWriter() {
   // and therefore must be executed after all the rest (it is registered last).
   _output_complete = "";
   _output_incomplete = "";
+  for (int i = 0; i < kMaxNumberOfPlayers; ++i) _known_name[i] = "";
   ResetHand();
 }
 
@@ -81,6 +82,9 @@ void CHandHistoryWriter::UpdateOnMyTurn() {
 }
 
 void CHandHistoryWriter::UpdateOnHeartbeat() {
+  // Cache real names every heartbeat (when no status overlay is showing) so the
+  // hand history never names a player "ANTE" / "PostSB" / "PostBB".
+  ObserveNames();
   if (!_meta_captured) {
     // Wait until at least two players are dealt (blinds posted) before we
     // open a hand. If we joined mid-hand we still open it, with placeholders.
@@ -373,6 +377,13 @@ void CHandHistoryWriter::Flush() {
   }
   out += "\n\n";
 
+  // Resolve every per-chair name token to a single consistent real name.
+  for (int i = 0; i < _nchairs; ++i) {
+    CString token;
+    token.Format("\x01P%d\x01", i);
+    out.Replace(token, ResolveName(i));
+  }
+
   // ---- route to complete\ or incomplete\ depending on import quality ----
   bool complete = HandLooksComplete();
   CString path = complete ? _output_complete : _output_incomplete;
@@ -432,15 +443,52 @@ CString CHandHistoryWriter::AcrHeader() {
 // formatting helpers (placeholder-aware)
 // ---------------------------------------------------------------------------
 
+// During a hand we emit a STABLE per-chair token instead of the live name; Flush()
+// replaces every token with ResolveName() once, so a player's name is identical on
+// every line of the hand (PokerTracker requires that).
 CString CHandHistoryWriter::FmtName(int chair) {
-  if (chair < 0 || chair >= kMaxNumberOfPlayers) return "Seat ?";
-  if (_have_names) {
-    CString n = p_table_state->Player(chair)->name();
-    n.Trim();
-    if (!n.IsEmpty()) return n;
+  CString s;
+  s.Format("\x01P%d\x01", chair);
+  return s;
+}
+
+// Is this scraped string an action/status overlay ("ANTE", "posts SB", "FOLD"...)
+// rather than a real player name?
+bool CHandHistoryWriter::LooksLikeStatus(CString n) {
+  n.Trim();
+  if (n.IsEmpty()) return true;
+  CString u = n; u.MakeUpper();
+  if (u.Left(4) == "POST") return true;        // "PostSB", "PostBB", "POSTS ANTE"
+  if (u.Left(4) == "ANTE") return true;
+  if (u.Find("BLIND") >= 0) return true;
+  if (u.Find("SITTING") >= 0 || u.Find("SIT OUT") >= 0) return true;
+  if (u.Find("ALL") >= 0 && u.Find("IN") >= 0) return true;  // "ALL IN" / "ALL-IN"
+  const char *words[] = { "SB","BB","FOLD","FOLDS","CALL","CALLS","CHECK","CHECKS",
+    "RAISE","RAISES","BET","BETS","WIN","WINS","WINNER","MUCK","MUCKS","DEALER",
+    "EMPTY","SEAT","WAITING","JOIN","RESERVED","ANTE", NULL };
+  for (int i = 0; words[i] != NULL; ++i) if (u == words[i]) return true;
+  return false;
+}
+
+void CHandHistoryWriter::ObserveNames() {
+  if (p_tablemap == NULL || p_table_state == NULL) return;
+  int n = p_tablemap->nchairs();
+  if (n <= 0 || n > kMaxNumberOfPlayers) n = kMaxNumberOfPlayers;
+  for (int i = 0; i < n; ++i) {
+    CString nm = p_table_state->Player(i)->name();
+    nm.Trim();
+    if (!nm.IsEmpty() && !LooksLikeStatus(nm)) {
+      _known_name[i] = nm;   // remember the latest real (non-overlay) name
+    }
+  }
+}
+
+CString CHandHistoryWriter::ResolveName(int chair) {
+  if (chair >= 0 && chair < kMaxNumberOfPlayers && !_known_name[chair].IsEmpty()) {
+    return _known_name[chair];
   }
   CString s;
-  s.Format("Seat %d", chair);
+  s.Format("Seat %d", AcrSeat(chair));   // ACR-style 1-based fallback
   return s;
 }
 

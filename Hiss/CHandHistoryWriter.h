@@ -66,8 +66,12 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
   void ObserveResult();
   void Flush();                  // write the finished hand to disk
 
+  // ---- name handling (avoid scraping the "ANTE"/"posts SB" status overlays) ----
+  void    ObserveNames();              // cache real names continuously
+  bool    LooksLikeStatus(CString n);  // is this an action/status label, not a name?
+  CString ResolveName(int chair);      // best real name, or "Seat N"
   // ---- formatting (placeholder-aware) ----
-  CString FmtName(int chair);
+  CString FmtName(int chair);          // returns a per-chair token, resolved at flush
   CString FmtStack(int chair);
   CString FmtMoney(double v);
   CString FmtHoleCards(int chair);
@@ -98,6 +102,9 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
   double  _sb, _bb, _ante;
   // Which field types the tablemap actually provides (else -> placeholder).
   bool    _have_names, _have_balance, _have_bet, _have_cards, _have_board, _have_dealer;
+  // Best real name seen per seat, persisted across hands (NOT reset each hand) so
+  // a transient "ANTE"/"posts SB" overlay never becomes the player's name.
+  CString _known_name[kMaxNumberOfPlayers];
   // Snapshot at the start of the hand.
   CString _seat_name[kMaxNumberOfPlayers];
   double  _seat_stack[kMaxNumberOfPlayers];
