@@ -90,11 +90,22 @@ void CTwoSuccessiveClicks::LoadForCurrentTablemap() {
   bool en2 = en2s.IsEmpty() ? !text2.IsEmpty() : (en2s == "1");
   int d = atoi(delay.GetString());
   if (d <= 0) d = kDefaultDelayMs;
-  ENT
-  _text1 = text1; _enable1 = en1;
-  _text2 = text2; _enable2 = en2;
-  _delay_ms = d;
-  _was_matching = false;
+  bool changed;
+  {
+    ENT
+    changed = (_text1 != text1) || (_enable1 != en1)
+           || (_text2 != text2) || (_enable2 != en2) || (_delay_ms != d);
+    _text1 = text1; _enable1 = en1;
+    _text2 = text2; _enable2 = en2;
+    _delay_ms = d;
+    // NOTE: do NOT reset _was_matching here -- this is called periodically to pick
+    // up edits made in Vision, and resetting it would re-fire while still matching.
+  }
+  if (changed) {
+    write_log(k_always_log_basic_information,
+      "[TwoClicks] Config for tablemap \"%s\": box1 en=%d \"%s\", box2 en=%d \"%s\", delay=%d ms\n",
+      field.GetString(), (int)en1, text1.GetString(), (int)en2, text2.GetString(), d);
+  }
 }
 
 CString CTwoSuccessiveClicks::Text1() { ENT return _text1; }
@@ -103,7 +114,7 @@ bool    CTwoSuccessiveClicks::Enable1() { ENT return _enable1; }
 bool    CTwoSuccessiveClicks::Enable2() { ENT return _enable2; }
 int     CTwoSuccessiveClicks::DelayMs() { ENT return _delay_ms; }
 
-bool CTwoSuccessiveClicks::HandleCycle() {
+bool CTwoSuccessiveClicks::HandleCycle(bool decision_is_raise) {
   CString text1, text2;
   bool    enable1, enable2;
   int     delay_ms;
@@ -117,6 +128,11 @@ bool CTwoSuccessiveClicks::HandleCycle() {
   bool box2_active = enable2 && !text2.IsEmpty();
   // Disabled when neither text box is enabled with text.
   if (!box1_active && !box2_active) {
+    _was_matching = false;
+    return false;
+  }
+  // Only act when the .ohf decision is to RAISE.
+  if (!decision_is_raise) {
     _was_matching = false;
     return false;
   }
@@ -158,9 +174,10 @@ bool CTwoSuccessiveClicks::HandleCycle() {
     if (!mutex.IsLocked()) {
       return false;
     }
-    write_log(Preferences()->debug_autoplayer(),
-      "[TwoClicks] Label \"%s\" matched: click rect1, wait %d ms, click rect2.\n",
-      ocr.GetString(), delay_ms);
+    write_log(k_always_log_basic_information,
+      "[TwoClicks] RAISE + label \"%s\" matched: click rect1 (%d,%d-%d,%d), wait %d ms, click rect2 (%d,%d-%d,%d).\n",
+      ocr.GetString(), rect1.left, rect1.top, rect1.right, rect1.bottom, delay_ms,
+      rect2.left, rect2.top, rect2.right, rect2.bottom);
     p_casino_interface->ClickRect(rect1);
     Sleep(delay_ms);
     if (p_casino_interface->TableLostFocus()) {

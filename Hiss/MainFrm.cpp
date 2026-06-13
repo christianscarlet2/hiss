@@ -717,11 +717,12 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent) {
     write_log(Preferences()->debug_alltherest(), "[GUI] location Johnny_P\n");
 		p_openholdem_statusbar->OnUpdateStatusbar();
     write_log(Preferences()->debug_alltherest(), "[GUI] location Johnny_Q\n");
-    // Reload the two-successive-clicks config (edited in Vision) whenever the
-    // loaded tablemap changes, so the autoplayer uses the current values.
+    // Reload the two-successive-clicks config (edited in Vision) on tablemap change
+    // AND periodically (~2s), so edits are picked up without reconnecting Hiss.
     if (p_two_successive_clicks != NULL && p_tablemap != NULL && p_tablemap->valid()) {
       CString tm = p_tablemap->filename();
-      if (tm != _loaded_tablemap_name) {
+      static int two_clicks_reload_tick = 0;
+      if (tm != _loaded_tablemap_name || ((++two_clicks_reload_tick % 4) == 0)) {
         _loaded_tablemap_name = tm;
         p_two_successive_clicks->LoadForCurrentTablemap();
       }

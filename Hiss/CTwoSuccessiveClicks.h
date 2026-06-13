@@ -43,8 +43,10 @@ class CTwoSuccessiveClicks {
   bool    Enable2();
   int     DelayMs();
  public:
-  // Autoplayer thread, once per cadence. Returns true if it performed the clicks.
-  bool HandleCycle();
+  // Autoplayer thread, once per cadence. Fires only when decision_is_raise (the
+  // .ohf wants to raise) AND the label matches an enabled box. Returns true if it
+  // performed the clicks.
+  bool HandleCycle(bool decision_is_raise);
  private:
   CString TablemapField();
  private:

@@ -467,13 +467,17 @@ void CAutoplayer::DoAutoplayer(void) {
 		DoAutoplayerServer();
 		return;
 	}
-  // Two-successive-clicks: when a labelled region matches the configured text,
-  // click the two region-centres (rect1, delay, rect2). Handled first, like the
-  // i86 popups, since it is typically used to dismiss something occluding the table.
-  if (p_two_successive_clicks != NULL && p_two_successive_clicks->HandleCycle()) {
-    write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Two-successive-clicks handled\n");
-    action_sequence_needs_to_be_finished = true;
-    goto AutoPlayerCleanupAndFinalization;
+  // Two-successive-clicks: fire only when the .ohf decision is to RAISE and a
+  // labelled region matches the configured text, clicking the two region-centres
+  // (rect1, delay, rect2). Handled first, like the i86 popups.
+  {
+    bool two_clicks_wants_raise = (p_function_collection != NULL)
+      && (p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_raise]) != 0);
+    if (p_two_successive_clicks != NULL && p_two_successive_clicks->HandleCycle(two_clicks_wants_raise)) {
+      write_log(k_always_log_basic_information, "[AutoPlayer] Two-successive-clicks handled\n");
+      action_sequence_needs_to_be_finished = true;
+      goto AutoPlayerCleanupAndFinalization;
+    }
   }
   CheckBringKeyboard();
   write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Number of visible buttons: %d (%s)\n", 
