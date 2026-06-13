@@ -172,6 +172,12 @@ void CPreferences::LoadPreferences() {
 #endif
   InitDefaults();
   ReadPreferences();
+  // Phone/scrcpy server-scrape build: the stable-frames counter compares the
+  // whole table (every opponent's balance/bet/cards) and a mirrored phone feed
+  // jitters constantly, so it never reaches a non-zero frame_delay and the bot
+  // never reaches isfinalanswer. Force 0 here so a stale saved INI value (e.g. 2)
+  // cannot block clicking. (Re-evaluated stability via OCR steadiness instead.)
+  prefs_numerical_values[k_prefs_frame_delay] = 0;
 }
 
 
