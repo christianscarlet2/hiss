@@ -25,18 +25,23 @@ void CSymbolEngineScarletBeast::UpdateOnNewRound() {}
 void CSymbolEngineScarletBeast::UpdateOnMyTurn() { RefreshFromServer(); }
 
 void CSymbolEngineScarletBeast::UpdateOnHeartbeat() {
-  // Each heartbeat, if the operator chose the server as the scrape source,
-  // pull the current seat view and flatten it into sb_* symbols...
+  // ALL of the work below makes synchronous HTTP requests to
+  // poker.scarletbeast.com on the heartbeat thread. When the server isn't the
+  // active scrape source (e.g. screen-scraping a phone mirror), those requests
+  // just time out (~30s each) and stall the entire bot. So do nothing unless
+  // Scarlet Beast server-scrape is actually enabled.
+  if (p_scarlet_beast == NULL || !p_scarlet_beast->ScrapeFromServer()) {
+    _connected_ok = false;
+    return;
+  }
+  // Each heartbeat, pull the current seat view and flatten it into sb_* symbols...
   RefreshFromServer();
   // ...and keep the per-table Hiss instances in sync with the seated tables.
-  if (p_scarlet_beast != NULL) {
-    p_scarlet_beast->ManageInstances();
-    // Auto buy-back-in when we bust out (stack hit zero).
-    p_scarlet_beast->AutoRebuyIfBusted();
-    // Keep the HUD payload fresh (throttled) so the React table display can render
-    // it -- whether or not the bot's formula reads pt_* symbols.
-    p_scarlet_beast->RefreshHud();
-  }
+  p_scarlet_beast->ManageInstances();
+  // Auto buy-back-in when we bust out (stack hit zero).
+  p_scarlet_beast->AutoRebuyIfBusted();
+  // Keep the HUD payload fresh (throttled) so the React table display can render it.
+  p_scarlet_beast->RefreshHud();
 }
 
 void CSymbolEngineScarletBeast::UpdateOnAutoPlayerAction() {}
