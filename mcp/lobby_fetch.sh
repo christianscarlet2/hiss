@@ -18,7 +18,7 @@
 # DELAY is a magic number (2.5s) for now -- tune once we see real timing.
 # ----------------------------------------------------------------------------
 PORT="${1:-27654}"
-DELAY="${2:-2.5}"
+DELAY="${2:-3.5}"
 FRAMES="/c/www/openholdembot_old/Release/logs/frames"
 
 capture() {  # capture the newest heartbeat frame -> C:/tmp/$1.png  (full window)
