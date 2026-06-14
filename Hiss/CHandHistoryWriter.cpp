@@ -302,8 +302,10 @@ void CHandHistoryWriter::ObserveActions() {
           // Opening bet on this street.
           _body += FmtName(i) + " bets " + FmtMoney(cur) + allin + "\n";
         } else {
-          // ACR raise syntax: "raises <by> to <to>".
-          _body += FmtName(i) + " raises " + FmtMoney(cur - _street_max)
+          // ACR raise syntax: "raises <by> to <to>", where <by> is the chips THIS
+          // player adds over their own prior bet this street (not over the current
+          // level) -- e.g. an opening raise to 360 over the BB prints "raises 360 to 360".
+          _body += FmtName(i) + " raises " + FmtMoney(cur - _street_bet[i])
                  + " to " + FmtMoney(cur) + allin + "\n";
         }
         _street_max = cur;
