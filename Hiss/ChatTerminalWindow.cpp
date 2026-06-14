@@ -393,6 +393,10 @@ void COpponentRangeWindow::OnVpipChanged()
 
 IMPLEMENT_DYNAMIC(CChatTerminalWindow, CWnd)
 
+// Visible menu-bar "Always on Top" command id (the ID_TERMINAL_* ids live in resource.h;
+// this is a local custom id well clear of those).
+#define ID_TERMINAL_ALWAYS_ON_TOP 0xBF01
+
 BEGIN_MESSAGE_MAP(CChatTerminalWindow, CWnd)
 	ON_WM_CREATE()
 	ON_WM_SIZE()
@@ -409,6 +413,7 @@ BEGIN_MESSAGE_MAP(CChatTerminalWindow, CWnd)
 	ON_UPDATE_COMMAND_UI(ID_TERMINAL_FEATURE_REVERSE_IMPLIED_ODDS, &CChatTerminalWindow::OnUpdateFeatureReverseImpliedOdds)
 	ON_COMMAND(ID_TERMINAL_FEATURE_LOAD_HUD_PROFILE, &CChatTerminalWindow::OnFeatureLoadHudProfile)
 	ON_COMMAND(ID_TERMINAL_EXTEND_BROWSER, &CChatTerminalWindow::OnExtendBrowser)
+	ON_COMMAND(ID_TERMINAL_ALWAYS_ON_TOP, &CChatTerminalWindow::OnAlwaysOnTopMenu)
 	ON_COMMAND(ID_TERMINAL_FEATURE_OPPONENT_RANGE, &CChatTerminalWindow::OnFeatureOpponentRange)
 	ON_UPDATE_COMMAND_UI(ID_TERMINAL_FEATURE_OPPONENT_RANGE, &CChatTerminalWindow::OnUpdateFeatureOpponentRange)
 	ON_EN_KILLFOCUS(IDC_TERMINAL_HOLE_CARDS, &CChatTerminalWindow::OnHoleCardsChanged)
@@ -557,7 +562,15 @@ int CChatTerminalWindow::OnCreate(LPCREATESTRUCT lpCreateStruct)
 	features_menu.AppendMenu(MF_SEPARATOR);
 	features_menu.AppendMenu(MF_STRING, ID_TERMINAL_EXTEND_BROWSER, "Extend this to your browser");
 	_menu.AppendMenu(MF_POPUP, (UINT_PTR)features_menu.Detach(), "Features");
+	CMenu window_menu;
+	window_menu.CreatePopupMenu();
+	window_menu.AppendMenu(MF_STRING, ID_TERMINAL_ALWAYS_ON_TOP, "Always on Top");
+	_menu.AppendMenu(MF_POPUP, (UINT_PTR)window_menu.Detach(), "Window");
 	SetMenu(&_menu);
+	// Restore the persisted Always-on-Top state (applies topmost; checks the system menu),
+	// then mirror the checkmark onto the visible menu-bar item.
+	Hiss_RestoreAlwaysOnTop(this, &_always_on_top, _T("Terminal"));
+	if (_always_on_top) _menu.CheckMenuItem(ID_TERMINAL_ALWAYS_ON_TOP, MF_BYCOMMAND | MF_CHECKED);
 
 	BuildRangeSelector();
 
@@ -610,8 +623,19 @@ void CChatTerminalWindow::OnMoving(UINT fwSide, LPRECT pRect)
 
 void CChatTerminalWindow::OnSysCommand(UINT nID, LPARAM lParam)
 {
-	if (Hiss_HandleAlwaysOnTopSysCommand(this, nID, &_always_on_top)) return;
+	if (Hiss_HandleAlwaysOnTopSysCommand(this, nID, &_always_on_top, _T("Terminal"))) {
+		// keep the visible menu-bar item's checkmark in sync with the system-menu toggle
+		if (GetMenu() != NULL) GetMenu()->CheckMenuItem(ID_TERMINAL_ALWAYS_ON_TOP,
+			MF_BYCOMMAND | (_always_on_top ? MF_CHECKED : MF_UNCHECKED));
+		return;
+	}
 	CWnd::OnSysCommand(nID, lParam);
+}
+
+void CChatTerminalWindow::OnAlwaysOnTopMenu()
+{
+	Hiss_ToggleAlwaysOnTopFromMenu(this, &_always_on_top, _T("Terminal"),
+		GetMenu(), ID_TERMINAL_ALWAYS_ON_TOP);
 }
 
 void CChatTerminalWindow::AttachToOwner(bool force)

@@ -42,6 +42,7 @@ protected:
 	afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
 	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
 	afx_msg void OnVpipChanged();
+	afx_msg void OnAlwaysOnTopMenu();   // visible menu-bar "Always on Top" toggle (persists)
 
 private:
 	void LayoutControls(int cx, int cy);
