@@ -78,6 +78,8 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
   CString FmtMoney(double v);
   CString FmtHoleCards(int chair);
   CString BoardTokens(int upto_count);   // "Ah Kd 2c" for the first upto_count cards
+  CString BoardCard(int idx);            // single card token at board index (0-based)
+  CString StreetName(int betround);      // "Pre-Flop" / "Flop" / "Turn" / "River"
   bool    AnySeatRegion(const char *suffix);
   bool    RegionExists(const CString &name);
   void    AddLine(const CString &line);
@@ -119,6 +121,9 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
   // Action tracking.
   int     _cur_street;                    // last observed betround
   int     _last_active_chair;             // to-act highlight last seen (for check detection)
+  int     _sb_chair, _bb_chair;           // who posted the blinds (for SUMMARY positions)
+  int     _fold_street[kMaxNumberOfPlayers]; // betround a player folded on (-1 = didn't)
+  bool    _voluntary_bet[kMaxNumberOfPlayers]; // put chips in voluntarily (not just a blind)
   double  _street_bet[kMaxNumberOfPlayers];
   double  _street_max;
   bool    _folded[kMaxNumberOfPlayers];

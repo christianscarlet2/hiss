@@ -122,6 +122,7 @@ void CHandHistoryWriter::ResetHand() {
   _have_cards = _have_board = _have_dealer = false;
   _cur_street    = kBetroundPreflop;
   _last_active_chair = kUndefined;
+  _sb_chair = _bb_chair = kUndefined;
   _street_max    = 0.0;
   _blinds_done   = false;
   _body          = "";
@@ -138,6 +139,8 @@ void CHandHistoryWriter::ResetHand() {
     _hole[i]         = "";
     _street_bet[i]   = 0.0;
     _folded[i]       = false;
+    _fold_street[i]  = kUndefined;
+    _voluntary_bet[i] = false;
   }
 }
 
@@ -196,6 +199,7 @@ void CHandHistoryWriter::CaptureMetadata() {
       if (sb_seen) {
         _body += FmtName(i) + " posts the big blind " + FmtMoney(cb) + "\n";
         bb_seen = true;
+        _bb_chair = i;
         _street_bet[i] = cb;
         if (cb > _street_max) _street_max = cb;
         continue;
@@ -204,11 +208,13 @@ void CHandHistoryWriter::CaptureMetadata() {
       if (cb <= _sb + kEpsilon) {
         _body += FmtName(i) + " posts the small blind " + FmtMoney(cb) + "\n";
         sb_seen = true;
+        _sb_chair = i;
       } else {
         // Big blind with a missing / dead small blind.
         _body += FmtName(i) + " posts the big blind " + FmtMoney(cb) + "\n";
         sb_seen = true;
         bb_seen = true;
+        _bb_chair = i;
       }
       _street_bet[i] = cb;
       if (cb > _street_max) _street_max = cb;
@@ -235,16 +241,18 @@ void CHandHistoryWriter::ObserveStreetTransition() {
   int br = BETROUND;
   if (br <= _cur_street) return;
   // Log every street we have advanced into (handles fast multi-street jumps).
+  // ACR uses split board brackets: TURN/RIVER repeat the prior board then the new card.
+  CString potline = "Main pot " + FmtMoney(p_engine_container->symbol_engine_chip_amounts()->pot()) + "\n";
   if (br >= kBetroundFlop && !_flop_logged) {
-    _body += "*** FLOP *** [" + BoardTokens(3) + "]\n";
+    _body += "*** FLOP *** [" + BoardTokens(3) + "]\n" + potline;
     _flop_logged = true;
   }
   if (br >= kBetroundTurn && !_turn_logged) {
-    _body += "*** TURN *** [" + BoardTokens(4) + "]\n";
+    _body += "*** TURN *** [" + BoardTokens(3) + "] [" + BoardCard(3) + "]\n" + potline;
     _turn_logged = true;
   }
   if (br >= kBetroundRiver && !_river_logged) {
-    _body += "*** RIVER *** [" + BoardTokens(5) + "]\n";
+    _body += "*** RIVER *** [" + BoardTokens(4) + "] [" + BoardCard(4) + "]\n" + potline;
     _river_logged = true;
   }
   // New street: bets are pushed to the pot, so the per-street baseline resets.
@@ -265,6 +273,7 @@ void CHandHistoryWriter::ObserveActions() {
     bool active = ((activebits & (1 << i)) != 0);
     if (!active && !p_table_state->Player(i)->IsAllin()) {
       _folded[i] = true;
+      _fold_street[i] = BETROUND;
       _body += FmtName(i) + " folds\n";
       continue;
     }
@@ -285,6 +294,7 @@ void CHandHistoryWriter::ObserveActions() {
       } else {
         _body += FmtName(i) + " calls " + FmtMoney(cur - _street_bet[i]) + allin + "\n";
       }
+      _voluntary_bet[i] = true;   // put chips in beyond a forced blind
       _street_bet[i] = cur;
     }
   }
@@ -347,6 +357,7 @@ void CHandHistoryWriter::ObserveResult() {
     if (any_shown) {
       _showdown_logged = true;
       _body += "*** SHOW DOWN ***\n";
+      _body += "Main pot " + FmtMoney(_final_pot) + "\n";
       for (int i = 0; i < _nchairs; ++i) {
         if (p_table_state->Player(i)->HasKnownCards()) {
           _body += FmtName(i) + " shows [" + _hole[i] + "]\n";
@@ -393,20 +404,34 @@ void CHandHistoryWriter::Flush() {
 
   // ---- SUMMARY ----
   out += "*** SUMMARY ***\n";
-  out += "Total pot " + FmtMoney(_final_pot);
+  // ACR tournament summary: "Total pot X" then "Board [...]" on its own line
+  // (no rake line in tournaments).
+  out += "Total pot " + FmtMoney(_final_pot) + "\n";
   CString board = BoardTokens(5);
-  if (!board.IsEmpty() && board != "??") out += " | Board [" + board + "]";
-  out += "\n";
+  if (!board.IsEmpty() && board != "??") out += "Board [" + board + "]\n";
   for (int i = 0; i < _nchairs; ++i) {
     if (!_seat_in_hand[i]) continue;
     CString seat;
+    // Position label (ACR: button / small blind / big blind).
     CString tag;
     if (i == _button && _have_dealer) tag = " (button)";
+    else if (i == _sb_chair)          tag = " (small blind)";
+    else if (i == _bb_chair)          tag = " (big blind)";
     CString fate;
-    if (i == _winner_uncontested) fate.Format("collected (%s)", FmtMoney(_final_pot).GetString());
-    else if (_folded[i])          fate = "folded";
-    else if (!_hole[i].IsEmpty()) fate.Format("showed [%s]", _hole[i].GetString());
-    else                          fate = "mucked/—";
+    if (i == _winner_uncontested) {
+      fate.Format("collected (%s)", FmtMoney(_final_pot).GetString());
+    } else if (_folded[i]) {
+      // "folded on the <Street>", with "and did not bet" when the player put no
+      // chips in voluntarily (forced blinds don't count).
+      int fs = (_fold_street[i] == kUndefined) ? kBetroundPreflop : _fold_street[i];
+      fate = "folded on the " + StreetName(fs);
+      bool is_blind = (i == _sb_chair || i == _bb_chair);
+      if (!_voluntary_bet[i] && !is_blind) fate += " and did not bet";
+    } else if (!_hole[i].IsEmpty()) {
+      fate.Format("showed [%s]", _hole[i].GetString());   // win/lost text -> stage 2
+    } else {
+      fate = "mucked";
+    }
     seat.Format("Seat %d: %s%s %s\n", AcrSeat(i), FmtName(i).GetString(),
                 tag.GetString(), fate.GetString());
     out += seat;
@@ -475,9 +500,15 @@ CString CHandHistoryWriter::AcrHeader() {
   CString tid = _tourney_id;
   tid.Trim();
   if (tid.IsEmpty()) tid.Format("%d", sid);
+  // ACR prefixes the tournament id with the tournament name, e.g.
+  // "$1,000 GTD Tournament #35045980". Use the scraped title when we have it.
+  CString name = _tourney_title;
+  name.Trim();
+  CString tourney = name.IsEmpty() ? ("Tournament #" + tid)
+                                   : (name + " Tournament #" + tid);
   CString s;
-  s.Format("Game Hand #%s - Tournament #%s - Holdem (No Limit) - Level 1 (%s/%s) - %s UTC",
-           hid.GetString(), tid.GetString(),
+  s.Format("Game Hand #%s - %s - Holdem (No Limit) - Level 1 (%s/%s) - %s UTC",
+           hid.GetString(), tourney.GetString(),
            FmtMoney(_sb).GetString(), FmtMoney(_bb).GetString(),
            AcrTimestampUtc().GetString());
   return s;
@@ -598,6 +629,22 @@ CString CHandHistoryWriter::FmtHoleCards(int chair) {
   }
   if (result.IsEmpty()) return "? ?";
   return result;
+}
+
+CString CHandHistoryWriter::BoardCard(int idx) {
+  if (!_have_board || idx < 0 || idx >= kNumberOfCommunityCards) return "?";
+  Card *c = p_table_state->CommonCards(idx);
+  if (c != NULL && c->IsKnownCard()) return c->ToString();
+  return "?";
+}
+
+CString CHandHistoryWriter::StreetName(int betround) {
+  switch (betround) {
+    case kBetroundFlop:  return "Flop";
+    case kBetroundTurn:  return "Turn";
+    case kBetroundRiver: return "River";
+    default:             return "Pre-Flop";
+  }
 }
 
 CString CHandHistoryWriter::BoardTokens(int upto_count) {
