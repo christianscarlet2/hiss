@@ -201,6 +201,9 @@ class Learner(tk.Tk):
         self.tts_on = tk.BooleanVar(value=bool(self.prefs.get("tts_enabled", False)))
         tools.add_checkbutton(label="Read questions aloud (ElevenLabs)", variable=self.tts_on,
                               command=self.toggle_tts)
+        self.coach_tts_on = tk.BooleanVar(value=bool(self.prefs.get("coach_tts_enabled", True)))
+        tools.add_checkbutton(label="Read coaching aloud (Lilith)", variable=self.coach_tts_on,
+                              command=self.toggle_coach_tts)
         tools.add_command(label="Set ElevenLabs voice id...", command=self.set_voice_id)
         tools.add_command(label="Test voice", command=lambda: self._speak("This is the Lilith voice. Testing one two three."))
         tools.add_command(label="Unmute all apps", command=lambda: set_app_mutes(False))
@@ -282,6 +285,18 @@ class Learner(tk.Tk):
         self.answer = tk.Text(qf, height=3, wrap="word"); self.answer.pack(fill="x", padx=6)
         self.btn_ans = ttk.Button(qf, text="Send answer", command=self.send_answer)
         self.btn_ans.pack(anchor="e", padx=6, pady=4)
+
+        # --- coach (Lilith) advice feed ---
+        cf = ttk.LabelFrame(self, text="Poker coach (Lilith)")
+        cf.pack(fill="both", expand=True, pady=6)
+        ctw = ttk.Frame(cf); ctw.pack(fill="both", expand=True, padx=6, pady=4)
+        csb = ttk.Scrollbar(ctw); csb.pack(side="right", fill="y")
+        self.c_text = tk.Text(ctw, height=12, wrap="word", state="disabled",
+                              background="#f3e9ff", font=("Segoe UI", 9),
+                              yscrollcommand=csb.set)
+        self.c_text.pack(side="left", fill="both", expand=True)
+        csb.config(command=self.c_text.yview)
+        self._last_coach_id = 0
 
         self.status = ttk.Label(self, text="", foreground="#2e7d32"); self.status.pack(anchor="w")
 
