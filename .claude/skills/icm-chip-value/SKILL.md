@@ -49,6 +49,14 @@ Keep it to what's actionable now; don't read every metric every time.
 ## 4. Log
 Insert an `icm_snapshots` row (handnumber, players_remaining, hero_stack, hero_equity, detail jsonb).
 
+## Works with the poker-coach skill
+This skill owns the MATH; the **poker-coach** skill owns the VOICE/advice. Each pass, after computing
+equity/bubble-factor/depth, write a short `coach_notes` row (kind='icm') with the actionable takeaway
+so it shows in learner.exe and the coach can build on it. Detect and announce the **bubble stage** from
+`players_remaining` vs `places_paid` (P): far ( >1.5P ), approaching ( 1.15P–1.5P ), ON BUBBLE ( P–1.15P,
+speak an alert ), in-the-money ( <=P ). The coach turns the numbers into "what your chips are worth and
+how to play them."
+
 ## Guardrails
 - ICM equity is exact only when all remaining stacks are known (final table); the
   MTT-field number is an **approximation** (hero + average field) — say "about" when speaking.

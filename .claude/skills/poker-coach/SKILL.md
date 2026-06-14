@@ -57,8 +57,25 @@ Before the first hand, interview the user, then deliver a personal speech.
   - **Postflop spot** (`postflop`): board texture read, range vs range, bet/check/fold reasoning,
     pot control vs value, draw math, blockers.
   - **Strategy nudge** (`strategy`): stack-depth gear shift, table image, exploit a pattern.
-  - **ICM** (`icm`): near a pay jump / short / bubble — defer to the icm-chip-value skill's reads;
-    add a one-line discipline reminder.
+  - **ICM (works WITH the icm-chip-value skill)** (`icm`): each pass, read `icm_config`
+    (players_remaining, places_paid, starting_stack) and the hero's stack/blinds. Translate the
+    ICM model into PLAY ADVICE about the VALUE OF THE CHIPS:
+      * **Stack depth:** hero_stack / bb = big blinds; classify deep (>40bb) / mid (20-40) /
+        short (10-20) / push-fold (<10).
+      * **Chip value vs face value:** far from the money, a chip is worth ~its face (play chip-EV,
+        accumulate). As the bubble nears, chips you can LOSE are worth more than chips you can WIN
+        (survival premium) — tighten calling ranges for stacks, widen folding.
+      * **BUBBLE DETECTION** from `players_remaining` vs `places_paid` (= P):
+          - remaining > 1.5*P  -> FAR from money: "play for chips, ICM barely matters."
+          - 1.15*P < remaining <= 1.5*P -> bubble APPROACHING: "start applying ICM — pressure
+            shorter stacks, avoid flips without a big edge."
+          - P < remaining <= 1.15*P -> ON THE BUBBLE: "max ICM. If you're big/medium, be the bubble
+            bully; if short, don't bust on a marginal spot — ladder up." Speak a clear bubble alert.
+          - remaining <= P -> IN THE MONEY: "you've cashed — now play pay jumps; reassess each bustout."
+      * Defer the exact $ equity / bubble-factor MATH to the icm-chip-value skill (icm.py); the coach
+        turns those numbers into a one- or two-sentence spoken recommendation about chip value + the
+        line to take. If the bot isn't scraping the tournament table, ASK the user for
+        players_remaining + current stack to keep the model current.
   - **Tilt** (`tilt`): if `hero_tilting` or behavioral drift — a gentle, supportive check-in
     (coordinate with the tilt-detector skill; don't double-alert within ~10 min).
 - Be concise and specific to the actual cards/board/stacks — never generic.
