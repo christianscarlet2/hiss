@@ -240,6 +240,18 @@ void CSymbolEngineTableLimits::CalcTableLimits() {
 }
 
 STableLimit CSymbolEngineTableLimits::BestTableLimitsToBeUsed() {
+  // table_game_info override (Claude/MCP-parsed): AUTHORITATIVE over the guesser AND the
+  // auto-lock. Without this, once the blinds auto-lock to the 0.01/0.02 fallback, the lock
+  // wins and bblind never becomes 1.0 even after Claude sets the real blinds. This makes
+  // the parsed blinds win every time.
+  if (g_tgi_set && g_tgi_bblind > 0) {
+    STableLimit tgi;
+    tgi.sblind = g_tgi_sblind;
+    tgi.bblind = g_tgi_bblind;
+    tgi.bbet   = g_tgi_bblind;
+    tgi.ante   = g_tgi_ante;
+    return tgi;
+  }
   if (blinds_locked_for_complete_session) {
 		return tablelimit_locked_for_complete_session;
 	}	else if (blinds_locked_for_current_hand) {
