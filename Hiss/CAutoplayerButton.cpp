@@ -202,8 +202,13 @@ bool CAutoplayerButton::IsLabelSitin() {
   s_lower_case.Remove('\'');
   // "I am back" / "I'm back" is this client's Sit-In button. OCR often reads the
   // leading "I" as "1" (seen as "1AmBack"), so accept that garble too.
+  // OCR often drops the leading "I " of "I am back" (seen scraped as "AmBack"), and the
+  // leading I<->1 garble, so accept those variants too -- otherwise the Sit-In button isn't
+  // recognized and a sat-out bot can never click "I Am Back" and just blinds out.
   if (s_lower_case == "iamback" || s_lower_case == "1amback"
-      || s_lower_case == "imback" || s_lower_case == "1mback") {
+      || s_lower_case == "imback" || s_lower_case == "1mback"
+      || s_lower_case == "amback" || s_lower_case == "mback"
+      || s_lower_case == "lamback") {
     return true;
   }
   s_lower_case = s_lower_case.Left(5);
