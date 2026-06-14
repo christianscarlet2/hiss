@@ -5,6 +5,9 @@
 
 ##f$turn##
 // @anchor: turn (id 3)
+// Scrape safety gate: never commit chips on a hard-flagged mis-scrape.
+WHEN validator_ok = 0 AND AmountToCall = 0 Check FORCE
+WHEN validator_ok = 0 Fold FORCE
 WHEN openai_action > -1000 RETURN openai_action FORCE
 WHEN AmountToCall == 0 RETURN f$turn_nobet FORCE
 WHEN Others RETURN f$turn_vs_bet FORCE

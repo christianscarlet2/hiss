@@ -9,6 +9,11 @@
 //*****************************************************************************
 
 ##f$preflop##
+// SCRAPE SAFETY GATE: if the validator flags a HARD scrape error (impossible cards,
+// chips that don't conserve, a bad/negative pot), do NOT commit chips on garbage data.
+// Check when it's free, otherwise fold. Complements the C++ CSymbolEngineValidator.
+WHEN validator_ok = 0 AND AmountToCall = 0 Check FORCE
+WHEN validator_ok = 0 Fold FORCE
 // @anchor: preflop (id 1)
 // OpenAI hijack override: when the advisor is enabled and returns a concrete
 // raise size, take it. Disabled -> openai_action is the kOpenAiNoOpinion sentinel
