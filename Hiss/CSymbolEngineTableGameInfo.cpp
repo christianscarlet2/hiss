@@ -9,6 +9,10 @@
 #include "CSymbolEngineTableGameInfo.h"
 
 #include "CScraper.h"   // g_tgi_* globals
+#include "CEngineContainer.h"
+#include "CSymbolEngineAutoplayer.h"
+#include "CTableState.h"
+#include "CPlayer.h"
 #include "..\CTablemap\CTablemap.h"
 
 // True if the tablemap defines a region with this name (the lobby buttons are added
@@ -37,6 +41,17 @@ bool CSymbolEngineTableGameInfo::EvaluateSymbol(const CString name, double *resu
   if (name == "leave_lobby_button")      { if (result) *result = TmRegionExists("leave_lobby_button") ? 1.0 : 0.0;      return true; }
   if (name == "return_to_tables_button") { if (result) *result = TmRegionExists("return_to_tables_button") ? 1.0 : 0.0; return true; }
   if (name == "lobby_more_info_button")  { if (result) *result = TmRegionExists("lobby_more_info_button") ? 1.0 : 0.0;  return true; }
+  // read_ahead_active: hero is dealt in (has known hole cards) but it is NOT yet hero's
+  // turn -- a window for Claude to pre-analyze the spot before the action arrives.
+  if (name == "read_ahead_active") {
+    bool hero_in  = (p_table_state != NULL && p_table_state->User() != NULL
+                     && p_table_state->User()->HasKnownCards());
+    bool my_turn  = (p_engine_container != NULL
+                     && p_engine_container->symbol_engine_autoplayer() != NULL
+                     && p_engine_container->symbol_engine_autoplayer()->ismyturn());
+    if (result) *result = (hero_in && !my_turn) ? 1.0 : 0.0;
+    return true;
+  }
   if (name != "table_game_info" && name != "table_game_info_2"
       && name.Left(4) != "tgi_" && name.Left(5) != "tgi2_") return false;
   if (name == "table_game_info")      { if (result) *result = g_tgi_set ? 1.0 : 0.0;     return true; }
@@ -57,5 +72,6 @@ CString CSymbolEngineTableGameInfo::SymbolsProvided() {
   return "table_game_info tgi_sblind tgi_bblind tgi_ante tgi_chips_per_bb "
          "tgi_level tgi_players_remaining "
          "table_game_info_2 tgi2_handnumber tgi2_prev_handnumber "
-         "goto_lobby_button leave_lobby_button return_to_tables_button lobby_more_info_button ";
+         "goto_lobby_button leave_lobby_button return_to_tables_button lobby_more_info_button "
+         "read_ahead_active ";
 }

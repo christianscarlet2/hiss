@@ -153,6 +153,8 @@ TOOLS = [
         "players": {"type": "integer", "description": "players remaining"},
         "tourney_name": {"type": "string"}, "tourney_id": {"type": "string"},
         "table_number": {"type": "string"}, "gametype": {"type": "string"}}}},
+    {"name": "click_region", "description": "Click an arbitrary tablemap region by name (lobby navigation: goto_lobby_button, leave_lobby_button, return_to_tables_button, lobby_more_info_button, etc.). The bot clicks the region's center on its next heartbeat. Use to open the lobby, read tournament info from the frame, then return to the tables.",
+     "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
     {"name": "set_region_value", "description": "Claude/MCP TRANSFORM: you parsed a region from the table image (a heartbeat frame) - NOT OCR - and post its value here. The scraper returns this value for that region instead of OCR'ing it. Use for finicky regions OCR misreads. name = the tablemap region name (e.g. c0handnumber), value = what you read.",
      "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "value": {"type": "string"}}, "required": ["name", "value"]}},
     {"name": "set_table_game_info_2", "description": "table_game_info_2: set the CURRENT and PREVIOUS hand numbers you read from the table image (ACR shows 'Current: <n>  Previous: <n>'). Exposed as symbols table_game_info_2 / tgi2_handnumber / tgi2_prev_handnumber.",
@@ -305,6 +307,9 @@ def call_tool(name, args):
         qs = "&".join("%s=%s" % (k, urllib.parse.quote(str(args[k])))
                       for k in keys if k in args and args[k] is not None)
         return [{"type": "text", "text": hiss_get("/api/table-game-info?" + qs)}]
+    if name == "click_region":
+        import urllib.parse
+        return [{"type": "text", "text": hiss_get("/api/click-region?name=%s" % urllib.parse.quote(str(args["name"])))}]
     if name == "set_region_value":
         import urllib.parse
         qs = "name=%s&value=%s" % (urllib.parse.quote(str(args["name"])),

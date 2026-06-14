@@ -20,6 +20,7 @@
 #include "CAutoplayerButton.h"
 #include "CAutoplayerFunctions.h"
 #include "CCasinoInterface.h"
+#include "..\CTablemap\CTablemap.h"
 #include "CTwoSuccessiveClicks.h"
 #include "CSymbolEngineAutoplayer.h"
 #include "CursorRestore.h"
@@ -254,6 +255,24 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
     if (!p_formula_parser->IsParsing()) {
       write_log(k_always_log_basic_information, "[MCP] Reloading OHF strategy (API request)\n");
       p_formula_parser->ReloadStrategy();
+    }
+  }
+  // ---- MCP / API: click an arbitrary tablemap region (lobby navigation, etc.).
+  // Looks up the named region's rect and clicks its center via the mouse DLL. ----
+  if (!g_mcp_click_region.IsEmpty() && p_tablemap != NULL && p_casino_interface != NULL) {
+    CString rgn = g_mcp_click_region;
+    g_mcp_click_region = "";
+    RMapCI it = p_tablemap->r$()->find(rgn.GetString());
+    if (it != p_tablemap->r$()->end()) {
+      CCursorRestorer _cursor_restorer;
+      RECT r;
+      r.left = it->second.left; r.top = it->second.top;
+      r.right = it->second.right; r.bottom = it->second.bottom;
+      write_log(k_always_log_basic_information, "[MCP] Clicking region '%s' (%d,%d,%d,%d)\n",
+                rgn.GetString(), r.left, r.top, r.right, r.bottom);
+      p_casino_interface->ClickRect(r);
+    } else {
+      write_log(k_always_log_basic_information, "[MCP] Click region '%s' not found in tablemap\n", rgn.GetString());
     }
   }
 

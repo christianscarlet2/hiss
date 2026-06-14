@@ -61,6 +61,7 @@ int g_mcp_action_request = -1;       // a k_autoplayer_function_* code (FCKRA)
 double g_mcp_action_amount = -1.0;   // bet/raise size in big blinds (<0 = plain button click)
 unsigned long g_mcp_action_set_tick = 0;  // GetTickCount() when the request was set (for wait-for-turn expiry)
 bool g_mcp_reload_ohf_request = false;  // /api/reload-ohf -> heartbeat reloads the strategy folder
+CString g_mcp_click_region = "";        // /api/click-region -> heartbeat clicks this region's rect
 bool g_frame_history_enabled = true;    // save a heartbeat frame each scrape (10-min rolling history)
 // table_game_info: Claude-parsed game info (set via /api/table-game-info). Unset until then.
 bool   g_tgi_set = false;
@@ -324,6 +325,12 @@ bool CScraper::EvaluateRegion(CString name, CString *result) {
 				_last_ocr_result[name] = *result;
 				++_ocr_recognitions;
 			}
+		}
+		else if (r_iter->second.transform == "CL") {
+			// Claude transform: the value comes from Claude via /api/set-region-value
+			// (handled by the override at the top). If none posted yet, return empty
+			// rather than mis-running an OCR/colour transform on it.
+			if (result) *result = "";
 		}
 		else
 			trans.DoTransform(r_iter, hdcCompatible, result);

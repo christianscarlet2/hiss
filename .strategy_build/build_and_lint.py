@@ -57,6 +57,7 @@ validator_cards_ok validator_pot_ok validator_stacks_ok validator_bets_ok
 table_game_info tgi_sblind tgi_bblind tgi_ante tgi_chips_per_bb tgi_level tgi_players_remaining
 table_game_info_2 tgi2_handnumber tgi2_prev_handnumber
 goto_lobby_button leave_lobby_button return_to_tables_button lobby_more_info_button
+read_ahead_active
 """.split())
 
 # keywords / actions / operators that are not symbols

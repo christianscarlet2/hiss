@@ -464,6 +464,19 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		return;
 	}
 
+	if (path.CompareNoCase("/api/click-region") == 0) {
+		// Click an arbitrary tablemap region by name (lobby navigation buttons, etc.).
+		// The heartbeat thread performs the click (mouse DLL) on its next cycle.
+		CStringA rn = UrlDecode(QueryValue(query, "name"));
+		if (!rn.IsEmpty()) g_mcp_click_region = CString(rn);
+		CStringA body;
+		body.Format("{\"ok\":%s,\"click_region\":\"%s\",\"note\":\"clicked on next heartbeat\"}",
+			rn.IsEmpty() ? "false" : "true", JsonEscape(CString(rn)).GetString());
+		CStringA response = Response(body + "\r\n");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
 	if (path.CompareNoCase("/api/table-game-info-2") == 0) {
 		// Current + previous hand numbers parsed by Claude from the table image.
 		CStringA ch = QueryValue(query, "curr_hand");
