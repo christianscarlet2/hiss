@@ -16,6 +16,20 @@
 // Custom system-command id (must be < 0xF000 and a multiple of 16).
 #define SC_HISS_ALWAYS_ON_TOP 0x9010
 
+// ---- persistence (per-window, in the app's registry profile) -----------------
+static inline void Hiss_ApplyTopMost(CWnd *w, bool on) {
+  if (w != NULL && ::IsWindow(w->GetSafeHwnd())) {
+    w->SetWindowPos(on ? &CWnd::wndTopMost : &CWnd::wndNoTopMost,
+                    0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+  }
+}
+static inline void Hiss_SaveAlwaysOnTop(LPCTSTR key, bool on) {
+  if (AfxGetApp() != NULL) AfxGetApp()->WriteProfileInt(_T("AlwaysOnTop"), key, on ? 1 : 0);
+}
+static inline bool Hiss_LoadAlwaysOnTop(LPCTSTR key) {
+  return (AfxGetApp() != NULL) && (AfxGetApp()->GetProfileInt(_T("AlwaysOnTop"), key, 0) != 0);
+}
+
 // Append "Always on Top" to a window's system menu (idempotent-ish: call once in OnCreate).
 static inline void Hiss_AppendAlwaysOnTopMenu(CWnd *w) {
   if (w == NULL || !::IsWindow(w->GetSafeHwnd())) return;
@@ -25,18 +39,47 @@ static inline void Hiss_AppendAlwaysOnTopMenu(CWnd *w) {
   sys->AppendMenu(MF_STRING, SC_HISS_ALWAYS_ON_TOP, _T("Always on Top"));
 }
 
-// Handle a WM_SYSCOMMAND; returns true if it was our Always-on-Top toggle.
-static inline bool Hiss_HandleAlwaysOnTopSysCommand(CWnd *w, UINT nID, bool *flag) {
+// Restore the persisted Always-on-Top state on window create: loads the saved flag,
+// applies topmost, and checks the system-menu item. Call in OnCreate AFTER the menus exist.
+static inline void Hiss_RestoreAlwaysOnTop(CWnd *w, bool *flag, LPCTSTR key) {
+  if (w == NULL || flag == NULL) return;
+  *flag = Hiss_LoadAlwaysOnTop(key);
+  if (*flag) Hiss_ApplyTopMost(w, true);
+  CMenu *sys = w->GetSystemMenu(FALSE);
+  if (sys != NULL) {
+    sys->CheckMenuItem(SC_HISS_ALWAYS_ON_TOP, MF_BYCOMMAND | (*flag ? MF_CHECKED : MF_UNCHECKED));
+  }
+}
+
+// Handle a WM_SYSCOMMAND; returns true if it was our Always-on-Top toggle. Persists.
+static inline bool Hiss_HandleAlwaysOnTopSysCommand(CWnd *w, UINT nID, bool *flag, LPCTSTR key) {
   if ((nID & 0xFFF0) != SC_HISS_ALWAYS_ON_TOP) return false;
   *flag = !*flag;
-  w->SetWindowPos(*flag ? &CWnd::wndTopMost : &CWnd::wndNoTopMost,
-                  0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+  Hiss_ApplyTopMost(w, *flag);
+  Hiss_SaveAlwaysOnTop(key, *flag);
   CMenu *sys = w->GetSystemMenu(FALSE);
   if (sys != NULL) {
     sys->CheckMenuItem(SC_HISS_ALWAYS_ON_TOP,
                        MF_BYCOMMAND | (*flag ? MF_CHECKED : MF_UNCHECKED));
   }
   return true;
+}
+
+// Toggle from a VISIBLE menu-bar item: flips, applies, persists, and re-checks both the
+// given menu item (menu_bar may be NULL for custom-drawn menus) and the system-menu item.
+static inline void Hiss_ToggleAlwaysOnTopFromMenu(CWnd *w, bool *flag, LPCTSTR key,
+                                                  CMenu *menu_bar, UINT cmdid) {
+  if (w == NULL || flag == NULL) return;
+  *flag = !*flag;
+  Hiss_ApplyTopMost(w, *flag);
+  Hiss_SaveAlwaysOnTop(key, *flag);
+  if (menu_bar != NULL) {
+    menu_bar->CheckMenuItem(cmdid, MF_BYCOMMAND | (*flag ? MF_CHECKED : MF_UNCHECKED));
+  }
+  CMenu *sys = w->GetSystemMenu(FALSE);
+  if (sys != NULL) {
+    sys->CheckMenuItem(SC_HISS_ALWAYS_ON_TOP, MF_BYCOMMAND | (*flag ? MF_CHECKED : MF_UNCHECKED));
+  }
 }
 
 // Snap the proposed move-rect to the owner's outer left/right side and to screen
