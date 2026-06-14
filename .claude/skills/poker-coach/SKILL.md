@@ -94,6 +94,29 @@ Driven on demand or on the analysis loop. If looping, a ~30-60s pass is plenty f
 debounce so you don't speak more than ~once per relevant hand/event. The user can mute via
 learner's "Read coaching aloud" toggle — keep WRITING notes regardless so the panel stays useful.
 
+## Lobby info fetch (live tournament structure, via Claude vision)
+The bot can navigate to ACR's tournament-info screen and read the structure WITHOUT OCR, by
+clicking through and letting Claude parse the full-window frames. Use this to keep the model
+current during a REAL tournament (skip in observer/test).
+
+- **Run the choreography:** `bash /c/www/openholdembot_old/mcp/lobby_fetch.sh 27654 3.5 6`
+  It clicks `goto_lobby_button` -> waits -> captures `C:/tmp/lobby_main.png` (info page) ->
+  clicks `lobby_more_info_button` -> waits -> captures `C:/tmp/lobby_moreinfo.png` (MORE INFO
+  popup) -> clicks `leave_lobby_button` -> `return_to_tables_button`.
+- **CAPTURE NOW, PARSE ASYNC:** the script just navigates + captures + returns the bot to the
+  table fast. Do the parsing AFTER it returns (Read the two PNGs) so the bot is back in the game
+  while you read. Don't keep it off the table.
+- **What you get** (proven): info page -> blinds/level (=> chips_per_bb), players Remaining, avg/
+  largest/smallest stack, prize pool, bounty, next level + break timer. MORE INFO popup ->
+  starting chips, blind-level minutes, max seats, late-reg, PKO %.
+- **Wire the parse in:** call `set_table_game_info` (sb=0.5 bb=1.0 chips_per_bb=<bb chips>
+  level players) so `bblind`->1.0 and the bot reads true depth; update `icm_config`
+  (players_remaining, starting_stack, level). Then coach off the fresh numbers.
+- **When to trigger** (real tournament only, with a cooldown): after the hero FOLDS (long gap til
+  next action), on a suspected blind-level change, or every ~N validator passes. Never mid-decision.
+- Caveat: the leave/return-to-table nav must actually land back on the felt before the hero's next
+  turn -- if it ever sticks on the info page, click the top-left back arrow.
+
 ## Guardrails
 - **Manual play only.** This coaches the human in learner.exe; it never touches the OHF or the
   autoplayer. (Strategy reactions for the bot are the OHF / CSymbolEngineTilt's job.)

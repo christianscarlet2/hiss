@@ -57,6 +57,26 @@ so it shows in learner.exe and the coach can build on it. Detect and announce th
 speak an alert ), in-the-money ( <=P ). The coach turns the numbers into "what your chips are worth and
 how to play them."
 
+## Auto-fetch the structure from the lobby (Claude vision, no asking the user)
+Instead of prompting for players-remaining / structure, pull them from ACR's tournament-info
+screen during a REAL tournament:
+
+- Run `bash /c/www/openholdembot_old/mcp/lobby_fetch.sh 27654 3.5 6` -- it navigates to the
+  info page + MORE INFO popup, captures `C:/tmp/lobby_main.png` + `C:/tmp/lobby_moreinfo.png`,
+  and returns the bot to the table FAST. **Parse the PNGs AFTER it returns (async)** so the bot
+  is back in the game while you read.
+- Read off the info page: current **blinds/level** (=> chips_per_bb), **players Remaining**,
+  **avg / largest / smallest stack**, **prize pool**, **bounty**, **entrants**, next level + timer.
+  Off MORE INFO: **starting chips**, blind-level minutes, max seats, late-reg, PKO %.
+- Update `icm_config` (players_remaining, avg_stack, starting_stack, current_level, total_entrants)
+  and `set_table_game_info`. Then compute equity/bubble as usual; speak via Lilith.
+- **places_paid / payout breakdown** are NOT on the info page -- they're behind the "PRIZE POOL >"
+  and "STRUCTURE >" buttons. Until those are mapped as regions, derive places_paid from the prize
+  pool / a typical ~15% paid, OR ask the user once. (Adding PRIZE_POOL / STRUCTURE regions +
+  clicks is the future upgrade for exact payouts.)
+- Good trigger: refresh on a blind-level change or every so often after the hero folds; cooldown so
+  it isn't constant. Real tournaments only.
+
 ## Guardrails
 - ICM equity is exact only when all remaining stacks are known (final table); the
   MTT-field number is an **approximation** (hero + average field) — say "about" when speaking.
