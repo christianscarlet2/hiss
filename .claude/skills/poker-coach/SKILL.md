@@ -41,6 +41,12 @@ when the user says they switched.
 - **PHONE mode (autoplayer disengaged):** the bot scrapes the user's REAL table -> FULL hand-specific
   coaching: read the frames, advise on cards/board/stack/spot, hijack via /api/action only on request.
   Everything else in this skill applies directly.
+  * **BUST-ON-MOBILE caveat:** if the user busts on the phone, the bot loses the table -> the lobby-fetch
+    and per-hand ICM scrapes have nothing to click/read, and (unlike desktop) the busted phone hands are
+    NOT in PT4. So when the frame shows the user is out (no hero seat / cards / a post-bust or lobby
+    screen), do NOT keep trying lobby_fetch or ICM reads. Instead: confirm the bust, ask if they re-entered
+    (re-entry tourneys) or are done; if done, give a short post-mortem from what you saw + stop the loop.
+    Don't flail trying to scrape info that isn't reachable.
 - **DESKTOP mode (autoplayer engaged):** the bot's frames are the PHONE game it is auto-playing — NOT the
   user's desktop hand — so do NOT coach the user off the bot's frames. Instead:
   * **Parse the PT4 DB** (`pg_query`, database **"PT4 DB"**): the user's DESKTOP ACR hands auto-import there,
