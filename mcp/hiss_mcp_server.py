@@ -199,6 +199,8 @@ TOOLS = [
       "required": ["question"]}},
     {"name": "learner_answers", "description": "Read the human's answers to questions you posted in learner.exe.",
      "inputSchema": {"type": "object", "properties": {"only_recent": {"type": "boolean", "default": True}}}},
+    {"name": "speak", "description": "Read text aloud in the Lilith (ElevenLabs) voice via the shared lilith.exe (mutes other apps except scrcpy + ACR Poker, then restores). Works during bot play when learner.exe isn't open. Use for tilt alerts.",
+     "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}},
     {"name": "card_scrapes", "description": "Vision link: trigger a fresh capture and show what every CARD region scraped -- each player's hole cards (p0..p8) and the community cards -- so the human can tell you which position/card is missing or wrong.",
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "card_image", "description": "Vision link: the raw scrape IMAGE + recognised value for one card region, to verify a misread. Specify a player chair (0-8) and slot (0/1), or position='community' with slot 0-4.",
