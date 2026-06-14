@@ -18,7 +18,8 @@
 # DELAY is a magic number (2.5s) for now -- tune once we see real timing.
 # ----------------------------------------------------------------------------
 PORT="${1:-27654}"
-DELAY="${2:-3.5}"
+DELAY="${2:-3.5}"          # gap between clicks
+LOAD_DELAY="${3:-6}"      # longer wait for a page to actually load before we capture/parse
 FRAMES="/c/www/openholdembot_old/Release/logs/frames"
 
 capture() {  # capture the newest heartbeat frame -> C:/tmp/$1.png  (full window)
@@ -32,12 +33,12 @@ click() {  # queue a region click; report whether the region exists
   echo "  click $1 -> $r"
 }
 
-echo "[lobby_fetch] start (port=$PORT delay=${DELAY}s)"
-click goto_lobby_button;        sleep "$DELAY"
-capture lobby_main                                  # PARSE POINT 1: lobby screen
+echo "[lobby_fetch] start (port=$PORT click-gap=${DELAY}s load-wait=${LOAD_DELAY}s)"
+click goto_lobby_button;        sleep "$LOAD_DELAY"   # info page is slow to load
+capture lobby_main                                  # PARSE POINT 1: tournament info page
 sleep "$DELAY"
-click lobby_more_info_button;   sleep "$DELAY"
-capture lobby_moreinfo                              # PARSE POINT 2: more-info screen
+click lobby_more_info_button;   sleep "$LOAD_DELAY"   # more-info detail is slow too
+capture lobby_moreinfo                              # PARSE POINT 2: more-info / structure
 sleep "$DELAY"
 click leave_lobby_button;       sleep "$DELAY"
 click return_to_tables_button
