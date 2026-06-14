@@ -22,7 +22,7 @@ Pure standard library + tkinter. Talks to postgres via psql.exe and to hiss.exe
 via http://127.0.0.1:<port>.
 """
 
-import os, json, subprocess, urllib.request, ctypes, threading, tempfile, tkinter as tk
+import os, json, subprocess, urllib.request, ctypes, threading, tempfile, time, tkinter as tk
 from ctypes import wintypes
 from tkinter import ttk, messagebox
 
@@ -94,10 +94,13 @@ def eleven_tts(api_key, voice_id, text, out_path):
     return out_path
 
 def play_audio(path):
+    # Blocks until playback finishes (called from a worker thread) so the caller
+    # can unmute afterwards.
     winmm = ctypes.windll.winmm
     winmm.mciSendStringW("close qaud", None, 0, None)
     winmm.mciSendStringW('open "%s" type mpegvideo alias qaud' % path, None, 0, None)
-    winmm.mciSendStringW("play qaud", None, 0, None)
+    winmm.mciSendStringW("play qaud wait", None, 0, None)
+    winmm.mciSendStringW("close qaud", None, 0, None)
 
 REPO   = os.environ.get("HISS_REPO", r"C:\www\openholdembot_old")
 LOGS   = os.path.join(REPO, "Release", "logs")
@@ -404,14 +407,23 @@ class Learner(tk.Tk):
             self.status.config(text="Read-aloud needs API key + voice id (Tools menu).")
             return
         def worker():
+            muted = False
             try:
-                set_app_mutes(True)     # mute everything except scrcpy + ACR Poker
+                # 1) generate FIRST while your sound is still on (synth can take a moment)
                 path = os.path.join(tempfile.gettempdir(), "learner_q.mp3")
                 eleven_tts(key, voice, text, path)
+                # 2) only now mute everything except scrcpy + ACR Poker, 3s before reading
+                set_app_mutes(True); muted = True
+                time.sleep(3)
+                # 3) read it (blocks until the audio finishes)
                 play_audio(path)
             except Exception as e:
                 try: self.status.config(text="TTS error: %s" % e)
                 except Exception: pass
+            finally:
+                # 4) turn your sound back on after reading
+                if muted:
+                    set_app_mutes(False)
         threading.Thread(target=worker, daemon=True).start()
 
     # ---- follow-up review of past decisions ----
