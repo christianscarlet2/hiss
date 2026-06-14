@@ -331,6 +331,7 @@ class Learner(tk.Tk):
         self.refresh_ctx()
         self.poll_questions()
         self.refresh_followups()
+        self.poll_coach()
 
     # ---- focus helpers / target-window picker ----
     def _focus(self, widget):
@@ -402,6 +403,11 @@ class Learner(tk.Tk):
         self.prefs["tts_enabled"] = bool(self.tts_on.get())
         save_prefs(self.prefs)
         self.status.config(text="Read-aloud %s" % ("ON" if self.tts_on.get() else "OFF"))
+
+    def toggle_coach_tts(self):
+        self.prefs["coach_tts_enabled"] = bool(self.coach_tts_on.get())
+        save_prefs(self.prefs)
+        self.status.config(text="Coach read-aloud %s" % ("ON" if self.coach_tts_on.get() else "OFF"))
 
     def set_voice_id(self):
         from tkinter import simpledialog
@@ -611,6 +617,51 @@ class Learner(tk.Tk):
                 save_prefs(self.prefs)
                 self._speak(qspeak)          # read the succinct summary aloud
         self.after(3000, self.poll_questions)
+
+    # ---- coach feed (advice Claude/Lilith pushes during play) ----
+    def poll_coach(self):
+        try:
+            log = run_sql(
+                "SELECT id, to_char(ts,'HH24:MI'), COALESCE(kind,''), "
+                "replace(message, chr(10), ' ') "
+                "FROM coach_notes ORDER BY id DESC LIMIT 60;", read=True)
+        except Exception:
+            log = ""
+        rows = [l for l in log.strip().splitlines() if l.strip()]
+        rows.reverse()                      # oldest -> newest (newest at the bottom)
+        lines = []
+        for r in rows:
+            f = r.split("|")
+            while len(f) < 4: f.append("")
+            cid, ts, kind, msg = f[0], f[1], f[2], f[3]
+            tag = ("[%s] " % kind) if kind and kind != "advice" else ""
+            lines.append("%s  %s%s" % (ts, tag, msg))
+        text = "\n".join(lines) if lines else "(coach is quiet for now — play on)"
+        try:
+            at_bottom = self.c_text.yview()[1] >= 0.97
+        except Exception:
+            at_bottom = True
+        self.c_text.config(state="normal")
+        self.c_text.delete("1.0", "end")
+        self.c_text.insert("1.0", text)
+        self.c_text.config(state="disabled")
+        if at_bottom:
+            self.c_text.see("end")
+        # Speak any NEW coach notes once (if coach read-aloud is enabled), then mark spoken.
+        if self.coach_tts_on.get():
+            try:
+                fresh = run_sql("SELECT id, replace(message, chr(10), ' ') FROM coach_notes "
+                                "WHERE spoken=false ORDER BY id LIMIT 1;", read=True).strip()
+            except Exception:
+                fresh = ""
+            if fresh:
+                cid, cmsg = fresh.split("|", 1)
+                try:
+                    run_sql("UPDATE coach_notes SET spoken=true, seen=true WHERE id=%s;" % cid)
+                except Exception:
+                    pass
+                self._speak(cmsg)
+        self.after(4000, self.poll_coach)
 
     def send_answer(self):
         if not self.cur_q:
