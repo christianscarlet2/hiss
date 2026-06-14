@@ -164,7 +164,9 @@ def get_context():
     # a couple of symbols for the betting context (modal is suppressed server-side)
     sym = {}
     try:
-        sym = json.loads(hiss_get("/api/symbols?names=betround,AmountToCall,PotSize,potplayer,potcommon"))
+        sym = json.loads(hiss_get("/api/symbols?names=betround,AmountToCall,PotSize,potplayer,"
+                                  "potcommon,balance,currentbet,ncurrentbets,nplayersdealt,"
+                                  "nopponentsplaying"))
     except Exception:
         pass
     return {
@@ -173,11 +175,15 @@ def get_context():
         "hero_cards": hero_cards,
         "board": board,
         "pot": st.get("pot"),
-        # potplayer = sum of all players' CURRENT BETS (chips in front this street, not yet
-        # swept into the center pot). With this tablemap (potmethod=2) the scraped "pot"
-        # is the center pot only, so the true pot for sizing a bet = pot + potplayer.
+        # potplayer = TOTAL CURRENT BETS for the round (sum of each player's scraped
+        # currentbet). The preset bet buttons size off this. potcommon = prior-streets pot.
         "potplayer": sym.get("potplayer"),
         "potcommon": sym.get("potcommon"),
+        "balance": sym.get("balance"),                 # hero stack
+        "currentbet": sym.get("currentbet"),           # hero's own current bet
+        "ncurrentbets": sym.get("ncurrentbets"),
+        "nplayersdealt": sym.get("nplayersdealt"),
+        "nopponentsplaying": sym.get("nopponentsplaying"),
         "amount_to_call": sym.get("AmountToCall"),
         "raw": st,
     }
@@ -394,12 +400,8 @@ class Learner(tk.Tk):
             self.lbl_hand.config(text="hand: %s   (betround %s)" % (c.get("handnumber") or "--", c.get("betround")))
             self.lbl_cards.config(text="your cards: %s" % (c.get("hero_cards") or "(none / not dealt in)"))
             self.lbl_board.config(text="board: %s" % (c.get("board") or "--"))
-            def _f(v):
-                try: return float(v or 0)
-                except Exception: return 0.0
-            total_pot = _f(c.get("pot")) + _f(c.get("potplayer"))
-            self.lbl_pot.config(text="pot: %g (center %s + bets %s)   to call: %s" % (
-                total_pot, c.get("pot"), c.get("potplayer") or 0, c.get("amount_to_call")))
+            self.lbl_pot.config(text="pot: %s   round bets (bet basis): %s   to call: %s" % (
+                c.get("pot"), c.get("potplayer") or 0, c.get("amount_to_call")))
         self.after(2000, self.refresh_ctx)
 
     def toggle_on_top(self):
@@ -514,25 +516,81 @@ class Learner(tk.Tk):
         except Exception as e:
             return False, str(e)
 
-    # ---- preset bet sizing (pot fractions / min), computed from the live pot ----
+    # ---- scrape heuristics: validate the values BEFORE we size a bet off them ----
+    # A mis-scraped round-bets / stack figure could turn a "3/4 pot" press into an
+    # accidental stack-ship, so we sanity-check the inputs and the resulting size and
+    # REFUSE to auto-fire anything that fails (the user can still confirm manually).
+    @staticmethod
+    def _fnum(v):
+        try: return float(v or 0)
+        except Exception: return 0.0
+
+    def validate_bet_basis(self, c, basis, amt_bb, bb):
+        """Returns (ok, hard_block, warnings[]). hard_block => never auto-send."""
+        f = self._fnum
+        sb        = f((c.get("raw", {}).get("limits", {}) or {}).get("sblind"))
+        ante      = f((c.get("raw", {}).get("limits", {}) or {}).get("ante"))
+        pot       = f(c.get("pot"))
+        potplayer = f(c.get("potplayer"))
+        bal       = f(c.get("balance"))            # hero stack (bb? no -> chips)
+        ncur      = f(c.get("ncurrentbets"))
+        ndealt    = f(c.get("nplayersdealt"))
+        w = []; hard = False
+        # --- input sanity ---
+        if bb <= 0:
+            w.append("big blind reads 0/invalid"); hard = True
+        if sb > bb > 0:
+            w.append("small blind > big blind (scrape suspect)")
+        if basis < 0:
+            w.append("round-bets basis is negative"); hard = True
+        if pot > 0 and basis > pot * 1.05:
+            w.append("round bets (%g) exceed total pot (%g)" % (basis, pot)); hard = True
+        if ndealt > 0 and ncur > ndealt:
+            w.append("more current bets than players dealt")
+        # an absurd basis vs the blinds: a single round of bets can't plausibly be
+        # thousands of big blinds unless stacks are that deep — flag the extreme case.
+        if bb > 0 and basis > 0 and (basis / bb) > 5000:
+            w.append("round bets = %g bb (implausibly large)" % (basis / bb)); hard = True
+        # --- resulting size sanity ---
+        if bal > 0:
+            bal_bb = bal / bb if bb else bal
+            if amt_bb > bal_bb + 0.01:
+                w.append("sized bet %.2f bb exceeds your stack %.2f bb" % (amt_bb, bal_bb))
+                # not a hard block (it just becomes an all-in) but must be confirmed
+        if amt_bb <= 0:
+            w.append("computed bet is zero/negative"); hard = True
+        return (len(w) == 0, hard, w)
+
+    # ---- preset bet sizing (round-bets fraction / min), validated before firing ----
     def submit_bet(self, frac=None, min_bb=None):
         c = self.ctx or {}
         raw = c.get("raw", {})
         bb = (raw.get("limits", {}) or {}).get("bblind") or 1.0
-        def fnum(v):
-            try: return float(v or 0)
-            except Exception: return 0.0
-        # True pot to size a fraction-bet against = center pot + current bets on the table.
-        # This tablemap is potmethod=2, so the scraped "pot" excludes the live street's
-        # current bets (potplayer); add them back so 1/4-3/4 reflect the real pot.
-        pot = fnum(c.get("pot")) + fnum(c.get("potplayer"))
-        pot_bb = (pot / bb) if bb else pot
+        f = self._fnum
+        # Bet basis = TOTAL CURRENT BETS FOR THE ROUND (potplayer). Fall back to full pot.
+        basis = f(c.get("potplayer")) or f(c.get("pot"))
+        basis_bb = (basis / bb) if bb else basis
         if min_bb is not None:
             amt = float(min_bb)
         else:
-            amt = round(frac * pot_bb, 2)
+            amt = round(frac * basis_bb, 2)
             if amt < 2:                 # never below a min open
                 amt = 2.0
+        # --- HEURISTIC GATE: validate scrape + size before sending ---
+        ok, hard, warns = self.validate_bet_basis(c, basis, amt, bb)
+        if not ok:
+            msg = "Bet sizing safety check flagged:\n  - " + "\n  - ".join(warns)
+            msg += "\n\nComputed bet: %g bb   (basis: round bets = %g)" % (amt, basis)
+            self._speak("Hold on. The scrape looks off, I'm not firing that bet.")
+            if hard:
+                msg += "\n\nBLOCKED (likely mis-scrape). Re-check the table, or type an amount and use Bet."
+                messagebox.showerror("Bet blocked - scrape suspect", msg)
+                self.status.config(text="bet BLOCKED by heuristics: " + "; ".join(warns))
+                return
+            # soft warning -> require explicit confirmation
+            if not messagebox.askyesno("Confirm bet - scrape looks off", msg + "\n\nSend it anyway?"):
+                self.status.config(text="bet cancelled (heuristic warning)")
+                return
         self.submit_action("bet", amount=("%g" % amt))
 
     # ---- log a decision (and execute it on the table) ----
