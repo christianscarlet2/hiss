@@ -21,6 +21,14 @@
 #include "CScrapedMoney.h"
 #include "..\DLLs\StringFunctions_DLL\string_functions.h"
 
+extern bool g_tgi_set;   // table_game_info set => BB-denominated table mode (declared in CScraper.cpp)
+
+// In a big-blind-denominated table (table_game_info set), no real bet/balance/pot reaches
+// thousands of big blinds, so a scraped value above this is OCR garbage (e.g. "20.25BB"
+// misread as 20226). Reject it and keep the last-good value. Generous so legit big multiway
+// pots pass. Not applied to chip-denominated tables (g_tgi_set false).
+static const double kMaxPlausibleBBMoney = 8000.0;
+
 CScrapedMoney::CScrapedMoney() {
 	Reset();
 }
@@ -68,6 +76,18 @@ bool CScrapedMoney::SetValue(CString scraped_value) {
 	}
 	double result = StringToMoney(scraped_value);
 	if (result >= 0.0) {
+		// Root mis-scrape guard (BB-denominated mode). An absurdly large value is almost
+		// always a DROPPED DECIMAL POINT in the OCR -- e.g. "202.26" scraped as "20226".
+		// Recover it by restoring the 2-place decimal when that yields a plausible BB value;
+		// only reject (keep last-good) if it is still nonsense after recovery.
+		if (g_tgi_set && result > kMaxPlausibleBBMoney) {
+			double recovered = result / 100.0;        // 20226 -> 202.26
+			if (recovered <= kMaxPlausibleBBMoney) {
+				result = recovered;
+			} else {
+				return false;                          // still absurd -> garbage
+			}
+		}
 		return SetValue(result);
 	}
 	return false;

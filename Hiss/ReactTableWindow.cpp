@@ -149,6 +149,7 @@ int CReactTableWindow::OnCreate(LPCREATESTRUCT lpCreateStruct)
 		return -1;
 	}
 	Hiss_AppendAlwaysOnTopMenu(this);
+	Hiss_RestoreAlwaysOnTop(this, &_always_on_top, _T("ReactTable"));   // persisted on exit
 
 	GdiplusStartupInput gdiplus_startup_input;
 	GdiplusStartup(&_gdiplus_token, &gdiplus_startup_input, NULL);
@@ -264,7 +265,7 @@ void CReactTableWindow::OnMoving(UINT fwSide, LPRECT pRect)
 
 void CReactTableWindow::OnSysCommand(UINT nID, LPARAM lParam)
 {
-	if (Hiss_HandleAlwaysOnTopSysCommand(this, nID, &_always_on_top)) return;
+	if (Hiss_HandleAlwaysOnTopSysCommand(this, nID, &_always_on_top, _T("ReactTable"))) return;
 	CWnd::OnSysCommand(nID, lParam);
 }
 

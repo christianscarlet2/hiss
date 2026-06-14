@@ -42,7 +42,6 @@ protected:
 	afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
 	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
 	afx_msg void OnVpipChanged();
-	afx_msg void OnAlwaysOnTopMenu();   // visible menu-bar "Always on Top" toggle (persists)
 
 private:
 	void LayoutControls(int cx, int cy);
@@ -109,6 +108,7 @@ protected:
 	afx_msg LRESULT OnAppendMessage(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnClearTerminal(WPARAM wParam, LPARAM lParam);
 	afx_msg void OnExtendBrowser();
+	afx_msg void OnAlwaysOnTopMenu();   // visible menu-bar "Always on Top" toggle (persists)
 	afx_msg HBRUSH OnCtlColor(CDC *pDC, CWnd *pWnd, UINT nCtlColor);
 	afx_msg BOOL OnEraseBkgnd(CDC *pDC);
 	virtual BOOL PreTranslateMessage(MSG *pMsg);   // chat prompt: Enter sends, Up/Down recall

@@ -310,6 +310,7 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct) {
 	if (CFrameWnd::OnCreate(lpCreateStruct) == kUndefined)
 		return -1;
 	Hiss_AppendAlwaysOnTopMenu(this);
+	Hiss_RestoreAlwaysOnTop(this, &_always_on_top, _T("MainFrm"));   // persisted on exit
 	// Tool bar
 	p_flags_toolbar = new CFlagsToolbar(this);
 	// Status bar
@@ -383,7 +384,7 @@ LRESULT CMainFrame::OnPanicAutoplayerOff(WPARAM wParam, LPARAM lParam) {
 }
 
 void CMainFrame::OnSysCommand(UINT nID, LPARAM lParam) {
-	if (Hiss_HandleAlwaysOnTopSysCommand(this, nID, &_always_on_top)) return;
+	if (Hiss_HandleAlwaysOnTopSysCommand(this, nID, &_always_on_top, _T("MainFrm"))) return;
 	CFrameWnd::OnSysCommand(nID, lParam);
 }
 
