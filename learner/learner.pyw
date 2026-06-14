@@ -164,7 +164,7 @@ def get_context():
     # a couple of symbols for the betting context (modal is suppressed server-side)
     sym = {}
     try:
-        sym = json.loads(hiss_get("/api/symbols?names=betround,AmountToCall,PotSize"))
+        sym = json.loads(hiss_get("/api/symbols?names=betround,AmountToCall,PotSize,potplayer,potcommon"))
     except Exception:
         pass
     return {
@@ -173,6 +173,11 @@ def get_context():
         "hero_cards": hero_cards,
         "board": board,
         "pot": st.get("pot"),
+        # potplayer = sum of all players' CURRENT BETS (chips in front this street, not yet
+        # swept into the center pot). With this tablemap (potmethod=2) the scraped "pot"
+        # is the center pot only, so the true pot for sizing a bet = pot + potplayer.
+        "potplayer": sym.get("potplayer"),
+        "potcommon": sym.get("potcommon"),
         "amount_to_call": sym.get("AmountToCall"),
         "raw": st,
     }
@@ -389,7 +394,12 @@ class Learner(tk.Tk):
             self.lbl_hand.config(text="hand: %s   (betround %s)" % (c.get("handnumber") or "--", c.get("betround")))
             self.lbl_cards.config(text="your cards: %s" % (c.get("hero_cards") or "(none / not dealt in)"))
             self.lbl_board.config(text="board: %s" % (c.get("board") or "--"))
-            self.lbl_pot.config(text="pot: %s   to call: %s" % (c.get("pot"), c.get("amount_to_call")))
+            def _f(v):
+                try: return float(v or 0)
+                except Exception: return 0.0
+            total_pot = _f(c.get("pot")) + _f(c.get("potplayer"))
+            self.lbl_pot.config(text="pot: %g (center %s + bets %s)   to call: %s" % (
+                total_pot, c.get("pot"), c.get("potplayer") or 0, c.get("amount_to_call")))
         self.after(2000, self.refresh_ctx)
 
     def toggle_on_top(self):
@@ -509,10 +519,13 @@ class Learner(tk.Tk):
         c = self.ctx or {}
         raw = c.get("raw", {})
         bb = (raw.get("limits", {}) or {}).get("bblind") or 1.0
-        try:
-            pot = float(c.get("pot") or 0)
-        except Exception:
-            pot = 0.0
+        def fnum(v):
+            try: return float(v or 0)
+            except Exception: return 0.0
+        # True pot to size a fraction-bet against = center pot + current bets on the table.
+        # This tablemap is potmethod=2, so the scraped "pot" excludes the live street's
+        # current bets (potplayer); add them back so 1/4-3/4 reflect the real pot.
+        pot = fnum(c.get("pot")) + fnum(c.get("potplayer"))
         pot_bb = (pot / bb) if bb else pot
         if min_bb is not None:
             amt = float(min_bb)
