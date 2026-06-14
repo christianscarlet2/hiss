@@ -22,7 +22,7 @@ Pure standard library + tkinter. Talks to postgres via psql.exe and to hiss.exe
 via http://127.0.0.1:<port>.
 """
 
-import os, json, subprocess, urllib.request, ctypes, tkinter as tk
+import os, json, subprocess, urllib.request, ctypes, threading, tempfile, tkinter as tk
 from ctypes import wintypes
 from tkinter import ttk, messagebox
 
@@ -53,6 +53,51 @@ def win_focus(hwnd):
         _user32.ShowWindow(hwnd, 9)   # SW_RESTORE
     _user32.SetForegroundWindow(hwnd)
     return True
+
+# --- per-app audio muting (keep scrcpy + ACR Poker audible) ---
+KEEP_UNMUTED = ["scrcpy", "acrpoker"]   # process-name substrings that stay audible
+def set_app_mutes(mute_others, keep_names=KEEP_UNMUTED):
+    try:
+        from pycaw.pycaw import AudioUtilities, ISimpleAudioVolume
+    except Exception:
+        return
+    for s in AudioUtilities.GetAllSessions():
+        try:
+            if not s.Process:
+                continue
+            name = (s.Process.name() or "").lower()
+            vol = s._ctl.QueryInterface(ISimpleAudioVolume)
+            if not mute_others:
+                vol.SetMute(0, None)                      # unmute everything
+            else:
+                keep = any(k in name for k in keep_names)
+                vol.SetMute(0 if keep else 1, None)       # mute all except the keep-list
+        except Exception:
+            pass
+
+# --- ElevenLabs TTS + playback (stdlib only) ---
+def eleven_tts(api_key, voice_id, text, out_path):
+    body = json.dumps({
+        "text": text,
+        "model_id": "eleven_multilingual_v2",
+        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.elevenlabs.io/v1/text-to-speech/%s" % voice_id,
+        data=body, method="POST",
+        headers={"xi-api-key": api_key, "Content-Type": "application/json",
+                 "Accept": "audio/mpeg"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = r.read()
+    with open(out_path, "wb") as f:
+        f.write(data)
+    return out_path
+
+def play_audio(path):
+    winmm = ctypes.windll.winmm
+    winmm.mciSendStringW("close qaud", None, 0, None)
+    winmm.mciSendStringW('open "%s" type mpegvideo alias qaud' % path, None, 0, None)
+    winmm.mciSendStringW("play qaud", None, 0, None)
 
 REPO   = os.environ.get("HISS_REPO", r"C:\www\openholdembot_old")
 LOGS   = os.path.join(REPO, "Release", "logs")
@@ -149,6 +194,13 @@ class Learner(tk.Tk):
         tools.add_separator()
         tools.add_command(label="Pick F4 target window (click it within 4s)",
                           command=self.pick_target)
+        tools.add_separator()
+        self.tts_on = tk.BooleanVar(value=bool(self.prefs.get("tts_enabled", False)))
+        tools.add_checkbutton(label="Read questions aloud (ElevenLabs)", variable=self.tts_on,
+                              command=self.toggle_tts)
+        tools.add_command(label="Set ElevenLabs voice id...", command=self.set_voice_id)
+        tools.add_command(label="Test voice", command=lambda: self._speak("This is the Lilith voice. Testing one two three."))
+        tools.add_command(label="Unmute all apps", command=lambda: set_app_mutes(False))
         menubar.add_cascade(label="Tools", menu=tools)
         self.config(menu=menubar)
         # apply the persisted preference at startup
@@ -237,6 +289,26 @@ class Learner(tk.Tk):
         self.bind_all("<F2>", lambda e: self._focus(self.fu_note))
         self.bind_all("<F3>", lambda e: self._focus(self.answer))
         self.bind_all("<F4>", lambda e: self.focus_target())
+        # Single-key action shortcuts (only fire when NOT typing in a text field, so
+        # they don't interfere with the reasoning/answer/amount boxes):
+        #   f=fold  c=call/check  b=bet  r=raise  a=allin  v=focus amount box
+        #   1=min2bb  2=1/4  3=1/2  4=3/4
+        keymap = {
+            "f": lambda: self.submit_action("fold"),
+            "c": lambda: self.submit_action("call"),
+            "b": lambda: self.submit_action("bet"),
+            "r": lambda: self.submit_action("raise"),
+            "a": lambda: self.submit_action("allin"),
+            "v": lambda: self._focus(self.amount),
+            "1": lambda: self.submit_bet(min_bb=2),
+            "2": lambda: self.submit_bet(frac=0.25),
+            "3": lambda: self.submit_bet(frac=0.50),
+            "4": lambda: self.submit_bet(frac=0.75),
+        }
+        for key, fn in keymap.items():
+            self.bind_all("<KeyPress-%s>" % key, lambda e, f=fn: self._key_action(f))
+            if key.isalpha():
+                self.bind_all("<KeyPress-%s>" % key.upper(), lambda e, f=fn: self._key_action(f))
 
         self.refresh_ctx()
         self.poll_questions()
@@ -248,6 +320,18 @@ class Learner(tk.Tk):
             widget.focus_force()
         except Exception:
             pass
+        return "break"
+
+    def _is_text_focus(self):
+        w = self.focus_get()
+        return isinstance(w, (tk.Text, tk.Entry, ttk.Entry, ttk.Combobox))
+
+    def _key_action(self, fn):
+        # When a text field has focus, let the character type normally; otherwise the
+        # single key triggers its action.
+        if self._is_text_focus():
+            return
+        fn()
         return "break"
 
     def pick_target(self):
@@ -294,6 +378,41 @@ class Learner(tk.Tk):
         self.wm_attributes("-topmost", on)
         self.prefs["always_on_top"] = on
         save_prefs(self.prefs)
+
+    # ---- ElevenLabs read-aloud ----
+    def toggle_tts(self):
+        self.prefs["tts_enabled"] = bool(self.tts_on.get())
+        save_prefs(self.prefs)
+        self.status.config(text="Read-aloud %s" % ("ON" if self.tts_on.get() else "OFF"))
+
+    def set_voice_id(self):
+        from tkinter import simpledialog
+        cur = self.prefs.get("elevenlabs_voice_id", "")
+        v = simpledialog.askstring("ElevenLabs voice id",
+                                   "Voice id for 'Lilith' (from your ElevenLabs voice page):",
+                                   initialvalue=cur, parent=self)
+        if v:
+            self.prefs["elevenlabs_voice_id"] = v.strip()
+            save_prefs(self.prefs)
+            self.status.config(text="Voice id set.")
+
+    def _speak(self, text):
+        # Runs in a worker thread: mute other apps, synth via ElevenLabs, play.
+        key = self.prefs.get("elevenlabs_api_key", "")
+        voice = self.prefs.get("elevenlabs_voice_id", "")
+        if not key or not voice:
+            self.status.config(text="Read-aloud needs API key + voice id (Tools menu).")
+            return
+        def worker():
+            try:
+                set_app_mutes(True)     # mute everything except scrcpy + ACR Poker
+                path = os.path.join(tempfile.gettempdir(), "learner_q.mp3")
+                eleven_tts(key, voice, text, path)
+                play_audio(path)
+            except Exception as e:
+                try: self.status.config(text="TTS error: %s" % e)
+                except Exception: pass
+        threading.Thread(target=worker, daemon=True).start()
 
     # ---- follow-up review of past decisions ----
     def refresh_followups(self):
@@ -401,7 +520,8 @@ class Learner(tk.Tk):
     def poll_questions(self):
         try:
             log = run_sql(
-                "SELECT id, answered, replace(question, chr(10), ' '), "
+                "SELECT id, answered, COALESCE(replace(summary, chr(10), ' '), ''), "
+                "replace(question, chr(10), ' '), "
                 "COALESCE(replace(answer, chr(10), ' '), '') "
                 "FROM learner_questions ORDER BY id DESC LIMIT 60;", read=True)
         except Exception:
@@ -411,10 +531,13 @@ class Learner(tk.Tk):
         lines = []
         for r in rows:
             f = r.split("|")
-            while len(f) < 4: f.append("")
-            qid, ans, q, a = f[0], f[1], f[2], f[3]
+            while len(f) < 5: f.append("")
+            qid, ans, summ, q, a = f[0], f[1], f[2], f[3], f[4]
             mark = "" if ans == "t" else "  *unanswered*"
-            lines.append("Q#%s%s: %s" % (qid, mark, q))
+            head = summ if summ else q
+            lines.append("Q#%s%s: %s" % (qid, mark, head))
+            if summ and q and q != summ:
+                lines.append("    detail: %s" % q)   # full info in the box
             if ans == "t" and a:
                 lines.append("    you: %s" % a)
             lines.append("")
@@ -439,6 +562,21 @@ class Learner(tk.Tk):
             u = ""
         self.cur_q = (u, "") if u else None
         self.lbl_answering.config(text=("Answering Q#%s" % u) if u else "No pending question")
+        # Auto-read any NEW unanswered question once, via ElevenLabs.
+        if self.prefs.get("tts_enabled"):
+            try:
+                last = int(self.prefs.get("last_spoken_id", 0) or 0)
+                newq = run_sql("SELECT id, COALESCE(NULLIF(replace(summary, chr(10), ' '), ''), "
+                               "replace(question, chr(10), ' ')) FROM learner_questions "
+                               "WHERE answered=false AND id > %d ORDER BY id DESC LIMIT 1;" % last,
+                               read=True).strip()
+            except Exception:
+                newq = ""
+            if newq:
+                qid, qspeak = newq.split("|", 1)
+                self.prefs["last_spoken_id"] = int(qid)
+                save_prefs(self.prefs)
+                self._speak(qspeak)          # read the succinct summary aloud
         self.after(3000, self.poll_questions)
 
     def send_answer(self):

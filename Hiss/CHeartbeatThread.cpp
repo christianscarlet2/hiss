@@ -21,6 +21,8 @@
 #include "CAutoplayerFunctions.h"
 #include "CCasinoInterface.h"
 #include "CTwoSuccessiveClicks.h"
+#include "CSymbolEngineAutoplayer.h"
+#include "CursorRestore.h"
 #include "CBetroundCalculator.h"
 #include "CHeartbeatDelay.h"
 #include "CEngineContainer.h"
@@ -202,31 +204,46 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
     p_autoplayer->EngageAutoplayer(want_on);
   }
   if (g_mcp_action_request >= 0 && p_casino_interface != NULL) {
-    int code = g_mcp_action_request;
-    double amount = g_mcp_action_amount;
-    g_mcp_action_request = -1;
-    g_mcp_action_amount = -1.0;
-    // Sized bet/raise: go through the autoplayer's two-successive-clicks + on-screen
-    // numpad path (same as auto-play), entering the amount (in big blinds).
-    if (code == k_autoplayer_function_raise && amount > 0
-        && p_two_successive_clicks != NULL) {
-      if (p_two_successive_clicks->HandleCycle(true)) {
-        Sleep(p_two_successive_clicks->DelayMs());
-        p_casino_interface->EnterBetsizeNumpadRaw(amount);
-        write_log(k_always_log_basic_information, "[MCP] Manual sized bet/raise %.2fbb via two-successive-clicks.\n", amount);
-      } else {
-        // Fallback: just click the raise button if the two-clicks path didn't apply.
-        CAutoplayerButton *btn = p_casino_interface->LogicalAutoplayerButton(code);
-        if (btn != NULL && btn->IsClickable()) btn->Click();
-        write_log(k_always_log_basic_information, "[MCP] Manual raise %.2fbb: two-clicks N/A, clicked raise button.\n", amount);
-      }
+    bool my_turn = (p_engine_container->symbol_engine_autoplayer() != NULL
+                    && p_engine_container->symbol_engine_autoplayer()->ismyturn());
+    if (GetTickCount() - g_mcp_action_set_tick > 25000) {
+      // Expired before our turn came -- discard so it can't fire a later hand.
+      write_log(k_always_log_basic_information, "[MCP] Manual action expired before our turn; discarded.\n");
+      g_mcp_action_request = -1;
+      g_mcp_action_amount = -1.0;
+    } else if (!my_turn) {
+      // Not our turn yet -- keep the request PENDING and retry next heartbeat.
     } else {
-      CAutoplayerButton *btn = p_casino_interface->LogicalAutoplayerButton(code);
-      if (btn != NULL && btn->IsClickable()) {
-        write_log(k_always_log_basic_information, "[MCP] Manual FCKRA action: clicking button code %d\n", code);
-        btn->Click();
+      int code = g_mcp_action_request;
+      double amount = g_mcp_action_amount;
+      g_mcp_action_request = -1;
+      g_mcp_action_amount = -1.0;
+      // Return the cursor to where the user left it after the WHOLE sequence.
+      CCursorRestorer _cursor_restorer;
+      // Sized bet/raise: go through the autoplayer's two-successive-clicks + on-screen
+      // numpad path (same as auto-play), entering the amount (in big blinds).
+      if (code == k_autoplayer_function_raise && amount > 0
+          && p_two_successive_clicks != NULL) {
+        if (p_two_successive_clicks->HandleCycle(true)) {
+          Sleep(p_two_successive_clicks->DelayMs());
+          p_casino_interface->EnterBetsizeNumpadRaw(amount);
+          write_log(k_always_log_basic_information, "[MCP] Manual sized bet/raise %.2fbb via two-successive-clicks.\n", amount);
+        } else {
+          CAutoplayerButton *btn = p_casino_interface->LogicalAutoplayerButton(code);
+          if (btn != NULL && btn->IsClickable()) btn->Click();
+          write_log(k_always_log_basic_information, "[MCP] Manual raise %.2fbb: two-clicks N/A, clicked raise button.\n", amount);
+        }
       } else {
-        write_log(k_always_log_basic_information, "[MCP] Manual FCKRA code %d skipped (button not clickable now)\n", code);
+        CAutoplayerButton *btn = p_casino_interface->LogicalAutoplayerButton(code);
+        if (btn != NULL && btn->IsClickable()) {
+          write_log(k_always_log_basic_information, "[MCP] Manual FCKRA action: clicking button code %d\n", code);
+          btn->Click();
+        } else {
+          write_log(k_always_log_basic_information, "[MCP] Manual FCKRA code %d: my turn but button not clickable; keeping pending.\n", code);
+          // Re-arm so it retries (e.g. buttons still appearing this turn).
+          g_mcp_action_request = code;
+          g_mcp_action_amount = amount;
+        }
       }
     }
   }

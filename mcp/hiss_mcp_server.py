@@ -191,9 +191,10 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {
          "only_unreviewed": {"type": "boolean", "default": True},
          "limit": {"type": "integer", "default": 20}}}},
-    {"name": "learner_ask", "description": "Post a question to the human in learner.exe's 'Questions from Claude' box (e.g. when their play differs from the OHF, or you need clarification). Optionally link it to a decision id.",
+    {"name": "learner_ask", "description": "Post a question to the human in learner.exe. 'summary' is a SHORT, succinct version read aloud (ElevenLabs) and shown as the headline; 'question' is the full detail shown in the box. If summary is omitted it is auto-derived from the question. Optionally link to a decision id.",
      "inputSchema": {"type": "object", "properties": {
-         "question": {"type": "string"},
+         "question": {"type": "string", "description": "full detail (shown in the box)"},
+         "summary": {"type": "string", "description": "short succinct version (read aloud + headline)"},
          "decision_id": {"type": "integer"}},
       "required": ["question"]}},
     {"name": "learner_answers", "description": "Read the human's answers to questions you posted in learner.exe.",
@@ -411,12 +412,18 @@ def call_tool(name, args):
             "%s ORDER BY id DESC LIMIT %d;" % (where, lim), tuples_only=False)
         return [{"type": "text", "text": out or "(no decisions logged yet)"}]
     if name == "learner_ask":
-        q = args["question"].replace("'", "''")
+        q = args["question"]
+        summary = args.get("summary")
+        if not summary:
+            # Auto-derive a succinct summary: first sentence, capped ~120 chars.
+            s = q.strip().replace("\n", " ")
+            cut = s.find(". ")
+            summary = (s[:cut + 1] if 0 < cut < 120 else s[:120])
         did = args.get("decision_id")
         did_sql = str(int(did)) if did is not None else "NULL"
-        psql_query("INSERT INTO learner_questions (question, decision_id) VALUES ('%s', %s);"
-                   % (q, did_sql))
-        return [{"type": "text", "text": "Question posted to learner.exe."}]
+        psql_query("INSERT INTO learner_questions (question, summary, decision_id) "
+                   "VALUES ('%s', '%s', %s);" % (esc_sql(q), esc_sql(summary), did_sql))
+        return [{"type": "text", "text": "Question posted to learner.exe (summary: %s)" % summary}]
     if name == "card_scrapes":
         # fresh capture so the raw images on disk match what's shown
         try:
