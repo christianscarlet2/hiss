@@ -162,6 +162,16 @@ CString ListOfRegions() {
   list += "c0tourney_id ";
   list += "c0tourney_level ";   // tournament level number -> "Level N" in the HH header
   list += "c0table_name ";
+  // Claude/MCP-transform regions: set their transform to "Claude" and Claude parses the
+  // region image (not OCR), posting the value via /api/set-region-value. table_game_info ->
+  // blinds/ante/level/chips-per-bb; table_game_info_2 -> current + previous hand number.
+  list += "table_game_info ";
+  list += "table_game_info_2 ";
+  // Lobby navigation buttons (clicked via /api/click-region to fetch tournament info).
+  list += "goto_lobby_button ";
+  list += "leave_lobby_button ";
+  list += "return_to_tables_button ";
+  list += "lobby_more_info_button ";
   list += "betsize ";
   // On-screen numpad for betsize entry (phone / screen-scraped tables that can't
   // take keyboard input): clear with 5x nBackspace, click n0..n9 / nDecimalPoint
