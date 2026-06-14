@@ -102,6 +102,7 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
   CString _tourney_title;        // c0tourney_title (commas stripped)
   CString _tourney_id;           // c0tourney_id    (parentheses stripped)
   CString _table_name;           // c0table_name    (single-quotes stripped)
+  CString _tourney_level;        // c0tourney_level (digits only; re-scraped per hand)
 
   // ---- per-hand state ----
   bool    _meta_captured;        // metadata for the current hand recorded

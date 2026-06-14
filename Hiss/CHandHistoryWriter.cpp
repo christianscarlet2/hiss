@@ -169,6 +169,18 @@ void CHandHistoryWriter::CaptureMetadata() {
   _bb     = p_engine_container->symbol_engine_tablelimits()->bblind();
   _ante   = p_engine_container->symbol_engine_tablelimits()->ante();
 
+  // Tournament level changes as blinds rise, so re-scrape it each hand (unlike the
+  // session-constant title/id). Keep only the digits (e.g. "Level 3" -> "3").
+  _tourney_level = "";
+  if (p_scraper != NULL && RegionExists("c0tourney_level")) {
+    CString lv;
+    if (p_scraper->EvaluateRegion("c0tourney_level", &lv)) {
+      CString digits;
+      for (int i = 0; i < lv.GetLength(); ++i) if (lv[i] >= '0' && lv[i] <= '9') digits += lv[i];
+      if (!digits.IsEmpty()) _tourney_level = digits;
+    }
+  }
+
   int dealtbits = p_engine_container->symbol_engine_active_dealt_playing()->playersdealtbits();
   for (int i = 0; i < _nchairs; ++i) {
     bool in_hand = ((dealtbits & (1 << i)) != 0) || p_table_state->Player(i)->active();
@@ -545,9 +557,12 @@ CString CHandHistoryWriter::AcrHeader() {
   name.Trim();
   CString tourney = name.IsEmpty() ? ("Tournament #" + tid)
                                    : (name + " Tournament #" + tid);
+  CString level = _tourney_level;
+  level.Trim();
+  if (level.IsEmpty()) level = "1";   // fallback when no level region is scraped
   CString s;
-  s.Format("Game Hand #%s - %s - Holdem (No Limit) - Level 1 (%s/%s) - %s UTC",
-           hid.GetString(), tourney.GetString(),
+  s.Format("Game Hand #%s - %s - Holdem (No Limit) - Level %s (%s/%s) - %s UTC",
+           hid.GetString(), tourney.GetString(), level.GetString(),
            FmtMoney(_sb).GetString(), FmtMoney(_bb).GetString(),
            AcrTimestampUtc().GetString());
   return s;

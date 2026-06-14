@@ -160,6 +160,7 @@ CString ListOfRegions() {
   //   c0table_name    -> table NAME      (written to the filename and the "Table '...'" header line)
   list += "c0tourney_title ";
   list += "c0tourney_id ";
+  list += "c0tourney_level ";   // tournament level number -> "Level N" in the HH header
   list += "c0table_name ";
   list += "betsize ";
   // On-screen numpad for betsize entry (phone / screen-scraped tables that can't
