@@ -607,6 +607,10 @@ void CHandHistoryWriter::ScrapeTourneyInfo() {
   if (!g_tgi_table_number.IsEmpty()) _table_name    = g_tgi_table_number;
   if (g_tgi_level > 0) { CString l; l.Format("%.0f", g_tgi_level); _tourney_level = l; }
   if (p_scraper == NULL || p_tablemap == NULL) return;
+  // When table_game_info / table_game_info_2 is in use, DO NOT fall back to the
+  // c0tourney_* OCR regions -- they mis-scrape this table (truncated/garbled), so the
+  // Claude/MCP-parsed values are authoritative even when some are still empty.
+  if (g_tgi_set) return;
   // Tournament NAME -> filename TN- field. Strip commas (they break the ACR
   // filename / are unwanted in the name).
   if (_tourney_title.IsEmpty() && RegionExists("c0tourney_title")) {
