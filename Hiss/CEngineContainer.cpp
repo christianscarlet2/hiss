@@ -34,6 +34,7 @@
 #include "CSymbolEngineActiveDealtPlaying.h"
 #include "CSymbolEngineTimingTells.h"
 #include "CSymbolEngineTilt.h"
+#include "CSymbolEngineValidator.h"
 #include "CSymbolEngineExplain.h"
 #include "CSymbolEngineOpenAI.h"
 #include "CSymbolEngineAutoplayer.h"
