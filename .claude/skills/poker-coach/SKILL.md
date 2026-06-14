@@ -28,25 +28,30 @@ default ON) speaks the newest unspoken note via the shared lilith.exe. So:
 
 ## Where the info comes from — play scenarios (CHECK THIS FIRST each session)
 The MCP/frames/symbols reflect the **bot's attached window (the phone via scrcpy)** — NOT necessarily
-the surface the user is playing on. Before coaching, figure out which scenario you're in (check
-`/api/autoplayer` for engaged state, look at the newest frame, and if unclear ASK the user):
+the surface the user is playing on. The DEVICE is determined by the bot's autoplayer state (this is the
+user's rule):
 
-- **(A) User on PHONE, bot autoplayer UNENGAGED** — the bot scrapes the user's REAL table. This is the
-  full-coaching case: read the frames, give HAND-SPECIFIC advice (cards/board/stack/spot), hijack via
-  /api/action only on request. Everything in this skill applies directly.
-- **(B) User on DESKTOP (ACR desktop client), bot running on the phone** — the bot's per-hand frames are
-  a DIFFERENT game (or an idle/observed table), so they DO NOT reflect the user's actual hand. Do NOT give
-  hand-specific advice off the bot's frames here — it would be about the wrong table. Instead give GENERAL
-  strategy/coaching, AND you CAN still use **ICM info from the lobby scrapes** (`lobby_fetch.sh` ->
-  table_game_info / icm_config: players remaining, blinds/level, avg stack, structure) because the lobby is
-  the same tournament regardless of device — so general ICM-relevant guidance (bubble proximity, stack
-  depth in bb, push/fold zone, pay-jump discipline) is valid even when the per-hand scrape isn't.
-- **(C) User on PHONE, bot autoplayer ENGAGED** — the BOT is auto-playing; the human isn't acting. Here you
-  REVIEW/observe the bot's decisions (analysis loop) rather than advising a human's manual play; speak only
-  notable reads/results.
+  poker coach ON + autoplayer **DISENGAGED**  ->  user is on the **PHONE** (playing manually; bot scrapes their table)
+  poker coach ON + autoplayer **ENGAGED**     ->  user is on the **DESKTOP** (bot auto-plays the phone; user plays ACR desktop)
 
-If you can't tell phone-vs-desktop from the autoplayer state + frame, ASK: "are you on your phone or the
-ACR desktop right now?" — and re-check when the user mentions switching. Tailor every pass to the active case.
+Detect the autoplayer state each pass: grep the latest `autoplayer_engaged():` line in
+`Release/logs/oh_0.log` (most reliable), and/or `/api/autoplayer`; if genuinely unclear, ASK. Re-check
+when the user says they switched.
+
+- **PHONE mode (autoplayer disengaged):** the bot scrapes the user's REAL table -> FULL hand-specific
+  coaching: read the frames, advise on cards/board/stack/spot, hijack via /api/action only on request.
+  Everything else in this skill applies directly.
+- **DESKTOP mode (autoplayer engaged):** the bot's frames are the PHONE game it is auto-playing — NOT the
+  user's desktop hand — so do NOT coach the user off the bot's frames. Instead:
+  * **Parse the PT4 DB** (`pg_query`, database **"PT4 DB"**): the user's DESKTOP ACR hands auto-import there,
+    so you CAN see their real current status — recent hands, the tournament they're in, stack/results,
+    how they've been playing. Coach off THAT (recent-hand review, leaks, results, tilt) — it's the user's
+    actual game. (Find recent rows in the tourney/cash hand-summary + history tables; newest first.)
+  * **Lobby ICM** still applies (lobby_fetch -> table_game_info / icm_config: players left, blinds, avg
+    stack, structure) — same tournament regardless of device -> bubble/stack-depth/pay-jump guidance.
+  * General strategy otherwise.
+  Note: when autoplayer is engaged, the bot's OWN play on the phone is also happening — that's the CFR/
+  analysis loop's job (review the bot), separate from coaching the user's desktop game.
 
 ## 0. Pre-game interview + psych-up speech (run once at session start)
 Before the first hand, interview the user, then deliver a personal speech.
