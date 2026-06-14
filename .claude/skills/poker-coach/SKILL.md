@@ -26,6 +26,28 @@ default ON) speaks the newest unspoken note via the shared lilith.exe. So:
   shows it and the user types an answer). Read the answers back with `learner_answers`
   or `pg_query` on `learner_questions`.
 
+## Where the info comes from — play scenarios (CHECK THIS FIRST each session)
+The MCP/frames/symbols reflect the **bot's attached window (the phone via scrcpy)** — NOT necessarily
+the surface the user is playing on. Before coaching, figure out which scenario you're in (check
+`/api/autoplayer` for engaged state, look at the newest frame, and if unclear ASK the user):
+
+- **(A) User on PHONE, bot autoplayer UNENGAGED** — the bot scrapes the user's REAL table. This is the
+  full-coaching case: read the frames, give HAND-SPECIFIC advice (cards/board/stack/spot), hijack via
+  /api/action only on request. Everything in this skill applies directly.
+- **(B) User on DESKTOP (ACR desktop client), bot running on the phone** — the bot's per-hand frames are
+  a DIFFERENT game (or an idle/observed table), so they DO NOT reflect the user's actual hand. Do NOT give
+  hand-specific advice off the bot's frames here — it would be about the wrong table. Instead give GENERAL
+  strategy/coaching, AND you CAN still use **ICM info from the lobby scrapes** (`lobby_fetch.sh` ->
+  table_game_info / icm_config: players remaining, blinds/level, avg stack, structure) because the lobby is
+  the same tournament regardless of device — so general ICM-relevant guidance (bubble proximity, stack
+  depth in bb, push/fold zone, pay-jump discipline) is valid even when the per-hand scrape isn't.
+- **(C) User on PHONE, bot autoplayer ENGAGED** — the BOT is auto-playing; the human isn't acting. Here you
+  REVIEW/observe the bot's decisions (analysis loop) rather than advising a human's manual play; speak only
+  notable reads/results.
+
+If you can't tell phone-vs-desktop from the autoplayer state + frame, ASK: "are you on your phone or the
+ACR desktop right now?" — and re-check when the user mentions switching. Tailor every pass to the active case.
+
 ## 0. Pre-game interview + psych-up speech (run once at session start)
 Before the first hand, interview the user, then deliver a personal speech.
 
