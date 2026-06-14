@@ -400,31 +400,37 @@ class Learner(tk.Tk):
             self.status.config(text="Voice id set.")
 
     def _speak(self, text):
-        # Runs in a worker thread: mute other apps, synth via ElevenLabs, play.
-        key = self.prefs.get("elevenlabs_api_key", "")
-        voice = self.prefs.get("elevenlabs_voice_id", "")
-        if not key or not voice:
-            self.status.config(text="Read-aloud needs API key + voice id (Tools menu).")
+        # Read aloud via the SHARED lilith.exe (same speaker the bot/tilt path uses),
+        # so behaviour is identical everywhere. Fire-and-forget; lilith.exe handles
+        # mute(except scrcpy/ACR) -> synth -> 3s -> play -> unmute.
+        text = (text or "").strip()
+        if not text:
             return
-        def worker():
-            muted = False
-            try:
-                # 1) generate FIRST while your sound is still on (synth can take a moment)
-                path = os.path.join(tempfile.gettempdir(), "learner_q.mp3")
-                eleven_tts(key, voice, text, path)
-                # 2) only now mute everything except scrcpy + ACR Poker, 3s before reading
-                set_app_mutes(True); muted = True
-                time.sleep(3)
-                # 3) read it (blocks until the audio finishes)
-                play_audio(path)
-            except Exception as e:
-                try: self.status.config(text="TTS error: %s" % e)
-                except Exception: pass
-            finally:
-                # 4) turn your sound back on after reading
-                if muted:
-                    set_app_mutes(False)
-        threading.Thread(target=worker, daemon=True).start()
+        exe = os.path.join(REPO, "Release", "lilith.exe")
+        try:
+            if os.path.isfile(exe):
+                subprocess.Popen([exe, text], creationflags=0x08000000)  # CREATE_NO_WINDOW
+            else:
+                # dev fallback: speak in-process
+                key = self.prefs.get("elevenlabs_api_key", "")
+                voice = self.prefs.get("elevenlabs_voice_id", "")
+                if not key or not voice:
+                    self.status.config(text="Read-aloud needs API key + voice id (Tools menu).")
+                    return
+                def worker():
+                    muted = False
+                    try:
+                        path = os.path.join(tempfile.gettempdir(), "learner_q.mp3")
+                        eleven_tts(key, voice, text, path)
+                        set_app_mutes(True); muted = True
+                        time.sleep(3)
+                        play_audio(path)
+                    finally:
+                        if muted: set_app_mutes(False)
+                threading.Thread(target=worker, daemon=True).start()
+        except Exception as e:
+            try: self.status.config(text="TTS error: %s" % e)
+            except Exception: pass
 
     # ---- follow-up review of past decisions ----
     def refresh_followups(self):

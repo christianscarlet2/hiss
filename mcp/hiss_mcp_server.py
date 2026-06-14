@@ -426,6 +426,23 @@ def call_tool(name, args):
         psql_query("INSERT INTO learner_questions (question, summary, decision_id) "
                    "VALUES ('%s', '%s', %s);" % (esc_sql(q), esc_sql(summary), did_sql))
         return [{"type": "text", "text": "Question posted to learner.exe (summary: %s)" % summary}]
+    if name == "speak":
+        text = str(args.get("text", "")).strip()
+        if not text:
+            return [{"type": "text", "text": "nothing to speak"}]
+        exe = os.path.join(RELEASE, "lilith.exe")
+        try:
+            if os.path.isfile(exe):
+                # fire-and-forget: lilith.exe mutes/synths/plays/unmutes on its own
+                subprocess.Popen([exe, text], cwd=RELEASE, close_fds=True,
+                                 creationflags=0x08000000 if os.name == "nt" else 0)  # CREATE_NO_WINDOW
+            else:
+                # fallback: speak in-process via the shared module
+                import lilith_tts
+                lilith_tts.speak(text)
+        except Exception as e:
+            return [{"type": "text", "text": "speak failed: %s" % e}]
+        return [{"type": "text", "text": "Lilith: %s" % text[:200]}]
     if name == "card_scrapes":
         # fresh capture so the raw images on disk match what's shown
         try:

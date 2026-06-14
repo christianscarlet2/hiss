@@ -51,6 +51,7 @@ Raises Calls Folds Bets AmountToCall PotSize BetSize BigBlindSize StackSize
 EffectiveMaxStacksizeOfActiveOpponents MaxStacksizeOfActiveOpponents
 nopponentscalled nopponentsraising
 lastraiseractiontime myactiontime
+hero_drawdown hero_tilting raiser_drawdown raiser_recent_bigloss raiser_maybe_tilting
 """.split())
 
 # keywords / actions / operators that are not symbols

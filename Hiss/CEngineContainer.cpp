@@ -33,6 +33,7 @@
 #include "CSessionCounter.h"
 #include "CSymbolEngineActiveDealtPlaying.h"
 #include "CSymbolEngineTimingTells.h"
+#include "CSymbolEngineTilt.h"
 #include "CSymbolEngineExplain.h"
 #include "CSymbolEngineOpenAI.h"
 #include "CSymbolEngineAutoplayer.h"
@@ -169,6 +170,9 @@ void CEngineContainer::CreateSymbolEngines() {
   // CSymbolEngineTimingTells (pNtiming: per-chair action time from pNactive rect1)
   p_symbol_engine_timing_tells = new CSymbolEngineTimingTells();
   AddSymbolEngine(p_symbol_engine_timing_tells);
+  // CSymbolEngineTilt (hero_/raiser_ tilt symbols from recent stack drawdown)
+  p_symbol_engine_tilt = new CSymbolEngineTilt();
+  AddSymbolEngine(p_symbol_engine_tilt);
   // CSymbolEngineExplain (explain_<tag>: variable-filled decision explanations)
   p_symbol_engine_explain = new CSymbolEngineExplain();
   AddSymbolEngine(p_symbol_engine_explain);
