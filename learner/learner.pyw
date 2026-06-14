@@ -93,7 +93,7 @@ class Learner(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("learner.exe  --  Hiss decision trainer")
-        self.geometry("560x640")
+        self.geometry("560x690")
         self.configure(padx=10, pady=8)
         self.ctx = {}
         self.cur_q = None  # (id, text)
@@ -134,6 +134,20 @@ class Learner(tk.Tk):
                           font=("Segoe UI", 10, "bold"),
                           command=lambda a=act: self.submit_action(a))
             b.pack(side="left", padx=4, ipady=6)
+
+        # --- preset sizing + all-in ---
+        pf = ttk.Frame(self); pf.pack(fill="x", pady=2)
+        tk.Button(pf, text="All-In", width=8, bg="#922b21", fg="white",
+                  font=("Segoe UI", 10, "bold"),
+                  command=lambda: self.submit_action("allin")).pack(side="left", padx=3, ipady=4)
+        tk.Button(pf, text="Min 2bb", width=8, bg="#1565c0", fg="white",
+                  command=lambda: self.submit_bet(min_bb=2)).pack(side="left", padx=3, ipady=4)
+        tk.Button(pf, text="Bet 1/4", width=7, bg="#1565c0", fg="white",
+                  command=lambda: self.submit_bet(frac=0.25)).pack(side="left", padx=3, ipady=4)
+        tk.Button(pf, text="Bet 1/2", width=7, bg="#1565c0", fg="white",
+                  command=lambda: self.submit_bet(frac=0.50)).pack(side="left", padx=3, ipady=4)
+        tk.Button(pf, text="Bet 3/4", width=7, bg="#1565c0", fg="white",
+                  command=lambda: self.submit_bet(frac=0.75)).pack(side="left", padx=3, ipady=4)
 
         # --- follow-up: rate your own past decisions after seeing the result ---
         ff = ttk.LabelFrame(self, text="Follow-up: review a past decision (after you've seen how it played out)")
@@ -234,11 +248,29 @@ class Learner(tk.Tk):
         except Exception as e:
             return False, str(e)
 
+    # ---- preset bet sizing (pot fractions / min), computed from the live pot ----
+    def submit_bet(self, frac=None, min_bb=None):
+        c = self.ctx or {}
+        raw = c.get("raw", {})
+        bb = (raw.get("limits", {}) or {}).get("bblind") or 1.0
+        try:
+            pot = float(c.get("pot") or 0)
+        except Exception:
+            pot = 0.0
+        pot_bb = (pot / bb) if bb else pot
+        if min_bb is not None:
+            amt = float(min_bb)
+        else:
+            amt = round(frac * pot_bb, 2)
+            if amt < 2:                 # never below a min open
+                amt = 2.0
+        self.submit_action("bet", amount=("%g" % amt))
+
     # ---- log a decision (and execute it on the table) ----
-    def submit_action(self, action):
+    def submit_action(self, action, amount=None):
         c = self.ctx or {}
         reasoning = self.reason.get("1.0", "end").strip()
-        amt = self.amount.get().strip()
+        amt = (amount if amount is not None else self.amount.get()).strip()
         amt_sql = amt if amt else "NULL"
         def numornull(v):
             try: return str(float(v))
