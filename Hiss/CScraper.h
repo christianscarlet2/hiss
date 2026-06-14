@@ -178,6 +178,13 @@ extern double g_mcp_action_amount;     // bet/raise size in big blinds (<0 = pla
 extern unsigned long g_mcp_action_set_tick;  // tick when set (wait-for-turn expiry)
 extern bool g_mcp_reload_ohf_request;  // set by /api/reload-ohf; heartbeat reloads the strategy folder
 extern bool g_frame_history_enabled;   // when true, save a heartbeat frame each scrape (10-min rolling)
+// MCP/Claude-driven blind override: when bb>0 these AUTHORITATIVE values are used by the
+// blind guesser instead of scraping/guessing. Set via /api/set-blinds after Claude reads the
+// table image and determines the real blinds+ante (e.g. for a big-blind-denominated display:
+// sb=0.5 bb=1.0). -1 = unset (fall back to the normal guesser).
+extern double g_mcp_sblind;
+extern double g_mcp_bblind;
+extern double g_mcp_ante;
 
 #endif // INC_CSCRAPER_H
 
