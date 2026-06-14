@@ -76,6 +76,7 @@ class CSymbolEngineValidator : public CVirtualSymbolEngine {
   int     _nerrors, _nwarnings;
   double  _confidence;
   CString _report;
+  CString _last_terminal_report;   // dedupe: last pot/stacks/bets alert pushed to the terminal
 };
 
 extern CSymbolEngineValidator *p_symbol_engine_validator;

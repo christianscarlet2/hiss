@@ -18,6 +18,7 @@
 #include "CTableState.h"
 #include "Card.h"
 #include "CPlayer.h"
+#include "ChatTerminalWindow.h"   // ChatTerminalAppend (thread-safe, PostMessage)
 #include "..\CTablemap\CTablemap.h"
 
 CSymbolEngineValidator *p_symbol_engine_validator = NULL;
@@ -267,6 +268,22 @@ void CSymbolEngineValidator::Validate() {
   if (_nerrors > 0) {
     write_log(k_always_log_errors, "[CSymbolEngineValidator] %d error(s), %d warning(s):\n%s",
               _nerrors, _nwarnings, _report.GetString());
+  }
+
+  // Tell the user via the Hiss chat-terminal window when POT/STACKS/BETS are invalid
+  // (cards are excluded -- those go down the self-heal path). Debounced: only push when
+  // the issue first appears or its text changes, not every heartbeat. Reset when it clears.
+  bool psb_bad = (!_pot_ok || !_stacks_ok || !_bets_ok);
+  if (psb_bad) {
+    if (_report != _last_terminal_report) {
+      CString msg;
+      msg.Format("[VALIDATOR] scrape issue (pot/stacks/bets) - confidence %.2f:\n%s",
+                 _confidence, _report.GetString());
+      ChatTerminalAppend(kChatTerminalChat, msg);
+      _last_terminal_report = _report;
+    }
+  } else {
+    _last_terminal_report = "";   // resolved -> re-notify if it recurs
   }
 }
 
