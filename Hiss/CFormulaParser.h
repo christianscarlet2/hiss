@@ -41,6 +41,10 @@ class CFormulaParser : public CSpaceOptimizedGlobalObject {
  public:
   void ParseDefaultLibraries();
  public:
+  // Public reload entry point (used by /api/reload-ohf via the heartbeat thread):
+  // re-parses the OpenPPL library + the bot_logic/Strategy folder + master OHF.
+  void ReloadStrategy() { LoadDefaultBot(); }
+ public:
   void ParseFormula(COHScriptObject* function_or_list_to_be_parsed);
  public:
   bool IsParsing()	                      { return (_is_parsing_counter > 0); }

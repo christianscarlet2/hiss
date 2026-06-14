@@ -69,9 +69,11 @@ A5s A4s A3s A2s K9s KTs KJs Q9s QJs J9s JTs T8s T9s 76s 65s
 
 ##listCallOpen##
 // Flat an open (set-mine + suited playables, mostly in position). [N p.21][B]
+// Small-ball: get in cheap with broadway offsuit suckers (KJo/KTo/ATo) IN POSITION
+// and outplay postflop, rather than folding them pre. [user feedback, freeroll]
 22 33 44 55 66 77 88 99 TT
 ATs AJs AQs KTs KJs KQs QTs QJs JTs T9s 98s 87s 76s 65s
-AJo AQo KQo
+ATo AJo AQo KQo KJo KTo
 
 ##listCall3bet##
 // Flat a 3-bet (in position) to outplay rather than 4-bet-or-fold. [N p.22]

@@ -247,6 +247,15 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
       }
     }
   }
+  // ---- MCP / API: reload the OHF strategy folder (safe here: outside the update
+  // critical section, between evaluations). Re-parses bot_logic/Strategy + the master. ----
+  if (g_mcp_reload_ohf_request && p_formula_parser != NULL) {
+    g_mcp_reload_ohf_request = false;
+    if (!p_formula_parser->IsParsing()) {
+      write_log(k_always_log_basic_information, "[MCP] Reloading OHF strategy (API request)\n");
+      p_formula_parser->ReloadStrategy();
+    }
+  }
 
 	p_openholdem_title->UpdateTitle();
 	////////////////////////////////////////////////////////////////////////////////////////////

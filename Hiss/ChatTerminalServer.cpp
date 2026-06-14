@@ -426,6 +426,15 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		return;
 	}
 
+	if (path.CompareNoCase("/api/reload-ohf") == 0) {
+		// Request a strategy reload; the heartbeat thread re-parses bot_logic/Strategy
+		// (+ the master OHF) between evaluations, so edits take effect without a restart.
+		g_mcp_reload_ohf_request = true;
+		CStringA response = Response("{\"ok\":true,\"queued\":\"OHF reload requested; applied on the next heartbeat.\"}\r\n");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
 	if (path.CompareNoCase("/api/validate") == 0) {
 		// Scrape + game-state sanity heuristics (CSymbolEngineValidator). Re-runs the
 		// checks against the current state and returns the verdict + a message report.

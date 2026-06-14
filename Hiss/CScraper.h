@@ -170,6 +170,7 @@ extern int g_mcp_autoplayer_request;   // 0 = off, 1 = on
 extern int g_mcp_action_request;       // a k_autoplayer_function_* code (FCKRA)
 extern double g_mcp_action_amount;     // bet/raise size in big blinds (<0 = plain click)
 extern unsigned long g_mcp_action_set_tick;  // tick when set (wait-for-turn expiry)
+extern bool g_mcp_reload_ohf_request;  // set by /api/reload-ohf; heartbeat reloads the strategy folder
 
 #endif // INC_CSCRAPER_H
 
