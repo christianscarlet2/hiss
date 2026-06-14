@@ -85,6 +85,9 @@ def hiss_get(path):
         return r.read().decode("utf-8", errors="replace")
 
 # --- postgres via psql ------------------------------------------------------
+def esc_sql(s):
+    return ("" if s is None else str(s)).replace("'", "''")
+
 def psql_query(sql, database=None, tuples_only=True):
     env = dict(os.environ); env["PGPASSWORD"] = PGPASS
     flags = ["-A"] + (["-t"] if tuples_only else [])   # unaligned; headers unless tuples_only
@@ -195,7 +198,26 @@ TOOLS = [
       "required": ["question"]}},
     {"name": "learner_answers", "description": "Read the human's answers to questions you posted in learner.exe.",
      "inputSchema": {"type": "object", "properties": {"only_recent": {"type": "boolean", "default": True}}}},
+    {"name": "card_scrapes", "description": "Vision link: trigger a fresh capture and show what every CARD region scraped -- each player's hole cards (p0..p8) and the community cards -- so the human can tell you which position/card is missing or wrong.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "card_image", "description": "Vision link: the raw scrape IMAGE + recognised value for one card region, to verify a misread. Specify a player chair (0-8) and slot (0/1), or position='community' with slot 0-4.",
+     "inputSchema": {"type": "object", "properties": {
+         "position": {"type": "string", "description": "player chair number 0-8, or 'community'/'board'"},
+         "slot": {"type": "integer", "description": "card index: 0/1 for players, 0-4 for community"}},
+      "required": ["position", "slot"]}},
+    {"name": "log_card_correction", "description": "Vision link: record the human's correction of a misscraped/missing card (position, slot, what the bot read, what it actually is) for font/region fixing.",
+     "inputSchema": {"type": "object", "properties": {
+         "position": {"type": "string"}, "slot": {"type": "integer"},
+         "scraped": {"type": "string"}, "correct": {"type": "string"}, "note": {"type": "string"}},
+      "required": ["position", "slot", "correct"]}},
 ]
+
+def _card_region(position, slot):
+    p = str(position).strip().lower()
+    if p in ("community", "board", "c0", "c"):
+        return "c0cardface%d" % int(slot)
+    p = p.replace("p", "")
+    return "p%dcardface%d" % (int(p), int(slot))
 
 def call_tool(name, args):
     if name == "hiss_status":
@@ -395,6 +417,60 @@ def call_tool(name, args):
         psql_query("INSERT INTO learner_questions (question, decision_id) VALUES ('%s', %s);"
                    % (q, did_sql))
         return [{"type": "text", "text": "Question posted to learner.exe."}]
+    if name == "card_scrapes":
+        # fresh capture so the raw images on disk match what's shown
+        try:
+            hiss_get("/api/dump-scrapes")
+        except Exception:
+            pass
+        time.sleep(1.2)
+        try:
+            st = json.loads(hiss_get("/api/table-state"))
+        except Exception as e:
+            return [{"type": "text", "text": "Hiss unreachable: %s" % e}]
+        lines = []
+        board = st.get("commonCards", [])
+        lines.append("COMMUNITY (c0cardface0..4): " +
+                     " ".join("[%d]%s" % (i, (board[i] if i < len(board) and board[i] else "--")) for i in range(5)))
+        for pl in st.get("players", []):
+            ch = pl.get("chair")
+            cs = pl.get("cards", [])
+            shown = " ".join("[%d]%s" % (i, (cs[i] if i < len(cs) and cs[i] else "--")) for i in range(2))
+            seated = "" if pl.get("seated") else " (empty seat)"
+            lines.append("p%s %-14s %s%s" % (ch, (pl.get("name") or "")[:14], shown, seated))
+        lines.append("\nUse card_image(position, slot) to see a region's raw image; "
+                     "log_card_correction(...) to record a fix. (BACK = face-down, -- = none/missing)")
+        return [{"type": "text", "text": "\n".join(lines)}]
+    if name == "card_image":
+        region = _card_region(args["position"], args["slot"])
+        try:
+            hiss_get("/api/dump-scrapes"); time.sleep(1.2)
+        except Exception:
+            pass
+        img = os.path.join(SCRAPES, region + "_raw.bmp")
+        txt = os.path.join(SCRAPES, region + ".txt")
+        out = [{"type": "text", "text": "region %s -> recognised: %r" %
+                (region, read_text(txt, 200) if os.path.isfile(txt) else "(no result file)")}]
+        if os.path.isfile(img):
+            out.append(image_content(img))
+        else:
+            out.append({"type": "text", "text": "(no raw image for %s -- region may be undefined in the tablemap)" % region})
+        return out
+    if name == "log_card_correction":
+        region = _card_region(args["position"], args["slot"])
+        hn = ""
+        try:
+            hn = json.loads(hiss_get("/api/table-state")).get("handnumber", "")
+        except Exception:
+            pass
+        psql_query(
+            "INSERT INTO card_corrections (position, slot, region, scraped, correct, handnumber, note) "
+            "VALUES ('%s', %d, '%s', '%s', '%s', '%s', '%s');" % (
+                esc_sql(str(args["position"])), int(args["slot"]), esc_sql(region),
+                esc_sql(args.get("scraped", "")), esc_sql(args["correct"]),
+                esc_sql(hn), esc_sql(args.get("note", ""))))
+        return [{"type": "text", "text": "Logged card correction: %s scraped=%r -> correct=%r" %
+                 (region, args.get("scraped", ""), args["correct"])}]
     if name == "learner_answers":
         cond = "WHERE answered=true " + ("AND answered_ts > now() - interval '1 day' " if args.get("only_recent", True) else "")
         out = psql_query("SELECT id, question, answer, answered_ts FROM learner_questions "

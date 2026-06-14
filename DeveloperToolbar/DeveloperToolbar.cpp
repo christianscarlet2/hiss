@@ -29,6 +29,7 @@ static const char kDuckIcoPath[]    = "C:\\www\\openholdembot_old\\DeveloperTool
 static const char kSnakeIcoPath[]   = "C:\\www\\openholdembot_old\\Hiss\\res\\OpenHoldem.ico";
 static const char kEyeIcoPath[]     = "C:\\www\\openholdembot_old\\Vision\\res\\OpenScrape.ico";
 static const char kBarbellIcoPath[] = "C:\\www\\openholdembot_old\\trainer\\res\\trainer.ico";
+static const char kFeatherIcoPath[] = "C:\\www\\openholdembot_old\\learner\\res\\learner.ico";
 
 // Put a small icon (kept with the button's text) on a button via its image list.
 static void SetButtonIcon(HWND button, const char *ico_path) {
@@ -1372,6 +1373,7 @@ static void CreateChildControls(HWND hwnd) {
   SetButtonIcon(g_open_openholdem_button, kSnakeIcoPath);   // Hiss
   SetButtonIcon(g_open_openscrape_button, kEyeIcoPath);     // Vision
   SetButtonIcon(g_open_trainer_button,    kBarbellIcoPath); // trainer
+  SetButtonIcon(g_open_learner_button,    kFeatherIcoPath); // learner (feather)
 
   g_build_progress = CreateWindowEx(0, PROGRESS_CLASS, "",
     WS_CHILD | WS_VISIBLE,
