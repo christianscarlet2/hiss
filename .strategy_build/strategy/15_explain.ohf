@@ -1,5 +1,5 @@
 //*****************************************************************************
-//  15_explain - human-readable, variable-filled decision explanations.
+//  15_explain - human-readable, variable-filled decision explanations (VERBOSE).
 //
 //  Each f$expl_<tag> holds its explanation TEMPLATE on a "//~" comment line
 //  (the parser ignores comments, so any {placeholders}, %, $ etc. are safe).
@@ -11,61 +11,82 @@
 //      WHEN f$HaveOnePair AND f$TimingSaysStrong AND explain_fold_tank Fold FORCE
 //
 //  {tokens} may be any symbol or f$function. Emission is de-duplicated and is
-//  suppressed during parsing.
+//  suppressed during parsing. Verbose = full spot (stack/pot/opp/equity) + the
+//  REASONING in plain English, so the Decisions pane reads like a coach talking.
 //*****************************************************************************
 
 ##f$expl_open##
-//~ OPEN to {f$Open_RaiseTo}bb -- first-in, {nopponentsplaying} opp(s), eff {f$EffStack}bb; style {f$Style}, opening my positional range.
+//~ OPEN-RAISE to {f$Open_RaiseTo}bb. First in from my {f$Style}-style positional range, {nopponentsplaying} left to act, effective {f$EffStack}bb, ~{tgi_players_remaining} players left. Taking the initiative and the dead money rather than limping; if 3-bet I have a plan. [conf {validator_confidence}]
 0
 
 ##f$expl_iso##
-//~ ISO-RAISE to {f$Open_RaiseTo}bb over {Calls} limper(s) -- punishing limpers, eff {f$EffStack}bb.
+//~ ISO-RAISE to {f$Open_RaiseTo}bb over {Calls} limper(s). Punishing the limp - they entered weak/passive, so I size up to play a bigger pot in position with the better hand and deny them a cheap flop. Eff {f$EffStack}bb, pot building to {PotSize}bb.
 0
 
 ##f$expl_3bet_value##
-//~ 3-BET to {f$ThreeBet_RaiseTo}bb for value -- premium vs a single open (raiser VPIP {f$Opp_VPIP}, PFR {f$Opp_PFR}).
+//~ 3-BET to {f$ThreeBet_RaiseTo}bb FOR VALUE. Premium vs a single open (opener VPIP {f$Opp_VPIP}, PFR {f$Opp_PFR}, AF {f$Opp_AF}). I want money in now while ahead of his opening range; building a pot I expect to win. Eff {f$EffStack}bb.
 0
 
 ##f$expl_3bet_bluff##
-//~ 3-BET BLUFF to {f$ThreeBet_RaiseTo}bb in position vs a foldy/loose opener (VPIP {f$Opp_VPIP}); ace-blocker / playable suited.
+//~ 3-BET BLUFF to {f$ThreeBet_RaiseTo}bb, in position vs a foldy/loose opener (VPIP {f$Opp_VPIP}, PFR {f$Opp_PFR}). Ace-blocker / playable suited, mixed frequency. He opens too wide and folds too much to pressure, so I attack; if called I have equity and position. Eff {f$EffStack}bb.
 0
 
 ##f$expl_call_setmine##
-//~ CALL to set-mine -- risking {AmountToCall}bb (<=10% of {f$EffStack}bb) for implied odds; small/medium pair.
+//~ CALL to SET-MINE. Risking {AmountToCall}bb (<=~10% of my {f$EffStack}bb) with a small/medium pair for the implied odds - I am hunting a flopped set to stack him; folding everything else. Pot {PotSize}bb, ~{tgi_players_remaining} left.
+0
+
+##f$expl_flat_ip##
+//~ FLAT IN POSITION. Calling {AmountToCall}bb with a hand that plays well postflop (suited broadway / connector / pair) rather than 3-betting - keeping his range wide and his bluffs in, then outplaying him after the flop with position. Pot {PotSize}bb, eff {f$EffStack}bb.
+0
+
+##f$expl_bbdefend##
+//~ DEFEND BIG BLIND. Getting a price ({AmountToCall}bb into {PotSize}bb) closing the action, so I call wide to realize equity rather than fold my big-blind investment. Will play fit-or-fold flops in a bloated-enough pot. Eff {f$EffStack}bb.
 0
 
 ##f$expl_pushfold##
-//~ PUSH/FOLD mode -- eff {f$EffStack}bb <= 10; shoving a position-scaled range, pot {PotSize}bb.
+//~ PUSH/FOLD MODE. Effective {f$EffStack}bb (<=~10) - too short to play postflop, so it is shove-or-fold. Jamming a position-scaled near-Nash range to maximize fold equity + pick up {PotSize}bb of blinds/antes. Survival = chips; a timely jam beats blinding out. ~{tgi_players_remaining} left.
+0
+
+##f$expl_jam##
+//~ ALL-IN JAM for {f$EffStack}bb. Short-stack first-in shove from my position range - fold equity is the whole point; folding strong hands here is the leak that blinds you out. Picking up {PotSize}bb dead money now. ~{tgi_players_remaining} left.
+0
+
+##f$expl_callshove##
+//~ CALL THE SHOVE. Getting it in for {f$EffStack}bb vs a single all-in, far enough from the money that it is chip-EV - my hand crushes his shoving range and I have the equity + price. Not folding a strong holding short. Pot {PotSize}bb.
 0
 
 ##f$expl_cbet##
-//~ C-BET ~{f$BetPctFlop}% pot -- I raised pre, board not scary, vs foldy/HU opp (VPIP {f$Opp_VPIP}); equity {prwin}.
+//~ C-BET ~{f$BetPctFlop}% pot ({PotSize}bb). I raised pre and keep the lead on a board that misses his range more than mine, vs a foldy/heads-up opp (VPIP {f$Opp_VPIP}, AF {f$Opp_AF}); my equity {prwin}. Denying his free cards and taking it down often right here.
 0
 
 ##f$expl_value_flop##
-//~ VALUE BET ~{f$BetPctFlop}% pot -- strong made hand; charging draws, pot {PotSize}bb, equity {prwin}.
+//~ VALUE BET ~{f$BetPctFlop}% pot ({PotSize}bb). Strong made hand, equity {prwin} - I size up to charge his draws and worse pairs, building the pot while I am ahead. He pays or folds equity; either is good. vs VPIP {f$Opp_VPIP}.
 0
 
 ##f$expl_semibluff##
-//~ SEMI-BLUFF ~{f$BetPctFlop}% pot -- big/combo draw, two ways to win; pot {PotSize}bb.
+//~ SEMI-BLUFF ~{f$BetPctFlop}% pot ({PotSize}bb). Big/combo draw - two ways to win: he folds now, or I hit. Equity {prwin}. Betting (not checking) so I can win it without showdown AND get paid when I improve. Eff {f$EffStack}bb.
 0
 
 ##f$expl_fold_tank##
-//~ FOLD one pair -- raiser TANKED {lastraiseractiontime}s (>= {f$TankSeconds}s) = strength; pot {PotSize}bb, call {AmountToCall}bb.
+//~ FOLD one pair. The raiser TANKED {lastraiseractiontime}s (>= {f$TankSeconds}s) before betting - a long think here screams strength/value, not a bluff. One pair is not worth {AmountToCall}bb into {PotSize}bb against that. Disciplined laydown; don't go broke with one pair.
 0
 
 ##f$expl_float_snap##
-//~ FLOAT one pair -- raiser SNAP-bet {lastraiseractiontime}s (<= {f$SnapSeconds}s) = likely weak; call {AmountToCall}bb into {PotSize}bb.
+//~ FLOAT / CALL one pair. The raiser SNAP-bet in {lastraiseractiontime}s (<= {f$SnapSeconds}s) - an instant bet is often a c-bet or weak stab, not a thinking value bet. Calling {AmountToCall}bb into {PotSize}bb to take it away on a later street; equity {prwin}.
 0
 
 ##f$expl_potcontrol##
-//~ CHECK for pot control -- one pair, keeping the pot small (don't go broke with one pair); pot {PotSize}bb.
+//~ CHECK for POT CONTROL. One pair, decent but not great - keeping the pot small (don't stack off with one pair) and getting to showdown cheaply rather than bloating it. Pot {PotSize}bb, eff {f$EffStack}bb, equity {prwin}.
 0
 
 ##f$expl_value_river##
-//~ RIVER VALUE ~{f$BetPctRiver}% pot -- strong made hand, equity {prwin}, vs VPIP {f$Opp_VPIP} opp.
+//~ RIVER VALUE ~{f$BetPctRiver}% pot ({PotSize}bb). Strong made hand at showdown, equity {prwin} - last chance to get value, so I bet a size a worse hand can still call, vs VPIP {f$Opp_VPIP} / AF {f$Opp_AF}. Thin-but-ahead.
 0
 
 ##f$expl_bluffcatch##
-//~ BLUFF-CATCH -- calling {AmountToCall}bb into {PotSize}bb vs an aggressive/snap bettor (AF {f$Opp_AF}).
+//~ BLUFF-CATCH. Calling {AmountToCall}bb into {PotSize}bb vs an aggressive/snap bettor (AF {f$Opp_AF}, VPIP {f$Opp_VPIP}). My hand only beats bluffs, but his range here is bluff-heavy enough and the price is right; a fold over-folds to aggression.
+0
+
+##f$expl_fold_pre##
+//~ FOLD preflop. Hand is below my range for this spot (position / action / {f$EffStack}bb depth) - no cheap entry, facing aggression, or out of position. Folding now saves chips for a better spot; patience early is a weapon. ~{tgi_players_remaining} left.
 0

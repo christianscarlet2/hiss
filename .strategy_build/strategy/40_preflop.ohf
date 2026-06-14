@@ -40,7 +40,7 @@ WHEN (InLatePosition OR InCutOff) AND listOpenLP RaiseTo f$Open_RaiseTo FORCE
 WHEN InButton AND listOpenBTN AND explain_open RaiseTo f$Open_RaiseTo FORCE
 WHEN InSmallBlind AND listOpenSB RaiseTo f$Open_RaiseTo FORCE
 WHEN InBigBlind Check FORCE
-WHEN Others Fold FORCE
+WHEN explain_fold_pre Fold FORCE
 
 ##f$preflop_limped##
 // Limpers in front, no raise: isolate the strong & wide-late hands with a bigger
@@ -52,7 +52,7 @@ WHEN f$DeepStack AND listCallOpen Call FORCE
 WHEN f$DeepStack AND listSetMine Call FORCE
 WHEN InBigBlind Check FORCE
 WHEN InSmallBlind AND listCallOpen Call FORCE
-WHEN Others Fold FORCE
+WHEN explain_fold_pre Fold FORCE
 
 //-----------------------------------------------------------------------------
 //  Facing a single open raise
@@ -67,12 +67,12 @@ WHEN list3betValue AND explain_3bet_value RaiseTo f$ThreeBet_RaiseTo FORCE
 WHEN list3betBluff AND f$Opp_Foldy AND f$InPositionPre AND randomround < 0.60 RaiseTo f$ThreeBet_RaiseTo FORCE
 WHEN list3betBluff AND f$Opp_IsLoose AND f$InPositionPre AND randomround < 0.35 RaiseTo f$ThreeBet_RaiseTo FORCE
 // Flat to set-mine / play suited hands, in position or getting a price.
-WHEN listCallOpen AND f$InPositionPre Call FORCE
-WHEN listSetMine AND f$DeepStack AND f$WithinSpecRisk Call FORCE
+WHEN listCallOpen AND f$InPositionPre AND explain_flat_ip Call FORCE
+WHEN listSetMine AND f$DeepStack AND f$WithinSpecRisk AND explain_call_setmine Call FORCE
 // Big-blind defence: defend a price with playable hands.
-WHEN InBigBlind AND listCallOpen Call FORCE
+WHEN InBigBlind AND listCallOpen AND explain_bbdefend Call FORCE
 WHEN InBigBlind AND f$DecentPrice AND listOpenLP Call FORCE
-WHEN Others Fold FORCE
+WHEN explain_fold_pre Fold FORCE
 
 //-----------------------------------------------------------------------------
 //  Facing a 3-bet or more (we usually opened)
@@ -88,7 +88,7 @@ WHEN listCall3bet AND f$InPositionPre Call FORCE
 WHEN listCall3bet AND f$DecentPrice Call FORCE
 // Deep speculative set-mine vs a 3-bet only when it risks <= ~10% of stack. [N p.29-30]
 WHEN listSetMine AND f$DeepStack AND f$WithinSpecRisk AND explain_call_setmine Call FORCE
-WHEN Others Fold FORCE
+WHEN explain_fold_pre Fold FORCE
 
 //-----------------------------------------------------------------------------
 //  Push / fold (effective stack <= ~10bb)
@@ -96,16 +96,16 @@ WHEN Others Fold FORCE
 
 ##f$preflop_pushfold##
 // Facing a 3-bet+ (multiway / lots in): tighten to the get-it-in tier.
-WHEN Raises >= 2 AND (listBigPair OR list3betValue) RaiseMax FORCE
-WHEN Raises >= 2 Fold FORCE
+WHEN Raises >= 2 AND (listBigPair OR list3betValue) AND explain_jam RaiseMax FORCE
+WHEN Raises >= 2 AND explain_fold_pre Fold FORCE
 // Facing a SINGLE raise/shove: get it in WIDE far from the money (KJ/QJ/KT type are
 // calls/re-jams here, not folds). Re-jam over a non-allin raise; calls an allin.
-WHEN Raises == 1 AND listCallShove RaiseMax FORCE
-WHEN Raises == 1 Fold FORCE
+WHEN Raises == 1 AND listCallShove AND explain_callshove RaiseMax FORCE
+WHEN Raises == 1 AND explain_fold_pre Fold FORCE
 // First in: jam a near-Nash, position-scaled range (very wide late). Folding strong
 // broadways at <=10bb is the leak that blinds you out.
 WHEN (InButton OR InCutOff OR InLatePosition OR InSmallBlind) AND listJamLP AND explain_pushfold RaiseMax FORCE
-WHEN InMiddlePosition AND listJamMP RaiseMax FORCE
-WHEN InEarlyPosition AND listJamEP RaiseMax FORCE
+WHEN InMiddlePosition AND listJamMP AND explain_jam RaiseMax FORCE
+WHEN InEarlyPosition AND listJamEP AND explain_jam RaiseMax FORCE
 WHEN InBigBlind Check FORCE
-WHEN Others Fold FORCE
+WHEN explain_fold_pre Fold FORCE
