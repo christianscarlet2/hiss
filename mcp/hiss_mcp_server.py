@@ -143,6 +143,20 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["fold", "check", "call", "bet", "raise", "allin"]}, "amount": {"type": "number", "description": "bet/raise size in big blinds"}}, "required": ["action"]}},
     {"name": "terminal_panes", "description": "Live contents of the 4 Terminal panes (Context / State / Decisions / Chat) + the pinned State block, from the running hiss.exe.",
      "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "set_table_game_info", "description": "Set table_game_info from what YOU (Claude) read in the table image (a heartbeat frame) - NOT OCR. Determine the real blinds/ante/level/tourney from the screenshot and pass them here; the bot uses these as authoritative (blinds drive the engine, fixing BB-denominated displays). For a big-blind display set sb=0.5 bb=1.0 and chips_per_bb to the real big blind (e.g. 400). All fields optional.",
+     "inputSchema": {"type": "object", "properties": {
+        "sb": {"type": "number", "description": "operating small blind (BB-display -> 0.5)"},
+        "bb": {"type": "number", "description": "operating big blind (BB-display -> 1.0)"},
+        "ante": {"type": "number"},
+        "chips_per_bb": {"type": "number", "description": "real chips per big blind, e.g. 400"},
+        "level": {"type": "integer"},
+        "players": {"type": "integer", "description": "players remaining"},
+        "tourney_name": {"type": "string"}, "tourney_id": {"type": "string"},
+        "table_number": {"type": "string"}, "gametype": {"type": "string"}}}},
+    {"name": "set_region_value", "description": "Claude/MCP TRANSFORM: you parsed a region from the table image (a heartbeat frame) - NOT OCR - and post its value here. The scraper returns this value for that region instead of OCR'ing it. Use for finicky regions OCR misreads. name = the tablemap region name (e.g. c0handnumber), value = what you read.",
+     "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "value": {"type": "string"}}, "required": ["name", "value"]}},
+    {"name": "set_table_game_info_2", "description": "table_game_info_2: set the CURRENT and PREVIOUS hand numbers you read from the table image (ACR shows 'Current: <n>  Previous: <n>'). Exposed as symbols table_game_info_2 / tgi2_handnumber / tgi2_prev_handnumber.",
+     "inputSchema": {"type": "object", "properties": {"curr_hand": {"type": "number"}, "prev_hand": {"type": "number"}}}},
     {"name": "reload_ohf", "description": "Reload the OHF strategy in the running hiss.exe WITHOUT a restart. Re-parses bot_logic/Strategy + the master OHF on the next heartbeat. Use after editing/rebuilding the strategy so changes take effect live.",
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "validate", "description": "Run the scrape + game-state sanity heuristics (CSymbolEngineValidator) on the CURRENT table state and return the verdict: ok, confidence (0..1), error/warning counts, per-category flags (cards/pot/stacks/bets), and a human-readable report of every issue. Use to decide whether a scraped value (pot, stacks, bets, cards) is trustworthy before acting on it.",
@@ -284,6 +298,23 @@ def call_tool(name, args):
         return [{"type": "text", "text": hiss_get("/api/action?" + q)}]
     if name == "terminal_panes":
         return [{"type": "text", "text": hiss_get("/api/terminal-state")}]
+    if name == "set_table_game_info":
+        import urllib.parse
+        keys = ["sb", "bb", "ante", "chips_per_bb", "level", "players",
+                "tourney_name", "tourney_id", "table_number", "gametype"]
+        qs = "&".join("%s=%s" % (k, urllib.parse.quote(str(args[k])))
+                      for k in keys if k in args and args[k] is not None)
+        return [{"type": "text", "text": hiss_get("/api/table-game-info?" + qs)}]
+    if name == "set_region_value":
+        import urllib.parse
+        qs = "name=%s&value=%s" % (urllib.parse.quote(str(args["name"])),
+                                   urllib.parse.quote(str(args.get("value", ""))))
+        return [{"type": "text", "text": hiss_get("/api/set-region-value?" + qs)}]
+    if name == "set_table_game_info_2":
+        import urllib.parse
+        qs = "&".join("%s=%s" % (k, urllib.parse.quote(str(args[k])))
+                      for k in ("curr_hand", "prev_hand") if k in args and args[k] is not None)
+        return [{"type": "text", "text": hiss_get("/api/table-game-info-2?" + qs)}]
     if name == "reload_ohf":
         return [{"type": "text", "text": hiss_get("/api/reload-ohf")}]
     if name == "validate":

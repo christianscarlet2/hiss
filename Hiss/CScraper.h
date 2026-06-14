@@ -113,6 +113,12 @@ class CScraper : public CSpaceOptimizedGlobalObject {
 	// to logs\frames\<epoch_ms>.bmp and prune anything older than 10 minutes. Lets us
 	// look back at exactly what was on screen at the time a question/command was asked.
 	void SaveHeartbeatFrame();
+ public:
+	// Claude/MCP transform: a region whose value Claude parses from the image (not OCR).
+	// Claude posts the value via /api/set-region-value; EvaluateRegion returns it instead
+	// of scraping. Thread-safe (HTTP thread writes, heartbeat thread reads).
+	void SetClaudeRegionValue(CString name, CString value);
+	bool GetClaudeRegionValue(CString name, CString *out);
  private:
 	void PruneFramesOlderThan(unsigned long long cutoff_epoch_ms);
 	bool ProcessRegion(RMapCI r_iter);
@@ -135,6 +141,8 @@ class CScraper : public CSpaceOptimizedGlobalObject {
   int total_region_counter;
   int identical_region_counter;
   int _frame_prune_counter;   // throttles the 10-min frame-history prune scan
+  std::map<CString, CString> _claude_region_values;   // Claude-transform region values
+  CCritSec _claude_critsec;
  public:
   // Per-scrape-cycle OCR profiling (reset/read by CLazyScraper::DoScrape):
   // how many AutoOcr regions were freshly recognised this frame vs reused
@@ -178,13 +186,28 @@ extern double g_mcp_action_amount;     // bet/raise size in big blinds (<0 = pla
 extern unsigned long g_mcp_action_set_tick;  // tick when set (wait-for-turn expiry)
 extern bool g_mcp_reload_ohf_request;  // set by /api/reload-ohf; heartbeat reloads the strategy folder
 extern bool g_frame_history_enabled;   // when true, save a heartbeat frame each scrape (10-min rolling)
-// MCP/Claude-driven blind override: when bb>0 these AUTHORITATIVE values are used by the
-// blind guesser instead of scraping/guessing. Set via /api/set-blinds after Claude reads the
-// table image and determines the real blinds+ante (e.g. for a big-blind-denominated display:
-// sb=0.5 bb=1.0). -1 = unset (fall back to the normal guesser).
-extern double g_mcp_sblind;
-extern double g_mcp_bblind;
-extern double g_mcp_ante;
+// table_game_info: MCP/Claude-parsed game info. Claude reads the table image (heartbeat
+// frame) and determines the blinds/ante/level/etc., then POSTs them to /api/table-game-info.
+// The blind guesser uses these AUTHORITATIVE values instead of scraping/guessing. For a
+// big-blind-denominated display the operating blinds are sb=0.5 bb=1.0, with chips_per_bb
+// (e.g. 400) carried as the real level for hand-history/ICM. g_tgi_set gates use.
+extern bool   g_tgi_set;             // true once Claude has populated table_game_info
+extern double g_tgi_sblind;          // operating small blind (scraped unit)
+extern double g_tgi_bblind;          // operating big blind (scraped unit; BB-display -> 1.0)
+extern double g_tgi_ante;            // ante in the operating unit
+extern double g_tgi_chips_per_bb;    // real chips per big blind (e.g. 400) -- metadata
+extern double g_tgi_level;           // tournament level number
+extern double g_tgi_players_remaining;
+// table_game_info string fields (used by the hand-history writer header, which otherwise
+// mis-scrapes them). Empty = not provided.
+extern CString g_tgi_tourney_name;   // e.g. "$50 GTD Freeroll"
+extern CString g_tgi_tourney_id;     // e.g. "35300198"
+extern CString g_tgi_table_number;   // e.g. "1"
+extern CString g_tgi_gametype;       // e.g. "No Limit"
+// table_game_info_2: current + previous hand numbers (ACR shows "Current: n  Previous: n").
+// Claude reads them from the frame and posts via /api/table-game-info-2.
+extern double g_tgi2_handnumber;
+extern double g_tgi2_prev_handnumber;
 
 #endif // INC_CSCRAPER_H
 

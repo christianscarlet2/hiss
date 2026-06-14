@@ -426,6 +426,75 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		return;
 	}
 
+	if (path.CompareNoCase("/api/table-game-info") == 0) {
+		// Claude-parsed game info from the table image. Query params (all optional):
+		//   sb, bb, ante, chips_per_bb, level, players  -> stored as table_game_info,
+		// and the blinds drive the blind guesser (authoritative).
+		CStringA sb = QueryValue(query, "sb");
+		CStringA bb = QueryValue(query, "bb");
+		CStringA an = QueryValue(query, "ante");
+		CStringA cpb = QueryValue(query, "chips_per_bb");
+		CStringA lvl = QueryValue(query, "level");
+		CStringA pl = QueryValue(query, "players");
+		if (!bb.IsEmpty()) g_tgi_bblind = atof(bb.GetString());
+		if (!sb.IsEmpty()) g_tgi_sblind = atof(sb.GetString());
+		if (!an.IsEmpty()) g_tgi_ante = atof(an.GetString());
+		if (!cpb.IsEmpty()) g_tgi_chips_per_bb = atof(cpb.GetString());
+		if (!lvl.IsEmpty()) g_tgi_level = atof(lvl.GetString());
+		if (!pl.IsEmpty()) g_tgi_players_remaining = atof(pl.GetString());
+		// String fields (URL-decoded): tourney name/id/table/gametype for the HH header.
+		CStringA tn = UrlDecode(QueryValue(query, "tourney_name"));
+		CStringA ti = UrlDecode(QueryValue(query, "tourney_id"));
+		CStringA tbl = UrlDecode(QueryValue(query, "table_number"));
+		CStringA gt = UrlDecode(QueryValue(query, "gametype"));
+		if (!tn.IsEmpty()) g_tgi_tourney_name = CString(tn);
+		if (!ti.IsEmpty()) g_tgi_tourney_id = CString(ti);
+		if (!tbl.IsEmpty()) g_tgi_table_number = CString(tbl);
+		if (!gt.IsEmpty()) g_tgi_gametype = CString(gt);
+		// If sb wasn't given but bb was, default sb to half the big blind.
+		if (g_tgi_bblind > 0 && g_tgi_sblind <= 0) g_tgi_sblind = g_tgi_bblind / 2.0;
+		g_tgi_set = (g_tgi_bblind > 0);
+		CStringA body;
+		body.Format("{\"ok\":true,\"table_game_info\":{\"sblind\":%.4f,\"bblind\":%.4f,\"ante\":%.4f,"
+			"\"chips_per_bb\":%.2f,\"level\":%.0f,\"players_remaining\":%.0f,\"set\":%s}}",
+			g_tgi_sblind, g_tgi_bblind, g_tgi_ante, g_tgi_chips_per_bb, g_tgi_level,
+			g_tgi_players_remaining, g_tgi_set ? "true" : "false");
+		CStringA response = Response(body + "\r\n");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	if (path.CompareNoCase("/api/table-game-info-2") == 0) {
+		// Current + previous hand numbers parsed by Claude from the table image.
+		CStringA ch = QueryValue(query, "curr_hand");
+		CStringA ph = QueryValue(query, "prev_hand");
+		if (!ch.IsEmpty()) g_tgi2_handnumber = atof(ch.GetString());
+		if (!ph.IsEmpty()) g_tgi2_prev_handnumber = atof(ph.GetString());
+		CStringA body;
+		body.Format("{\"ok\":true,\"table_game_info_2\":{\"handnumber\":%.0f,\"prev_handnumber\":%.0f}}",
+			g_tgi2_handnumber, g_tgi2_prev_handnumber);
+		CStringA response = Response(body + "\r\n");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	if (path.CompareNoCase("/api/set-region-value") == 0) {
+		// Claude/MCP transform: Claude parsed a region from the image and posts its value
+		// here; the scraper returns it for that region instead of OCR. name + value params.
+		CStringA rn = UrlDecode(QueryValue(query, "name"));
+		CStringA rv = UrlDecode(QueryValue(query, "value"));
+		if (!rn.IsEmpty() && p_scraper != NULL) {
+			p_scraper->SetClaudeRegionValue(CString(rn), CString(rv));
+		}
+		CStringA body;
+		body.Format("{\"ok\":%s,\"region\":\"%s\",\"value\":\"%s\"}",
+			(!rn.IsEmpty() && p_scraper != NULL) ? "true" : "false",
+			JsonEscape(CString(rn)).GetString(), JsonEscape(CString(rv)).GetString());
+		CStringA response = Response(body + "\r\n");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
 	if (path.CompareNoCase("/api/reload-ohf") == 0) {
 		// Request a strategy reload; the heartbeat thread re-parses bot_logic/Strategy
 		// (+ the master OHF) between evaluations, so edits take effect without a restart.

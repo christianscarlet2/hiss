@@ -62,6 +62,20 @@ double g_mcp_action_amount = -1.0;   // bet/raise size in big blinds (<0 = plain
 unsigned long g_mcp_action_set_tick = 0;  // GetTickCount() when the request was set (for wait-for-turn expiry)
 bool g_mcp_reload_ohf_request = false;  // /api/reload-ohf -> heartbeat reloads the strategy folder
 bool g_frame_history_enabled = true;    // save a heartbeat frame each scrape (10-min rolling history)
+// table_game_info: Claude-parsed game info (set via /api/table-game-info). Unset until then.
+bool   g_tgi_set = false;
+double g_tgi_sblind = -1.0;
+double g_tgi_bblind = -1.0;
+double g_tgi_ante = 0.0;
+double g_tgi_chips_per_bb = 0.0;
+double g_tgi_level = 0.0;
+double g_tgi_players_remaining = 0.0;
+CString g_tgi_tourney_name = "";
+CString g_tgi_tourney_id = "";
+CString g_tgi_table_number = "";
+CString g_tgi_gametype = "";
+double g_tgi2_handnumber = 0.0;
+double g_tgi2_prev_handnumber = 0.0;
 
 // Make a region name safe for a filename (region names are normally alphanumeric).
 static CString SanitizeRegionFilename(CString name) {
@@ -255,6 +269,18 @@ bool CScraper::EvaluateRegion(CString name, CString *result) {
   name = RedirectObserverName(name);   // observer mode: p3<x> -> p3observer_<x>
   write_log(Preferences()->debug_scraper(),
     "[CScraper] EvaluateRegion %s\n", name);
+  // Claude/MCP transform: if Claude has parsed this region from the image and posted a
+  // value (/api/set-region-value), use it instead of OCR. This is the per-region analog
+  // of table_game_info -- async cache, never a blocking call on the scrape path.
+  {
+    CString claude_val;
+    if (GetClaudeRegionValue(name, &claude_val)) {
+      if (result) *result = claude_val;
+      // Must release the DCs allocated by __HDC_HEADER before any early return.
+      __HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK
+      return true;
+    }
+  }
 	CTransform	trans;
 	RMapCI		r_iter = p_tablemap->r$()->find(name.GetString());
 	if (r_iter != p_tablemap->r$()->end()) {
@@ -1655,6 +1681,19 @@ void CScraper::SaveHeartbeatFrame() {
 	if ((++_frame_prune_counter % 60) == 0) {
 		PruneFramesOlderThan(ms - 600000ULL);   // 10 minutes
 	}
+}
+
+void CScraper::SetClaudeRegionValue(CString name, CString value) {
+	CSLock lock(_claude_critsec);
+	_claude_region_values[name] = value;
+}
+
+bool CScraper::GetClaudeRegionValue(CString name, CString *out) {
+	CSLock lock(_claude_critsec);
+	std::map<CString, CString>::const_iterator it = _claude_region_values.find(name);
+	if (it == _claude_region_values.end()) return false;
+	if (out) *out = it->second;
+	return true;
 }
 
 void CScraper::PruneFramesOlderThan(unsigned long long cutoff_epoch_ms) {

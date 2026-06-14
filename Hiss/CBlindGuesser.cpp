@@ -34,6 +34,17 @@ CBlindGuesser::~CBlindGuesser() {
 
 // All parameters are out-parameters only
 void CBlindGuesser::Guess(double *sblind, double *bblind, double *bbet, double *ante) {
+  // table_game_info override: if Claude has parsed the blinds from the table image and
+  // posted them (/api/table-game-info), use those AUTHORITATIVE values and skip guessing.
+  // This is how a big-blind-denominated table (stacks shown in BB) gets the correct unit
+  // (bb=1.0) instead of the 0.01/0.02 fallback that made the bot misread depth ~50x.
+  if (g_tgi_set && g_tgi_bblind > 0) {
+    *sblind = g_tgi_sblind;
+    *bblind = g_tgi_bblind;
+    *bbet   = g_tgi_bblind;
+    *ante   = g_tgi_ante;
+    return;
+  }
   // No debug-messages needed here. Subroutines log enough.
   GetFirstBlindDataFromScraper(sblind, bblind, bbet, ante);
   // Take what we have and check the blinds on the list of known levels

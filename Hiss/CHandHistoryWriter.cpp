@@ -600,6 +600,12 @@ bool CHandHistoryWriter::LooksLikeStatus(CString n) {
 }
 
 void CHandHistoryWriter::ScrapeTourneyInfo() {
+  // Prefer Claude/MCP-parsed table_game_info (the c0tourney_* regions mis-scrape this
+  // table). These win over the region scrapes for an accurate ACR header.
+  if (!g_tgi_tourney_name.IsEmpty()) _tourney_title = g_tgi_tourney_name;
+  if (!g_tgi_tourney_id.IsEmpty())   _tourney_id    = g_tgi_tourney_id;
+  if (!g_tgi_table_number.IsEmpty()) _table_name    = g_tgi_table_number;
+  if (g_tgi_level > 0) { CString l; l.Format("%.0f", g_tgi_level); _tourney_level = l; }
   if (p_scraper == NULL || p_tablemap == NULL) return;
   // Tournament NAME -> filename TN- field. Strip commas (they break the ACR
   // filename / are unwanted in the name).

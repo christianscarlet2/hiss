@@ -35,6 +35,7 @@
 #include "CSymbolEngineTimingTells.h"
 #include "CSymbolEngineTilt.h"
 #include "CSymbolEngineValidator.h"
+#include "CSymbolEngineTableGameInfo.h"
 #include "CSymbolEngineExplain.h"
 #include "CSymbolEngineOpenAI.h"
 #include "CSymbolEngineAutoplayer.h"
@@ -194,6 +195,9 @@ void CEngineContainer::CreateSymbolEngines() {
   // per-heartbeat Validate() sees fresh values).
   p_symbol_engine_validator = new CSymbolEngineValidator();
   AddSymbolEngine(p_symbol_engine_validator);
+  // CSymbolEngineTableGameInfo (Claude/MCP-parsed blinds/ante/level/tourney from the table image)
+  p_symbol_engine_table_game_info = new CSymbolEngineTableGameInfo();
+  AddSymbolEngine(p_symbol_engine_table_game_info);
   // CSymbolEngineTableStats
   p_symbol_engine_table_stats = new CSymbolEngineTableStats();
   AddSymbolEngine(p_symbol_engine_table_stats);

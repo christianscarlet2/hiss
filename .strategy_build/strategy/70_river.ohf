@@ -6,9 +6,9 @@
 
 ##f$river##
 // @anchor: river (id 4)
-// Scrape safety gate: never commit chips on a hard-flagged mis-scrape.
+// Scrape safety gate: CHECK if free on a hard-flagged mis-scrape; do NOT auto-fold
+// (folding a made hand on a transient bad frame is worse). Facing a bet, fall through.
 WHEN validator_ok = 0 AND AmountToCall = 0 Check FORCE
-WHEN validator_ok = 0 Fold FORCE
 WHEN openai_action > -1000 RETURN openai_action FORCE
 WHEN AmountToCall == 0 RETURN f$river_nobet FORCE
 WHEN Others RETURN f$river_vs_bet FORCE
