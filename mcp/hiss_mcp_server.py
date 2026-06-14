@@ -134,6 +134,10 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "replay_screenshot", "description": "Take a FRESH replay screenshot of the connected table window (triggers a capture, then returns the image).",
      "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "autoplayer_toggle", "description": "Turn the bot's autoplayer on or off.",
+     "inputSchema": {"type": "object", "properties": {"on": {"type": "boolean"}}, "required": ["on"]}},
+    {"name": "fckra_action", "description": "Manually click an FCKRA button on the table (fold/check/call/raise/allin). Applied on the bot's next heartbeat if the button is clickable (i.e. it's the bot's turn).",
+     "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["fold", "check", "call", "raise", "allin"]}}, "required": ["action"]}},
     {"name": "terminal_panes", "description": "Live contents of the 4 Terminal panes (Context / State / Decisions / Chat) + the pinned State block, from the running hiss.exe.",
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "game_state", "description": "Live internal-engine game state JSON (seats, cards, pot, blinds, button, hero, HUD) from the running hiss.exe.",
@@ -180,6 +184,17 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {"database": {"type": "string"}}}},
     {"name": "pg_describe", "description": "Describe a table's columns and types.",
      "inputSchema": {"type": "object", "properties": {"table": {"type": "string"}, "database": {"type": "string"}}, "required": ["table"]}},
+    {"name": "learner_decisions", "description": "Read human decisions logged from learner.exe (action + reasoning + game-state snapshot). Compare these to the OHF to find improvements.",
+     "inputSchema": {"type": "object", "properties": {
+         "only_unreviewed": {"type": "boolean", "default": True},
+         "limit": {"type": "integer", "default": 20}}}},
+    {"name": "learner_ask", "description": "Post a question to the human in learner.exe's 'Questions from Claude' box (e.g. when their play differs from the OHF, or you need clarification). Optionally link it to a decision id.",
+     "inputSchema": {"type": "object", "properties": {
+         "question": {"type": "string"},
+         "decision_id": {"type": "integer"}},
+      "required": ["question"]}},
+    {"name": "learner_answers", "description": "Read the human's answers to questions you posted in learner.exe.",
+     "inputSchema": {"type": "object", "properties": {"only_recent": {"type": "boolean", "default": True}}}},
 ]
 
 def call_tool(name, args):
@@ -227,6 +242,14 @@ def call_tool(name, args):
         if not os.path.isfile(p):
             return [{"type": "text", "text": "Capture triggered but no screenshot file appeared (is Hiss connected to a table?)."}]
         return [image_content(p)]
+    if name == "autoplayer_toggle":
+        on = "1" if args.get("on") else "0"
+        return [{"type": "text", "text": hiss_get("/api/autoplayer?on=%s" % on)}]
+    if name == "fckra_action":
+        act = str(args.get("action", "")).lower()
+        if act not in ("fold", "check", "call", "raise", "allin"):
+            return [{"type": "text", "text": "action must be fold|check|call|raise|allin"}]
+        return [{"type": "text", "text": hiss_get("/api/action?do=%s" % act)}]
     if name == "terminal_panes":
         return [{"type": "text", "text": hiss_get("/api/terminal-state")}]
     if name == "game_state":
@@ -354,6 +377,26 @@ def call_tool(name, args):
                          "WHERE table_name='%s' ORDER BY ordinal_position;" % t,
                          database=args.get("database"))
         return [{"type": "text", "text": out or "(no such table / no columns)"}]
+    if name == "learner_decisions":
+        where = "WHERE reviewed=false " if args.get("only_unreviewed", True) else ""
+        lim = int(args.get("limit", 20))
+        out = psql_query(
+            "SELECT id, ts, handnumber, betround, hero_cards, board, pot, amount_to_call, "
+            "action, amount, reasoning FROM learner_decisions %s ORDER BY id DESC LIMIT %d;"
+            % (where, lim), tuples_only=False)
+        return [{"type": "text", "text": out or "(no decisions logged yet)"}]
+    if name == "learner_ask":
+        q = args["question"].replace("'", "''")
+        did = args.get("decision_id")
+        did_sql = str(int(did)) if did is not None else "NULL"
+        psql_query("INSERT INTO learner_questions (question, decision_id) VALUES ('%s', %s);"
+                   % (q, did_sql))
+        return [{"type": "text", "text": "Question posted to learner.exe."}]
+    if name == "learner_answers":
+        cond = "WHERE answered=true " + ("AND answered_ts > now() - interval '1 day' " if args.get("only_recent", True) else "")
+        out = psql_query("SELECT id, question, answer, answered_ts FROM learner_questions "
+                         "%s ORDER BY answered_ts DESC LIMIT 50;" % cond, tuples_only=False)
+        return [{"type": "text", "text": out or "(no answers yet)"}]
     raise ValueError("unknown tool: %s" % name)
 
 # ===========================================================================

@@ -17,7 +17,9 @@
 #include <process.h>
 #include "CAutoconnector.h"
 #include "CAutoplayer.h"
+#include "CAutoplayerButton.h"
 #include "CAutoplayerFunctions.h"
+#include "CCasinoInterface.h"
 #include "CBetroundCalculator.h"
 #include "CHeartbeatDelay.h"
 #include "CEngineContainer.h"
@@ -190,6 +192,26 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
 	// Reply-frames no longer here in the heartbeat.
   // we have a "ReplayFrameController for that.
   LeaveCriticalSection(&pParent->cs_update_in_progress);
+
+  // ---- MCP / API control requests (run on this thread, where the autoplayer acts) ----
+  if (g_mcp_autoplayer_request >= 0 && p_autoplayer != NULL) {
+    bool want_on = (g_mcp_autoplayer_request == 1);
+    g_mcp_autoplayer_request = -1;
+    write_log(k_always_log_basic_information, "[MCP] Autoplayer -> %s (API request)\n", want_on ? "ON" : "OFF");
+    p_autoplayer->EngageAutoplayer(want_on);
+  }
+  if (g_mcp_action_request >= 0 && p_casino_interface != NULL) {
+    int code = g_mcp_action_request;
+    g_mcp_action_request = -1;
+    CAutoplayerButton *btn = p_casino_interface->LogicalAutoplayerButton(code);
+    if (btn != NULL && btn->IsClickable()) {
+      write_log(k_always_log_basic_information, "[MCP] Manual FCKRA action: clicking button code %d\n", code);
+      btn->Click();
+    } else {
+      write_log(k_always_log_basic_information, "[MCP] Manual FCKRA code %d skipped (button not clickable now)\n", code);
+    }
+  }
+
 	p_openholdem_title->UpdateTitle();
 	////////////////////////////////////////////////////////////////////////////////////////////
 	// Update scraper output dialog if it is present

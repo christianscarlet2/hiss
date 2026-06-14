@@ -3,6 +3,7 @@
 #include "ChatTerminalWindow.h"
 #include "CEngineContainer.h"
 #include "UnknownSymbols.h"
+#include "..\Shared\MagicNumbers\MagicNumbers.h"
 #include "CSymbolEngineTableLimits.h"
 #include "CSymbolEngineGameType.h"
 #include "CSymbolEngineIsOmaha.h"
