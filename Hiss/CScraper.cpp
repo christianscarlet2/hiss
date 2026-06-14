@@ -61,6 +61,7 @@ int g_mcp_action_request = -1;       // a k_autoplayer_function_* code (FCKRA)
 double g_mcp_action_amount = -1.0;   // bet/raise size in big blinds (<0 = plain button click)
 unsigned long g_mcp_action_set_tick = 0;  // GetTickCount() when the request was set (for wait-for-turn expiry)
 bool g_mcp_reload_ohf_request = false;  // /api/reload-ohf -> heartbeat reloads the strategy folder
+bool g_frame_history_enabled = true;    // save a heartbeat frame each scrape (10-min rolling history)
 
 // Make a region name safe for a filename (region names are normally alphanumeric).
 static CString SanitizeRegionFilename(CString name) {
@@ -116,6 +117,7 @@ CScraper::CScraper(void) {
   _leaking_GDI_objects = 0;
   total_region_counter = 0;
   identical_region_counter = 0;
+  _frame_prune_counter = 0;
   _ocr_recognitions = 0;
   _ocr_reuses = 0;
   _chg_pixel_delta = 0;   // 0 = exact match (off) until LoadChangeThresholds() runs
@@ -1625,6 +1627,51 @@ void CScraper::DumpScrapesIfRequested() {
 		}
 	}
 	write_log(k_always_log_basic_information, "[CScraper] Dumped region scrapes to %s\n", dir.GetString());
+}
+
+// Wall-clock milliseconds since the Unix epoch (matches `date +%s%3N`), so frame
+// filenames line up with the time a command/question was asked.
+static unsigned long long NowEpochMs() {
+	FILETIME ft;
+	GetSystemTimeAsFileTime(&ft);
+	ULARGE_INTEGER u;
+	u.LowPart = ft.dwLowDateTime;
+	u.HighPart = ft.dwHighDateTime;
+	// FILETIME is 100ns ticks since 1601-01-01; 116444736000000000 = ticks to 1970.
+	return (u.QuadPart - 116444736000000000ULL) / 10000ULL;
+}
+
+void CScraper::SaveHeartbeatFrame() {
+	if (!g_frame_history_enabled) return;
+	if (_entire_window_cur == NULL) return;
+	CString dir = LogsDirectory() + "frames";
+	CreateDirectory(dir, NULL);
+	unsigned long long ms = NowEpochMs();
+	CString path;
+	path.Format("%s\\%llu.bmp", dir.GetString(), ms);
+	SaveHBITMAPToFile(_entire_window_cur, path.GetString());
+	// Prune frames older than 10 minutes. Scanning the directory every heartbeat would
+	// be wasteful, so only sweep every ~60 frames.
+	if ((++_frame_prune_counter % 60) == 0) {
+		PruneFramesOlderThan(ms - 600000ULL);   // 10 minutes
+	}
+}
+
+void CScraper::PruneFramesOlderThan(unsigned long long cutoff_epoch_ms) {
+	CString dir = LogsDirectory() + "frames";
+	CString pattern = dir + "\\*.bmp";
+	WIN32_FIND_DATA fd;
+	HANDLE h = FindFirstFile(pattern.GetString(), &fd);
+	if (h == INVALID_HANDLE_VALUE) return;
+	do {
+		// Filenames are "<epoch_ms>.bmp"; parse the leading number.
+		unsigned long long fms = _strtoui64(CStringA(fd.cFileName).GetString(), NULL, 10);
+		if (fms > 0 && fms < cutoff_epoch_ms) {
+			CString full = dir + "\\" + fd.cFileName;
+			DeleteFile(full.GetString());
+		}
+	} while (FindNextFile(h, &fd));
+	FindClose(h);
 }
 
 void CScraper::CreateBitmaps(void) {

@@ -109,7 +109,12 @@ class CScraper : public CSpaceOptimizedGlobalObject {
 	// region's raw scrape (<name>_raw.bmp) and its OCR/recognition result (<name>.txt)
 	// to logs\scrapes\, then clear the flag. Called once per heartbeat scrape.
 	void DumpScrapesIfRequested();
+	// Rolling heartbeat-frame history: every heartbeat, save the captured table window
+	// to logs\frames\<epoch_ms>.bmp and prune anything older than 10 minutes. Lets us
+	// look back at exactly what was on screen at the time a question/command was asked.
+	void SaveHeartbeatFrame();
  private:
+	void PruneFramesOlderThan(unsigned long long cutoff_epoch_ms);
 	bool ProcessRegion(RMapCI r_iter);
 	bool IsExtendedNumberic(CString text);
 	BOOL SaveHBITMAPToFile(HBITMAP hBitmap, LPCTSTR lpszFileName);
@@ -129,6 +134,7 @@ class CScraper : public CSpaceOptimizedGlobalObject {
   // Used for potential optimizations
   int total_region_counter;
   int identical_region_counter;
+  int _frame_prune_counter;   // throttles the 10-min frame-history prune scan
  public:
   // Per-scrape-cycle OCR profiling (reset/read by CLazyScraper::DoScrape):
   // how many AutoOcr regions were freshly recognised this frame vs reused
@@ -171,6 +177,7 @@ extern int g_mcp_action_request;       // a k_autoplayer_function_* code (FCKRA)
 extern double g_mcp_action_amount;     // bet/raise size in big blinds (<0 = plain click)
 extern unsigned long g_mcp_action_set_tick;  // tick when set (wait-for-turn expiry)
 extern bool g_mcp_reload_ohf_request;  // set by /api/reload-ohf; heartbeat reloads the strategy folder
+extern bool g_frame_history_enabled;   // when true, save a heartbeat frame each scrape (10-min rolling)
 
 #endif // INC_CSCRAPER_H
 

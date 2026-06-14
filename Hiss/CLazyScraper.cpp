@@ -220,6 +220,8 @@ void CLazyScraper::DoScrape() {
   }
   // MCP feed: dump full-table + per-region scrapes/results when requested.
   p_scraper->DumpScrapesIfRequested();
+  // Rolling 10-minute heartbeat-frame history (logs\frames\<epoch_ms>.bmp).
+  p_scraper->SaveHeartbeatFrame();
 }
 
 bool CLazyScraper::NeedDealerChair() {
