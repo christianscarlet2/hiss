@@ -6,6 +6,7 @@
 #include <gdiplus.h>
 #pragma comment(lib, "gdiplus.lib")
 #include "resource.h"
+#include "WindowDockUtil.h"
 
 using namespace Microsoft::WRL;
 using namespace Gdiplus;
@@ -59,6 +60,8 @@ IMPLEMENT_DYNAMIC(CReactTableWindow, CWnd)
 BEGIN_MESSAGE_MAP(CReactTableWindow, CWnd)
 	ON_WM_CREATE()
 	ON_WM_SIZE()
+	ON_WM_MOVING()
+	ON_WM_SYSCOMMAND()
 	ON_WM_NCCALCSIZE()
 	ON_WM_NCHITTEST()
 	ON_WM_PAINT()
@@ -85,6 +88,8 @@ CReactTableWindow::CReactTableWindow()
 	_tracking_mouse = false;
 	_gdiplus_token = 0;
 	_title = "Hiss:";
+	_docked = true;
+	_always_on_top = false;
 }
 
 static const UINT_PTR kTitleSyncTimer = 0x52544D54;   // refresh the mirrored title
@@ -143,6 +148,7 @@ int CReactTableWindow::OnCreate(LPCREATESTRUCT lpCreateStruct)
 	if (CWnd::OnCreate(lpCreateStruct) == -1) {
 		return -1;
 	}
+	Hiss_AppendAlwaysOnTopMenu(this);
 
 	GdiplusStartupInput gdiplus_startup_input;
 	GdiplusStartup(&_gdiplus_token, &gdiplus_startup_input, NULL);
@@ -242,9 +248,24 @@ void CReactTableWindow::AttachToOwner(void)
 	CRect owner_rect, rect;
 	_owner->GetWindowRect(&owner_rect);
 	GetWindowRect(&rect);
-	int x = owner_rect.right - rect.Width();
-	int y = owner_rect.bottom;
+	// Dock to the owner's right side (aligned tops) so it sticks to the side.
+	const int gap = 8;
+	int x = owner_rect.right + gap;
+	int y = owner_rect.top;
 	SetWindowPos(NULL, x, y, rect.Width(), rect.Height(), SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+void CReactTableWindow::OnMoving(UINT fwSide, LPRECT pRect)
+{
+	CWnd::OnMoving(fwSide, pRect);
+	// Detachable, snaps to the owner's side / a screen edge when dragged near.
+	_docked = (Hiss_SnapMovingRect(pRect, _owner, 8) != 0);
+}
+
+void CReactTableWindow::OnSysCommand(UINT nID, LPARAM lParam)
+{
+	if (Hiss_HandleAlwaysOnTopSysCommand(this, nID, &_always_on_top)) return;
+	CWnd::OnSysCommand(nID, lParam);
 }
 
 void CReactTableWindow::NavigateToDisplay(unsigned short port)

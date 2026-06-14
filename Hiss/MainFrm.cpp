@@ -77,6 +77,7 @@
 #include "OpenHoldemDoc.h"
 #include "ReactTableWindow.h"
 #include "ReactMappingsWindow.h"
+#include "WindowDockUtil.h"
 #include "SAPrefsDialog.h"
 #include "Singletons.h"
 #include "CTwoSuccessiveClicks.h"
@@ -308,6 +309,7 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct) {
 	lpCreateStruct->dwExStyle |= WS_MINIMIZE;
 	if (CFrameWnd::OnCreate(lpCreateStruct) == kUndefined)
 		return -1;
+	Hiss_AppendAlwaysOnTopMenu(this);
 	// Tool bar
 	p_flags_toolbar = new CFlagsToolbar(this);
 	// Status bar
@@ -380,12 +382,19 @@ LRESULT CMainFrame::OnPanicAutoplayerOff(WPARAM wParam, LPARAM lParam) {
 	return 0;
 }
 
+void CMainFrame::OnSysCommand(UINT nID, LPARAM lParam) {
+	if (Hiss_HandleAlwaysOnTopSysCommand(this, nID, &_always_on_top)) return;
+	CFrameWnd::OnSysCommand(nID, lParam);
+}
+
 void CMainFrame::OnMove(int x, int y) {
 	CFrameWnd::OnMove(x, y);
-	if (p_chat_terminal != NULL) {
+	// Re-glue to our side only while the window is still DOCKED. Once the user drags
+	// it away (detached), leave it where it is.
+	if (p_chat_terminal != NULL && p_chat_terminal->IsDocked()) {
 		p_chat_terminal->AttachToOwner(true);
 	}
-	if (p_react_table_window != NULL) {
+	if (p_react_table_window != NULL && p_react_table_window->IsDocked()) {
 		p_react_table_window->AttachToOwner();
 	}
 }

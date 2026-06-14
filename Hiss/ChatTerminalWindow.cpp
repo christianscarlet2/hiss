@@ -6,6 +6,7 @@
 #include "ChatTerminalServer.h"
 #include "COpenAiAdvisor.h"
 #include "HudManager.h"
+#include "WindowDockUtil.h"
 #include "inlines/eval.h"
 #include "..\Shared\CCritSec\CCritSec.h"
 #include <shellapi.h>
@@ -396,6 +397,7 @@ BEGIN_MESSAGE_MAP(CChatTerminalWindow, CWnd)
 	ON_WM_CREATE()
 	ON_WM_SIZE()
 	ON_WM_MOVING()
+	ON_WM_SYSCOMMAND()
 	ON_BN_CLICKED(IDC_TERMINAL_CLEAR, &CChatTerminalWindow::OnClearClicked)
 	ON_BN_CLICKED(IDC_TERMINAL_SEND, &CChatTerminalWindow::OnSendClicked)
 	ON_CBN_SELCHANGE(IDC_TERMINAL_SCREEN, &CChatTerminalWindow::OnScreenChanged)
@@ -483,6 +485,8 @@ CChatTerminalWindow::CChatTerminalWindow()
 {
 	_owner = NULL;
 	_attach_left = false;
+	_docked = true;
+	_always_on_top = false;
 	_active_screen = 0;
 	_history_index = 0;
 	_layout_ready = false;
@@ -531,6 +535,7 @@ int CChatTerminalWindow::OnCreate(LPCREATESTRUCT lpCreateStruct)
 	if (CWnd::OnCreate(lpCreateStruct) == -1) {
 		return -1;
 	}
+	Hiss_AppendAlwaysOnTopMenu(this);
 
 	_title.Create("Terminal", WS_CHILD | WS_VISIBLE | SS_LEFT, CRect(0, 0, 0, 0), this);
 	_clear_button.Create("Clear", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, CRect(0, 0, 0, 0), this, IDC_TERMINAL_CLEAR);
@@ -594,28 +599,19 @@ void CChatTerminalWindow::OnSize(UINT nType, int cx, int cy)
 void CChatTerminalWindow::OnMoving(UINT fwSide, LPRECT pRect)
 {
 	CWnd::OnMoving(fwSide, pRect);
-	if (_owner == NULL || !::IsWindow(_owner->GetSafeHwnd())) {
-		return;
-	}
+	// Detachable, but snaps to the owner's left/right side (or a screen edge) when
+	// dragged near. Only when snapped to the owner do we stay "docked" (re-glued on
+	// owner moves); dragged away, it floats freely.
+	int docked = Hiss_SnapMovingRect(pRect, _owner, kTerminalGap);
+	_docked = (docked != 0);
+	if (docked == 1) _attach_left = true;
+	else if (docked == 2) _attach_left = false;
+}
 
-	CRect owner_rect;
-	_owner->GetWindowRect(&owner_rect);
-	int terminal_center = (pRect->left + pRect->right) / 2;
-	int owner_center = (owner_rect.left + owner_rect.right) / 2;
-	_attach_left = terminal_center < owner_center;
-
-	int width = pRect->right - pRect->left;
-	int height = pRect->bottom - pRect->top;
-	if (_attach_left) {
-		pRect->right = owner_rect.left - kTerminalGap;
-		pRect->left = pRect->right - width;
-	}
-	else {
-		pRect->left = owner_rect.right + kTerminalGap;
-		pRect->right = pRect->left + width;
-	}
-	pRect->top = owner_rect.top;
-	pRect->bottom = pRect->top + height;
+void CChatTerminalWindow::OnSysCommand(UINT nID, LPARAM lParam)
+{
+	if (Hiss_HandleAlwaysOnTopSysCommand(this, nID, &_always_on_top)) return;
+	CWnd::OnSysCommand(nID, lParam);
 }
 
 void CChatTerminalWindow::AttachToOwner(bool force)

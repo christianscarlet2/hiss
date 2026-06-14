@@ -91,6 +91,7 @@ protected:
 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
 	afx_msg void OnSize(UINT nType, int cx, int cy);
 	afx_msg void OnMoving(UINT fwSide, LPRECT pRect);
+	afx_msg void OnSysCommand(UINT nID, LPARAM lParam);
 	afx_msg void OnClearClicked();
 	afx_msg void OnSendClicked();
 	afx_msg void OnScreenChanged();
@@ -158,6 +159,11 @@ private:
 	std::vector<SChatTerminalScreen> _screens;
 	int _active_screen;
 	bool _attach_left;
+	bool _docked;          // glued to the owner's side (re-glue on owner move) vs detached
+	bool _always_on_top;   // system-menu "Always on Top" toggle
+ public:
+	bool IsDocked() const { return _docked; }
+ protected:
 	bool _layout_ready;
 	bool _pot_odds_enabled;
 	bool _implied_pot_odds_enabled;

@@ -57,6 +57,7 @@ protected: // create from serialization only
 	afx_msg void OnFileLoadTableMap();
 	afx_msg void OnTimer(UINT_PTR nIDEvent);
 	afx_msg void OnMove(int x, int y);
+	afx_msg void OnSysCommand(UINT nID, LPARAM lParam);
 	afx_msg void OnUpdateStatus(CCmdUI *pCmdUI);
 	afx_msg void OnAutoplayer();
 	afx_msg void OnValidator();
@@ -107,6 +108,7 @@ public:
 private:
 	// private variables - use public accessors and public mutators to address these
 	bool			_wait_cursor;	 // Used if we need to display a wait cursor anywhere
+	bool			_always_on_top = false;	// system-menu "Always on Top" toggle
 
 private:
 	// private functions and variables - not available via accessors or mutators

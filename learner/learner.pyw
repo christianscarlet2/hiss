@@ -48,6 +48,18 @@ def hiss_get(path):
 def esc(s):
     return ("" if s is None else str(s)).replace("'", "''")
 
+PREF_FILE = os.path.join(os.path.expanduser("~"), ".hiss_learner.json")
+def load_prefs():
+    try:
+        return json.load(open(PREF_FILE))
+    except Exception:
+        return {}
+def save_prefs(p):
+    try:
+        json.dump(p, open(PREF_FILE, "w"))
+    except Exception:
+        pass
+
 def run_sql(sql, read=False):
     env = dict(os.environ); env["PGPASSWORD"] = PGPASS
     flags = ["-t", "-A"] if read else []
@@ -101,11 +113,14 @@ class Learner(tk.Tk):
         # --- menu: Tools -> Always on Top ---
         menubar = tk.Menu(self)
         tools = tk.Menu(menubar, tearoff=0)
-        self.on_top = tk.BooleanVar(value=False)
+        self.prefs = load_prefs()
+        self.on_top = tk.BooleanVar(value=bool(self.prefs.get("always_on_top", False)))
         tools.add_checkbutton(label="Always on Top", variable=self.on_top,
                               command=self.toggle_on_top)
         menubar.add_cascade(label="Tools", menu=tools)
         self.config(menu=menubar)
+        # apply the persisted preference at startup
+        self.wm_attributes("-topmost", bool(self.on_top.get()))
 
         # --- live context panel ---
         ctxf = ttk.LabelFrame(self, text="Live table (from hiss.exe)")
@@ -195,7 +210,10 @@ class Learner(tk.Tk):
         self.after(2000, self.refresh_ctx)
 
     def toggle_on_top(self):
-        self.wm_attributes("-topmost", bool(self.on_top.get()))
+        on = bool(self.on_top.get())
+        self.wm_attributes("-topmost", on)
+        self.prefs["always_on_top"] = on
+        save_prefs(self.prefs)
 
     # ---- follow-up review of past decisions ----
     def refresh_followups(self):

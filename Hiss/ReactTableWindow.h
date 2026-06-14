@@ -14,10 +14,13 @@ public:
 	BOOL Create(CWnd *owner, unsigned short port);
 	void NavigateToDisplay(unsigned short port);
 	void AttachToOwner(void);
+	bool IsDocked() const { return _docked; }
 
 protected:
 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
 	afx_msg void OnSize(UINT nType, int cx, int cy);
+	afx_msg void OnMoving(UINT fwSide, LPRECT pRect);
+	afx_msg void OnSysCommand(UINT nID, LPARAM lParam);
 	// Custom GDI+ title bar (the standard caption is removed via WM_NCCALCSIZE).
 	afx_msg void OnNcCalcSize(BOOL bCalcValidRects, NCCALCSIZE_PARAMS *lpncsp);
 	afx_msg LRESULT OnNcHitTest(CPoint point);
@@ -57,6 +60,8 @@ private:
 	bool _tracking_mouse;
 	ULONG_PTR _gdiplus_token;
 	CString _title;   // mirrors the main window's caption; refreshed by a timer
+	bool _docked;          // glued to the owner's side vs detached
+	bool _always_on_top;   // system-menu "Always on Top" toggle
 };
 
 extern CReactTableWindow *p_react_table_window;
