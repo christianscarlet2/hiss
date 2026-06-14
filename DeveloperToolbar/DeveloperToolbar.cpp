@@ -59,6 +59,7 @@ static void SetButtonIcon(HWND button, const char *ico_path) {
 #define IDC_OPEN_SCRCPY_BUTTON 1012
 #define IDC_OPEN_TRAINER_BUTTON 1013
 #define IDC_REC_SCRCPY_BUTTON 1014
+#define IDC_OPEN_LEARNER_BUTTON 1015
 
 #define TIMER_WINDOW_MONITOR 2001
 
@@ -80,6 +81,7 @@ static HWND g_open_openscrape_button = NULL;
 static HWND g_open_openholdem_button = NULL;
 static HWND g_open_scrcpy_button = NULL;
 static HWND g_open_trainer_button = NULL;
+static HWND g_open_learner_button = NULL;
 static HWND g_rec_scrcpy_button = NULL;
 static HWND g_close_all_button = NULL;
 static HWND g_build_progress = NULL;
@@ -1362,6 +1364,10 @@ static void CreateChildControls(HWND hwnd) {
     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
     126, 154, 220, 28, hwnd, (HMENU)IDC_REC_SCRCPY_BUTTON, g_instance, NULL);
 
+  g_open_learner_button = CreateWindow("BUTTON", "Learner",
+    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+    16, 190, 104, 28, hwnd, (HMENU)IDC_OPEN_LEARNER_BUTTON, g_instance, NULL);
+
   // App icons on the launch buttons.
   SetButtonIcon(g_open_openholdem_button, kSnakeIcoPath);   // Hiss
   SetButtonIcon(g_open_openscrape_button, kEyeIcoPath);     // Vision
@@ -1369,18 +1375,18 @@ static void CreateChildControls(HWND hwnd) {
 
   g_build_progress = CreateWindowEx(0, PROGRESS_CLASS, "",
     WS_CHILD | WS_VISIBLE,
-    16, 194, 330, 18, hwnd, (HMENU)IDC_BUILD_PROGRESS, g_instance, NULL);
+    16, 230, 330, 18, hwnd, (HMENU)IDC_BUILD_PROGRESS, g_instance, NULL);
   SendMessage(g_build_progress, PBM_SETRANGE, 0, MAKELPARAM(0, 100));
   SendMessage(g_build_progress, PBM_SETPOS, 0, 0);
 
   g_alert_text = CreateWindow("STATIC", "",
     WS_CHILD | SS_CENTER,
-    16, 220, 330, 36, hwnd, (HMENU)IDC_ALERT_TEXT, g_instance, NULL);
+    16, 256, 330, 36, hwnd, (HMENU)IDC_ALERT_TEXT, g_instance, NULL);
   ShowWindow(g_alert_text, SW_HIDE);
 
   g_status_text = CreateWindow("STATIC", "Enter size, then click Pick Window.",
     WS_CHILD | WS_VISIBLE,
-    16, 264, 340, 54, hwnd, (HMENU)IDC_STATUS_TEXT, g_instance, NULL);
+    16, 300, 340, 54, hwnd, (HMENU)IDC_STATUS_TEXT, g_instance, NULL);
   LoadDefaultTablemapSize();
 }
 
@@ -1418,6 +1424,10 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARA
     }
     if (LOWORD(wparam) == IDC_OPEN_TRAINER_BUTTON) {
       OpenRepoExecutable("trainer.exe", "Trainer");
+      return 0;
+    }
+    if (LOWORD(wparam) == IDC_OPEN_LEARNER_BUTTON) {
+      OpenRepoExecutable("learner.exe", "Learner");
       return 0;
     }
     if (LOWORD(wparam) == IDC_CLOSE_ALL_BUTTON) {
@@ -1531,7 +1541,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show_command) {
 
   HWND hwnd = CreateWindowEx(WS_EX_TOPMOST, kWindowClassName, kAppTitle,
     WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-    CW_USEDEFAULT, CW_USEDEFAULT, 380, 385,
+    CW_USEDEFAULT, CW_USEDEFAULT, 380, 421,
     NULL, NULL, instance, NULL);
   if (hwnd == NULL) {
     return 1;
