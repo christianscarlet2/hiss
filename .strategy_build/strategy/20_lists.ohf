@@ -56,6 +56,43 @@ K6s K7s K8s K9s KTs KJs KQs Q8s Q9s QTs QJs J8s J9s JTs T7s T8s T9s 96s 97s 98s 
 A7o A8o A9o ATo AJo AQo AKo K9o KTo KJo KQo Q9o QTo QJo J9o JTo T9o
 
 //-----------------------------------------------------------------------------
+//  Push/fold JAM ranges (effective stack <= ~10bb). Near-Nash, position-scaled.
+//  At these depths strong broadways (KJ/QJ/KT/QT/JT) and any ace/pair are SHOVES,
+//  not folds - folding them is the leak that blinds a short stack out. [Nash push]
+//-----------------------------------------------------------------------------
+
+##listJamLP##
+// Button / cutoff / late / SB first-in: very wide (~55-60%).
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+K2s K3s K4s K5s K6s K7s K8s K9s KTs KJs KQs
+Q2s Q3s Q4s Q5s Q6s Q7s Q8s Q9s QTs QJs
+J5s J6s J7s J8s J9s JTs T6s T7s T8s T9s 95s 96s 97s 98s 85s 86s 87s 75s 76s 64s 65s 54s 43s
+A2o A3o A4o A5o A6o A7o A8o A9o ATo AJo AQo AKo
+K5o K6o K7o K8o K9o KTo KJo KQo Q7o Q8o Q9o QTo QJo J7o J8o J9o JTo T7o T8o T9o 97o 98o 87o
+
+##listJamMP##
+// Middle position first-in (~35%).
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+K7s K8s K9s KTs KJs KQs Q8s Q9s QTs QJs J8s J9s JTs T8s T9s 97s 98s 87s 76s 65s
+A5o A7o A8o A9o ATo AJo AQo AKo K9o KTo KJo KQo Q9o QTo QJo J9o JTo T9o
+
+##listJamEP##
+// Early position first-in (~22%).
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A8s A9s ATs AJs AQs AKs
+K9s KTs KJs KQs QTs QJs JTs T9s 98s
+A9o ATo AJo AQo AKo KJo KQo
+
+##listCallShove##
+// Call / get-it-in vs a SINGLE shove at a short stack (~<=10bb), far from the money.
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+K8s K9s KTs KJs KQs Q9s QTs QJs J9s JTs T9s 98s
+A7o A8o A9o ATo AJo AQo AKo K9o KTo KJo KQo QTo QJo JTo
+
+//-----------------------------------------------------------------------------
 //  Facing aggression.
 //-----------------------------------------------------------------------------
 

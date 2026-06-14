@@ -88,14 +88,17 @@ WHEN Others Fold FORCE
 //-----------------------------------------------------------------------------
 
 ##f$preflop_pushfold##
-// Facing action: jam premiums, otherwise fold.
-WHEN Raises >= 1 AND listPremium RaiseMax FORCE
-WHEN Raises >= 1 AND f$EffStack <= 8 AND (listBigPair OR list3betValue) RaiseMax FORCE
-WHEN Raises >= 1 Fold FORCE
-// First in: shove a position-scaled range.
-WHEN (InButton OR InCutOff OR InLatePosition) AND listOpenMP AND explain_pushfold RaiseMax FORCE
-WHEN InMiddlePosition AND listOpenEP RaiseMax FORCE
-WHEN InEarlyPosition AND (listBigPair OR list3betValue OR listSetMine) RaiseMax FORCE
-WHEN InSmallBlind AND listOpenLP RaiseMax FORCE
+// Facing a 3-bet+ (multiway / lots in): tighten to the get-it-in tier.
+WHEN Raises >= 2 AND (listBigPair OR list3betValue) RaiseMax FORCE
+WHEN Raises >= 2 Fold FORCE
+// Facing a SINGLE raise/shove: get it in WIDE far from the money (KJ/QJ/KT type are
+// calls/re-jams here, not folds). Re-jam over a non-allin raise; calls an allin.
+WHEN Raises == 1 AND listCallShove RaiseMax FORCE
+WHEN Raises == 1 Fold FORCE
+// First in: jam a near-Nash, position-scaled range (very wide late). Folding strong
+// broadways at <=10bb is the leak that blinds you out.
+WHEN (InButton OR InCutOff OR InLatePosition OR InSmallBlind) AND listJamLP AND explain_pushfold RaiseMax FORCE
+WHEN InMiddlePosition AND listJamMP RaiseMax FORCE
+WHEN InEarlyPosition AND listJamEP RaiseMax FORCE
 WHEN InBigBlind Check FORCE
 WHEN Others Fold FORCE
