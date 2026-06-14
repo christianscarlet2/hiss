@@ -22,8 +22,37 @@ Pure standard library + tkinter. Talks to postgres via psql.exe and to hiss.exe
 via http://127.0.0.1:<port>.
 """
 
-import os, json, subprocess, urllib.request, tkinter as tk
+import os, json, subprocess, urllib.request, ctypes, tkinter as tk
+from ctypes import wintypes
 from tkinter import ttk, messagebox
+
+# --- Win32 helpers to refocus another app window (e.g. the Claude box in VSCode) ---
+_user32 = ctypes.windll.user32
+def win_foreground_hwnd():
+    return int(_user32.GetForegroundWindow())
+def win_title(hwnd):
+    n = _user32.GetWindowTextLengthW(hwnd)
+    buf = ctypes.create_unicode_buffer(n + 1)
+    _user32.GetWindowTextW(hwnd, buf, n + 1)
+    return buf.value
+def win_find_by_title(substr):
+    hits = []
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+    def _cb(hwnd, _):
+        if _user32.IsWindowVisible(hwnd):
+            t = win_title(hwnd)
+            if substr and substr.lower() in t.lower():
+                hits.append(int(hwnd))
+        return True
+    _user32.EnumWindows(_cb, 0)
+    return hits[0] if hits else 0
+def win_focus(hwnd):
+    if not hwnd or not _user32.IsWindow(hwnd):
+        return False
+    if _user32.IsIconic(hwnd):
+        _user32.ShowWindow(hwnd, 9)   # SW_RESTORE
+    _user32.SetForegroundWindow(hwnd)
+    return True
 
 REPO   = os.environ.get("HISS_REPO", r"C:\www\openholdembot_old")
 LOGS   = os.path.join(REPO, "Release", "logs")
@@ -105,7 +134,7 @@ class Learner(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("learner.exe  --  Hiss decision trainer")
-        self.geometry("560x690")
+        self.geometry("600x1040")   # fits a 1080-tall viewport
         self.configure(padx=10, pady=8)
         self.ctx = {}
         self.cur_q = None  # (id, text)
@@ -117,6 +146,9 @@ class Learner(tk.Tk):
         self.on_top = tk.BooleanVar(value=bool(self.prefs.get("always_on_top", False)))
         tools.add_checkbutton(label="Always on Top", variable=self.on_top,
                               command=self.toggle_on_top)
+        tools.add_separator()
+        tools.add_command(label="Pick F4 target window (click it within 4s)",
+                          command=self.pick_target)
         menubar.add_cascade(label="Tools", menu=tools)
         self.config(menu=menubar)
         # apply the persisted preference at startup
@@ -181,19 +213,67 @@ class Learner(tk.Tk):
         self._fu_ids = []
 
         # --- questions from Claude ---
-        qf = ttk.LabelFrame(self, text="Questions from Claude")
+        qf = ttk.LabelFrame(self, text="Questions from Claude  (F3 = answer)")
         qf.pack(fill="both", expand=True, pady=6)
-        self.q_text = tk.Text(qf, height=4, wrap="word", state="disabled", background="#fffbe6")
-        self.q_text.pack(fill="x", padx=6, pady=4)
+        qtw = ttk.Frame(qf); qtw.pack(fill="both", expand=True, padx=6, pady=4)
+        qsb = ttk.Scrollbar(qtw); qsb.pack(side="right", fill="y")
+        self.q_text = tk.Text(qtw, height=34, wrap="word", state="disabled",
+                              background="#fffbe6", font=("Segoe UI", 8),
+                              yscrollcommand=qsb.set)
+        self.q_text.pack(side="left", fill="both", expand=True)
+        qsb.config(command=self.q_text.yview)
+        self.lbl_answering = ttk.Label(qf, text="No pending question", foreground="#1565c0")
+        self.lbl_answering.pack(anchor="w", padx=6)
         self.answer = tk.Text(qf, height=3, wrap="word"); self.answer.pack(fill="x", padx=6)
         self.btn_ans = ttk.Button(qf, text="Send answer", command=self.send_answer)
         self.btn_ans.pack(anchor="e", padx=6, pady=4)
 
         self.status = ttk.Label(self, text="", foreground="#2e7d32"); self.status.pack(anchor="w")
 
+        # Keyboard focus shortcuts (work whenever learner has focus):
+        #   F1 -> reasoning, F2 -> follow-up note, F3 -> answer box,
+        #   F4 -> jump back to the picked target window (e.g. the Claude box in VSCode)
+        self.bind_all("<F1>", lambda e: self._focus(self.reason))
+        self.bind_all("<F2>", lambda e: self._focus(self.fu_note))
+        self.bind_all("<F3>", lambda e: self._focus(self.answer))
+        self.bind_all("<F4>", lambda e: self.focus_target())
+
         self.refresh_ctx()
         self.poll_questions()
         self.refresh_followups()
+
+    # ---- focus helpers / target-window picker ----
+    def _focus(self, widget):
+        try:
+            widget.focus_force()
+        except Exception:
+            pass
+        return "break"
+
+    def pick_target(self):
+        self.status.config(text="Click the target window (e.g. the Claude box in VSCode) within 4 seconds...")
+        self.after(4000, self._capture_target)
+
+    def _capture_target(self):
+        hwnd = win_foreground_hwnd()
+        title = win_title(hwnd)
+        if "Hiss decision trainer" in title:   # they didn't click away from learner
+            self.status.config(text="Pick cancelled (still on learner). Try again and click the target window.")
+            return
+        self.prefs["target_hwnd"] = hwnd
+        self.prefs["target_title"] = title
+        save_prefs(self.prefs)
+        self.status.config(text="F4 target set: %s" % (title[:60] or "(untitled)"))
+
+    def focus_target(self):
+        hwnd = int(self.prefs.get("target_hwnd", 0) or 0)
+        if not (hwnd and _user32.IsWindow(hwnd)):
+            # HWND stale (target app restarted): re-find by remembered title, else VSCode.
+            substr = self.prefs.get("target_title", "") or "Visual Studio Code"
+            hwnd = win_find_by_title(substr) or win_find_by_title("Visual Studio Code")
+        if not win_focus(hwnd):
+            self.status.config(text="No F4 target set. Tools -> Pick F4 target window.")
+        return "break"
 
     # ---- live refresh
     def refresh_ctx(self):
@@ -317,22 +397,48 @@ class Learner(tk.Tk):
             self.status.config(text="logged %s, but table action failed: %s" % (action.upper(), err))
         self.reason.delete("1.0", "end"); self.amount.delete(0, "end")
 
-    # ---- questions
+    # ---- questions (scrolling Q&A log, newest at bottom) ----
     def poll_questions(self):
         try:
-            out = run_sql("SELECT id, replace(question, chr(10), ' ') FROM learner_questions "
-                          "WHERE answered=false ORDER BY id LIMIT 1;", read=True).strip()
+            log = run_sql(
+                "SELECT id, answered, replace(question, chr(10), ' '), "
+                "COALESCE(replace(answer, chr(10), ' '), '') "
+                "FROM learner_questions ORDER BY id DESC LIMIT 60;", read=True)
         except Exception:
-            out = ""
-        self.q_text.config(state="normal"); self.q_text.delete("1.0", "end")
-        if out:
-            qid, qtext = out.split("|", 1)
-            self.cur_q = (qid, qtext)
-            self.q_text.insert("1.0", qtext)
-        else:
-            self.cur_q = None
-            self.q_text.insert("1.0", "(no pending questions)")
+            log = ""
+        rows = [l for l in log.strip().splitlines() if l.strip()]
+        rows.reverse()                      # oldest -> newest (newest at the bottom)
+        lines = []
+        for r in rows:
+            f = r.split("|")
+            while len(f) < 4: f.append("")
+            qid, ans, q, a = f[0], f[1], f[2], f[3]
+            mark = "" if ans == "t" else "  *unanswered*"
+            lines.append("Q#%s%s: %s" % (qid, mark, q))
+            if ans == "t" and a:
+                lines.append("    you: %s" % a)
+            lines.append("")
+        text = "\n".join(lines) if lines else "(no questions yet)"
+        # Autoscroll to bottom only if the user is already near the bottom (i.e. hasn't
+        # scrolled up to read older messages).
+        try:
+            at_bottom = self.q_text.yview()[1] >= 0.97
+        except Exception:
+            at_bottom = True
+        self.q_text.config(state="normal")
+        self.q_text.delete("1.0", "end")
+        self.q_text.insert("1.0", text)
         self.q_text.config(state="disabled")
+        if at_bottom:
+            self.q_text.see("end")
+        # oldest unanswered = the question the answer box targets
+        try:
+            u = run_sql("SELECT id FROM learner_questions WHERE answered=false "
+                        "ORDER BY id LIMIT 1;", read=True).strip()
+        except Exception:
+            u = ""
+        self.cur_q = (u, "") if u else None
+        self.lbl_answering.config(text=("Answering Q#%s" % u) if u else "No pending question")
         self.after(3000, self.poll_questions)
 
     def send_answer(self):

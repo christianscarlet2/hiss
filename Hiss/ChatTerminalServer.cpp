@@ -399,6 +399,7 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 			body = "{\"ok\":false,\"error\":\"do must be fold|check|call|bet|raise|allin\"}";
 		} else {
 			g_mcp_action_amount = ((d == "raise" || d == "bet") ? amount : -1.0);
+			g_mcp_action_set_tick = GetTickCount();   // for wait-for-turn expiry
 			g_mcp_action_request = code;   // executed by the heartbeat thread on our turn
 			body.Format("{\"ok\":true,\"action\":\"%s\",\"amount\":%.2f}", d.GetString(), amount);
 		}

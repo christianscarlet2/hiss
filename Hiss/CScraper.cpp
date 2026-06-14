@@ -59,6 +59,7 @@ bool g_dump_scrapes_once = false;
 int g_mcp_autoplayer_request = -1;   // 0 = turn off, 1 = turn on
 int g_mcp_action_request = -1;       // a k_autoplayer_function_* code (FCKRA)
 double g_mcp_action_amount = -1.0;   // bet/raise size in big blinds (<0 = plain button click)
+unsigned long g_mcp_action_set_tick = 0;  // GetTickCount() when the request was set (for wait-for-turn expiry)
 
 // Make a region name safe for a filename (region names are normally alphanumeric).
 static CString SanitizeRegionFilename(CString name) {

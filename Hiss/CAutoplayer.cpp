@@ -13,6 +13,7 @@
 
 #include "StdAfx.h"
 #include "CAutoplayer.h"
+#include "CursorRestore.h"
 
 #include <complex>
 #include "AllinAdjustment.h"
@@ -248,6 +249,10 @@ bool CAutoplayer::AnySecondaryFormulaTrue() {
 
 bool CAutoplayer::ExecutePrimaryFormulasIfNecessary() {
 	write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] ExecutePrimaryFormulasIfNecessary()\n");
+	// Return the mouse to where the user left it after the ENTIRE click sequence
+	// completes (FCKRA / two-successive-clicks / numpad / nOkay / nConfirm), not
+	// between clicks. Restores on every return path.
+	CCursorRestorer _cursor_restorer;
 	if (!AnyPrimaryFormulaTrue())	{
 		APTrace("ExecutePrimaryFormulas -> STOP: AnyPrimaryFormulaTrue()=false (no f$ action true)");
 		write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] No primary formula true. Nothing to do\n");
