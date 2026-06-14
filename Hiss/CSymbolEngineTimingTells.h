@@ -38,6 +38,9 @@ class CSymbolEngineTimingTells : public CVirtualSymbolEngine {
  public:
   bool EvaluateSymbol(const CString name, double *result, bool log = false);
   CString SymbolsProvided();
+  // Chair currently showing the to-act highlight (-1 = none). Used by the hand-history
+  // writer to detect checks (the action passing a player who owes nothing).
+  int CurrentActiveChair() { return _last_chair; }
  private:
   // Evaluate the pNactive region using ONLY rectangle 1 (temporarily disabling
   // its optional rect2 OR-match), returning the "active" highlight state.

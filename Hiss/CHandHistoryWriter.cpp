@@ -37,6 +37,7 @@
 #include "CScraper.h"
 #include "CSessionCounter.h"
 #include "CSymbolEngineActiveDealtPlaying.h"
+#include "CSymbolEngineTimingTells.h"
 #include "CSymbolEngineChipAmounts.h"
 #include "CSymbolEngineDealerchair.h"
 #include "CSymbolEngineTableLimits.h"
@@ -120,6 +121,7 @@ void CHandHistoryWriter::ResetHand() {
   _have_names = _have_balance = _have_bet = false;
   _have_cards = _have_board = _have_dealer = false;
   _cur_street    = kBetroundPreflop;
+  _last_active_chair = kUndefined;
   _street_max    = 0.0;
   _blinds_done   = false;
   _body          = "";
@@ -250,6 +252,7 @@ void CHandHistoryWriter::ObserveStreetTransition() {
     _street_bet[i] = 0.0;
   }
   _street_max = 0.0;
+  _last_active_chair = kUndefined;   // start the new street's check detection clean
   _cur_street = br;
 }
 
@@ -283,6 +286,26 @@ void CHandHistoryWriter::ObserveActions() {
         _body += FmtName(i) + " calls " + FmtMoney(cur - _street_bet[i]) + allin + "\n";
       }
       _street_bet[i] = cur;
+    }
+  }
+
+  // --- check detection (postflop) -------------------------------------------
+  // The to-act highlight (pNactive) moving off a player who is still in the hand,
+  // owes nothing (no bet faced this street), and has not put chips in = a check.
+  // Folds (activebits) and calls/raises (bet increases) are handled above; this
+  // only fires while nobody has bet this street, so it never mis-labels a bet.
+  if (BETROUND >= kBetroundFlop && _street_max <= kEpsilon
+      && p_engine_container->symbol_engine_timing_tells() != NULL) {
+    int act = p_engine_container->symbol_engine_timing_tells()->CurrentActiveChair();
+    if (act != _last_active_chair) {
+      int prev = _last_active_chair;
+      _last_active_chair = act;
+      if (prev >= 0 && prev < _nchairs && _seat_in_hand[prev] && !_folded[prev]) {
+        double pbet = _have_bet ? p_table_state->Player(prev)->_bet.GetValue() : 0.0;
+        if (pbet <= kEpsilon) {
+          _body += FmtName(prev) + " checks\n";
+        }
+      }
     }
   }
 }

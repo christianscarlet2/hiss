@@ -118,6 +118,7 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
   CString _hole[kMaxNumberOfPlayers];     // hero + any shown cards, captured over the hand
   // Action tracking.
   int     _cur_street;                    // last observed betround
+  int     _last_active_chair;             // to-act highlight last seen (for check detection)
   double  _street_bet[kMaxNumberOfPlayers];
   double  _street_max;
   bool    _folded[kMaxNumberOfPlayers];
