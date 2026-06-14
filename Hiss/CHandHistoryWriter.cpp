@@ -38,6 +38,7 @@
 #include "CSessionCounter.h"
 #include "CSymbolEngineActiveDealtPlaying.h"
 #include "CSymbolEngineTimingTells.h"
+#include "inlines/eval.h"   // pokereval: Hand_EVAL_N + HandVal_* decode for showdown text
 #include "CSymbolEngineChipAmounts.h"
 #include "CSymbolEngineDealerchair.h"
 #include "CSymbolEngineTableLimits.h"
@@ -130,6 +131,8 @@ void CHandHistoryWriter::ResetHand() {
   _flop_logged = _turn_logged = _river_logged = false;
   _winner_uncontested = kUndefined;
   _showdown_logged = false;
+  _uncalled_emitted = false;
+  _showdown_winner = kUndefined;
   _joined_midhand = false;
   _final_pot = 0.0;
   for (int i = 0; i < kMaxNumberOfPlayers; ++i) {
@@ -137,6 +140,8 @@ void CHandHistoryWriter::ResetHand() {
     _seat_stack[i]   = 0.0;
     _seat_in_hand[i] = false;
     _hole[i]         = "";
+    _hand_desc[i]    = "";
+    _hand_bracket[i] = "";
     _street_bet[i]   = 0.0;
     _folded[i]       = false;
     _fold_street[i]  = kUndefined;
@@ -183,17 +188,26 @@ void CHandHistoryWriter::CaptureMetadata() {
   if (_have_bet && (BETROUND == kBetroundPreflop)) {
     int last_chair  = (_button >= 0 && _button < _nchairs) ? _button : (_nchairs - 1);
     int first_chair = (last_chair + 1) % _nchairs;
+    // ACR posts one ante line per player before the blinds. Antes are dead money
+    // (they don't count toward the per-street bet to call).
+    if (_ante > kEpsilon) {
+      for (int k = 0; k < _nchairs; ++k) {
+        int i = (first_chair + k) % _nchairs;
+        if (_seat_in_hand[i] && p_table_state->Player(i)->_bet.GetValue() >= _ante - kEpsilon) {
+          _body += FmtName(i) + " posts ante " + FmtMoney(_ante) + "\n";
+        }
+      }
+    }
     bool sb_seen = false;
     bool bb_seen = false;
     for (int k = 0; k < _nchairs; ++k) {
       int i = (first_chair + k) % _nchairs;
       double cb = p_table_state->Player(i)->_bet.GetValue();
-      if (cb <= 0) continue;
+      // The blind is the bet beyond the (already-accounted) dead ante.
+      if (_ante > kEpsilon) cb -= _ante;
+      if (cb <= kEpsilon) continue;       // ante-only player (no blind)
       if (sb_seen && bb_seen) {
-        if (cb < _sb - kEpsilon) {
-          _body += FmtName(i) + " posts ante " + FmtMoney(cb) + "\n";
-        }
-        // Additional big-blind-sized bets can't be told apart from callers; skip.
+        // Additional blind-sized bets can't be told apart from callers; skip.
         continue;
       }
       if (sb_seen) {
@@ -240,6 +254,8 @@ void CHandHistoryWriter::CaptureMetadata() {
 void CHandHistoryWriter::ObserveStreetTransition() {
   int br = BETROUND;
   if (br <= _cur_street) return;
+  // The previous street's betting just closed: return any uncalled bet first.
+  EmitUncalledReturn();
   // Log every street we have advanced into (handles fast multi-street jumps).
   // ACR uses split board brackets: TURN/RIVER repeat the prior board then the new card.
   CString potline = "Main pot " + FmtMoney(p_engine_container->symbol_engine_chip_amounts()->pot()) + "\n";
@@ -340,6 +356,7 @@ void CHandHistoryWriter::ObserveResult() {
     int activebits = p_engine_container->symbol_engine_active_dealt_playing()->playersactivebits();
     for (int i = 0; i < _nchairs; ++i) {
       if (activebits & (1 << i)) {
+        EmitUncalledReturn();   // return any uncalled bet before awarding the pot
         _winner_uncontested = i;
         _body += FmtName(i) + " collected " + FmtMoney(_final_pot) + " from pot\n";
         break;
@@ -358,10 +375,23 @@ void CHandHistoryWriter::ObserveResult() {
       _showdown_logged = true;
       _body += "*** SHOW DOWN ***\n";
       _body += "Main pot " + FmtMoney(_final_pot) + "\n";
+      // Evaluate every shown hand, emit the ACR "shows [..] (<desc> [5cards])" line,
+      // and pick the winner (highest handval).
+      int best_hv = -1;
+      _showdown_winner = kUndefined;
       for (int i = 0; i < _nchairs; ++i) {
-        if (p_table_state->Player(i)->HasKnownCards()) {
+        if (!p_table_state->Player(i)->HasKnownCards()) continue;
+        CString d, br; int hv = -1;
+        if (DescribeShowdownHand(i, d, br, hv)) {
+          _hand_desc[i] = d; _hand_bracket[i] = br;
+          _body += FmtName(i) + " shows [" + _hole[i] + "] (" + d + " " + br + ")\n";
+          if (hv > best_hv) { best_hv = hv; _showdown_winner = i; }
+        } else {
           _body += FmtName(i) + " shows [" + _hole[i] + "]\n";
         }
+      }
+      if (_showdown_winner != kUndefined) {
+        _body += FmtName(_showdown_winner) + " collected " + FmtMoney(_final_pot) + " from main pot\n";
       }
     }
   }
@@ -427,8 +457,15 @@ void CHandHistoryWriter::Flush() {
       fate = "folded on the " + StreetName(fs);
       bool is_blind = (i == _sb_chair || i == _bb_chair);
       if (!_voluntary_bet[i] && !is_blind) fate += " and did not bet";
+    } else if (i == _showdown_winner && !_hand_desc[i].IsEmpty()) {
+      fate.Format("showed [%s] and won %s with %s %s", _hole[i].GetString(),
+                  FmtMoney(_final_pot).GetString(), _hand_desc[i].GetString(),
+                  _hand_bracket[i].GetString());
+    } else if (!_hand_desc[i].IsEmpty()) {
+      fate.Format("showed [%s] and lost with %s %s", _hole[i].GetString(),
+                  _hand_desc[i].GetString(), _hand_bracket[i].GetString());
     } else if (!_hole[i].IsEmpty()) {
-      fate.Format("showed [%s]", _hole[i].GetString());   // win/lost text -> stage 2
+      fate.Format("showed [%s]", _hole[i].GetString());
     } else {
       fate = "mucked";
     }
@@ -644,6 +681,107 @@ CString CHandHistoryWriter::StreetName(int betround) {
     case kBetroundTurn:  return "Turn";
     case kBetroundRiver: return "River";
     default:             return "Pre-Flop";
+  }
+}
+
+// ACR rank names by StdDeck rank index (0=Two .. 12=Ace). Note ACR's quirky
+// plurals: Two->"Deuces", Six->"Sixs".
+static const char *kAcrSingular[13] = {
+  "Deuce","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Jack","Queen","King","Ace" };
+static const char *kAcrPlural[13] = {
+  "Deuces","Threes","Fours","Fives","Sixs","Sevens","Eights","Nines","Tens","Jacks","Queens","Kings","Aces" };
+
+bool CHandHistoryWriter::DescribeShowdownHand(int chair, CString &desc, CString &bracket, int &handval) {
+  if (chair < 0 || chair >= _nchairs || p_table_state == NULL) return false;
+  if (!p_table_state->Player(chair)->HasKnownCards()) return false;
+  int n = 0, rnk[7], sut[7];
+  CString tok[7];
+  CardMask mask; CardMask_RESET(mask);
+  for (int j = 0; j < 2 && n < 7; ++j) {
+    Card *c = p_table_state->Player(chair)->hole_cards(j);
+    if (c != NULL && c->IsKnownCard()) {
+      int v = c->GetValue();
+      CardMask_SET(mask, v); rnk[n] = StdDeck_RANK(v); sut[n] = StdDeck_SUIT(v); tok[n] = c->ToString(); ++n;
+    }
+  }
+  for (int j = 0; j < kNumberOfCommunityCards && n < 7; ++j) {
+    Card *c = p_table_state->CommonCards(j);
+    if (c != NULL && c->IsKnownCard()) {
+      int v = c->GetValue();
+      CardMask_SET(mask, v); rnk[n] = StdDeck_RANK(v); sut[n] = StdDeck_SUIT(v); tok[n] = c->ToString(); ++n;
+    }
+  }
+  if (n < 5) return false;
+  handval = Hand_EVAL_N(mask, n);
+  int type = HandVal_HANDTYPE(handval);
+  int t = HandVal_TOP_CARD(handval), s = HandVal_SECOND_CARD(handval);
+  switch (type) {
+    case HandType_NOPAIR:    desc.Format("a high card, %s high", kAcrSingular[t]); break;
+    case HandType_ONEPAIR:   desc.Format("a pair of %s", kAcrPlural[t]); break;
+    case HandType_TWOPAIR:   desc.Format("two pair, %s and %s", kAcrPlural[t], kAcrPlural[s]); break;
+    case HandType_TRIPS:     desc.Format("three of a kind, Set of %s", kAcrPlural[t]); break;
+    case HandType_STRAIGHT:  desc.Format("a straight, %s high", kAcrSingular[t]); break;
+    case HandType_FLUSH:     desc.Format("a flush, %s high", kAcrSingular[t]); break;
+    case HandType_FULLHOUSE: desc.Format("a full house, %s full of %s", kAcrPlural[t], kAcrPlural[s]); break;
+    case HandType_QUADS:     desc.Format("four of a kind, Four %s", kAcrPlural[t]); break;
+    default:                 desc.Format("a straight flush, %s high", kAcrSingular[t]); break;
+  }
+  // Build the 5-card bracket from the actual cards forming the hand.
+  bool used[7] = { false, false, false, false, false, false, false };
+  CString picks; int npick = 0;
+  // pick `cnt` highest unused cards of rank r (any suit)
+  // (small inline closures via index loops)
+  #define HH_ADD(idx) do { if (npick) picks += " "; picks += tok[idx]; used[idx] = true; ++npick; } while (0)
+  // pick up to cnt cards of a given rank
+  for (int pass = 0; pass < 1; ++pass) {
+    if (type == HandType_FLUSH || type == HandType_STFLUSH) {
+      int fs = -1;
+      for (int su = 0; su <= 3 && fs < 0; ++su) { int cc = 0; for (int k = 0; k < n; ++k) if (sut[k] == su) ++cc; if (cc >= 5) fs = su; }
+      if (type == HandType_FLUSH) {
+        for (int p = 0; p < 5; ++p) { int best = -1; for (int k = 0; k < n; ++k) if (!used[k] && sut[k] == fs && (best < 0 || rnk[k] > rnk[best])) best = k; if (best >= 0) HH_ADD(best); }
+      } else {
+        int rs[5]; if (t == 3) { rs[0]=3; rs[1]=2; rs[2]=1; rs[3]=0; rs[4]=12; } else for (int i = 0; i < 5; ++i) rs[i] = t - i;
+        for (int i = 0; i < 5; ++i) for (int k = 0; k < n; ++k) if (!used[k] && sut[k] == fs && rnk[k] == rs[i]) { HH_ADD(k); break; }
+      }
+    } else if (type == HandType_STRAIGHT) {
+      int rs[5]; if (t == 3) { rs[0]=3; rs[1]=2; rs[2]=1; rs[3]=0; rs[4]=12; } else for (int i = 0; i < 5; ++i) rs[i] = t - i;
+      for (int i = 0; i < 5; ++i) for (int k = 0; k < n; ++k) if (!used[k] && rnk[k] == rs[i]) { HH_ADD(k); break; }
+    } else {
+      int want_r1 = -1, c1 = 0, want_r2 = -1, c2 = 0, kick = 0;
+      if (type == HandType_ONEPAIR)      { want_r1 = t; c1 = 2; kick = 3; }
+      else if (type == HandType_TWOPAIR) { want_r1 = t; c1 = 2; want_r2 = s; c2 = 2; kick = 1; }
+      else if (type == HandType_TRIPS)   { want_r1 = t; c1 = 3; kick = 2; }
+      else if (type == HandType_FULLHOUSE){ want_r1 = t; c1 = 3; want_r2 = s; c2 = 2; kick = 0; }
+      else if (type == HandType_QUADS)   { want_r1 = t; c1 = 4; kick = 1; }
+      else                               { kick = 5; }  // NOPAIR
+      for (int got = 0; got < c1; ) { int b = -1; for (int k = 0; k < n; ++k) if (!used[k] && rnk[k] == want_r1) { b = k; break; } if (b < 0) break; HH_ADD(b); ++got; }
+      for (int got = 0; got < c2; ) { int b = -1; for (int k = 0; k < n; ++k) if (!used[k] && rnk[k] == want_r2) { b = k; break; } if (b < 0) break; HH_ADD(b); ++got; }
+      for (int got = 0; got < kick; ++got) { int b = -1; for (int k = 0; k < n; ++k) if (!used[k] && (b < 0 || rnk[k] > rnk[b])) b = k; if (b >= 0) HH_ADD(b); }
+    }
+  }
+  #undef HH_ADD
+  bracket = "[" + picks + "]";
+  return true;
+}
+
+void CHandHistoryWriter::EmitUncalledReturn() {
+  // Called when a street's betting closes. If exactly one player put in more than
+  // anyone else could match, the excess is uncalled and returned (ACR shows this
+  // before the next street header / the result). Handles all-in over-bets and a
+  // bet everyone folded to.
+  if (_uncalled_emitted || !_have_bet) return;
+  int top = kUndefined; double topbet = 0.0, second = 0.0;
+  for (int i = 0; i < _nchairs; ++i) {
+    if (!_seat_in_hand[i]) continue;
+    double b = _street_bet[i];
+    if (b > topbet + kEpsilon) { second = topbet; topbet = b; top = i; }
+    else if (b > second + kEpsilon) { second = b; }
+  }
+  double diff = topbet - second;
+  if (top != kUndefined && diff > kEpsilon) {
+    _body += "Uncalled bet (" + FmtMoney(diff) + ") returned to " + FmtName(top) + "\n";
+    _street_bet[top] = second;   // the returned chips never entered the pot
+    _uncalled_emitted = true;
   }
 }
 

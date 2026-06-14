@@ -80,6 +80,10 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
   CString BoardTokens(int upto_count);   // "Ah Kd 2c" for the first upto_count cards
   CString BoardCard(int idx);            // single card token at board index (0-based)
   CString StreetName(int betround);      // "Pre-Flop" / "Flop" / "Turn" / "River"
+  // Evaluate a player's best 5-card hand at showdown: ACR description text +
+  // the 5-card bracket + the raw handval (for picking the winner). false if cards unknown.
+  bool    DescribeShowdownHand(int chair, CString &desc, CString &bracket, int &handval);
+  void    EmitUncalledReturn();          // "Uncalled bet (X) returned to <name>"
   bool    AnySeatRegion(const char *suffix);
   bool    RegionExists(const CString &name);
   void    AddLine(const CString &line);
@@ -135,6 +139,10 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
   // Result.
   int     _winner_uncontested;            // chair, or -1
   bool    _showdown_logged;
+  bool    _uncalled_emitted;              // "Uncalled bet returned" already written this hand
+  int     _showdown_winner;               // chair that won at showdown, or -1
+  CString _hand_desc[kMaxNumberOfPlayers];    // ACR hand description per shown player
+  CString _hand_bracket[kMaxNumberOfPlayers]; // best-5 bracket per shown player
   double  _final_pot;
 };
 
