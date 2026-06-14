@@ -168,6 +168,7 @@ extern bool g_dump_scrapes_once;
 // MCP/API control, consumed by the heartbeat thread. -1 = nothing pending.
 extern int g_mcp_autoplayer_request;   // 0 = off, 1 = on
 extern int g_mcp_action_request;       // a k_autoplayer_function_* code (FCKRA)
+extern double g_mcp_action_amount;     // bet/raise size in big blinds (<0 = plain click)
 
 #endif // INC_CSCRAPER_H
 

@@ -98,6 +98,15 @@ class Learner(tk.Tk):
         self.ctx = {}
         self.cur_q = None  # (id, text)
 
+        # --- menu: Tools -> Always on Top ---
+        menubar = tk.Menu(self)
+        tools = tk.Menu(menubar, tearoff=0)
+        self.on_top = tk.BooleanVar(value=False)
+        tools.add_checkbutton(label="Always on Top", variable=self.on_top,
+                              command=self.toggle_on_top)
+        menubar.add_cascade(label="Tools", menu=tools)
+        self.config(menu=menubar)
+
         # --- live context panel ---
         ctxf = ttk.LabelFrame(self, text="Live table (from hiss.exe)")
         ctxf.pack(fill="x", pady=4)
@@ -126,6 +135,22 @@ class Learner(tk.Tk):
                           command=lambda a=act: self.submit_action(a))
             b.pack(side="left", padx=4, ipady=6)
 
+        # --- follow-up: rate your own past decisions after seeing the result ---
+        ff = ttk.LabelFrame(self, text="Follow-up: review a past decision (after you've seen how it played out)")
+        ff.pack(fill="x", pady=6)
+        row = ttk.Frame(ff); row.pack(fill="x", padx=6, pady=2)
+        ttk.Label(row, text="decision:").pack(side="left")
+        self.fu_pick = ttk.Combobox(row, width=52, state="readonly", values=[])
+        self.fu_pick.pack(side="left", padx=6)
+        ttk.Button(row, text="refresh", width=8, command=self.refresh_followups).pack(side="left")
+        self.fu_note = tk.Text(ff, height=2, wrap="word"); self.fu_note.pack(fill="x", padx=6, pady=3)
+        brow = ttk.Frame(ff); brow.pack(fill="x", padx=6, pady=2)
+        tk.Button(brow, text="✔ Liked it", bg="#2e7d32", fg="white",
+                  command=lambda: self.submit_followup(True)).pack(side="left", padx=4, ipady=2)
+        tk.Button(brow, text="✖ Didn't like it", bg="#c0392b", fg="white",
+                  command=lambda: self.submit_followup(False)).pack(side="left", padx=4, ipady=2)
+        self._fu_ids = []
+
         # --- questions from Claude ---
         qf = ttk.LabelFrame(self, text="Questions from Claude")
         qf.pack(fill="both", expand=True, pady=6)
@@ -139,6 +164,7 @@ class Learner(tk.Tk):
 
         self.refresh_ctx()
         self.poll_questions()
+        self.refresh_followups()
 
     # ---- live refresh
     def refresh_ctx(self):
@@ -154,7 +180,61 @@ class Learner(tk.Tk):
             self.lbl_pot.config(text="pot: %s   to call: %s" % (c.get("pot"), c.get("amount_to_call")))
         self.after(2000, self.refresh_ctx)
 
-    # ---- log a decision
+    def toggle_on_top(self):
+        self.wm_attributes("-topmost", bool(self.on_top.get()))
+
+    # ---- follow-up review of past decisions ----
+    def refresh_followups(self):
+        try:
+            out = run_sql("SELECT id, handnumber, hero_cards, action, "
+                          "COALESCE(amount::text,''), CASE WHEN self_liked IS NULL THEN '' "
+                          "WHEN self_liked THEN ' [liked]' ELSE ' [disliked]' END "
+                          "FROM learner_decisions ORDER BY id DESC LIMIT 20;", read=True)
+        except Exception:
+            out = ""
+        self._fu_ids = []; labels = []
+        for line in out.strip().splitlines():
+            if not line.strip():
+                continue
+            f = line.split("|")
+            while len(f) < 6: f.append("")
+            self._fu_ids.append(f[0])
+            labels.append("#%s  %s  %s %s%s" % (f[0], f[2] or "?", f[3], f[4], f[5]))
+        self.fu_pick["values"] = labels
+        if labels and not self.fu_pick.get():
+            self.fu_pick.current(0)
+
+    def submit_followup(self, liked):
+        i = self.fu_pick.current()
+        if i < 0 or i >= len(self._fu_ids):
+            messagebox.showinfo("Pick one", "Choose a decision to review (use refresh).")
+            return
+        did = self._fu_ids[i]
+        note = self.fu_note.get("1.0", "end").strip()
+        try:
+            run_sql("UPDATE learner_decisions SET self_liked=%s, self_feedback='%s', "
+                    "feedback_ts=now() WHERE id=%s;" % ("true" if liked else "false", esc(note), did))
+            self.fu_note.delete("1.0", "end")
+            self.status.config(text="follow-up saved for decision #%s (%s)" % (did, "liked" if liked else "disliked"))
+            self.refresh_followups()
+        except Exception as e:
+            messagebox.showerror("DB error", str(e))
+
+    # ---- execute the action on the real table (via the bot's button-finding) ----
+    def execute_on_table(self, action, amt):
+        # Maps learner buttons to the bot's manual-action endpoint. Fold/Call/Allin
+        # click the FCKRA button (found via label/state/button regions); Bet/Raise go
+        # through the two-successive-clicks + numpad path with the amount in big blinds.
+        q = "do=%s" % action
+        if action in ("bet", "raise") and amt:
+            q += "&amount=%s" % amt
+        try:
+            hiss_get("/api/action?" + q)
+            return True, ""
+        except Exception as e:
+            return False, str(e)
+
+    # ---- log a decision (and execute it on the table) ----
     def submit_action(self, action):
         c = self.ctx or {}
         reasoning = self.reason.get("1.0", "end").strip()
@@ -173,12 +253,19 @@ class Learner(tk.Tk):
                 esc(c.get("hero_cards")), esc(c.get("board")),
                 numornull(c.get("pot")), numornull(c.get("amount_to_call")),
                 esc(action), amt_sql, esc(reasoning), esc(gs)))
+        # 1) execute on the real table (pass through the autoplayer's button finding)
+        ok, err = self.execute_on_table(action, amt)
+        # 2) log the decision + reasoning for Claude to review
         try:
             run_sql(sql)
-            self.status.config(text="logged: %s  (%s)" % (action.upper(), c.get("hero_cards") or "?"))
-            self.reason.delete("1.0", "end"); self.amount.delete(0, "end")
         except Exception as e:
             messagebox.showerror("DB error", str(e))
+            return
+        if ok:
+            self.status.config(text="%s sent to table + logged  (%s)" % (action.upper(), c.get("hero_cards") or "?"))
+        else:
+            self.status.config(text="logged %s, but table action failed: %s" % (action.upper(), err))
+        self.reason.delete("1.0", "end"); self.amount.delete(0, "end")
 
     # ---- questions
     def poll_questions(self):

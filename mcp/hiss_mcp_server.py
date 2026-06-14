@@ -136,8 +136,8 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "autoplayer_toggle", "description": "Turn the bot's autoplayer on or off.",
      "inputSchema": {"type": "object", "properties": {"on": {"type": "boolean"}}, "required": ["on"]}},
-    {"name": "fckra_action", "description": "Manually click an FCKRA button on the table (fold/check/call/raise/allin). Applied on the bot's next heartbeat if the button is clickable (i.e. it's the bot's turn).",
-     "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["fold", "check", "call", "raise", "allin"]}}, "required": ["action"]}},
+    {"name": "fckra_action", "description": "Manually act on the table (fold/check/call/bet/raise/allin), passing through the bot's button-finding (label/state/button regions). bet/raise use the two-successive-clicks + numpad path; pass amount (in big blinds) for a sized bet/raise. Applied on the next heartbeat when the button is live.",
+     "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["fold", "check", "call", "bet", "raise", "allin"]}, "amount": {"type": "number", "description": "bet/raise size in big blinds"}}, "required": ["action"]}},
     {"name": "terminal_panes", "description": "Live contents of the 4 Terminal panes (Context / State / Decisions / Chat) + the pinned State block, from the running hiss.exe.",
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "game_state", "description": "Live internal-engine game state JSON (seats, cards, pot, blinds, button, hero, HUD) from the running hiss.exe.",
@@ -247,9 +247,12 @@ def call_tool(name, args):
         return [{"type": "text", "text": hiss_get("/api/autoplayer?on=%s" % on)}]
     if name == "fckra_action":
         act = str(args.get("action", "")).lower()
-        if act not in ("fold", "check", "call", "raise", "allin"):
-            return [{"type": "text", "text": "action must be fold|check|call|raise|allin"}]
-        return [{"type": "text", "text": hiss_get("/api/action?do=%s" % act)}]
+        if act not in ("fold", "check", "call", "bet", "raise", "allin"):
+            return [{"type": "text", "text": "action must be fold|check|call|bet|raise|allin"}]
+        q = "do=%s" % act
+        if act in ("bet", "raise") and args.get("amount") is not None:
+            q += "&amount=%s" % args["amount"]
+        return [{"type": "text", "text": hiss_get("/api/action?" + q)}]
     if name == "terminal_panes":
         return [{"type": "text", "text": hiss_get("/api/terminal-state")}]
     if name == "game_state":
@@ -382,8 +385,8 @@ def call_tool(name, args):
         lim = int(args.get("limit", 20))
         out = psql_query(
             "SELECT id, ts, handnumber, betround, hero_cards, board, pot, amount_to_call, "
-            "action, amount, reasoning FROM learner_decisions %s ORDER BY id DESC LIMIT %d;"
-            % (where, lim), tuples_only=False)
+            "action, amount, reasoning, self_liked, self_feedback FROM learner_decisions "
+            "%s ORDER BY id DESC LIMIT %d;" % (where, lim), tuples_only=False)
         return [{"type": "text", "text": out or "(no decisions logged yet)"}]
     if name == "learner_ask":
         q = args["question"].replace("'", "''")

@@ -380,21 +380,27 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		return;
 	}
 
-	// Manually click an FCKRA button:  /api/action?do=fold|check|call|raise|allin
+	// Manually act on the table (only fires on an explicit request, e.g. learner.exe):
+	//   /api/action?do=fold|check|call|raise|allin            -> click that button
+	//   /api/action?do=bet|raise&amount=<bb>                  -> sized bet/raise via the
+	//        autoplayer's two-successive-clicks + numpad path (amount in big blinds)
 	if (path.CompareNoCase("/api/action") == 0) {
 		CStringA d = QueryValue(query, "do"); d.MakeLower();
+		CStringA amt = QueryValue(query, "amount");
+		double amount = amt.IsEmpty() ? -1.0 : atof(amt.GetString());
 		int code = -1;
 		if (d == "fold")  code = k_autoplayer_function_fold;
 		else if (d == "check") code = k_autoplayer_function_check;
 		else if (d == "call")  code = k_autoplayer_function_call;
-		else if (d == "raise") code = k_autoplayer_function_raise;
+		else if (d == "raise" || d == "bet") code = k_autoplayer_function_raise;
 		else if (d == "allin" || d == "all-in") code = k_autoplayer_function_allin;
 		CStringA body;
 		if (code < 0) {
-			body = "{\"ok\":false,\"error\":\"do must be fold|check|call|raise|allin\"}";
+			body = "{\"ok\":false,\"error\":\"do must be fold|check|call|bet|raise|allin\"}";
 		} else {
-			g_mcp_action_request = code;   // clicked by the heartbeat thread on our turn
-			body.Format("{\"ok\":true,\"action\":\"%s\"}", d.GetString());
+			g_mcp_action_amount = ((d == "raise" || d == "bet") ? amount : -1.0);
+			g_mcp_action_request = code;   // executed by the heartbeat thread on our turn
+			body.Format("{\"ok\":true,\"action\":\"%s\",\"amount\":%.2f}", d.GetString(), amount);
 		}
 		CStringA response;
 		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"

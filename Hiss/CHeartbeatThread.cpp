@@ -20,6 +20,7 @@
 #include "CAutoplayerButton.h"
 #include "CAutoplayerFunctions.h"
 #include "CCasinoInterface.h"
+#include "CTwoSuccessiveClicks.h"
 #include "CBetroundCalculator.h"
 #include "CHeartbeatDelay.h"
 #include "CEngineContainer.h"
@@ -202,13 +203,31 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
   }
   if (g_mcp_action_request >= 0 && p_casino_interface != NULL) {
     int code = g_mcp_action_request;
+    double amount = g_mcp_action_amount;
     g_mcp_action_request = -1;
-    CAutoplayerButton *btn = p_casino_interface->LogicalAutoplayerButton(code);
-    if (btn != NULL && btn->IsClickable()) {
-      write_log(k_always_log_basic_information, "[MCP] Manual FCKRA action: clicking button code %d\n", code);
-      btn->Click();
+    g_mcp_action_amount = -1.0;
+    // Sized bet/raise: go through the autoplayer's two-successive-clicks + on-screen
+    // numpad path (same as auto-play), entering the amount (in big blinds).
+    if (code == k_autoplayer_function_raise && amount > 0
+        && p_two_successive_clicks != NULL) {
+      if (p_two_successive_clicks->HandleCycle(true)) {
+        Sleep(p_two_successive_clicks->DelayMs());
+        p_casino_interface->EnterBetsizeNumpadRaw(amount);
+        write_log(k_always_log_basic_information, "[MCP] Manual sized bet/raise %.2fbb via two-successive-clicks.\n", amount);
+      } else {
+        // Fallback: just click the raise button if the two-clicks path didn't apply.
+        CAutoplayerButton *btn = p_casino_interface->LogicalAutoplayerButton(code);
+        if (btn != NULL && btn->IsClickable()) btn->Click();
+        write_log(k_always_log_basic_information, "[MCP] Manual raise %.2fbb: two-clicks N/A, clicked raise button.\n", amount);
+      }
     } else {
-      write_log(k_always_log_basic_information, "[MCP] Manual FCKRA code %d skipped (button not clickable now)\n", code);
+      CAutoplayerButton *btn = p_casino_interface->LogicalAutoplayerButton(code);
+      if (btn != NULL && btn->IsClickable()) {
+        write_log(k_always_log_basic_information, "[MCP] Manual FCKRA action: clicking button code %d\n", code);
+        btn->Click();
+      } else {
+        write_log(k_always_log_basic_information, "[MCP] Manual FCKRA code %d skipped (button not clickable now)\n", code);
+      }
     }
   }
 
