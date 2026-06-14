@@ -52,6 +52,8 @@ EffectiveMaxStacksizeOfActiveOpponents MaxStacksizeOfActiveOpponents
 nopponentscalled nopponentsraising
 lastraiseractiontime myactiontime
 hero_drawdown hero_tilting raiser_drawdown raiser_recent_bigloss raiser_maybe_tilting
+validator_ok validator_nerrors validator_nwarnings validator_confidence
+validator_cards_ok validator_pot_ok validator_stacks_ok validator_bets_ok
 """.split())
 
 # keywords / actions / operators that are not symbols

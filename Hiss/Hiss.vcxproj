@@ -412,6 +412,7 @@
     <ClCompile Include="CrashHandler.cpp" />
     <ClCompile Include="CSymbolEngineTimingTells.cpp" />
     <ClCompile Include="CSymbolEngineTilt.cpp" />
+    <ClCompile Include="CSymbolEngineValidator.cpp" />
     <ClCompile Include="CSymbolEngineExplain.cpp" />
     <ClCompile Include="CSymbolEngineOpenAI.cpp" />
     <ClCompile Include="COpenAiAdvisor.cpp" />
@@ -760,6 +761,7 @@
     <ClInclude Include="CrashHandler.h" />
     <ClInclude Include="CSymbolEngineTimingTells.h" />
     <ClInclude Include="CSymbolEngineTilt.h" />
+    <ClInclude Include="CSymbolEngineValidator.h" />
     <ClInclude Include="CSymbolEngineExplain.h" />
     <ClInclude Include="CSymbolEngineOpenAI.h" />
     <ClInclude Include="COpenAiAdvisor.h" />

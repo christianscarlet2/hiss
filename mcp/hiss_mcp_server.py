@@ -143,6 +143,8 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["fold", "check", "call", "bet", "raise", "allin"]}, "amount": {"type": "number", "description": "bet/raise size in big blinds"}}, "required": ["action"]}},
     {"name": "terminal_panes", "description": "Live contents of the 4 Terminal panes (Context / State / Decisions / Chat) + the pinned State block, from the running hiss.exe.",
      "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "validate", "description": "Run the scrape + game-state sanity heuristics (CSymbolEngineValidator) on the CURRENT table state and return the verdict: ok, confidence (0..1), error/warning counts, per-category flags (cards/pot/stacks/bets), and a human-readable report of every issue. Use to decide whether a scraped value (pot, stacks, bets, cards) is trustworthy before acting on it.",
+     "inputSchema": {"type": "object", "properties": {}}},
     {"name": "game_state", "description": "Live internal-engine game state JSON (seats, cards, pot, blinds, button, hero, HUD) from the running hiss.exe.",
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "symbols", "description": "Evaluate OpenPPL / engine symbols live. Pass a comma-separated list of symbol names.",
@@ -280,6 +282,8 @@ def call_tool(name, args):
         return [{"type": "text", "text": hiss_get("/api/action?" + q)}]
     if name == "terminal_panes":
         return [{"type": "text", "text": hiss_get("/api/terminal-state")}]
+    if name == "validate":
+        return [{"type": "text", "text": hiss_get("/api/validate")}]
     if name == "game_state":
         return [{"type": "text", "text": hiss_get("/api/table-state")}]
     if name == "symbols":

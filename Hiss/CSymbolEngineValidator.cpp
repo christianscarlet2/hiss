@@ -8,6 +8,8 @@
 #include "stdafx.h"
 #include "CSymbolEngineValidator.h"
 
+#include <math.h>
+
 #include "CBetroundCalculator.h"
 #include "CEngineContainer.h"
 #include "CSymbolEngineActiveDealtPlaying.h"
@@ -83,8 +85,8 @@ void CSymbolEngineValidator::CheckCards() {
   for (int i = 0; i < kNumberOfCommunityCards; ++i) {
     Card *c = p_table_state->CommonCards(i);
     if (c == NULL || !c->IsKnownCard()) continue;
-    int v = c->GetStdDeckRank() >= 0 ? c->GetValue() : -1;
     ++n_community_known;
+    int v = c->GetValue();
     if (v < 0 || v > 51) { AddError("community card has an impossible value"); _cards_ok = false; continue; }
     if (++seen[v] > 1) { AddError("duplicate card on the board/among hands"); _cards_ok = false; }
   }

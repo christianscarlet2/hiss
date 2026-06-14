@@ -189,6 +189,11 @@ void CEngineContainer::CreateSymbolEngines() {
   // CSymbolEngineChipAmounts
   p_symbol_engine_chip_amounts = new CSymbolEngineChipAmounts();
   AddSymbolEngine(p_symbol_engine_chip_amounts);
+  // CSymbolEngineValidator (scrape + game-state sanity heuristics; reads chip amounts,
+  // limits and dealt/playing counts, so it is registered after chip_amounts so its
+  // per-heartbeat Validate() sees fresh values).
+  p_symbol_engine_validator = new CSymbolEngineValidator();
+  AddSymbolEngine(p_symbol_engine_validator);
   // CSymbolEngineTableStats
   p_symbol_engine_table_stats = new CSymbolEngineTableStats();
   AddSymbolEngine(p_symbol_engine_table_stats);

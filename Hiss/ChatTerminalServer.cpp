@@ -8,6 +8,7 @@
 #include "CSymbolEngineGameType.h"
 #include "CSymbolEngineIsOmaha.h"
 #include "CSymbolEngineChipAmounts.h"
+#include "CSymbolEngineValidator.h"
 #include "CSymbolEngineUserchair.h"
 #include "CScarletBeast.h"
 #include "CHandresetDetector.h"
@@ -416,6 +417,35 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 	if (path.CompareNoCase("/api/dump-scrapes") == 0) {
 		g_dump_scrapes_once = true;
 		CStringA body = "{\"ok\":true,\"dir\":\"logs/scrapes\"}";
+		CStringA response;
+		response.Format(
+			"HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+			body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	if (path.CompareNoCase("/api/validate") == 0) {
+		// Scrape + game-state sanity heuristics (CSymbolEngineValidator). Re-runs the
+		// checks against the current state and returns the verdict + a message report.
+		CStringA body = "{\"available\":false}";
+		if (p_engine_container != NULL && p_symbol_engine_validator != NULL) {
+			p_symbol_engine_validator->Validate();
+			CString report = p_symbol_engine_validator->Report();
+			body.Format(
+				"{\"available\":true,\"ok\":%s,\"confidence\":%.3f,\"nerrors\":%d,\"nwarnings\":%d,"
+				"\"cards_ok\":%s,\"pot_ok\":%s,\"stacks_ok\":%s,\"bets_ok\":%s,\"report\":\"%s\"}",
+				p_symbol_engine_validator->Ok() ? "true" : "false",
+				p_symbol_engine_validator->Confidence(),
+				p_symbol_engine_validator->Nerrors(),
+				p_symbol_engine_validator->Nwarnings(),
+				p_symbol_engine_validator->CardsOk() ? "true" : "false",
+				p_symbol_engine_validator->PotOk() ? "true" : "false",
+				p_symbol_engine_validator->StacksOk() ? "true" : "false",
+				p_symbol_engine_validator->BetsOk() ? "true" : "false",
+				JsonEscape(report).GetString());
+		}
 		CStringA response;
 		response.Format(
 			"HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
