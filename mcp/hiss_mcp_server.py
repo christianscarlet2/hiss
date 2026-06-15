@@ -84,6 +84,22 @@ def hiss_get(path):
     with urllib.request.urlopen(url, timeout=5) as r:
         return r.read().decode("utf-8", errors="replace")
 
+# --- replay server (hiss.scarletbeast.com) ----------------------------------
+# Ingest/read over the LAN with a Host header (name-based vhost) so frame blobs
+# never leave the LAN; the public Cloudflare hostname is only for the browser UI.
+REPLAY_BASE = os.environ.get("HISS_REPLAY_URL", "http://192.168.1.39")
+REPLAY_HOST = os.environ.get("HISS_REPLAY_HOST", "hiss.scarletbeast.com")
+
+def replay_get(path, raw=False):
+    req = urllib.request.Request(REPLAY_BASE + path, headers={"Host": REPLAY_HOST})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        data = r.read()
+    return data if raw else json.loads(data.decode("utf-8", errors="replace"))
+
+def replay_latest_ts(hand):
+    frames = replay_get("/api/frames/%s" % urllib.request.quote(str(hand)))
+    return frames[-1]["ts_ms"] if frames else 0
+
 # --- postgres via psql ------------------------------------------------------
 def esc_sql(s):
     return ("" if s is None else str(s)).replace("'", "''")
@@ -179,6 +195,12 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {"positions": {"type": "object"}, "locked": {"type": "boolean"}}, "required": ["positions"]}},
     {"name": "open_md_viewer", "description": "Open a markdown file in the user's MarkdownViewer (C:\\\\www\\\\mdviewer\\\\dist\\\\MarkdownViewer.exe). Use this to show the user any plan or markdown meant for them to read (relative paths resolve against the repo).",
      "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
+    {"name": "replay_hands", "description": "Time-travel debugger: list the most-recent hands captured on the replay server (hiss.scarletbeast.com) with frame counts + start/end timestamps. Use to pick a hand to investigate, then replay_stream/replay_frame at a ts_ms.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "replay_stream", "description": "Time-travel debugger: the full state AS OF a moment in a hand -- the hand-history text, the latest symbol/scrape values, and the OHF decision (action + f$fold/f$call/f$raise/f$betsize + the complete decision-tree trace) at/just-before ts_ms. The single best tool for understanding WHY the bot did what it did on a given hand.",
+     "inputSchema": {"type": "object", "properties": {"hand": {"type": "string"}, "ts": {"type": "integer", "description": "ts_ms cutoff; omit for the latest"}}, "required": ["hand"]}},
+    {"name": "replay_frame", "description": "Time-travel debugger: the actual PNG screen-grab Hiss captured for a hand at (or nearest before) a ts_ms. See exactly what the bot saw at that heartbeat.",
+     "inputSchema": {"type": "object", "properties": {"hand": {"type": "string"}, "ts": {"type": "integer", "description": "ts_ms; omit for the latest frame in the hand"}}, "required": ["hand"]}},
     {"name": "read_scrape", "description": "Get a region's raw scrape image and its OCR/recognition result text.",
      "inputSchema": {"type": "object", "properties": {"region": {"type": "string"}}, "required": ["region"]}},
     {"name": "list_logs", "description": "List log files in Release/logs.",
@@ -366,6 +388,42 @@ def call_tool(name, args):
             return [{"type": "text", "text": "Opened in MarkdownViewer: %s" % path}]
         except Exception as e:
             return [{"type": "text", "text": "Failed to open MarkdownViewer: %s" % e}]
+    if name == "replay_hands":
+        try:
+            hands = replay_get("/api/hands")
+        except Exception as e:
+            return [{"type": "text", "text": "Replay server unreachable: %s" % e}]
+        if not hands:
+            return [{"type": "text", "text": "No hands captured on the replay server yet."}]
+        lines = ["%-14s frames=%-4s span=%sms" %
+                 (h.get("handnumber"), h.get("frames"),
+                  int(h.get("end_ts", 0)) - int(h.get("start_ts", 0))) for h in hands]
+        return [{"type": "text", "text": "%d hands on replay server:\n%s" % (len(hands), "\n".join(lines))}]
+    if name == "replay_stream":
+        hand = str(args.get("hand", "")).strip()
+        if not hand:
+            return [{"type": "text", "text": "hand required."}]
+        ts = args.get("ts")
+        try:
+            if ts is None:
+                ts = replay_latest_ts(hand)
+            data = replay_get("/api/stream?hand=%s&ts=%d" % (urllib.request.quote(hand), int(ts)))
+        except Exception as e:
+            return [{"type": "text", "text": "Replay server error: %s" % e}]
+        return [{"type": "text", "text": json.dumps(data, indent=2)[:60000]}]
+    if name == "replay_frame":
+        hand = str(args.get("hand", "")).strip()
+        if not hand:
+            return [{"type": "text", "text": "hand required."}]
+        ts = args.get("ts")
+        try:
+            if ts is None:
+                ts = replay_latest_ts(hand)
+            png = replay_get("/api/img/%s/%d" % (urllib.request.quote(hand), int(ts)), raw=True)
+        except Exception as e:
+            return [{"type": "text", "text": "Frame fetch failed: %s" % e}]
+        return [{"type": "image", "data": base64.b64encode(png).decode("ascii"), "mimeType": "image/png"},
+                {"type": "text", "text": "hand %s @ ts %s" % (hand, ts)}]
     if name == "hud_calibrate_pending":
         status = hiss_get("/api/hud-calibrate-status").strip()
         out = [{"type": "text", "text": "HUD calibrate status: %s" % status}]
