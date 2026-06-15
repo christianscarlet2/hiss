@@ -46,9 +46,13 @@ WHEN f$Opp_Known AND f$Opp_VPIP > 32 RETURN true FORCE
 WHEN Others RETURN false FORCE
 
 ##f$Opp_IsStation##
-// Calls down too much -> value-bet thin, NEVER bluff. [N p.158][B B9.3]
+// Calls down too much -> value-bet thin & BIG, NEVER bluff. [N p.158][B B9.3]
+// Broadened to catch the canonical passive fish (very high VPIP, very low PFR,
+// low aggression) even before WTSD has a sample. [CtM p40][TN p15][EM]
 WHEN f$Opp_Known AND f$Opp_WTSD > 34 RETURN true FORCE
 WHEN f$Opp_Known AND f$Opp_AF < 1.0 AND f$Opp_VPIP > 40 RETURN true FORCE
+WHEN f$Opp_Known AND f$Opp_VPIP > 35 AND f$Opp_PFR < 10 RETURN true FORCE
+WHEN f$Opp_Known AND f$Opp_AF < 1.5 AND f$Opp_VPIP > 32 RETURN true FORCE
 WHEN Others RETURN false FORCE
 
 ##f$Opp_IsPassive##
@@ -71,4 +75,33 @@ WHEN Others RETURN false FORCE
 // Folds a lot pre/post -> our c-bets and steals print money. [B R1.2]
 WHEN f$Opp_IsNit RETURN true FORCE
 WHEN f$Opp_Known AND f$Opp_WTSD < 24 AND f$Opp_VPIP < 22 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  Additional archetypes from the wider library. The originals lumped these in:
+//  f$Opp_IsAggro fired on AF alone (a TIGHT-aggressive nit counts), which is the
+//  wrong read for a LAG. These split the population out cleanly. [EM PtP][TN][CtM]
+//-----------------------------------------------------------------------------
+
+##f$Opp_IsFish##
+// Pure recreational: very loose + very passive. Value-bet relentlessly & big,
+// keep pots small pre (flat premiums, don't 3-bet), never bluff. [CtM p40][EM HRH]
+WHEN f$Opp_Known AND f$Opp_VPIP > 40 AND f$Opp_PFR < 8 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_IsTAG##
+// Tight-aggressive REG: opens then bet-folds; floats/raises print vs his c-bets,
+// but pay off his committing bets. The original model had no TAG branch. [EM PtP p274]
+WHEN f$Opp_Known AND f$Opp_VPIP >= 18 AND f$Opp_VPIP <= 26 AND (f$Opp_VPIP - f$Opp_PFR) < 6 AND f$Opp_AF >= 2 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_IsLAG##
+// Loose-AND-aggressive: 3-bets & barrels wide. Deny info (call down, don't raise
+// to "find out"); widen our own calling/3-bet ranges. [EM PtP p677]
+WHEN f$Opp_Known AND f$Opp_VPIP > 28 AND f$Opp_PFR > 20 AND f$Opp_AF > 2.5 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_IsManiac##
+// Hyper-aggressive, no fold equity against him: trap & induce, never bluff. [CtM p41]
+WHEN f$Opp_Known AND f$Opp_VPIP > 45 AND f$Opp_PFR > 30 AND f$Opp_AF > 4 RETURN true FORCE
 WHEN Others RETURN false FORCE

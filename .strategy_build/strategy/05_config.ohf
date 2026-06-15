@@ -29,12 +29,17 @@ WHEN Others RETURN false FORCE
 
 ##f$ShortStack##
 // Below ~25bb: stop limping speculative hands, tighten, prefer raise-or-fold.
+// Also true in the Orange M-zone or worse (M<=10) for ante tables. [HoH2 p131-138]
+WHEN f$Mzone <= 2 RETURN true FORCE
 WHEN f$EffStack <= 25 RETURN true FORCE
 WHEN Others RETURN false FORCE
 
 ##f$PushFoldStack##
 // Push/fold (jam, don't min-raise) at <= 13bb. Raised from 10 -> 13 per HUMAN FEEDBACK
 // (learner_decisions #42: liked jamming QJs at 12.5bb instead of min-raising). [N p.34]
+// Antes-aware: also jam in the Red/Dead M-zone (M<=5), which with live antes can be
+// reached at a higher bb-count than 13. Additive - never removes the 13bb behavior. [HoH2 p140]
+WHEN f$Mzone <= 1 RETURN true FORCE
 WHEN f$EffStack <= 13 RETURN true FORCE
 WHEN Others RETURN false FORCE
 
@@ -112,6 +117,12 @@ WHEN f$Style = 1 RETURN 90 FORCE
 WHEN f$Style = 0 RETURN 55 FORCE
 WHEN Others RETURN 66 FORCE
 
+##f$BetPctVsStation##
+// VALUE size vs a calling station. Counter-intuitively BIGGER, not smaller: a station
+// pays off on its own hand strength and reads a big bet as a bluff. Bet ~pot with a
+// strong made hand for max value; even overbet on "bingo" boards. [CtM p147,149]
+WHEN Others RETURN 100 FORCE
+
 ##f$CbetFreq##
 // How often we fire a continuation bet with air as the pre-flop raiser. [B ~90%][N ~60%]
 // [T] TAO of Poker (Phillips) Ch.6 & Ch.14: in loose low-limit fields (our freerolls)
@@ -138,9 +149,148 @@ WHEN Others RETURN false FORCE
 
 ##f$WithinSpecRisk##
 // We risk no more than ~10% of our stack on a speculative "bust 'em" call
-// (set-mining / suited connectors vs a raise or 3-bet). [N pp.29-30][B S8.6]
+// (suited connectors / steal equity vs a raise). [N pp.29-30][B S8.6]
+// NOTE: this is a COMMITMENT-threshold (10% of stack), NOT the set-mine implied-odds
+// test - for pure set-mining use f$SetMineOK below. [SSNL commitment-threshold]
 WHEN AmountToCall * 10 <= f$EffStack RETURN true FORCE
 WHEN Others RETURN false FORCE
+
+//=============================================================================
+//  TIER-1 BOOK EXPANSION (2026-06-15) - dials distilled from the wider NLHE
+//  library and reconciled with the [N]/[B]/[T] spine. New source tags:
+//    [HoH] Harrington on Hold'em I-II   [KE] Kill Everyone / [KP] Kill Phil
+//    [SSNL] Small Stakes No-Limit (Miller/Mehta/Flynn)   [ToP] Theory of Poker
+//    [SM] Hold'em for Advanced Players  [CtM] Crushing the Microstakes
+//    [PMM] Poker Math That Matters      [MoH] Math of Hold'em
+//    [SNG] SNG Blueprint / Moshman / Shaw   [EM] Ed Miller / [TN] Tri Nguyen
+//  UNITS: PotSize / StackSize / AmountToCall / f$EffStack are all in BIG BLINDS
+//  (OpenPPL divides each by bblind). So SPR = EffStack/PotSize directly; M is a
+//  dimensionless ratio. bblind/sblind/ante are the raw chip denominators.
+//=============================================================================
+
+//-----------------------------------------------------------------------------
+//  M-ratio (Magriel/Harrington) - the antes-aware depth measure. M = stack /
+//  cost-of-one-orbit (SB+BB+all antes). With antes live, M is materially smaller
+//  than the raw bb-depth, so push/fold should kick in earlier. [HoH2 p124-131]
+//-----------------------------------------------------------------------------
+
+##f$AnteTotal##
+// Total antes posted per orbit, in CHIPS (per-player ante * players dealt).
+// 0 when there are no antes; degrades M gracefully to a blinds-only ratio.
+// tgi_ante comes from table_game_info (set via the lobby / set_table_game_info).
+WHEN Others RETURN tgi_ante * nplayersdealt FORCE
+
+##f$M##
+// Harrington M = effective stack / cost per round. f$EffStack is in bb, so
+// (f$EffStack * bblind) is chips; divide by the chip cost of one orbit. Ratio.
+WHEN (bblind + sblind + f$AnteTotal) <= 0 RETURN 999 FORCE
+WHEN Others RETURN (f$EffStack * bblind) / (bblind + sblind + f$AnteTotal) FORCE
+
+##f$Mzone##
+// 4=Green(M>20) 3=Yellow(10-20) 2=Orange(6-10) 1=Red(1-5) 0=Dead(<1). [HoH2 p128-131]
+WHEN f$M > 20 RETURN 4 FORCE
+WHEN f$M >= 10 RETURN 3 FORCE
+WHEN f$M >= 6  RETURN 2 FORCE
+WHEN f$M >= 1  RETURN 1 FORCE
+WHEN Others    RETURN 0 FORCE
+
+//-----------------------------------------------------------------------------
+//  SPR (stack-to-pot ratio) & commitment. Refines the spine's "don't go broke
+//  with one pair" into the HIGH-SPR case: at LOW SPR you SHOULD stack off top
+//  pair / overpair. [SSNL SPR sidebar]
+//-----------------------------------------------------------------------------
+
+##f$SPR##
+// Effective remaining stack / current pot (both already in bb).
+WHEN PotSize <= 0 RETURN 999 FORCE
+WHEN Others RETURN f$EffStack / PotSize FORCE
+
+##f$Committed##
+// True when SPR is low enough to get top-pair/overpair-strength hands all in.
+// Opponent- and board-texture-aware. Gate the get-it-in line on this; gate the
+// "never go broke with one pair" pot-control on NOT f$Committed. [SSNL SPR sidebar]
+WHEN f$SPR <= 1 RETURN true FORCE
+WHEN f$Opp_IsAggro AND f$SPR <= 8 RETURN true FORCE
+WHEN f$BoardWet AND f$SPR <= 7 RETURN true FORCE
+WHEN f$Opp_IsPassive AND f$SPR <= 3 RETURN true FORCE
+WHEN f$SPR <= 4 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  Exact pot-odds & set-mining implied-odds (replaces the coarse K-bucket
+//  helpers for the cases that want precision). [PMM p59-63][MoH][SSNL p143]
+//-----------------------------------------------------------------------------
+
+##f$RequiredEquity##
+// Win% needed to call = call / (pot-before-our-call + call). Compare vs prwin.
+WHEN (PotSize + AmountToCall) <= 0 RETURN 1 FORCE
+WHEN Others RETURN AmountToCall / (PotSize + AmountToCall) FORCE
+
+##f$SetMineOK##
+// Set-mine a small pair only with ~15x the call behind (real implied odds), and
+// not vs a 3-bet or a tight opener (SPR too low / won't get paid). The current
+// f$WithinSpecRisk (10x) was too loose for a pure set-mine. [CtM p122][SSNL p143][PMM]
+WHEN f$Opp_IsNit RETURN false FORCE
+WHEN AmountToCall * 15 <= f$EffStack RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  Table size. The open lists are full-ring/8-max shapes; 6-max wants the EP/MP
+//  seats to play wider. [V6 charts]
+//-----------------------------------------------------------------------------
+
+##f$Is6Max##
+WHEN nplayersdealt <= 6 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  Tournament STAGE & bubble pressure. Scales the ICM get-it-in margin: tighter
+//  near the bubble, looser in the money / heads-up. [SNG][KE p120-126]
+//  NOTE: these depend on a REAL lobby payout curve (f$PaidPlaces). The current
+//  f$icm_prizeX is a placeholder where all 8 places "pay", so f$NearBubble stays
+//  false and f$BubbleTighten stays 1.0 (= today's behavior) until the real payout
+//  table is scraped (lobby_fetch -> settings.lobby_info). Structurally ready.
+//-----------------------------------------------------------------------------
+
+##f$PaidPlaces##
+// Number of paid finishing positions = count of nonzero prizes in the curve.
+WHEN f$icm_prize8 > 0 RETURN 8 FORCE
+WHEN f$icm_prize7 > 0 RETURN 7 FORCE
+WHEN f$icm_prize6 > 0 RETURN 6 FORCE
+WHEN f$icm_prize5 > 0 RETURN 5 FORCE
+WHEN f$icm_prize4 > 0 RETURN 4 FORCE
+WHEN f$icm_prize3 > 0 RETURN 3 FORCE
+WHEN f$icm_prize2 > 0 RETURN 2 FORCE
+WHEN Others RETURN 1 FORCE
+
+##f$NearBubble##
+// One elimination from the money. Uses tgi_players_remaining (tournament-wide
+// players left, from the lobby) - 0/unknown for cash, so this stays false there.
+WHEN tgi_players_remaining = f$PaidPlaces + 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$InMoney##
+WHEN tgi_players_remaining <= f$PaidPlaces AND tgi_players_remaining >= 2 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$HeadsUpTourney##
+// Two players left in the tournament: ICM is off, chips become linear money. [SoS p94]
+WHEN tgi_players_remaining = 2 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Stage##
+// 0 early  1 middle  2 bubble  3 ITM/HU
+WHEN f$HeadsUpTourney OR f$InMoney RETURN 3 FORCE
+WHEN f$NearBubble RETURN 2 FORCE
+WHEN f$ShortStack OR nplayersdealt <= 6 RETURN 1 FORCE
+WHEN Others RETURN 0 FORCE
+
+##f$BubbleTighten##
+// Required $-equity edge over folding when getting it in. >1 = need more, near
+// the bubble; <1 = gamble looser in the money. [SNG][KE p120]
+WHEN f$Stage = 2 RETURN 1.06 FORCE
+WHEN f$Stage = 3 RETURN 0.97 FORCE
+WHEN Others RETURN 1.00 FORCE
 
 //-----------------------------------------------------------------------------
 //  Bet-timing tells.  Hiss measures how long each chair dwells on its to-act
@@ -216,6 +366,10 @@ WHEN Others RETURN 0.020 FORCE
 WHEN Others RETURN prwin * icm_callwin + (1 - prwin) * icm_calllose FORCE
 
 ##f$ICM_CallShove##
-// Is getting it in $-correct? Call/jam when the ICM EV of calling beats folding.
-WHEN f$ICM_CallEV >= icm_fold RETURN true FORCE
+// Is getting it in $-correct? Call/jam when the ICM EV of calling beats folding,
+// scaled by the bubble factor: near the bubble we need a real edge (survival has
+// value); in the money / heads-up we gamble looser. f$BubbleTighten is 1.0 until a
+// real payout curve is scraped, so this matches today's behavior. [SNG][KE p120]
+WHEN f$HeadsUpTourney AND f$ICM_CallEV >= icm_fold RETURN true FORCE
+WHEN f$ICM_CallEV >= icm_fold * f$BubbleTighten RETURN true FORCE
 WHEN Others RETURN false FORCE

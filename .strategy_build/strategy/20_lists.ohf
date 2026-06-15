@@ -92,6 +92,13 @@ A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
 K8s K9s KTs KJs KQs Q9s QTs QJs J9s JTs T9s 98s
 A7o A8o A9o ATo AJo AQo AKo K9o KTo KJo KQo QTo QJo JTo
 
+##listCallShoveBubble##
+// Calling a shove ON THE BUBBLE: drastically tighter (~top 8-11%), survival has $-value.
+// Selected when f$Stage = 2 (needs the real payout curve to fire). [SoS p.61][SNG]
+TT JJ QQ KK AA
+ATs AJs AQs AKs KQs
+AJo AQo AKo
+
 //-----------------------------------------------------------------------------
 //  Facing aggression.
 //-----------------------------------------------------------------------------

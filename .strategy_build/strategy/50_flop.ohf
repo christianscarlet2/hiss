@@ -18,6 +18,8 @@ WHEN Others RETURN f$flop_vs_bet FORCE
 
 ##f$flop_nobet##
 // Value & protection with strong made hands (bigger on wet boards - see f$BetPctFlop).
+// Vs a calling station, size UP for value (pot/overbet) - they pay on their own hand. [CtM p147]
+WHEN f$HaveStrongMade AND f$Opp_IsStation AND explain_value_flop RaiseBy f$BetPctVsStation % FORCE
 WHEN f$HaveStrongMade AND explain_value_flop RaiseBy f$BetPctFlop % FORCE
 // Semi-bluff strong & combo draws - two ways to win. [B D6]
 WHEN f$HaveComboDraw AND explain_semibluff RaiseBy f$BetPctFlop % FORCE
@@ -45,6 +47,10 @@ WHEN Others Check FORCE
 // Value-raise the big made hands (charge draws; build the pot). [B R5.5]
 WHEN f$HaveBigMade RaiseBy f$BetPctFlop % FORCE
 WHEN HaveSet OR HaveTwoPair RaiseBy f$BetPctFlop % FORCE
+// Low SPR (committed): get top pair / overpair all-in rather than pot-controlling.
+// This is the LOW-SPR branch of "don't go broke with one pair" - at high SPR the
+// peel/pot-control lines below still apply (NOT f$Committed). [SSNL SPR sidebar]
+WHEN (HaveOverPair OR HaveTopPair OR f$HaveStrongMade) AND f$Committed RaiseMax FORCE
 // Combo draw -> get it all in (two ways to win). [B D6.6]
 WHEN f$HaveComboDraw RaiseMax FORCE
 // Brunson plays big draws fast even facing a bet; otherwise call at a price.

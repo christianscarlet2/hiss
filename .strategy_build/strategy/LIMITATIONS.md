@@ -72,3 +72,36 @@ is, and **how it was handled** — ✅ built a substitute, ⚠️ partial/approx
 implementation plan for the *remaining* ❌ items — physical tells, feel/soul reads,
 tilt detection, true leveling, plus the self-image / gear-changing memory — lives in
 **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)**.
+
+---
+
+# Hiss-improvement backlog — Tier-1 library expansion (2026-06-15)
+
+New engine work surfaced while folding the wider NLHE library (Harrington, Kill
+Everyone/Phil, SSNL, Theory of Poker, Crushing the Microstakes, Poker Math That
+Matters, the SNG canon, Ed Miller, Tri Nguyen) into the OHF. These are concepts the
+books teach that OpenPPL/Hiss **cannot express today** — ranked by value. The dials
+that WERE implementable this round (M/M-zones, SPR/commitment, exact required-equity,
+15× set-mining, bubble-scaled ICM gate, TAG/LAG/fish/maniac typing, value-big-vs-station)
+are already live in 05_config/10_opponents/50_flop.
+
+| # | Concept (source) | Why the OHF can't do it | Engine work needed |
+|---|------------------|-------------------------|--------------------|
+| 1 | **Real lobby payout curve** [SNG][KE] | `f$icm_prize1..8` is a hardcoded top-heavy placeholder where all 8 places "pay", so `f$PaidPlaces`/`f$NearBubble`/`f$BubbleTighten` stay inert. The stage machinery is built and waiting. | Feed the actual payout table + places-paid from the existing `lobby_fetch.sh → settings.lobby_info` pipe into the prize-curve symbols + `tgi_players_remaining`. **Highest leverage — unlocks all the bubble dials already written.** |
+| 2 | **Per-opponent bubble factor / true N-player ICM solver** [KE p120-126][SNG] | `f$ICM_CallEV` is a single static one-shot calc; real bubble play needs every live stack + each villain's range run through ICM to get a per-villain risk premium and the exact push/call frontier. | Extend `CSymbolEngineICM` to enumerate opponent calling ranges and expose `bubble_factor[chair]` + a threshold-range symbol, not just one EV. |
+| 3 | **Node-by-node range narrowing / combinatorics** [EM HRH][TN] | OHF sees only aggregate HUD stats + the current board — no per-street action-history range object, no combo counter, no card-removal math. Hand-reading is the core of three of these books. | A street-indexed range/combinatorics module (Flopzilla-style) fed by `f$Opp_*` + betting history, exposing combos-that-beat-us / fold-equity-by-range. |
+| 4 | **Size-bucketed fold stats** [PMM][MoH][CtM] | `f$AutoProfitBluff`/`f$MDF`/double-barrel exploits need *fold-to-bet-of-size-B by street*, not one aggregate fold-to-cbet. HUD currently exposes only flop AF / coarse buckets. | Surface `pt_fold_flop_cbet`, `pt_fold_turn_cbet`, `pt_fold_to_3bet`, `pt_fold_to_4bet`, `pt_3bet` (heartbeat-thread only, per the PT4-race rule) as symbols. |
+| 5 | **Multi-street line planning** [SSNL][ToP][N] | OpenPPL decides one street per heartbeat with no carried-forward plan (check-raise-all-in vs lead-lead-shove to be the last bet with a draw OOP). Approximated today only by betting-history symbols. | A persisted "intended line" state across heartbeats with board-texture-conditioned barrel triggers. |
+| 6 | **Mixed / card-anchored randomization** [ToP ch.19][KE] | `randomround` is decision-time noise decorrelated from holdings, so a thinking villain can't be kept indifferent; no per-hand "push X% of the time" table. | A deterministic hash of hole cards → [0,1) exposed as a symbol for card-anchored frequency mixing; optional per-handrank push-mix table. |
+| 7 | **Per-session dynamic / Bayesian opponent updating** [EM HRH p146][CtM p209] | Only the static long-run PT4 sample is visible; can't raise P(light-3bettor) after observing reraises this session, or value-bet lighter after stacking a fish who now thinks we bluff. | A per-seat Bayesian profiler + short-window pot/showdown ledger keyed by persistent player ID (feeds, and overlaps, the tilt-detector skill). |
+| 8 | **Multiway field-range model** [EM HRH p133][HoH][CtM] | `f$Opp_*` describes only the last raiser; can't model "which of 3 opponents is the fish vs the TAG" or P(someone holds a premium) across the field. | Per-seat archetype tagging within a single hand + a multiway-aware flop dispatcher; `n×x` premium-behind estimator. |
+| 9 | **Q-ratio (stack ÷ field-average stack)** [HoH2 p126] | Needs total-field chip count + players remaining tournament-wide; the table scrape sees only the local table. | Ingest lobby/tournament info (avg stack, players left) into an `f$Q` symbol via the lobby pipe. |
+| 10 | **Reverse-implied-odds / implied-odds quality as EV** [PMM][MoH][SM] | `prwin` is raw equity, not equity-when-money-goes-in; no down-weighting of dominated draws or weak-villain payoff. | Range-aware equity that derates dominated draws + a per-opponent implied-odds multiplier learned from replay telemetry. |
+| 11 | **Board-texture / perceived-range classifier** [CtM p137-147][EM] | Bot has `f$BoardWet/Dry/Scary` but no paired/dry-rag/broadway/monotone/"bingo" classes and no model of whose range the board hits. | A lightweight board-texture classifier exposed as symbols, feeding three-tier c-bet sizing and range-advantage barreling. |
+| 12 | **Bubble timing / seat-geometry tactics** [SoS p85][SNG] | Stalling for the blinds on the bubble and "big stack on my left = fewer steals" need turn-timing control + seat-relative stack geometry the autoplayer doesn't model. | Turn-timing control + a seat-relative stack-position symbol set. |
+
+Lower-priority / analysis-only (not live dials): Sklansky-dollar per-decision EV
+accounting from replay hands (a leak-finder for the improvement loop, [MoH p740]);
+re-OCR of Harrington Vol 1's two-column body and the "Effective M for short tables"
+multiplier (Vol 2 p277) at higher DPI; obtain a full (non-promo) copy of *NL Theory
+and Practice* and the *Professional No-Limit* .mobi for direct mining.

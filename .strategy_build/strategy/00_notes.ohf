@@ -50,6 +50,40 @@
 //  The mental-game rules (tilt, calm, losing, luck, slumps, trusting your read) live in
 //  the Lilith poker-coach (mcp/poker_coach_hype.py) - that is where TAO mostly applies.
 //
+//  ---------------------------------------------------------------------------
+//  TIER-1 LIBRARY EXPANSION (2026-06-15) - the relevant NLHE subset of the
+//  PokerBooks library, distilled and reconciled into the dials above. Each new
+//  source carries a citation tag used inline in 05_config / 20_lists / 10_opponents:
+//
+//    [HoH] Harrington on Hold'em I-II (Harrington & Robertie) - the M-ratio /
+//          inflection-point endgame. Drives f$M / f$Mzone and the antes-aware
+//          push/fold + short-stack triggers. "First-in vigorish" as M falls.
+//    [KE]  Kill Everyone / [KP] Kill Phil (Nelson, Rodman, Streib, Heston) -
+//          CSI stages, equilibrium (Nash) push/fold, ICM bubble factor. Drives
+//          the bubble-tightened ICM call gate and the move-in-or-fold short game.
+//    [SSNL] Small Stakes No-Limit Hold'em (Miller/Mehta/Flynn) - SPR & COMMITMENT.
+//          Drives f$SPR / f$Committed: the low-SPR branch of "don't go broke with
+//          one pair" (at low SPR you SHOULD stack off top pair / overpair).
+//    [ToP] Theory of Poker / [SM] Hold'em for Advanced Players (Sklansky/Malmuth)
+//          - Fundamental Theorem, semi-bluff math, the Gap Concept, optimal bluff
+//          frequency. Confirms the listCallOpen < listOpen* gap and the semibluff lines.
+//    [CtM] Crushing the Microstakes (Williams) - exploit weak/passive fields:
+//          value BIG vs stations (f$BetPctVsStation), broadened station typing,
+//          never bluff the fish on any street.
+//    [PMM] Poker Math That Matters (Gaines) / [MoH] Math of Hold'em (Moshman) -
+//          exact pot odds (f$RequiredEquity), fold-equity / MDF, the 15x set-mine
+//          rule (f$SetMineOK, tighter than the old 10% f$WithinSpecRisk).
+//    [SNG] SNG Blueprint / Moshman SNG / Shaw "Secrets of Sit'n'gos" - stage &
+//          bubble play. Drives f$Stage / f$NearBubble / f$BubbleTighten + listCallShoveBubble.
+//    [EM]  Ed Miller "Playing the Player" / "How to Read Hands" / [TN] Tri Nguyen
+//          "Poker Blueprint" - stat-based opponent typing: the new TAG/LAG/fish/
+//          maniac archetypes in 10_opponents (fixes IsAggro firing on AF alone).
+//
+//  Concepts the OHF/Hiss engine cannot express (per-opponent bubble factor, true
+//  Nash/ICM solver, node-by-node range narrowing, multi-street line planning,
+//  size-bucketed fold stats, real lobby payout curve) are tracked as engine work
+//  in LIMITATIONS.md. Remaining ~40 on-target books are queued in BOOKS_PROGRESS.md.
+//
 //  Bet amounts are expressed as RaiseTo <big blinds> (pre-flop) or
 //  RaiseBy <pct> % (post-flop pot-fractions). Hiss converts the resulting
 //  f$betsize into the table's chip amount.
