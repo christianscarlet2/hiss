@@ -43,15 +43,17 @@ WHEN InBigBlind Check FORCE
 WHEN explain_fold_pre Fold FORCE
 
 ##f$preflop_limped##
-// Limpers in front, no raise: isolate the strong & wide-late hands with a bigger
-// raise (f$Open_RaiseTo adds 1bb per limper), over-limp speculative hands cheaply. [N p.24][B]
-WHEN listBigPair OR list3betValue RaiseTo f$Open_RaiseTo FORCE
-WHEN InButton AND listOpenLP RaiseTo f$Open_RaiseTo FORCE
-WHEN (InCutOff OR InLatePosition) AND listOpenEP RaiseTo f$Open_RaiseTo FORCE
-WHEN f$DeepStack AND listCallOpen Call FORCE
+// Limpers (1bb bettors) in front: PUNISH the limp with a ~5bb iso-raise (f$Iso_RaiseTo,
+// +1bb per extra limper) using the positional OPEN ranges -- this RAISES KJ/broadway-type
+// hands (e.g. KdJd) instead of flatting them. Speculative hands set-mine cheaply; trash
+// folds. [N p.24][B]
+WHEN listBigPair OR list3betValue RaiseTo f$Iso_RaiseTo FORCE
+WHEN InEarlyPosition AND listOpenEP RaiseTo f$Iso_RaiseTo FORCE
+WHEN InMiddlePosition AND listOpenMP RaiseTo f$Iso_RaiseTo FORCE
+WHEN (InLatePosition OR InCutOff OR InButton) AND listOpenLP RaiseTo f$Iso_RaiseTo FORCE
+WHEN InSmallBlind AND listOpenMP RaiseTo f$Iso_RaiseTo FORCE
 WHEN f$DeepStack AND listSetMine Call FORCE
 WHEN InBigBlind Check FORCE
-WHEN InSmallBlind AND listCallOpen Call FORCE
 WHEN explain_fold_pre Fold FORCE
 
 //-----------------------------------------------------------------------------

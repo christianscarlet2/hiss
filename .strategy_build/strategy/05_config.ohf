@@ -72,6 +72,11 @@ WHEN Others RETURN 2.5 FORCE
 // Add one big blind for each limper we are isolating.
 WHEN Others RETURN f$OpenBase + Calls FORCE
 
+##f$Iso_RaiseTo##
+// PUNISH limpers (1bb bettors): iso-raise to 5bb for a single limper, +1bb for each
+// extra limper. Big enough to deny a cheap flop and play a bigger pot with the better hand.
+WHEN Others RETURN 4 + Calls FORCE
+
 ##f$ThreeBet_RaiseTo##
 // 3-bet sizing (to N big blinds). Larger out of position. [N pp.26-27]
 WHEN f$Style = 1 RETURN 13 FORCE

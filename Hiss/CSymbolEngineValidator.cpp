@@ -20,6 +20,7 @@
 #include "CPlayer.h"
 #include "ChatTerminalWindow.h"   // ChatTerminalAppend (thread-safe, PostMessage)
 #include "..\CTablemap\CTablemap.h"
+#include "CScraper.h"             // g_capture_suspect_request (validator -> Claude/training capture)
 
 CSymbolEngineValidator *p_symbol_engine_validator = NULL;
 
@@ -54,6 +55,11 @@ void CSymbolEngineValidator::AddError(const CString msg) {
   ++_nerrors;
   _ok = false;
   _report += "ERROR: " + msg + "\n";
+  // Capture the suspect money scrape for Claude clarification + tesseract training
+  // (throttled in the scraper). The scraper's balance/bet memory has already restored
+  // last-good values where it could, so the game state stays usable meanwhile.
+  g_capture_suspect_request = true;
+  g_capture_suspect_reason  = msg;
 }
 
 void CSymbolEngineValidator::AddWarn(const CString msg) {

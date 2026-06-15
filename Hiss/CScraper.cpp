@@ -54,6 +54,8 @@ using namespace std;
 
 CScraper *p_scraper = NULL;
 bool g_dump_scrapes_once = false;
+bool g_capture_suspect_request = false;
+CString g_capture_suspect_reason;
 // MCP/API control requests, consumed by the heartbeat thread (so clicks happen on
 // the same thread the autoplayer normally acts on). -1 = no request pending.
 int g_mcp_autoplayer_request = -1;   // 0 = turn off, 1 = turn on
@@ -144,6 +146,7 @@ CScraper::CScraper(void) {
   _observer_active = false;
   for (int i = 0; i < kMaxNumberOfPlayers; ++i) {
     _mem_balance[i] = 0.0;
+    _mem_bet[i] = 0.0;
     _mem_name[i] = "";
     _mem_out_frames[i] = 0;
   }
@@ -1565,6 +1568,7 @@ void CScraper::ScrapeBet(int chair) {
   CString result;
   EvaluateRegion(s, &result);
 	if (p_table_state->Player(chair)->_bet.SetValue(result)) {
+		ApplyBetMemory(chair);
 		__HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK
 		return;
 	}
@@ -1573,6 +1577,7 @@ void CScraper::ScrapeBet(int chair) {
   result = "";
   EvaluateRegion(s, &result);
   if (p_table_state->Player(chair)->_bet.SetValue(result)) {
+    ApplyBetMemory(chair);
     __HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK
       return;
   }
@@ -1586,10 +1591,32 @@ void CScraper::ScrapeBet(int chair) {
 
 		t.Format("%.2f", chipscrape_res);
 		p_table_state->Player(chair)->_bet.SetValue(t.GetString());
-		write_log(Preferences()->debug_scraper(), "[CScraper] p%dchipXY, result %f\n", 
+		write_log(Preferences()->debug_scraper(), "[CScraper] p%dchipXY, result %f\n",
       chair, p_table_state->Player(chair)->_bet.GetValue());
 	}
+	ApplyBetMemory(chair);
 	__HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK
+}
+
+// Bet memory: a player can't wager more than their stack. If the scraped bet exceeds the
+// remembered stack (a stack/other number mis-read into the bet region, e.g. the 142.91
+// case), restore the last-good bet (usually 0 / the real bet) and flag the frame for
+// Claude clarification + training capture. Otherwise remember the plausible bet. Gated on
+// the OCR-memory toggle.
+void CScraper::ApplyBetMemory(int chair) {
+	if (!g_ocr_memory || chair < 0 || chair >= kMaxNumberOfPlayers) return;
+	double bet = p_table_state->Player(chair)->_bet.GetValue();
+	double stack_ref = _mem_balance[chair];   // last-good stack (before betting)
+	if (bet > 0.01 && stack_ref > 0.01 && bet > stack_ref + 0.01) {
+		p_table_state->Player(chair)->_bet.SetValue(_mem_bet[chair]);
+		g_capture_suspect_request = true;
+		g_capture_suspect_reason = "bet_exceeds_stack";
+		write_log(Preferences()->debug_scraper(),
+			"[CScraper] bet-memory: chair %d restored %.2f (scrape %.2f > stack %.2f)\n",
+			chair, _mem_bet[chair], bet, stack_ref);
+	} else if (bet >= 0.0) {
+		_mem_bet[chair] = bet;
+	}
 }
 
 void CScraper::ScrapeAllPlayerCards() {
@@ -1800,6 +1827,62 @@ void CScraper::DumpScrapesIfRequested() {
 		}
 	}
 	write_log(k_always_log_basic_information, "[CScraper] Dumped region scrapes to %s\n", dir.GetString());
+}
+
+static unsigned long long NowEpochMs();   // defined below (epoch ms helper)
+
+// On a validator-flagged bad money value, save the money region images (balance/bet/pot)
+// of THIS frame to logs\capture\<ms>\ with a .gt.txt placeholder + a reason.txt. These are
+// exactly the hard cases that fail validation: Claude clarifies them (posting the value via
+// /api/set-region-value -> memory) and writes the .gt.txt, turning each into a labelled real
+// tesseract training sample. Throttled so a sustained error doesn't flood the disk.
+void CScraper::CaptureSuspectScrapeIfRequested() {
+	if (!g_capture_suspect_request) return;
+	g_capture_suspect_request = false;
+	if (p_tablemap == NULL) return;
+	static unsigned long long s_last_capture_ms = 0;
+	unsigned long long ms = NowEpochMs();
+	if (ms - s_last_capture_ms < 4000ULL) return;   // at most one capture / 4s
+	s_last_capture_ms = ms;
+
+	CString dir;
+	dir.Format("%scapture\\%llu", LogsDirectory().GetString(), ms);
+	CreateDirectory((LogsDirectory() + "capture").GetString(), NULL);
+	CreateDirectory(dir, NULL);
+	// reason + full table frame for context.
+	{
+		FILE *f = NULL;
+		if (fopen_s(&f, (dir + "\\reason.txt").GetString(), "w") == 0 && f != NULL) {
+			CStringA a(g_capture_suspect_reason);
+			fputs(a.GetString(), f); fclose(f);
+		}
+	}
+	if (_entire_window_cur != NULL) {
+		SaveHBITMAPToFile(_entire_window_cur, (dir + "\\_table.bmp").GetString());
+	}
+	// Save every money region's image + the current OCR text as a .gt.txt SEED (Claude
+	// corrects it). Money = balance/bet/pot regions.
+	int saved = 0;
+	for (RMapCI it = p_tablemap->r$()->begin(); it != p_tablemap->r$()->end(); ++it) {
+		const CString &rn = it->second.name;
+		bool money = (rn.Find("balance") != -1) || (rn.Find("bet") != -1)
+		          || (rn.Find("pot") != -1);
+		if (!money) continue;
+		if (it->second.cur_bmp == NULL) continue;
+		CString safe = SanitizeRegionFilename(rn);
+		if (safe.IsEmpty()) continue;
+		SaveHBITMAPToFile(it->second.cur_bmp, (dir + "\\" + safe + ".bmp").GetString());
+		CString txt;
+		EvaluateRegion(rn, &txt);
+		FILE *f = NULL;
+		if (fopen_s(&f, (dir + "\\" + safe + ".gt.txt").GetString(), "w") == 0 && f != NULL) {
+			CStringA a(txt); fputs(a.GetString(), f); fclose(f);   // seed; Claude corrects
+		}
+		++saved;
+	}
+	write_log(k_always_log_basic_information,
+		"[CScraper] Captured %d suspect money regions (%s) to %s\n",
+		saved, g_capture_suspect_reason.GetString(), dir.GetString());
 }
 
 // Wall-clock milliseconds since the Unix epoch (matches `date +%s%3N`), so frame

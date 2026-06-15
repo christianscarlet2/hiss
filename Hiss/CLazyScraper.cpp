@@ -220,6 +220,9 @@ void CLazyScraper::DoScrape() {
   }
   // MCP feed: dump full-table + per-region scrapes/results when requested.
   p_scraper->DumpScrapesIfRequested();
+  // Validator-flagged bad money value: capture the suspect money regions for Claude
+  // clarification + tesseract training (logs\capture\<ms>\).
+  p_scraper->CaptureSuspectScrapeIfRequested();
   // Rolling 10-minute heartbeat-frame history (logs\frames\<epoch_ms>.bmp).
   p_scraper->SaveHeartbeatFrame();
 }

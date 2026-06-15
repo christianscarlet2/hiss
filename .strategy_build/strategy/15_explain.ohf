@@ -20,7 +20,7 @@
 0
 
 ##f$expl_iso##
-//~ ISO-RAISE to {f$Open_RaiseTo}bb over {Calls} limper(s). Punishing the limp - they entered weak/passive, so I size up to play a bigger pot in position with the better hand and deny them a cheap flop. Eff {f$EffStack}bb, pot building to {PotSize}bb.
+//~ ISO-RAISE to {f$Iso_RaiseTo}bb over {Calls} limper(s). Punishing the limp - they entered weak/passive, so I size up to play a bigger pot in position with the better hand and deny them a cheap flop. Eff {f$EffStack}bb, pot building to {PotSize}bb.
 0
 
 ##f$expl_3bet_value##

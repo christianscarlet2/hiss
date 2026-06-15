@@ -102,6 +102,7 @@ class CScraper : public CSpaceOptimizedGlobalObject {
   CString ScrapeUPBalance(int chair, char scrape_u_else_p);
 	void ScrapeBalance(const int chair);
 	void ScrapeBet(const int chair);
+	void ApplyBetMemory(int chair);   // bet memory: restore last-good if bet > stack
 	void ScrapePots();
 	void ScrapeLimits();
 	const double DoChipScrape(RMapCI r_iter);
@@ -114,6 +115,11 @@ class CScraper : public CSpaceOptimizedGlobalObject {
 	// look back at exactly what was on screen at the time a question/command was asked.
 	void SaveHeartbeatFrame();
  public:
+	// On a validator error (g_capture_suspect_request), save the money region images
+	// (balance/bet/pot) + a .gt.txt placeholder to logs\capture\<ms>\ so Claude can
+	// clarify them (post via /api/set-region-value -> memory) and they become labelled
+	// real training samples (exactly the hard cases that fail validation).
+	void CaptureSuspectScrapeIfRequested();
 	// Claude/MCP transform: a region whose value Claude parses from the image (not OCR).
 	// Claude posts the value via /api/set-region-value; EvaluateRegion returns it instead
 	// of scraping. Thread-safe (HTTP thread writes, heartbeat thread reads).
@@ -167,6 +173,7 @@ class CScraper : public CSpaceOptimizedGlobalObject {
 	// chair) keeps showing their last-good stack/name instead of flashing 0/empty. Cleared
 	// once the seat has been unseated continuously past kMaxOutMemoryFrames (truly gone).
 	double  _mem_balance[kMaxNumberOfPlayers];
+	double  _mem_bet[kMaxNumberOfPlayers];   // last-good bet per chair (bet memory)
 	CString _mem_name[kMaxNumberOfPlayers];
 	int     _mem_out_frames[kMaxNumberOfPlayers];
 	// Parallel-OCR pre-pass results for this scrape cycle (region name -> text).
@@ -186,6 +193,10 @@ extern CScraper *p_scraper;
 // One-shot trigger: set true to make the next heartbeat scrape dump all region
 // images + results to logs\scrapes\ (for the MCP server / Claude /improve).
 extern bool g_dump_scrapes_once;
+// Set by the validator when it detects a bad money value; the next heartbeat saves the
+// suspect money-region images for Claude clarification + tesseract training capture.
+extern bool g_capture_suspect_request;
+extern CString g_capture_suspect_reason;
 // MCP/API control, consumed by the heartbeat thread. -1 = nothing pending.
 extern int g_mcp_autoplayer_request;   // 0 = off, 1 = on
 extern int g_mcp_action_request;       // a k_autoplayer_function_* code (FCKRA)
