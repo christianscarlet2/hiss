@@ -25,6 +25,7 @@
 
 #include "SwagAdjustment.h"
 #include "CSymbolEngineHistory.h"
+#include "CTableState.h"   // scraped hero balance for the betsize clamp
 #include "..\CTablemap\CTablemap.h"
 #include "OpenHoldem.h"
 #include "..\DLLs\WindowFunctions_DLL\window_functions.h"
@@ -250,6 +251,18 @@ bool CBetsizeInputBox::ClickNumpadRegion(CString region_name) {
 // Enter the betsize by tapping the on-screen numpad: clear with 1x nBackspace,
 // "type" each character by clicking n0..n9 / nDecimalPoint, then click nOkay.
 void CBetsizeInputBox::EnterBetsizeByNumpad(CString amount) {
+	// Clamp to the scraped hero balance: never type a bet/raise larger than the stack
+	// we actually have on the table. A mis-scrape or an over-large f$betsize must not
+	// enter a number bigger than our balance -- the casino rejects it or it mis-parses.
+	if (p_table_state != NULL && p_table_state->User() != NULL) {
+		double balance = p_table_state->User()->_balance.GetValue();
+		double amt = atof(amount.GetString());
+		if (balance > 0.0 && amt > balance) {
+			write_log(k_always_log_basic_information,
+				"[CBetsizeInputBox] amount %.2f exceeds scraped balance %.2f -- clamping to balance.\n", amt, balance);
+			amount = Number2CString(balance);
+		}
+	}
 	// Trim trailing zeros after the decimal point: type "2.5" not "2.50", and "2"
 	// not "2.00". Some casino keypads reject/misparse a trailing zero, and it matches
 	// how a human enters the bet. (Number2CString already drops decimals for whole
@@ -268,8 +281,10 @@ void CBetsizeInputBox::EnterBetsizeByNumpad(CString amount) {
 	if (kNumpadClickDelayMs < 0) kNumpadClickDelayMs = 0;
 	write_log(k_always_log_basic_information, "[CBetsizeInputBox] Entering betsize \"%s\" via on-screen numpad (%d ms/click).\n",
 		amount.GetString(), kNumpadClickDelayMs);
-	// 1) Clear the field: click nBackspace 1 time.
-	for (int i = 0; i < 1; i++) {
+	// 1) Clear the field: click nBackspace 4 times. The phone keypad can pre-fill a
+	// multi-digit min-raise/last amount; a single backspace leaves stale digits in
+	// front of what we type. Four taps clears the common 1-4 digit pre-fill.
+	for (int i = 0; i < 4; i++) {
 		ClickNumpadRegion("nBackspace");
 		Sleep(kNumpadClickDelayMs);
 	}
