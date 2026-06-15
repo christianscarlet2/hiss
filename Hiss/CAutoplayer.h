@@ -87,6 +87,11 @@ private:
 	// when a fresh turn begins (ismyturn rising edge).
 	bool	_acted_this_turn;
 	bool	_was_my_turn;
+	// Click-miss retry: stamp the heartbeat when we take a primary action. If it's STILL
+	// our turn (buttons still present) several heartbeats later, the click didn't register
+	// -- clear the latch to re-click. _retry_count caps retries per turn (reset each turn).
+	int		_acted_heartbeat;
+	int		_retry_count;
 
 	CCritSec	m_critsec;
 };

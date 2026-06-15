@@ -86,6 +86,8 @@ CAutoplayer::CAutoplayer(void) {
   _last_server_act_version = 0;
   _acted_this_turn = false;
   _was_my_turn = false;
+  _acted_heartbeat = 0;
+  _retry_count = 0;
 }
 
 
@@ -427,6 +429,36 @@ bool CAutoplayer::ExecuteRaiseCallCheckFold() {
               p_log_writer->LogSymbol(_ms, CStringA(_hand).GetString(), _br,
                 kReplaySymbols[s], CStringA(_vs).GetString());
             }
+          }
+          // Replay context: snapshot the SCRAPED table state at this decision (each seated
+          // seat's balance + bet, pot, board, hero cards) so the replay UI's Scrapes panel
+          // shows what the bot actually READ -- and a mis-scrape (e.g. a garbage balance like
+          // 1362222) is visible at the exact moment it mattered. is_crop=true (crop-derived).
+          if (p_table_state != NULL) {
+            for (int c = 0; c < kMaxNumberOfPlayers; ++c) {
+              CPlayer *pl = p_table_state->Player(c);
+              if (pl == NULL || !pl->seated()) continue;
+              CString rn, vs;
+              rn.Format("p%d_balance", c); vs.Format("%.2f", pl->_balance.GetValue());
+              p_log_writer->LogScrape(_ms, CStringA(_hand).GetString(), _br,
+                CStringA(rn).GetString(), CStringA(vs).GetString(), true);
+              rn.Format("p%d_bet", c); vs.Format("%.2f", pl->_bet.GetValue());
+              p_log_writer->LogScrape(_ms, CStringA(_hand).GetString(), _br,
+                CStringA(rn).GetString(), CStringA(vs).GetString(), true);
+            }
+            CString vs; vs.Format("%.2f", p_table_state->Pot(0));
+            p_log_writer->LogScrape(_ms, CStringA(_hand).GetString(), _br, "pot",
+              CStringA(vs).GetString(), true);
+            CString board;
+            for (int b = 0; b < kNumberOfCommunityCards; ++b) {
+              Card *cc = p_table_state->CommonCards(b);
+              if (cc != NULL) { CString t = cc->ToString(); if (!t.IsEmpty() && t != "..") board += t + " "; }
+            }
+            board.Trim();
+            p_log_writer->LogScrape(_ms, CStringA(_hand).GetString(), _br, "board",
+              CStringA(board).GetString(), true);
+            p_log_writer->LogScrape(_ms, CStringA(_hand).GetString(), _br, "hero_cards",
+              CStringA(_cards).GetString(), true);
           }
         }
         p_autoplayer_trace->Print(ActionConstantNames(i), kAlwaysLogAutoplayerFunctions);
@@ -782,7 +814,27 @@ void CAutoplayer::DoAutoplayer(void) {
 	bool my_turn_now = p_engine_container->symbol_engine_autoplayer()->ismyturn();
 	if (my_turn_now && !_was_my_turn) {
 		_acted_this_turn = false;
+		_retry_count = 0;
 		APTrace("DoAutoplayer -> new turn detected (ismyturn rising edge), FCKRA latch cleared");
+	}
+	// CLICK-MISS RETRY: a successful action ends our turn (ismyturn -> false). If we acted
+	// but it's STILL our turn N heartbeats later AND the buttons are still present
+	// (isfinalanswer), the click did not register (e.g. a missed/mis-aimed tap, or the
+	// two-successive-clicks keypad entry that didn't land) -- clear the latch to re-click.
+	// Wait N heartbeats so we don't false-trigger on scrape lag; cap retries per turn.
+	static const int kRetryAfterHeartbeats = 4;
+	static const int kMaxClickRetries = 4;
+	if (my_turn_now && _acted_this_turn && p_heartbeat_thread != NULL
+	    && p_engine_container->symbol_engine_autoplayer()->isfinalanswer()) {
+		int elapsed = p_heartbeat_thread->heartbeat_counter() - _acted_heartbeat;
+		if (elapsed >= kRetryAfterHeartbeats && _retry_count < kMaxClickRetries) {
+			_acted_this_turn = false;
+			_retry_count++;
+			write_log(k_always_log_basic_information,
+				"[AutoPlayer] CLICK-MISS RETRY: still my turn %d heartbeats after acting and buttons still present "
+				"-> re-clicking (retry %d/%d)\n", elapsed, _retry_count, kMaxClickRetries);
+			APTrace("DoAutoplayer -> click-miss retry: latch cleared to re-act");
+		}
 	}
 	_was_my_turn = my_turn_now;
 
@@ -795,6 +847,11 @@ void CAutoplayer::DoAutoplayer(void) {
 			p_autoplayer_functions->CalcPrimaryFormulas();
 			if (ExecutePrimaryFormulasIfNecessary()) {
 				_acted_this_turn = true;   // latch: no more FCKRA actions until next turn
+				// Stamp the heartbeat so the click-miss retry above can tell whether this
+				// click actually registered (turn should end within a few heartbeats). For
+				// the two-successive-clicks bet/raise this is set AFTER the final keypad
+				// entry, so the retry window measures from the final click as intended.
+				_acted_heartbeat = (p_heartbeat_thread != NULL) ? p_heartbeat_thread->heartbeat_counter() : 0;
 				APTrace("DoAutoplayer -> primary action taken; FCKRA latch set for this turn");
 			}
 		}

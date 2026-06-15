@@ -1805,6 +1805,15 @@ BOOL CScraper::SaveHBITMAPToFile(HBITMAP hBitmap, LPCTSTR lpszFileName)
 		* Bitmap0.bmHeight;
 	hDib = GlobalAlloc(GHND, dwBmBitsSize + dwPaletteSize + sizeof(BITMAPINFOHEADER));
 	lpbi = (LPBITMAPINFOHEADER)GlobalLock(hDib);
+	// Guard: GlobalAlloc/GlobalLock can fail under memory pressure, and this runs every
+	// heartbeat for the replay-frame capture -- a NULL lpbi here was an access violation
+	// (0xc0000005) that crashed the bot mid-hand. Bail cleanly instead.
+	if (lpbi == NULL) {
+		write_log(k_always_log_errors, "[CScraper] SaveHBITMAPToFile: GlobalAlloc/Lock failed (%u bytes) -- skipping frame\n",
+			(unsigned)(dwBmBitsSize + dwPaletteSize + sizeof(BITMAPINFOHEADER)));
+		if (hDib) GlobalFree(hDib);
+		return FALSE;
+	}
 	*lpbi = bi;
 
 	hPal = GetStockObject(DEFAULT_PALETTE);
