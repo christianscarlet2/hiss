@@ -339,6 +339,8 @@ void COpenHoldemView::UpdateDisplay(const bool update_all) {
 
 	// Draw button state indicators
 	DrawButtonIndicators();
+	// Footer: "Observer Mode" / "Playing Mode" in the bottom indicator row.
+	DrawModeFooter();
 
 	// Draw common cards
 	bool community_cards_changed = false;
@@ -541,7 +543,38 @@ void COpenHoldemView::DrawButtonIndicators(void) {
   }
 }
 
-void COpenHoldemView::DrawSpecificButtonIndicator(const char ch, const bool on_off, const int left, 
+// Footer label centered in the bottom indicator row (between the TIOLP/FCKRA corner
+// boxes): "Observer Mode" when the resolved p3observer state is true (incl. the memory
+// override), otherwise "Playing Mode".
+void COpenHoldemView::DrawModeFooter(void) {
+	CDC *pDC = GetDC();
+	if (pDC == NULL) return;
+	int top = _full_client_bottom - kIndicatorRowHeight;
+	// Leave ~86px clear at each edge for the corner indicator stacks.
+	CRect band(_client_rect.left + 86, top, _client_rect.right - 86, _full_client_bottom);
+	if (band.right <= band.left) { ReleaseDC(pDC); return; }
+	// Clear to the table background so a previous label never lingers.
+	CBrush back(COLOR_GRAY);
+	pDC->FillRect(&band, &back);
+
+	bool observing = (p_scraper != NULL && p_scraper->ObserverActive());
+	CFont font;
+	font.CreateFont(14, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+		DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+		PROOF_QUALITY, DEFAULT_PITCH | FF_SWISS, "Arial");
+	CFont *pOld = pDC->SelectObject(&font);
+	int oldBk = pDC->SetBkMode(TRANSPARENT);
+	COLORREF oldColor = pDC->SetTextColor(observing ? COLOR_GREEN : COLOR_YELLOW);
+	pDC->DrawText(observing ? _T("Observer Mode") : _T("Playing Mode"),
+		&band, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+	pDC->SetTextColor(oldColor);
+	pDC->SetBkMode(oldBk);
+	pDC->SelectObject(pOld);
+	font.DeleteObject();
+	ReleaseDC(pDC);
+}
+
+void COpenHoldemView::DrawSpecificButtonIndicator(const char ch, const bool on_off, const int left,
 												  const int top, const int right, const int bottom) {
 	CPen		*pTempPen = NULL, oldpen;
 	CBrush	*pTempBrush = NULL, oldbrush;

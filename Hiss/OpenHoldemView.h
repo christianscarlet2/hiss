@@ -41,6 +41,7 @@ class COpenHoldemView : public CView {
 	// private functions and variables - not available via accessors or mutators
 	void UpdateDisplay(const bool update_all);
 	void DrawButtonIndicators();
+	void DrawModeFooter();
 	void DrawSpecificButtonIndicator(const char ch, const bool on_off, const int left, const int top, const int right, const int bottom);
 	void DrawSeatedActiveCircle(const int chair);
 	void DrawCard(Card *card, const int left, const int top, const int right, const int bottom, const bool pl_card);
