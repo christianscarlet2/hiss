@@ -31,6 +31,25 @@
 //      opponent-aware via the PokerTracker HUD stats (see 10_opponents).  [N,B]
 //    * Mix it up / stay unpredictable - balanced frequencies via randomround. [N,B]
 //
+//  THIRD SOURCE - the mental/discipline layer:
+//    [T]  Larry W. Phillips - "The TAO of Poker" (285 rules, 2003)
+//  TAO is a discipline + low-limit text; its rules are incorporated as follows:
+//    * TIGHT SELECTION / PATIENCE - "see how many hands you can fold; make each hand
+//      prove it is good." Reflected in the by-position open lists (20_lists) + the
+//      fold-heavy default of every street. Discipline must hold "until the end." [T R10,R11]
+//    * BET YOUR PREMIUMS - "start with premium hands; when you get them, bet them."
+//      Reflected in list3betValue/list4betValue + the raise branches.            [T R3]
+//    * VALUE OVER BLUFF IN LOW-LIMIT - the freeroll field calls too much, so bluffing
+//      donates. f$CbetFreq dialed down (05_config), c-bet air CHECKED vs a station
+//      (50_flop f$Opp_IsStation), 3-bet bluffs gated on a foldy/loose opp only.   [T R188-190, Ch.6]
+//    * FOLD WHEN BEAT / DON'T PAY OFF - "if you're beat, fold; forget the idea they're
+//      bluffing." Reflected in pot-control + bluff-catch discipline, and the river
+//      never-bluff-a-station / fold-to-strength lines.                            [T Ch.3,R28]
+//    * RESPECT THE CONFIDENT BAD PLAYER - don't bluff-catch light vs a maniac. [T R189]
+//    * STAY UNPREDICTABLE - mix frequencies (randomround) rather than play face-up. [T R191]
+//  The mental-game rules (tilt, calm, losing, luck, slumps, trusting your read) live in
+//  the Lilith poker-coach (mcp/poker_coach_hype.py) - that is where TAO mostly applies.
+//
 //  Bet amounts are expressed as RaiseTo <big blinds> (pre-flop) or
 //  RaiseBy <pct> % (post-flop pot-fractions). Hiss converts the resulting
 //  f$betsize into the table's chip amount.

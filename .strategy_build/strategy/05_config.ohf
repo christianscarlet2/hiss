@@ -114,9 +114,13 @@ WHEN Others RETURN 66 FORCE
 
 ##f$CbetFreq##
 // How often we fire a continuation bet with air as the pre-flop raiser. [B ~90%][N ~60%]
+// [T] TAO of Poker (Phillips) Ch.6 & Ch.14: in loose low-limit fields (our freerolls)
+// bluffing into calling stations just donates -- "you still have to win once in a while."
+// So the hybrid air c-bet is dialed DOWN (0.72 -> 0.60): bluff less, value-bet more. (The
+// bot already CHECKS air vs an identified station in 50_flop -- f$Opp_IsStation Check.)
 WHEN f$Style = 1 RETURN 0.90 FORCE
 WHEN f$Style = 0 RETURN 0.60 FORCE
-WHEN Others RETURN 0.72 FORCE
+WHEN Others RETURN 0.60 FORCE
 
 //-----------------------------------------------------------------------------
 //  Draw / pot-odds thresholds.

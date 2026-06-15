@@ -106,6 +106,19 @@ HYPE_LINES = [
     "Don't pay off the nit. When the rock raises the river, your one pair is a museum piece.",
     "Win the small pots with position, the big pots with the nuts. Don't flip it around.",
     "Breathe. Big stack or short stack, the next decision is the only one that matters. Make it clean.",
+    # --- The TAO of Poker (Larry Phillips) -- the mental game ---
+    "TAO of Poker: see how many hands you can fold. Make each hand prove it is good before a chip goes in.",
+    "If you're beat, fold. Forget the idea that they're bluffing. Most of the time, they have it.",
+    "Discipline must be kept up until the very end. The last hour is where tournaments are won and lost.",
+    "Patience is the weapon. The skilled player simply waits for a good hand, then bets it hard.",
+    "When the bad beat comes, stay unflappable. Clinical detachment. The next hand does not know what just happened.",
+    "Never deliberately tilt to make something happen. Steaming is how good players go broke.",
+    "Calm and composure under pressure is the whole game. When you feel strong emotion, that is the moment to slow down.",
+    "Do not bluff the calling station. In a loose game you still have to win pots. Value bet, don't donate.",
+    "Trust your read even when it means folding again and again. An accurate read that folds is a winning read.",
+    "The biggest leak in a soft game is impatience: getting over-eager to put your chips in play. Wait.",
+    "Bet your premiums. When you finally get the hand, make them pay. Don't get fancy with the nuts.",
+    "Stay unpredictable. Mix it up so they never know if your bet means strength or air.",
 ]
 
 ELABORATE_SPEECH = (
