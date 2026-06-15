@@ -65,13 +65,28 @@ void CBlindGuesser::Guess(double *sblind, double *bblind, double *bbet, double *
   if (CompletePartiallyKnownBlinds(sblind, bblind, bbet)) {
     return;
   }
-  write_log(Preferences()->debug_table_limits(), 
+  write_log(Preferences()->debug_table_limits(),
     "[CBlindGuesser] Complete failure\n");
-  write_log(Preferences()->debug_table_limits(), 
-    "[CBlindGuesser] Assuming lowest level: 0.01 / 0.02 / 0.04\n");
-  *sblind = 0.01;
-  *bblind = 0.02;
-  *bbet   = 0.04;
+  // A big-blind-denominated table (stacks/bets shown in BB, e.g. ACR mobile) can set the
+  // tablemap symbol "bblind_fallback" to 1.0 so depth is read in the correct unit even when
+  // the blind level can't be scraped -- WITHOUT needing /api/table-game-info posted each
+  // session. Otherwise assume the lowest cash level. This is the fix for the ~50x depth
+  // misread that kept the bot out of push/fold mode and folding short-stack jams.
+  double tm_fallback_bb = (p_tablemap != NULL)
+    ? atof(p_tablemap->GetTMSymbol("bblind_fallback").GetString()) : 0.0;
+  if (tm_fallback_bb > 0) {
+    write_log(Preferences()->debug_table_limits(),
+      "[CBlindGuesser] Using tablemap bblind_fallback = %.4f (BB-denominated table)\n", tm_fallback_bb);
+    *bblind = tm_fallback_bb;
+    *sblind = tm_fallback_bb / 2.0;
+    *bbet   = tm_fallback_bb;
+  } else {
+    write_log(Preferences()->debug_table_limits(),
+      "[CBlindGuesser] Assuming lowest level: 0.01 / 0.02 / 0.04\n");
+    *sblind = 0.01;
+    *bblind = 0.02;
+    *bbet   = 0.04;
+  }
 }
 
 bool CBlindGuesser::CompletePartiallyKnownBlinds(double *sblind, 
