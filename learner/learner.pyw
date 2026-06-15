@@ -656,6 +656,10 @@ class Learner(tk.Tk):
         # ACT immediately on the table (force-bypass the once-per-ismyturn gate), snapshot
         # the spot, and stage it for logging. The reason + log happen on SUBMIT PLAY.
         c = dict(self.ctx or {})
+        # Call/Check button: when there's nothing to call the table button is CHECK, not
+        # CALL (a different FCKRA function), so send the right one or the click no-ops.
+        if action == "call" and self._fnum(c.get("amount_to_call")) <= 0:
+            action = "check"
         amt = (str(amount) if amount is not None else self.amount.get()).strip()
         ok, err = self.execute_on_table(action, amt, force=True)
         self._pending = {"action": action, "amount": amt, "ctx": c}
