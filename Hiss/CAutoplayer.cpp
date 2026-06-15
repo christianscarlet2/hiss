@@ -452,7 +452,9 @@ bool CAutoplayer::ExecuteRaiseCallCheckFold() {
             CString board;
             for (int b = 0; b < kNumberOfCommunityCards; ++b) {
               Card *cc = p_table_state->CommonCards(b);
-              if (cc != NULL) { CString t = cc->ToString(); if (!t.IsEmpty() && t != "..") board += t + " "; }
+              // Only log DEALT board cards. Undealt slots ToString() to junk (e.g. "9"),
+              // which polluted the scrape log with boards like "9 9 9 9 9".
+              if (cc != NULL && cc->IsKnownCard()) board += cc->ToString() + " ";
             }
             board.Trim();
             p_log_writer->LogScrape(_ms, CStringA(_hand).GetString(), _br, "board",
