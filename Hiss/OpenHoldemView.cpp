@@ -258,9 +258,9 @@ void COpenHoldemView::UpdateDisplay(const bool update_all) {
 	CDC			*pDC = GetDC();
 
 	CString sym_handnumber = p_handreset_detector->GetHandNumber();
-	if (p_hud_manager != NULL) {
-		p_hud_manager->RefreshIfNeeded(sym_handnumber, update_all);
-	}
+	// HUD/PT4 stats are refreshed on the heartbeat thread (the only thread that may evaluate
+	// the non-thread-safe PT4 symbols). The view + the HTTP game-state JSON only READ the
+	// cached SamplesForChair/StatsForChair, so we do NOT call RefreshIfNeeded here anymore.
 	double  sym_bblind = p_engine_container->symbol_engine_tablelimits()->bblind();
 	double  sym_sblind = p_engine_container->symbol_engine_tablelimits()->sblind();
 	double  sym_ante = p_engine_container->symbol_engine_tablelimits()->ante();

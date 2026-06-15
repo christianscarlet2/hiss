@@ -194,6 +194,14 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
   DWORD t_eval0 = GetTickCount();
 	p_engine_container->EvaluateAll();
   DWORD t_eval_ms = GetTickCount() - t_eval0;
+  // Refresh the HUD/PT4 stat cache HERE, on the heartbeat thread, inside the update lock
+  // and right after the engine evaluated -- this is the ONLY place PT_DLL_GetStat (which
+  // evaluates non-thread-safe PT4 query symbols) may run. The UI display + the HTTP
+  // game-state JSON now only READ the cached values, so nothing evaluates symbols off this
+  // thread (that race crashed Hiss: BuildTableStateJson -> RefreshIfNeeded -> CFunction::Evaluate).
+  if (p_hud_manager != NULL && p_handreset_detector != NULL) {
+    p_hud_manager->RefreshIfNeeded(p_handreset_detector->GetHandNumber(), false);
+  }
 	// Reply-frames no longer here in the heartbeat.
   // we have a "ReplayFrameController for that.
   LeaveCriticalSection(&pParent->cs_update_in_progress);

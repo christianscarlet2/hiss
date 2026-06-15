@@ -783,9 +783,12 @@ CStringA CChatTerminalServer::BuildTableStateJson(void)
 	double pot = p_engine_container == NULL ? 0 : p_engine_container->symbol_engine_chip_amounts()->pot();
 	int gametype = p_engine_container == NULL ? 0 : p_engine_container->symbol_engine_gametype()->gametype();
 	bool is_omaha = p_engine_container != NULL && p_engine_container->symbol_engine_isomaha()->isomaha();
-	if (p_hud_manager != NULL) {
-		p_hud_manager->RefreshIfNeeded(handnumber, false);
-	}
+	// DO NOT refresh HUD/PT4 stats here: this runs on the HTTP server thread, and
+	// PT_DLL_GetStat evaluates PT4 query symbols through the (non-thread-safe) symbol
+	// engine. Doing that off the heartbeat/UI thread races the engine and crashes
+	// (CFunction::Evaluate throws -> SEH). The UI display timer refreshes the cache under
+	// the heartbeat update lock; here we only READ the cached SamplesForChair/StatsForChair
+	// (both mutex-guarded copies), so the JSON is safe + slightly-throttled-stale.
 
 	// Observer mode: when "p3observer" is true, p3's scraped values come from the
 	// p3observer_ regions and p3 should render as a normal seat (not the hero).
