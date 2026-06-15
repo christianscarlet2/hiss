@@ -64,6 +64,7 @@ BEGIN_MESSAGE_MAP(CReactTableWindow, CWnd)
 	ON_WM_SYSCOMMAND()
 	ON_WM_NCCALCSIZE()
 	ON_WM_NCHITTEST()
+	ON_WM_NCRBUTTONUP()
 	ON_WM_PAINT()
 	ON_WM_ERASEBKGND()
 	ON_WM_LBUTTONDOWN()
@@ -345,6 +346,26 @@ LRESULT CReactTableWindow::OnNcHitTest(CPoint point)
 BOOL CReactTableWindow::OnEraseBkgnd(CDC *pDC)
 {
 	return TRUE;   // painted in OnPaint; WebView2 covers the rest
+}
+
+// Right-click on the custom title bar: the standard caption (and its system menu) is
+// removed, so pop our own context menu with the Always-on-Top toggle.
+void CReactTableWindow::OnNcRButtonUp(UINT nHitTest, CPoint point)
+{
+	if (nHitTest == HTCAPTION) {
+		CMenu menu;
+		menu.CreatePopupMenu();
+		menu.AppendMenu(MF_STRING | (_always_on_top ? MF_CHECKED : MF_UNCHECKED),
+			SC_HISS_ALWAYS_ON_TOP, _T("Always on Top"));
+		int cmd = menu.TrackPopupMenu(TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_LEFTALIGN,
+			point.x, point.y, this);
+		if (cmd == SC_HISS_ALWAYS_ON_TOP) {
+			Hiss_ToggleAlwaysOnTopFromMenu(this, &_always_on_top, _T("ReactTable"), NULL,
+				SC_HISS_ALWAYS_ON_TOP);
+		}
+		return;
+	}
+	CWnd::OnNcRButtonUp(nHitTest, point);
 }
 
 BOOL CReactTableWindow::OnNcActivate(BOOL bActive)
