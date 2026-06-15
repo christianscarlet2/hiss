@@ -443,9 +443,10 @@ BOOL CMainFrame::PreCreateWindow(CREATESTRUCT& cs) {
 	cs.y = min(Preferences()->main_y(), max_y);
   cs.x = max(cs.x, 0);
   cs.y = max(cs.y, 0);
-  // GUI size
+  // GUI size. Default the height to match the React table window (560) so the two
+  // windows line up side by side by default; the window stays resizable.
 	cs.cx = kMainSizeX;
-	cs.cy = kMainSizeY;
+	cs.cy = 560;   // kReactTableHeight
 
 	return true;
 }

@@ -209,6 +209,12 @@ extern unsigned long g_mcp_action_set_tick;  // tick when set (wait-for-turn exp
 extern bool g_mcp_action_force;        // true: manual learner click -> bypass the ismyturn gate
 extern bool g_mcp_reload_ohf_request;  // set by /api/reload-ohf; heartbeat reloads the strategy folder
 extern CString g_mcp_click_region;     // /api/click-region: heartbeat clicks this tablemap region's rect (lobby nav)
+// HUD overlay recalibration: user right-clicks "Recalibrate all HUDs (Claude)" -> request flag.
+// Claude/MCP reads the table screenshot and posts per-seat anchors as JSON (fractions of the
+// client area); the heartbeat hands g_hud_positions_json to the overlay to apply + persist.
+extern bool    g_hud_calibrate_request;  // set by /api/hud-calibrate; MCP polls /api/hud-calibrate-status
+extern bool    g_hud_positions_apply;    // set by /api/hud-positions; heartbeat applies g_hud_positions_json
+extern CString g_hud_positions_json;     // per-seat anchor fractions: {"c0":{"x":fx,"y":fy},...}
 extern bool g_frame_history_enabled;   // when true, save a heartbeat frame each scrape (10-min rolling)
 // table_game_info: MCP/Claude-parsed game info. Claude reads the table image (heartbeat
 // frame) and determines the blinds/ante/level/etc., then POSTs them to /api/table-game-info.

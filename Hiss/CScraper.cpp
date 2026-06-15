@@ -65,6 +65,9 @@ unsigned long g_mcp_action_set_tick = 0;  // GetTickCount() when the request was
 bool g_mcp_action_force = false;          // true: a manual learner click -> bypass the ismyturn gate
 bool g_mcp_reload_ohf_request = false;  // /api/reload-ohf -> heartbeat reloads the strategy folder
 CString g_mcp_click_region = "";        // /api/click-region -> heartbeat clicks this region's rect
+bool    g_hud_calibrate_request = false; // /api/hud-calibrate -> overlay recalibration pending
+bool    g_hud_positions_apply = false;   // /api/hud-positions -> heartbeat applies g_hud_positions_json
+CString g_hud_positions_json = "";       // per-seat anchor fractions posted by Claude/MCP
 bool g_frame_history_enabled = true;    // save a heartbeat frame each scrape (10-min rolling history)
 // table_game_info: Claude-parsed game info (set via /api/table-game-info). Unset until then.
 bool   g_tgi_set = false;

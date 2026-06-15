@@ -1027,11 +1027,14 @@ void COpenHoldemView::DrawHudStats(const int chair) {
 	int cy = strip_top + rrow * cellh;
 	CRect cell(cx + 1, cy + 1, cx + cellw - 1, cy + cellh - 1);
 	pDC->FillSolidRect(&cell, COLOR_GRAY);
-	// Stats + sample size are only shown once the name mapping is verified ("confirmed").
-	bool name_verified = (chair >= kFirstChair && chair <= kLastChair) && _player_data[chair].verified;
-	if (!name_verified || !p_table_state->Player(chair)->seated()) {
+	// Decoupled from name-mapping verification (which gated the HUD from ever loading for
+	// unverified opponents). Show stats whenever PokerTracker 4 actually has hands for this
+	// seat -- same gate the scrcpy overlay uses.
+	bool has_data = p_table_state->Player(chair)->seated()
+		&& (p_hud_manager != NULL && p_hud_manager->SamplesForChair(chair) > 0);
+	if (!has_data) {
 		ReleaseDC(pDC);
-		return;   // empty (grey) cell for a non-player / unverified seat
+		return;   // empty (grey) cell for a non-player / no-PT4-data seat
 	}
 
 	_logfont.lfHeight = -10;
