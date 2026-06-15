@@ -100,6 +100,12 @@ A7o A8o A9o ATo AJo AQo AKo K9o KTo KJo KQo QTo QJo JTo
 // 3-bet for value vs an open.
 AA KK QQ JJ AKs AKo AQs
 
+##listSqueeze##
+// SQUEEZE value range: a raise + cold-caller(s) in front. Wider than a heads-up 3-bet
+// because the dead money + multiway-OOP misery of flatting make isolating with strong
+// broadways correct (AJo-type hands play badly multiway out of position). [N p.26]
+AA KK QQ JJ TT AKs AKo AQs AQo AJs AJo ATs KQs KQo
+
 ##list3betBluff##
 // 3-bet bluff candidates: ace blockers + playable suited hands. [N p.17,26]
 A5s A4s A3s A2s K9s KTs KJs Q9s QJs J9s JTs T8s T9s 76s 65s

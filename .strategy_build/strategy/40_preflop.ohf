@@ -65,6 +65,10 @@ WHEN explain_fold_pre Fold FORCE
 WHEN list3betValue AND f$Opp_ThreeBetsLight AND listCall3bet Call FORCE
 // 3-bet for value.
 WHEN list3betValue AND explain_3bet_value RaiseTo f$ThreeBet_RaiseTo FORCE
+// SQUEEZE: a raise WITH cold-caller(s) in front -> 3-bet to isolate with a value range.
+// Flatting OOP in the blinds doesn't even close the action (BB acts behind the SB), so a
+// strong broadway like AJo must squeeze rather than fold/flat multiway. [N p.26]
+WHEN Calls >= 1 AND listSqueeze AND explain_3bet_value RaiseTo f$ThreeBet_RaiseTo FORCE
 // 3-bet bluff vs a foldy / loose opener, in position, at a mixed frequency. [N p.26]
 WHEN list3betBluff AND f$Opp_Foldy AND f$InPositionPre AND randomround < 0.60 RaiseTo f$ThreeBet_RaiseTo FORCE
 WHEN list3betBluff AND f$Opp_IsLoose AND f$InPositionPre AND randomround < 0.35 RaiseTo f$ThreeBet_RaiseTo FORCE
