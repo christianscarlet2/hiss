@@ -401,6 +401,22 @@ bool CAutoplayer::ExecuteRaiseCallCheckFold() {
             p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_raise]),
             p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_allin]),
             _amt, CStringA(_trace).GetString());
+          // Replay context: snapshot the key NON-CROP symbols behind this decision (stack,
+          // position, pot, odds, opponents) so the replay UI's Symbols panel shows WHY, keyed
+          // to the same ts as the decision. Low-volume (only when a decision fires, not per
+          // heartbeat). Heartbeat-thread only -> symbol eval is safe here.
+          static const char *kReplaySymbols[] = {
+            "StackSize", "balance", "dealposition", "betposition", "nopponentsplaying",
+            "nopponentsseated", "nplayersdealt", "PotSize", "AmountToCall", "Raises", "Calls",
+            "prwin", "f$PushFoldStack", "bblind", NULL };
+          for (int s = 0; kReplaySymbols[s] != NULL; ++s) {
+            double _sv = 0.0;
+            if (p_engine_container->EvaluateSymbol(kReplaySymbols[s], &_sv, false)) {
+              CString _vs; _vs.Format("%.4f", _sv);
+              p_log_writer->LogSymbol(_ms, CStringA(_hand).GetString(), _br,
+                kReplaySymbols[s], CStringA(_vs).GetString());
+            }
+          }
         }
         p_autoplayer_trace->Print(ActionConstantNames(i), kAlwaysLogAutoplayerFunctions);
 				return true;
