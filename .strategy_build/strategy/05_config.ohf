@@ -33,8 +33,9 @@ WHEN f$EffStack <= 25 RETURN true FORCE
 WHEN Others RETURN false FORCE
 
 ##f$PushFoldStack##
-// Below ~10bb: push/fold only. [N p.34 "below 10 bets"]
-WHEN f$EffStack <= 10 RETURN true FORCE
+// Push/fold (jam, don't min-raise) at <= 13bb. Raised from 10 -> 13 per HUMAN FEEDBACK
+// (learner_decisions #42: liked jamming QJs at 12.5bb instead of min-raising). [N p.34]
+WHEN f$EffStack <= 13 RETURN true FORCE
 WHEN Others RETURN false FORCE
 
 //-----------------------------------------------------------------------------
