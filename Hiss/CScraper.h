@@ -162,6 +162,13 @@ class CScraper : public CSpaceOptimizedGlobalObject {
  private:
 	HBITMAP			_entire_window_last;
 	HBITMAP			_entire_window_cur;
+	// OCR memory cache (g_ocr_memory). Survives CPlayer::Reset(), which set_seated(false)
+	// triggers on a flickering pXseated read: an OUT player (sitting out, still in the
+	// chair) keeps showing their last-good stack/name instead of flashing 0/empty. Cleared
+	// once the seat has been unseated continuously past kMaxOutMemoryFrames (truly gone).
+	double  _mem_balance[kMaxNumberOfPlayers];
+	CString _mem_name[kMaxNumberOfPlayers];
+	int     _mem_out_frames[kMaxNumberOfPlayers];
 	// Parallel-OCR pre-pass results for this scrape cycle (region name -> text).
 	std::map<CString, CString> _ocr_cache;
 	// Last OCR result per AutoOcr region, kept ACROSS frames. When a region's

@@ -138,6 +138,11 @@ CScraper::CScraper(void) {
   _chg_pixel_delta = 0;   // 0 = exact match (off) until LoadChangeThresholds() runs
   _chg_min_pixels = 0;
   _observer_active = false;
+  for (int i = 0; i < kMaxNumberOfPlayers; ++i) {
+    _mem_balance[i] = 0.0;
+    _mem_name[i] = "";
+    _mem_out_frames[i] = 0;
+  }
 }
 
 // Read change-detection tolerance from the `scrape_tuning` DB setting (fields
@@ -659,6 +664,7 @@ void CScraper::ScrapeSeated(int chair) {
 	seated.Format("p%dseated", chair);
 	if (EvaluateRegion(seated, &result)) {
 		if ((result != "") && (p_string_match->IsStringSeated(result))) {
+			_mem_out_frames[chair] = 0;   // present again -> reset OUT-memory expiry
 			p_table_state->Player(chair)->set_seated(true);
 			return;
 		}
@@ -669,11 +675,38 @@ void CScraper::ScrapeSeated(int chair) {
 	seated.Format("u%dseated", chair);
 	if (EvaluateRegion(seated, &result)) {
 		if ((result != "") && (p_string_match->IsStringSeated(result))) {
+			_mem_out_frames[chair] = 0;   // present again -> reset OUT-memory expiry
 			p_table_state->Player(chair)->set_seated(true);
 			return;
 		}
 	}
-	// Failed. Not seated
+	// Failed. Not seated.
+	if (g_ocr_memory && chair >= 0 && chair < kMaxNumberOfPlayers) {
+		// An OUT player (sitting out) still occupies the chair but the pXseated region
+		// reads false (often flickering). set_seated(false) Reset()s their name/balance to
+		// empty/0 -> flicker. Capture the last-good values FIRST (they survive in the
+		// CScraper cache), then restore them after the reset so the chair keeps showing the
+		// remembered stack/name. Only let it clear once the seat has been unseated for a
+		// long stretch (truly gone), so a fresh player who sits down is picked up normally.
+		static const int kMaxOutMemoryFrames = 20000;
+		CPlayer *pl = p_table_state->Player(chair);
+		double bal = pl->_balance.GetValue();
+		CString nm = pl->name();
+		if (bal > 0.0) {
+			_mem_balance[chair] = bal;
+			if (!nm.IsEmpty() && !IsLikelyNameStatusIndicator(nm)) _mem_name[chair] = nm;
+		}
+		pl->set_seated(false);   // triggers CPlayer::Reset()
+		if (_mem_balance[chair] > 0.0 && _mem_out_frames[chair] < kMaxOutMemoryFrames) {
+			pl->_balance.SetValue(_mem_balance[chair]);
+			if (!_mem_name[chair].IsEmpty()) pl->set_name(_mem_name[chair]);
+			_mem_out_frames[chair]++;
+		} else {
+			_mem_balance[chair] = 0.0;
+			_mem_name[chair] = "";
+		}
+		return;
+	}
 	p_table_state->Player(chair)->set_seated(false);
 }
 
