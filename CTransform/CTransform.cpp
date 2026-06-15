@@ -492,9 +492,15 @@ int CTransform::TTypeTransform(RMapCI region, const HDC hdc, CString *text, CStr
 		text->Append("Field too wide");
 		return ERR_FIELD_TOO_LARGE;
 	}
-	if (height > MAX_CHAR_HEIGHT) 
+	if (height > MAX_CHAR_HEIGHT)
 	{
 		text->Append("Field too tall");
+		return ERR_FIELD_TOO_LARGE;
+	}
+	// Guard a malformed/zero region (a transient table-relayout frame can give right<left or
+	// bottom<top -> width/height <= 0), which would run the pixel loop off the buffer below.
+	if (width <= 0 || height <= 0)
+	{
 		return ERR_FIELD_TOO_LARGE;
 	}
 
@@ -524,7 +530,18 @@ int CTransform::TTypeTransform(RMapCI region, const HDC hdc, CString *text, CStr
 	pBits = new BYTE[bmi->bmiHeader.biSizeImage];
 	::GetDIBits(hdc, hbm, 0, height, pBits, bmi, DIB_RGB_COLORS);
 
-	for (x = 0; x < width; x++) 
+	// Guard: when scrcpy/the attached window isn't really there (e.g. closed, or mid table
+	// re-layout), the capture yields a biSizeImage smaller than width*height*4 (or 0).
+	// Indexing pBits in the loop below then runs off the buffer -- the access violation that
+	// crashed Hiss in CTransform::TTypeTransform. Read the region as empty this frame instead.
+	if (pBits == NULL || bmi->bmiHeader.biSizeImage < (DWORD)(width * height * 4))
+	{
+		::HeapFree(GetProcessHeap(), NULL, bmi);
+		delete [] pBits;
+		return ERR_FIELD_TOO_LARGE;
+	}
+
+	for (x = 0; x < width; x++)
 	{
 		for (y = 0; y < height; y++) 
 		{
