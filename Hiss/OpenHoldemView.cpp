@@ -1145,8 +1145,9 @@ void COpenHoldemView::DrawPlayerCards(const int chair) {
 		// with cardbacks can read active=false, so we must still draw their cards.)
 		return;
 	}
-	// Get size of current client window
-	GetClientRect(&_client_rect);
+	// Use the table rect already set by UpdateDisplay (shrunk to exclude the bottom HUD
+	// strip). Re-fetching GetClientRect here would restore the FULL height and misalign
+	// these cards — and everything drawn afterwards — against the seat circles/boxes.
   // Calculate fixed y-position
   int pos_y_top = _client_rect.bottom * pc[p_tablemap->nchairs()][chair][1] - CARDSIZEY / 2;
   int pos_y_bottom = pos_y_top + CARDSIZEY - 1;
