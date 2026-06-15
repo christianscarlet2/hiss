@@ -381,6 +381,27 @@ bool CAutoplayer::ExecuteRaiseCallCheckFold() {
 				k_standard_function_names[i], (btn != NULL && btn->IsClickable()) ? 1 : 0);
 			if (btn->Click()) 			{
         p_engine_container->UpdateAfterAutoplayerAction(i);
+        // Replay logging: capture the OHF decision tree for this clicked action. Read the
+        // trace BEFORE Print() (which clears it). Off-loaded to the background writer.
+        if (p_log_writer != NULL && p_log_writer->Enabled()) {
+          FILETIME _ft; GetSystemTimeAsFileTime(&_ft);
+          ULARGE_INTEGER _u; _u.LowPart = _ft.dwLowDateTime; _u.HighPart = _ft.dwHighDateTime;
+          long long _ms = (long long)((_u.QuadPart - 116444736000000000ULL) / 10000ULL);
+          CString _hand = (p_handreset_detector != NULL) ? p_handreset_detector->GetHandNumber() : CString("");
+          int _br = (p_betround_calculator != NULL) ? p_betround_calculator->betround() : 0;
+          CString _cards = (p_table_state != NULL && p_table_state->User() != NULL)
+            ? p_table_state->User()->Cards() : CString("");
+          CString _trace = (p_autoplayer_trace != NULL) ? p_autoplayer_trace->GetTraceText() : CString("");
+          double _amt = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_betsize]);
+          p_log_writer->LogDecision(_ms, CStringA(_hand).GetString(), _br, CStringA(_cards).GetString(),
+            ActionConstantNames(i), _amt,
+            p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_fold]),
+            p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_call]),
+            p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_check]),
+            p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_raise]),
+            p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_allin]),
+            _amt, CStringA(_trace).GetString());
+        }
         p_autoplayer_trace->Print(ActionConstantNames(i), kAlwaysLogAutoplayerFunctions);
 				return true;
 			}

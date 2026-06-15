@@ -273,6 +273,10 @@ bool CCasinoInterface::EnterBetsizeNumpad(double total_betsize_in_dollars) {
 }
 
 bool CCasinoInterface::EnterBetsizeNumpadRaw(double amount) {
+  // Floor a sub-1 betsize up to 1: a big-blind amount below 1 (e.g. 0.99) is below the
+  // table minimum, so round it up to exactly 1 before typing it on the keypad. This is
+  // the single entry point for raw BB betsizes (autoplayer + manual /api/action raises).
+  if (amount > 0.0 && amount < 1.0) amount = 1.0;
   return _betsize_input_box.EnterAmountViaNumpadRaw(amount);
 }
 
