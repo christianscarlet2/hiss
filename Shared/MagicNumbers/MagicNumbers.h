@@ -205,7 +205,13 @@ const int F_OK = 0;
 
 // thread timeout
 #define THREAD_WAIT					3000
-const int k_max_time_to_wait_for_thread_to_shutdown = 60000; // milli-seconds
+// Shutdown cap per worker thread. Was 60000, which made the app linger ~60s as a
+// windowless background process after the user closed it (the heartbeat thread only
+// checks its stop event between cycles, and a cycle can block on an OCR-worker pipe
+// during teardown, so the join consumed the whole timeout). 5s: a normal close
+// finishes in ~1s; a blocked one is abandoned after 5s and process-exit + the
+// kill-on-job-close job then reap any straggler thread / OCR workers.
+const int k_max_time_to_wait_for_thread_to_shutdown = 5000; // milli-seconds
 // "This must not happen."
 // It is better to have a named constant then to write "assert(false);".
 const bool kThisMustNotHappen = false;
