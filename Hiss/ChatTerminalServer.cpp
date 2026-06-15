@@ -401,7 +401,10 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		} else {
 			g_mcp_action_amount = ((d == "raise" || d == "bet") ? amount : -1.0);
 			g_mcp_action_set_tick = GetTickCount();   // for wait-for-turn expiry
-			g_mcp_action_request = code;   // executed by the heartbeat thread on our turn
+			// force=1 (manual learner click) bypasses the ismyturn gate: fire as soon as
+			// the button is clickable, even if the buttons-visible threshold isn't met.
+			g_mcp_action_force = (QueryValue(query, "force") == "1");
+			g_mcp_action_request = code;   // executed by the heartbeat thread
 			body.Format("{\"ok\":true,\"action\":\"%s\",\"amount\":%.2f}", d.GetString(), amount);
 		}
 		CStringA response;

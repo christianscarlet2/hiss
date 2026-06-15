@@ -197,7 +197,8 @@ class Learner(tk.Tk):
         self.configure(padx=10, pady=8)
         self.ctx = {}
         self.cur_q = None  # (id, text)
-        self._pending = None  # staged play: ("action",act,amt) | ("bet",frac,min_bb)
+        self._pending = None  # staged play (acted, awaiting reason+Submit)
+        self._armed = None    # CHARGED play: Ctrl+click -> waits for ismyturn -> fires
 
         # --- menu: Tools -> Always on Top ---
         menubar = tk.Menu(self)
@@ -252,24 +253,34 @@ class Learner(tk.Tk):
             b = tk.Button(bf, text=txt, width=11, bg=col, fg="white",
                           font=("Segoe UI", 10, "bold"),
                           command=lambda a=act: self.stage_action(a))
+            b.bind("<Control-Button-1>",
+                   lambda e, bt=b, a=act: (self._charge(bt, "action", action=a), "break")[1])
             b.pack(side="left", padx=4, ipady=6)
 
-        # --- preset sizing + all-in (also stage) ---
+        # --- preset sizing + all-in. Normal click = act now; Ctrl+click = CHARGE. ---
+        # Pot = 2x total current bets (double the current pot). 5bb = fixed iso to punish a 1bb.
         pf = ttk.Frame(self); pf.pack(fill="x", pady=2)
-        tk.Button(pf, text="All-In", width=8, bg="#922b21", fg="white",
-                  font=("Segoe UI", 10, "bold"),
-                  command=lambda: self.stage_action("allin")).pack(side="left", padx=3, ipady=4)
-        tk.Button(pf, text="Min 2bb", width=8, bg="#1565c0", fg="white",
-                  command=lambda: self.stage_bet(min_bb=2)).pack(side="left", padx=3, ipady=4)
-        tk.Button(pf, text="Bet 1/4", width=7, bg="#1565c0", fg="white",
-                  command=lambda: self.stage_bet(frac=0.25)).pack(side="left", padx=3, ipady=4)
-        tk.Button(pf, text="Bet 1/2", width=7, bg="#1565c0", fg="white",
-                  command=lambda: self.stage_bet(frac=0.50)).pack(side="left", padx=3, ipady=4)
-        tk.Button(pf, text="Bet 3/4", width=7, bg="#1565c0", fg="white",
-                  command=lambda: self.stage_bet(frac=0.75)).pack(side="left", padx=3, ipady=4)
-        tk.Button(pf, text="Pot", width=6, bg="#0d47a1", fg="white",
-                  font=("Segoe UI", 9, "bold"),
-                  command=lambda: self.stage_bet(frac=1.0)).pack(side="left", padx=3, ipady=4)
+        presets = [
+            ("All-In", "#922b21", "action", "allin", None, None),
+            ("Min 2bb", "#1565c0", "bet", None, None, 2),
+            ("Bet 1/4", "#1565c0", "bet", None, 0.25, None),
+            ("Bet 1/2", "#1565c0", "bet", None, 0.50, None),
+            ("Bet 3/4", "#1565c0", "bet", None, 0.75, None),
+            ("Pot",     "#0d47a1", "bet", None, 2.0, None),
+            ("5bb",     "#ad1457", "bet", None, None, 5),
+        ]
+        for text, col, kind, action, frac, min_bb in presets:
+            if kind == "action":
+                b = tk.Button(pf, text=text, width=8, bg=col, fg="white", font=("Segoe UI", 10, "bold"),
+                              command=lambda a=action: self.stage_action(a))
+                b.bind("<Control-Button-1>",
+                       lambda e, bt=b, a=action: (self._charge(bt, "action", action=a), "break")[1])
+            else:
+                b = tk.Button(pf, text=text, width=7, bg=col, fg="white",
+                              command=lambda fr=frac, mb=min_bb: self.stage_bet(frac=fr, min_bb=mb))
+                b.bind("<Control-Button-1>",
+                       lambda e, bt=b, fr=frac, mb=min_bb: (self._charge(bt, "bet", frac=fr, min_bb=mb), "break")[1])
+            b.pack(side="left", padx=3, ipady=4)
 
         # --- SUBMIT PLAY: commit the staged action with your reason ---
         sf = ttk.Frame(self); sf.pack(fill="x", pady=4)
@@ -519,13 +530,17 @@ class Learner(tk.Tk):
             messagebox.showerror("DB error", str(e))
 
     # ---- execute the action on the real table (via the bot's button-finding) ----
-    def execute_on_table(self, action, amt):
+    def execute_on_table(self, action, amt, force=False):
         # Maps learner buttons to the bot's manual-action endpoint. Fold/Call/Allin
         # click the FCKRA button (found via label/state/button regions); Bet/Raise go
         # through the two-successive-clicks + numpad path with the amount in big blinds.
+        # force=1 bypasses the bot's once-per-ismyturn gate -- a manual click should act
+        # whenever the button is on screen (fixes "Fold sometimes doesn't fire").
         q = "do=%s" % action
         if action in ("bet", "raise") and amt:
             q += "&amount=%s" % amt
+        if force:
+            q += "&force=1"
         try:
             hiss_get("/api/action?" + q)
             return True, ""
@@ -577,36 +592,121 @@ class Learner(tk.Tk):
             w.append("computed bet is zero/negative"); hard = True
         return (len(w) == 0, hard, w)
 
-    # ---- preset bet sizing (round-bets fraction / min), validated before firing ----
-    # ---- staged-play flow: click action -> type reason -> SUBMIT PLAY -----------
+    # ---- Ctrl+click CHARGE: pre-arm an action; fires automatically when it's your turn ----
+    def _charge(self, btn, kind, action=None, frac=None, min_bb=None):
+        # Toggle: Ctrl+click the same charged button to cancel.
+        if self._armed and self._armed.get("btn") is btn:
+            self._clear_armed(); self.status.config(text="charge cancelled"); return
+        self._clear_armed()
+        self._armed = {"btn": btn, "kind": kind, "action": action, "frac": frac, "min_bb": min_bb}
+        try:
+            if not hasattr(btn, "_orig_bg"): btn._orig_bg = btn.cget("bg")
+            btn.config(relief="sunken", bg="#f9a825", fg="black")
+        except Exception: pass
+        lbl = (action.upper() if kind == "action"
+               else ("BET %g%%" % (frac * 100) if frac else "BET %gbb" % min_bb))
+        self.status.config(text="CHARGED %s -- will FIRE when it's your turn  (Ctrl+click to cancel)" % lbl)
+        self._poll_armed()
+
+    def _poll_armed(self):
+        if not self._armed: return
+        myturn = False
+        try:
+            s = json.loads(hiss_get("/api/symbols?names=ismyturn"))
+            myturn = float(s.get("ismyturn") or 0) >= 1
+        except Exception:
+            myturn = False
+        if myturn:
+            a = self._armed; self._clear_armed()
+            if a["kind"] == "action":
+                self.stage_action(a["action"])
+            else:
+                self.stage_bet(frac=a["frac"], min_bb=a["min_bb"])
+        else:
+            self.after(400, self._poll_armed)
+
+    def _clear_armed(self):
+        a = self._armed
+        if a and a.get("btn") is not None:
+            try:
+                b = a["btn"]
+                b.config(relief="raised", bg=getattr(b, "_orig_bg", b.cget("bg")), fg="white")
+            except Exception: pass
+        self._armed = None
+
+    # ---- flow: click action -> it ACTS now -> type reason -> SUBMIT PLAY logs it ----
     def stage_action(self, action, amount=None):
-        self._pending = ("action", action, amount)
-        lbl = action.upper() + (("  " + str(amount) + "bb") if amount else "")
-        self.status.config(text="STAGED: %s   -- type your reason, then SUBMIT PLAY (Ctrl+Enter)" % lbl)
-        try: self.btn_submit_play.config(text="SUBMIT PLAY: %s  (Ctrl+Enter)" % lbl)
+        # ACT immediately on the table (force-bypass the once-per-ismyturn gate), snapshot
+        # the spot, and stage it for logging. The reason + log happen on SUBMIT PLAY.
+        c = dict(self.ctx or {})
+        amt = (str(amount) if amount is not None else self.amount.get()).strip()
+        ok, err = self.execute_on_table(action, amt, force=True)
+        self._pending = {"action": action, "amount": amt, "ctx": c}
+        lbl = action.upper() + (("  %sbb" % amt) if amt else "")
+        self.status.config(text=("ACTED %s%s -- type your reason, then SUBMIT PLAY (Ctrl+Enter)"
+                                 % (lbl, "" if ok else "  [table fail: %s]" % err)))
+        try: self.btn_submit_play.config(text="SUBMIT PLAY: log %s  (Ctrl+Enter)" % lbl)
         except Exception: pass
         self._focus(self.reason)
 
     def stage_bet(self, frac=None, min_bb=None):
-        self._pending = ("bet", frac, min_bb)
-        lbl = ("BET min %gbb" % min_bb) if min_bb is not None else ("BET %d%% of round bets" % int(round(frac * 100)))
-        self.status.config(text="STAGED: %s   -- type your reason, then SUBMIT PLAY (Ctrl+Enter)" % lbl)
-        try: self.btn_submit_play.config(text="SUBMIT PLAY: %s  (Ctrl+Enter)" % lbl)
+        c = dict(self.ctx or {})
+        raw = c.get("raw", {}); bb = (raw.get("limits", {}) or {}).get("bblind") or 1.0
+        f = self._fnum
+        basis = f(c.get("potplayer")) or 0.0   # TOTAL CURRENT BETS for the round (not pot)
+        basis_bb = (basis / bb) if bb else basis
+        if min_bb is not None:
+            amt = float(min_bb)
+        else:
+            amt = round(frac * basis_bb, 2)
+            if amt < 2: amt = 2.0
+        ok2, hard, warns = self.validate_bet_basis(c, basis, amt, bb)
+        if not ok2:
+            msg = ("Bet sizing safety check flagged:\n  - " + "\n  - ".join(warns)
+                   + "\n\nComputed bet: %g bb (basis: round bets = %g)" % (amt, basis))
+            if hard:
+                messagebox.showerror("Bet blocked - scrape suspect", msg)
+                self.status.config(text="bet BLOCKED by heuristics: " + "; ".join(warns)); return
+            if not messagebox.askyesno("Confirm bet - scrape looks off", msg + "\n\nSend it anyway?"):
+                self.status.config(text="bet cancelled (heuristic warning)"); return
+        amt_s = "%g" % amt
+        ok, err = self.execute_on_table("bet", amt_s, force=True)
+        self._pending = {"action": "bet", "amount": amt_s, "ctx": c}
+        self.status.config(text=("ACTED BET %sbb%s -- type your reason, then SUBMIT PLAY (Ctrl+Enter)"
+                                 % (amt_s, "" if ok else "  [table fail: %s]" % err)))
+        try: self.btn_submit_play.config(text="SUBMIT PLAY: log BET %sbb  (Ctrl+Enter)" % amt_s)
         except Exception: pass
         self._focus(self.reason)
 
     def commit_pending(self):
+        # Log the already-executed play with your typed reason (no table action here).
         p = self._pending
         if not p:
-            self.status.config(text="Nothing staged -- click an action first, type why, then Submit.")
+            self.status.config(text="Nothing to log -- click an action first, then type why.")
             return "break"
         self._pending = None
         try: self.btn_submit_play.config(text="SUBMIT PLAY  (Ctrl+Enter)")
         except Exception: pass
-        if p[0] == "action":
-            self.submit_action(p[1], amount=p[2])
-        elif p[0] == "bet":
-            self.submit_bet(frac=p[1], min_bb=p[2])
+        c = p["ctx"]; action = p["action"]; amt = p["amount"]
+        reasoning = self.reason.get("1.0", "end").strip()
+        amt_sql = amt if amt else "NULL"
+        def numornull(v):
+            try: return str(float(v))
+            except Exception: return "NULL"
+        gs = json.dumps(c.get("raw", {}))
+        sql = ("INSERT INTO learner_decisions "
+               "(handnumber,betround,hero_cards,board,pot,amount_to_call,action,amount,reasoning,game_state) VALUES "
+               "('%s',%s,'%s','%s',%s,%s,'%s',%s,'%s','%s'::jsonb);" % (
+                   esc(c.get("handnumber")), numornull(c.get("betround")),
+                   esc(c.get("hero_cards")), esc(c.get("board")),
+                   numornull(c.get("pot")), numornull(c.get("amount_to_call")),
+                   esc(action), amt_sql, esc(reasoning), esc(gs)))
+        try:
+            run_sql(sql)
+        except Exception as e:
+            messagebox.showerror("DB error", str(e)); return "break"
+        self.status.config(text="logged %s + reason  (%s)" % (action.upper(), c.get("hero_cards") or "?"))
+        self.reason.delete("1.0", "end"); self.amount.delete(0, "end")
         return "break"
 
     def submit_bet(self, frac=None, min_bb=None):

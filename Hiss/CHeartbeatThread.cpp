@@ -207,18 +207,22 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
   if (g_mcp_action_request >= 0 && p_casino_interface != NULL) {
     bool my_turn = (p_engine_container->symbol_engine_autoplayer() != NULL
                     && p_engine_container->symbol_engine_autoplayer()->ismyturn());
+    bool force = g_mcp_action_force;   // manual learner click: bypass the ismyturn gate
     if (GetTickCount() - g_mcp_action_set_tick > 25000) {
       // Expired before our turn came -- discard so it can't fire a later hand.
       write_log(k_always_log_basic_information, "[MCP] Manual action expired before our turn; discarded.\n");
       g_mcp_action_request = -1;
       g_mcp_action_amount = -1.0;
-    } else if (!my_turn) {
-      // Not our turn yet -- keep the request PENDING and retry next heartbeat.
+      g_mcp_action_force = false;
+    } else if (!force && !my_turn) {
+      // Not our turn yet -- keep the request PENDING and retry next heartbeat. With
+      // force (manual click) we skip this wait and try the click below right away.
     } else {
       int code = g_mcp_action_request;
       double amount = g_mcp_action_amount;
       g_mcp_action_request = -1;
       g_mcp_action_amount = -1.0;
+      g_mcp_action_force = false;
       // Return the cursor to where the user left it after the WHOLE sequence.
       CCursorRestorer _cursor_restorer;
       // Sized bet/raise: go through the autoplayer's two-successive-clicks + on-screen
@@ -240,10 +244,12 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
           write_log(k_always_log_basic_information, "[MCP] Manual FCKRA action: clicking button code %d\n", code);
           btn->Click();
         } else {
-          write_log(k_always_log_basic_information, "[MCP] Manual FCKRA code %d: my turn but button not clickable; keeping pending.\n", code);
-          // Re-arm so it retries (e.g. buttons still appearing this turn).
+          write_log(k_always_log_basic_information, "[MCP] Manual FCKRA code %d: button not clickable yet; keeping pending.\n", code);
+          // Re-arm so it retries (e.g. buttons still appearing this turn). Preserve force
+          // so a manual click keeps bypassing the ismyturn gate until it lands or expires.
           g_mcp_action_request = code;
           g_mcp_action_amount = amount;
+          g_mcp_action_force = force;
         }
       }
     }
