@@ -127,6 +127,26 @@ Driven on demand or on the analysis loop. If looping, a ~30-60s pass is plenty f
 debounce so you don't speak more than ~once per relevant hand/event. The user can mute via
 learner's "Read coaching aloud" toggle — keep WRITING notes regardless so the panel stays useful.
 
+## 3a. Always-on hype pulse + pre-tournament elite speech (daemon) [Emrald request]
+A standalone daemon `mcp/poker_coach_hype.py` runs the MECHANICAL coaching cadence independent of
+whether Claude/the loop is awake:
+  * **Hype pulse:** speaks a short hype/wisdom line every **5-10 minutes (random)**, pulled from a
+    varied pool (Negreanu/Brunson/Ivey/Hellmuth flavor, personal to Emrald).
+  * **Pre-tournament speech:** **5 minutes before** each scheduled tournament start it delivers an
+    elaborate **~5-minute elite-player prep speech** (once per start).
+Each line speaks via `Release/lilith.exe` AND logs a `coach_notes` row (spoken=true) so it shows in
+learner.exe's panel.
+- **Schedule source:** postgres settings record `tournament_schedule` = JSON list of "HH:MM" 24h
+  local starts (e.g. `["18:05"]`). Update it as tournaments are known:
+  `UPDATE settings SET value='["09:00","12:05","18:05"]'::jsonb WHERE key='tournament_schedule';`
+- **Run:** `nohup python /c/www/openholdembot_old/mcp/poker_coach_hype.py > Release/logs/poker_coach.log 2>&1 &`
+- **START with the loops** (coach start / loop start): launch the daemon if not already running.
+- **STOP with the loops** (Emrald says "stop loops and skills"): KILL the daemon
+  (`taskkill` the python proc whose command line contains `poker_coach_hype`) in addition to
+  disengaging the autoplayer + stopping the monitor/AIL crons. See memory loop-autoplayer-rule.
+- Tune cadence via env COACH_HYPE_MIN / COACH_HYPE_MAX (seconds). Edit the HYPE_LINES pool /
+  ELABORATE_SPEECH text in the daemon to refresh content.
+
 ## Lobby info fetch (live tournament structure, via Claude vision)
 The bot can navigate to ACR's tournament-info screen and read the structure WITHOUT OCR, by
 clicking through and letting Claude parse the full-window frames. Use this to keep the model
