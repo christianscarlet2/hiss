@@ -285,10 +285,9 @@ void CBetsizeInputBox::EnterBetsizeByNumpad(CString amount) {
 	if (kNumpadClickDelayMs < 0) kNumpadClickDelayMs = 0;
 	write_log(k_always_log_basic_information, "[CBetsizeInputBox] Entering betsize \"%s\" via on-screen numpad (%d ms/click).\n",
 		amount.GetString(), kNumpadClickDelayMs);
-	// 1) Clear the field: click nBackspace 4 times. The phone keypad can pre-fill a
-	// multi-digit min-raise/last amount; a single backspace leaves stale digits in
-	// front of what we type. Four taps clears the common 1-4 digit pre-fill.
-	for (int i = 0; i < 4; i++) {
+	// 1) Clear the field: click nBackspace 2 times to wipe a short pre-filled amount
+	// before typing (Emrald tuned this down from 4 -> 2).
+	for (int i = 0; i < 2; i++) {
 		ClickNumpadRegion("nBackspace");
 		Sleep(kNumpadClickDelayMs);
 	}

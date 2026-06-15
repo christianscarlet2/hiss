@@ -104,8 +104,12 @@ WHEN explain_fold_pre Fold FORCE
 // Facing a 3-bet+ (multiway / lots in): tighten to the get-it-in tier.
 WHEN Raises >= 2 AND (listBigPair OR list3betValue) AND explain_jam RaiseMax FORCE
 WHEN Raises >= 2 AND explain_fold_pre Fold FORCE
-// Facing a SINGLE raise/shove: get it in WIDE far from the money (KJ/QJ/KT type are
-// calls/re-jams here, not folds). Re-jam over a non-allin raise; calls an allin.
+// Facing a SINGLE raise/shove: get it in by ICM. Premiums never fold; otherwise call/
+// re-jam when the ICM model says getting it in is $-correct (f$ICM_CallShove), with the
+// wide chip-EV list as a floor so we still jam the standard get-it-in tier when ICM is
+// borderline. Re-jam over a non-allin raise; calls an allin. [ICM + N p.34]
+WHEN Raises == 1 AND list3betValue AND explain_callshove RaiseMax FORCE
+WHEN Raises == 1 AND f$ICM_CallShove AND explain_callshove RaiseMax FORCE
 WHEN Raises == 1 AND listCallShove AND explain_callshove RaiseMax FORCE
 WHEN Raises == 1 AND explain_fold_pre Fold FORCE
 // First in: jam a near-Nash, position-scaled range (very wide late). Folding strong

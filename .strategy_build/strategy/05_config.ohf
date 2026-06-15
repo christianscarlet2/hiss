@@ -175,3 +175,43 @@ WHEN Others RETURN false FORCE
 // marginal hands we would otherwise pay off; do not bluff-raise into it.
 WHEN f$TimingKnown AND f$HeadsUpPot AND lastraiseractiontime >= f$TankSeconds RETURN true FORCE
 WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  ICM (Independent Chip Model).  The engine's CSymbolEngineICM computes our
+//  TOURNAMENT-$ equity for each line (icm_fold / icm_callwin / icm_calllose)
+//  from the live table stacks + the payout structure below. We use it for the
+//  short-stack get-it-in decision so calls/jams are $-correct, not just chip-EV
+//  (survival has value when the payouts are top-heavy). [tournament]
+//
+//  f$icm_prizeX = fraction of the prize pool paid for finishing Xth AT THE TABLE
+//  (a final-table approximation). Sum must = 1.00. This is a standard top-heavy
+//  8-max curve; replace with the real lobby payout table once scraped.
+//-----------------------------------------------------------------------------
+
+##f$icm_prize1##
+WHEN Others RETURN 0.300 FORCE
+##f$icm_prize2##
+WHEN Others RETURN 0.220 FORCE
+##f$icm_prize3##
+WHEN Others RETURN 0.160 FORCE
+##f$icm_prize4##
+WHEN Others RETURN 0.120 FORCE
+##f$icm_prize5##
+WHEN Others RETURN 0.085 FORCE
+##f$icm_prize6##
+WHEN Others RETURN 0.060 FORCE
+##f$icm_prize7##
+WHEN Others RETURN 0.035 FORCE
+##f$icm_prize8##
+WHEN Others RETURN 0.020 FORCE
+
+##f$ICM_CallEV##
+// Tournament-$ EV of CALLING an all-in = P(win)*equity-if-win + P(lose)*equity-if-lose.
+// (Ties are rare in an all-in and folded into the win/lose split.) icm_callwin /
+// icm_calllose are the ICM equities of the resulting stacks from CSymbolEngineICM.
+WHEN Others RETURN prwin * icm_callwin + (1 - prwin) * icm_calllose FORCE
+
+##f$ICM_CallShove##
+// Is getting it in $-correct? Call/jam when the ICM EV of calling beats folding.
+WHEN f$ICM_CallEV >= icm_fold RETURN true FORCE
+WHEN Others RETURN false FORCE
