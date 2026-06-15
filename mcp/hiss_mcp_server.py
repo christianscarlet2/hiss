@@ -173,6 +173,10 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "list_scrapes", "description": "List the per-region scrape files (raw images and OCR-result .txt) in logs/scrapes.",
      "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "hud_calibrate_pending", "description": "Check whether the user requested a HUD recalibration (right-clicked 'Recalibrate all HUDs (Claude)' on the scrcpy overlay). If pending, ALSO returns the fresh table screenshot so you can locate each seated player's name-plate, then call post_hud_positions with one anchor per occupied seat.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "post_hud_positions", "description": "Set per-seat HUD overlay box anchors. 'positions' maps chair index -> top-left pixel coords on the table screenshot, e.g. {\"0\":{\"x\":120,\"y\":300},\"3\":{\"x\":500,\"y\":80}}. Optional 'locked' bool. Hiss converts pixels to client-area fractions and repositions + persists the boxes.",
+     "inputSchema": {"type": "object", "properties": {"positions": {"type": "object"}, "locked": {"type": "boolean"}}, "required": ["positions"]}},
     {"name": "read_scrape", "description": "Get a region's raw scrape image and its OCR/recognition result text.",
      "inputSchema": {"type": "object", "properties": {"region": {"type": "string"}}, "required": ["region"]}},
     {"name": "list_logs", "description": "List log files in Release/logs.",
@@ -344,6 +348,49 @@ def call_tool(name, args):
         if not os.path.isdir(SCRAPES):
             return [{"type": "text", "text": "logs/scrapes does not exist yet (run trigger_scrape_dump)."}]
         return [{"type": "text", "text": "\n".join(list_files(SCRAPES, ["*"], rel_to=SCRAPES))}]
+    if name == "hud_calibrate_pending":
+        status = hiss_get("/api/hud-calibrate-status").strip()
+        out = [{"type": "text", "text": "HUD calibrate status: %s" % status}]
+        if '"pending":true' in status:
+            try:
+                hiss_get("/api/dump-scrapes"); time.sleep(1.2)   # refresh _table.bmp
+            except Exception:
+                pass
+            p = os.path.join(SCRAPES, "_table.bmp")
+            if os.path.isfile(p):
+                out.append({"type": "text", "text": "Locate each seated player's name-plate below and call post_hud_positions with top-left pixel anchors per chair."})
+                out.append(image_content(p))
+        return out
+    if name == "post_hud_positions":
+        import urllib.parse
+        positions = args.get("positions") or {}
+        locked = args.get("locked")
+        p = os.path.join(SCRAPES, "_table.bmp")
+        W = H = 0
+        try:
+            from PIL import Image
+            with Image.open(p) as im:
+                W, H = im.size
+        except Exception:
+            pass
+        if W <= 0 or H <= 0:
+            return [{"type": "text", "text": "No table screenshot to size against; run hud_calibrate_pending or trigger_scrape_dump first."}]
+        parts = []
+        if locked is not None:
+            parts.append('"locked":%d' % (1 if locked else 0))
+        n = 0
+        for k, v in positions.items():
+            try:
+                ch = int(k)
+                fx = max(0.0, min(1.0, float(v["x"]) / W))
+                fy = max(0.0, min(1.0, float(v["y"]) / H))
+                parts.append('"c%d":{"x":%.4f,"y":%.4f}' % (ch, fx, fy))
+                n += 1
+            except Exception:
+                continue
+        obj = "{" + ",".join(parts) + "}"
+        resp = hiss_get("/api/hud-positions?json=" + urllib.parse.quote(obj))
+        return [{"type": "text", "text": "Posted %d HUD positions (capture %dx%d). Hiss: %s" % (n, W, H, resp.strip())}]
     if name == "read_scrape":
         region = os.path.basename(args["region"])
         img = os.path.join(SCRAPES, region + "_raw.bmp")

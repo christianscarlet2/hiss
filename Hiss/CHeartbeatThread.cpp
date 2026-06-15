@@ -38,6 +38,7 @@
 #include "CFunctionCollection.h"
 #include "CScarletBeast.h"
 #include "CScraper.h"
+#include "HudOverlayWindow.h"
 #include "CSymbolEngineAutoplayer.h"
 #include "CSymbolEngineChipAmounts.h"
 #include "CSymbolEngineUserchair.h"
@@ -279,6 +280,16 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
       p_casino_interface->ClickRect(r);
     } else {
       write_log(k_always_log_basic_information, "[MCP] Click region '%s' not found in tablemap\n", rgn.GetString());
+    }
+  }
+
+  // ---- MCP / API: apply HUD overlay positions posted by Claude (/api/hud-positions).
+  // Hand the JSON to the overlay on the UI thread (DB write + repaint happen there). ----
+  if (g_hud_positions_apply) {
+    g_hud_positions_apply = false;
+    if (p_hud_overlay_window != NULL && ::IsWindow(p_hud_overlay_window->GetSafeHwnd())) {
+      p_hud_overlay_window->PostMessage(WM_HUD_APPLY_POSITIONS, 0, 0);
+      write_log(k_always_log_basic_information, "[MCP] Applied HUD positions from API.\n");
     }
   }
 

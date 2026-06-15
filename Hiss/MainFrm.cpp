@@ -76,6 +76,7 @@
 #include "OpenHoldem.h"
 #include "OpenHoldemDoc.h"
 #include "ReactTableWindow.h"
+#include "HudOverlayWindow.h"
 #include "ReactMappingsWindow.h"
 #include "WindowDockUtil.h"
 #include "SAPrefsDialog.h"
@@ -277,6 +278,13 @@ CMainFrame::~CMainFrame() {
 		delete p_react_table_window;
 		p_react_table_window = NULL;
 	}
+	if (p_hud_overlay_window != NULL) {
+		if (::IsWindow(p_hud_overlay_window->GetSafeHwnd())) {
+			p_hud_overlay_window->DestroyWindow();
+		}
+		delete p_hud_overlay_window;
+		p_hud_overlay_window = NULL;
+	}
 	if (p_react_mappings_window != NULL) {
 		if (::IsWindow(p_react_mappings_window->GetSafeHwnd())) {
 			p_react_mappings_window->DestroyWindow();
@@ -326,6 +334,9 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct) {
 	}
 	p_react_table_window = new CReactTableWindow();
 	p_react_table_window->Create(this, p_chat_terminal_server->port());
+	// Transparent PT4 HUD overlay drawn over the attached scrcpy table window.
+	p_hud_overlay_window = new CHudOverlayWindow();
+	p_hud_overlay_window->Create(this);
 	// Start timer that checks if we should enable buttons
 	SetTimer(ENABLE_BUTTONS_TIMER, 50, 0);
 	// Start timer that updates status bar
@@ -753,9 +764,14 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent) {
     // Checking only garbage HWND, then disconnecting
     // can lead to freezing if it colludes with Connect()
  	  if (p_autoconnector->IsConnectedToGoneWindow()) {
- 	    // Table disappeared 		
+ 	    // Table disappeared
       write_log(Preferences()->debug_timers(), "[GUI] OnTimer found disappeared window()\n");
- 	    p_autoconnector->Disconnect("table disappeared"); 		 		
+ 	    p_autoconnector->Disconnect("table disappeared");
+    }
+    // Keep the PT4 HUD overlay covering the scrcpy table window (and hide it when
+    // disconnected / HUD off). Cheap; runs every 200ms with the connection check.
+    if (p_hud_overlay_window != NULL) {
+      p_hud_overlay_window->TrackTableWindow();
     }
  	} else if (nIDEvent == ENABLE_BUTTONS_TIMER) {
 		// Autoplayer

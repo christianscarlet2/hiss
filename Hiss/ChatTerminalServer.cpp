@@ -467,6 +467,38 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		return;
 	}
 
+	// HUD overlay recalibration. The user right-clicks "Recalibrate all HUDs (Claude)"
+	// which sets g_hud_calibrate_request; Claude/MCP polls the status, reads the table
+	// screenshot, and POSTs per-seat anchor fractions back via /api/hud-positions.
+	if (path.CompareNoCase("/api/hud-calibrate") == 0) {
+		g_dump_scrapes_once = true;        // refresh logs/scrapes/_table.bmp for Claude to read
+		g_hud_calibrate_request = true;
+		CStringA response = Response("{\"ok\":true,\"pending\":true}\r\n");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+	if (path.CompareNoCase("/api/hud-calibrate-status") == 0) {
+		CStringA body;
+		body.Format("{\"pending\":%s}\r\n", g_hud_calibrate_request ? "true" : "false");
+		CStringA response = Response(body);
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+	if (path.CompareNoCase("/api/hud-positions") == 0) {
+		// json = per-seat anchor fractions, e.g. {"c0":{"x":0.12,"y":0.30},...,"locked":0}
+		CStringA j = UrlDecode(QueryValue(query, "json"));
+		if (!j.IsEmpty()) {
+			g_hud_positions_json = CString(j);
+			g_hud_positions_apply = true;   // heartbeat hands it to the overlay (off this thread)
+			g_hud_calibrate_request = false;
+		}
+		CStringA body;
+		body.Format("{\"ok\":%s}\r\n", j.IsEmpty() ? "false" : "true");
+		CStringA response = Response(body);
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
 	if (path.CompareNoCase("/api/click-region") == 0) {
 		// Click an arbitrary tablemap region by name (lobby navigation buttons, etc.).
 		// The heartbeat thread performs the click (mouse DLL) on its next cycle.

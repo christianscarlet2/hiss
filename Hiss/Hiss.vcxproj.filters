@@ -122,6 +122,7 @@
     <ClCompile Include="DialogScraperOutput.cpp" />
     <ClCompile Include="MyCToolBar.cpp" />
     <ClCompile Include="OpenHoldemView.cpp" />
+    <ClCompile Include="HudOverlayWindow.cpp" />
     <ClCompile Include="ReactTableWindow.cpp" />
     <ClCompile Include="ReactMappingsWindow.cpp" />
     <ClCompile Include="ScintillaWnd.cpp" />
@@ -286,6 +287,7 @@
     <ClInclude Include="MyCToolBar.h" />
     <ClInclude Include="OpenHoldem.h" />
     <ClInclude Include="OpenHoldemDoc.h" />
+    <ClInclude Include="HudOverlayWindow.h" />
     <ClInclude Include="ReactTableWindow.h" />
     <ClInclude Include="ReactMappingsWindow.h" />
     <ClInclude Include="COpenHoldemStarter.h" />
