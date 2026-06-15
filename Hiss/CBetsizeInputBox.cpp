@@ -255,12 +255,16 @@ void CBetsizeInputBox::EnterBetsizeByNumpad(CString amount) {
 	// we actually have on the table. A mis-scrape or an over-large f$betsize must not
 	// enter a number bigger than our balance -- the casino rejects it or it mis-parses.
 	if (p_table_state != NULL && p_table_state->User() != NULL) {
-		double balance = p_table_state->User()->_balance.GetValue();
+		// Cap at the full committable stack = already-posted bet + remaining balance. A
+		// "RaiseTo" amount is the TOTAL bet, so the max legal entry is our whole stack, not
+		// just the remaining balance (clamping to balance alone would clip a real all-in).
+		double max_stack = p_table_state->User()->_bet.GetValue()
+			+ p_table_state->User()->_balance.GetValue();
 		double amt = atof(amount.GetString());
-		if (balance > 0.0 && amt > balance) {
+		if (max_stack > 0.0 && amt > max_stack) {
 			write_log(k_always_log_basic_information,
-				"[CBetsizeInputBox] amount %.2f exceeds scraped balance %.2f -- clamping to balance.\n", amt, balance);
-			amount = Number2CString(balance);
+				"[CBetsizeInputBox] amount %.2f exceeds full stack %.2f -- clamping to stack.\n", amt, max_stack);
+			amount = Number2CString(max_stack);
 		}
 	}
 	// Trim trailing zeros after the decimal point: type "2.5" not "2.50", and "2"

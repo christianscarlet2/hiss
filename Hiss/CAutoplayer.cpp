@@ -325,9 +325,10 @@ bool CAutoplayer::HandleTwoSuccessiveClicksBetRaise() {
 	// fall through to clicking Call (the reported "raise-to-3 calls instead" bug).
 	double f_betsize = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_betsize]);
 	bool wants_raise = (p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_raise]) != 0);
-	// Fire on a BET or RAISE decision (phone tables expose a keypad rather than a
+	bool wants_allin = (p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_allin]) != 0);
+	// Fire on a BET, RAISE or ALL-IN decision (phone tables expose a keypad rather than a
 	// betsize textbox, so we click the two configured region-centres to open it).
-	if (!wants_raise && f_betsize <= 0 && decision_bb <= 0) {
+	if (!wants_raise && !wants_allin && f_betsize <= 0 && decision_bb <= 0) {
 		return false;
 	}
 	// Keypad amount: PREFER the raw big-blind decision (decision_bb). f$betsize is
@@ -337,9 +338,19 @@ bool CAutoplayer::HandleTwoSuccessiveClicksBetRaise() {
 	// amount directly, so type decision_bb (e.g. RaiseTo 3 -> 3); only fall back to
 	// f$betsize if the OpenPPL decision somehow isn't a positive bet/raise size.
 	double betsize = (decision_bb > 0) ? decision_bb : f_betsize;
+	// ALL-IN / RaiseMax: f$preflop returns the all-in action code, NOT a numeric RaiseTo
+	// size, so decision_bb and f$betsize are both 0. On a phone table with no AllIn button
+	// (DoAllin's button/slider/swag all fail), the jam must be typed on the keypad -- so
+	// substitute our FULL stack (posted bet + remaining balance). Without this the size is
+	// 0, the keypad path SKIPS, and the bot folds a hand it wanted to shove. This is the
+	// leak that folded 77/AJ-type hands facing a shove. [equity]
+	if (wants_allin && betsize <= 0 && p_table_state != NULL && p_table_state->User() != NULL) {
+		betsize = p_table_state->User()->_bet.GetValue() + p_table_state->User()->_balance.GetValue();
+		APTrace("two-successive-clicks: ALL-IN with no numeric size -> typing full stack");
+	}
 	write_log(k_always_log_basic_information,
-		"[TwoClicks] BetRaise entry: wants_raise=%d f$betsize=%.2f decision_bb=%.2f -> keypad betsize=%.2f\n",
-		wants_raise ? 1 : 0, f_betsize, decision_bb, betsize);
+		"[TwoClicks] BetRaise entry: wants_raise=%d wants_allin=%d f$betsize=%.2f decision_bb=%.2f -> keypad betsize=%.2f\n",
+		wants_raise ? 1 : 0, wants_allin ? 1 : 0, f_betsize, decision_bb, betsize);
 	if (betsize <= 0) {
 		APTrace("two-successive-clicks: SKIP, no positive size (f$betsize=0 AND OpenPPL decision<=0)");
 		return false;
