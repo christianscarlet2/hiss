@@ -73,7 +73,8 @@ class COpenHoldemView : public CView {
 	LOGFONT	_logfont;
 	CPen		_black_pen, _green_pen, _red_pen, _blue_pen, _white_dot_pen, _null_pen;
 	CBrush	_white_brush, _gray_brush, _red_brush, _yellow_brush;
-	RECT		_client_rect;
+	RECT		_client_rect;          // table-drawing area (top); shrunk by the HUD strip
+	int			_full_client_bottom;   // true client bottom; HUD strip = [_client_rect.bottom .. here]
 	CToolTipCtrl _hud_tooltip;
 	std::vector<SHudHotspot> _hud_hotspots;
 	CString _current_hud_tooltip;

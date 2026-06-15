@@ -70,6 +70,9 @@ int		cc[kNumberOfCommunityCards][2] =
 // Player locations as a percentage of width/height
 // [nplayers][chairnum][x/y]
 const int kNumberOfScreenDimensions = 2;
+// Height (px) of the bottom HUD strip reserved below the table when the HUD is enabled
+// (2 rows of per-player cells), so HUD boxes never overlap the table.
+static const int kHudStripHeight = 104;
 double	pc[kMaxNumberOfPlayers+1][kMaxNumberOfPlayers][kNumberOfScreenDimensions] = {
   // 0 chairs
 	{ {0,0}, {0,0}, {0,0}, {0,0}, {0,0}, {0,0}, {0,0}, {0,0}, {0,0}, {0,0} },	
@@ -263,6 +266,17 @@ void COpenHoldemView::UpdateDisplay(const bool update_all) {
 		CBrush* pOldBrush = pDC->SelectObject(&backBrush);
 		pDC->PatBlt(_client_rect.left, _client_rect.top, _client_rect.right-_client_rect.left, _client_rect.bottom-_client_rect.top, PATCOPY);
 		pDC->SelectObject(pOldBrush);
+	}
+
+	// Reserve a HUD strip at the BOTTOM so the per-player HUD boxes sit below the table
+	// instead of overlapping it. Shrinking _client_rect.bottom here makes every table
+	// element (seats, cards, info box) auto-draw into the area ABOVE the strip; the strip
+	// spans [_client_rect.bottom, _full_client_bottom]. No strip when the HUD is off.
+	_full_client_bottom = _client_rect.bottom;
+	if (p_hud_manager != NULL && p_hud_manager->IsEnabled()) {
+		_client_rect.bottom -= kHudStripHeight;
+		if (_client_rect.bottom < _full_client_bottom / 2)
+			_client_rect.bottom = _full_client_bottom / 2;   // safety: keep half for the table
 	}
 
 	// Draw center info box
@@ -952,15 +966,26 @@ void COpenHoldemView::DrawHudStats(const int chair) {
 	ClearHudHotspotsForChair(chair);
 
 	CDC *pDC = GetDC();
-	int xcenter = _client_rect.right * pc[p_tablemap->nchairs()][chair][0];
-	int ycenter = _client_rect.bottom * pc[p_tablemap->nchairs()][chair][1];
-	CRect erase_rect(xcenter - 70, ycenter + 46, xcenter + 70, ycenter + 92);
-	pDC->FillSolidRect(&erase_rect, COLOR_GRAY);
+	// HUD lives in the reserved bottom strip [_client_rect.bottom, _full_client_bottom],
+	// laid out as a grid (2 rows) by chair index, so it never overlaps the table. Each
+	// cell is headed by the player's name so you know whose stats they are.
+	const int cols = 5;
+	int strip_top = _client_rect.bottom;
+	int strip_h = _full_client_bottom - strip_top;
+	if (strip_h <= 4) { ReleaseDC(pDC); return; }
+	int cellw = _client_rect.right / cols;
+	int cellh = strip_h / 2;
+	int col = chair % cols;
+	int rrow = (chair / cols) % 2;
+	int cx = col * cellw;
+	int cy = strip_top + rrow * cellh;
+	CRect cell(cx + 1, cy + 1, cx + cellw - 1, cy + cellh - 1);
+	pDC->FillSolidRect(&cell, COLOR_GRAY);
 	// Stats + sample size are only shown once the name mapping is verified ("confirmed").
 	bool name_verified = (chair >= kFirstChair && chair <= kLastChair) && _player_data[chair].verified;
 	if (!name_verified || !p_table_state->Player(chair)->seated()) {
 		ReleaseDC(pDC);
-		return;
+		return;   // empty (grey) cell for a non-player / unverified seat
 	}
 
 	_logfont.lfHeight = -10;
@@ -970,41 +995,45 @@ void COpenHoldemView::DrawHudStats(const int chair) {
 	CFont *oldfont = pDC->SelectObject(&font);
 	pDC->SetBkMode(TRANSPARENT);
 
-	int x = erase_rect.left;
-	int y = erase_rect.top;
-	const int row_height = 12;
+	const int row_height = 11;
 	const int gap = 4;
+	int x = cell.left + 3;
+	int y = cell.top + 1;
 
-	// Sample size (total PokerTracker 4 hands) shown next to the HUD stats.
-	// Read from the throttled HUD cache rather than querying the DB on every paint.
+	// Cell header: the player name (so this HUD cell is tied to a seat).
+	{
+		CRect nr(x, y, cell.right - 1, y + row_height);
+		pDC->SetTextColor(COLOR_WHITE);
+		pDC->DrawText(p_table_state->Player(chair)->name(), -1, &nr,
+			DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
+		y += row_height;
+	}
+	// Sample size (total PokerTracker 4 hands). Read from the throttled HUD cache.
 	{
 		int sample_size = p_hud_manager->SamplesForChair(chair);
-		if (sample_size < 0) {
-			sample_size = 0;
-		}
+		if (sample_size < 0) sample_size = 0;
 		CString text;
 		text.Format("n=%s", FormatThousands(sample_size).GetString());
-		CSize size = pDC->GetTextExtent(text);
-		CRect text_rect(x, y, x + size.cx + 2, y + row_height);
+		CRect text_rect(x, y, cell.right - 1, y + row_height);
 		pDC->SetTextColor(COLOR_WHITE);
-		pDC->DrawText(text, -1, &text_rect, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-		x += size.cx + gap + 2;
+		pDC->DrawText(text, -1, &text_rect, DT_LEFT | DT_SINGLELINE);
+		y += row_height; x = cell.left + 3;
 	}
 
 	for (size_t i = 0; i < stats.size(); ++i) {
 		CString text;
 		text.Format("%s %s", stats[i].abbreviation.GetString(), stats[i].value.GetString());
 		CSize size = pDC->GetTextExtent(text);
-		if (x + size.cx > erase_rect.right && x > erase_rect.left) {
-			x = erase_rect.left;
+		if (x + size.cx > cell.right && x > cell.left + 3) {
+			x = cell.left + 3;
 			y += row_height;
 		}
-		if (y + row_height > erase_rect.bottom) {
+		if (y + row_height > cell.bottom) {
 			break;
 		}
 		CRect text_rect(x, y, x + size.cx + 2, y + row_height);
 		pDC->SetTextColor(stats[i].important ? COLOR_WHITE : RGB(180, 180, 180));
-		pDC->DrawText(text, -1, &text_rect, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+		pDC->DrawText(text, -1, &text_rect, DT_LEFT | DT_SINGLELINE);
 
 		SHudHotspot hotspot;
 		hotspot.rect = text_rect;
