@@ -127,6 +127,10 @@ static int CountHissInstances() {
 
 
 
+// Defined further down (near the name-scrape helpers); used by ScrapeSeated's OCR-memory
+// cache to avoid caching a status-indicator string as a name.
+static bool IsLikelyNameStatusIndicator(const CString &normalized_name);
+
 CScraper::CScraper(void) {
 	p_table_state->Reset();
   _leaking_GDI_objects = 0;
