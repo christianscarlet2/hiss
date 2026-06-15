@@ -283,10 +283,10 @@ class Learner(tk.Tk):
 
         # --- questions from Claude ---
         qf = ttk.LabelFrame(self, text="Questions from Claude  (F3 = answer)")
-        qf.pack(fill="both", expand=True, pady=6)
+        qf.pack(fill="x", pady=6)
         qtw = ttk.Frame(qf); qtw.pack(fill="both", expand=True, padx=6, pady=4)
         qsb = ttk.Scrollbar(qtw); qsb.pack(side="right", fill="y")
-        self.q_text = tk.Text(qtw, height=34, wrap="word", state="disabled",
+        self.q_text = tk.Text(qtw, height=24, wrap="word", state="disabled",
                               background="#fffbe6", font=("Segoe UI", 8),
                               yscrollcommand=qsb.set)
         self.q_text.pack(side="left", fill="both", expand=True)
