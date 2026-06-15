@@ -139,7 +139,22 @@ void CHudOverlayWindow::TrackTableWindow() {
 // ---------------------------------------------------------------------------
 // Layout
 // ---------------------------------------------------------------------------
-void CHudOverlayWindow::DefaultFractionForChair(int chair, int nchairs, double *fx, double *fy) const {
+void CHudOverlayWindow::DefaultFractionForChair(int chair, int nchairs, int client_w, int client_h, double *fx, double *fy) const {
+	// Prefer the tablemap's actual pNname region (the real on-screen name-plate) so default
+	// boxes land on the CORRECT seats. The generic pc[][] display layout does not match the
+	// scrcpy table and put HUDs on the wrong players.
+	if (p_tablemap != NULL && client_w > 0 && client_h > 0) {
+		CString rn; rn.Format("p%dname", chair);
+		RMapCI it = p_tablemap->r$()->find(rn.GetString());
+		if (it != p_tablemap->r$()->end()) {
+			*fx = (double)it->second.left / (double)client_w;
+			*fy = (double)it->second.top  / (double)client_h;
+			if (*fx < 0.0) *fx = 0.0; if (*fx > 0.85) *fx = 0.85;
+			if (*fy < 0.0) *fy = 0.0; if (*fy > 0.92) *fy = 0.92;
+			return;
+		}
+	}
+	// Fallback: generic seat layout.
 	if (nchairs >= 2 && nchairs <= kMaxNumberOfPlayers && chair >= 0 && chair < nchairs) {
 		*fx = pc[nchairs][chair][0] - 0.06;          // shift left so the box centres under the seat
 		*fy = pc[nchairs][chair][1] + 0.05;          // a touch below the seat (name/balance area)
@@ -164,7 +179,7 @@ void CHudOverlayWindow::ComputeBoxRects(int client_w, int client_h) {
 		if (!seated || samples <= 0 || chair == hero) continue;
 
 		double fx = _fx[chair], fy = _fy[chair];
-		if (fx < 0.0 || fy < 0.0) DefaultFractionForChair(chair, nchairs, &fx, &fy);
+		if (fx < 0.0 || fy < 0.0) DefaultFractionForChair(chair, nchairs, client_w, client_h, &fx, &fy);
 
 		std::vector<SHudStatValue> stats = p_hud_manager->StatsForChair(chair);
 		int nlines = 2 + (int)stats.size();         // name + n= + stats

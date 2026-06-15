@@ -177,6 +177,8 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "post_hud_positions", "description": "Set per-seat HUD overlay box anchors. 'positions' maps chair index -> top-left pixel coords on the table screenshot, e.g. {\"0\":{\"x\":120,\"y\":300},\"3\":{\"x\":500,\"y\":80}}. Optional 'locked' bool. Hiss converts pixels to client-area fractions and repositions + persists the boxes.",
      "inputSchema": {"type": "object", "properties": {"positions": {"type": "object"}, "locked": {"type": "boolean"}}, "required": ["positions"]}},
+    {"name": "open_md_viewer", "description": "Open a markdown file in the user's MarkdownViewer (C:\\\\www\\\\mdviewer\\\\dist\\\\MarkdownViewer.exe). Use this to show the user any plan or markdown meant for them to read (relative paths resolve against the repo).",
+     "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
     {"name": "read_scrape", "description": "Get a region's raw scrape image and its OCR/recognition result text.",
      "inputSchema": {"type": "object", "properties": {"region": {"type": "string"}}, "required": ["region"]}},
     {"name": "list_logs", "description": "List log files in Release/logs.",
@@ -348,6 +350,22 @@ def call_tool(name, args):
         if not os.path.isdir(SCRAPES):
             return [{"type": "text", "text": "logs/scrapes does not exist yet (run trigger_scrape_dump)."}]
         return [{"type": "text", "text": "\n".join(list_files(SCRAPES, ["*"], rel_to=SCRAPES))}]
+    if name == "open_md_viewer":
+        import subprocess
+        raw = str(args.get("path", "")).strip()
+        if not raw:
+            return [{"type": "text", "text": "No path given."}]
+        path = raw if os.path.isabs(raw) else os.path.join(REPO, raw)
+        if not os.path.isfile(path):
+            return [{"type": "text", "text": "File not found: %s" % path}]
+        viewer = r"C:\www\mdviewer\dist\MarkdownViewer.exe"
+        if not os.path.isfile(viewer):
+            return [{"type": "text", "text": "MarkdownViewer.exe not found at %s" % viewer}]
+        try:
+            subprocess.Popen([viewer, path])
+            return [{"type": "text", "text": "Opened in MarkdownViewer: %s" % path}]
+        except Exception as e:
+            return [{"type": "text", "text": "Failed to open MarkdownViewer: %s" % e}]
     if name == "hud_calibrate_pending":
         status = hiss_get("/api/hud-calibrate-status").strip()
         out = [{"type": "text", "text": "HUD calibrate status: %s" % status}]

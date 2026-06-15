@@ -52,7 +52,7 @@ private:
 	void LoadPositions();
 	void SavePositions();
 	void ParsePositions(const CString &json);
-	void DefaultFractionForChair(int chair, int nchairs, double *fx, double *fy) const;
+	void DefaultFractionForChair(int chair, int nchairs, int client_w, int client_h, double *fx, double *fy) const;
 	void ComputeBoxRects(int client_w, int client_h);
 	int  BoxIndexAtClientPoint(CPoint pt) const;
 	CString PositionsField() const;

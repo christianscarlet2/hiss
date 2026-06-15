@@ -29,6 +29,13 @@ CPokerTrackerLookup::CPokerTrackerLookup() {
 	_pt4_siteid.insert(std::pair<CString, int> ("ultimate", 1600));
 	_pt4_siteid.insert(std::pair<CString, int> ("absolute", 1700));
 	_pt4_siteid.insert(std::pair<CString, int> ("wpex", 1800));
+	// Winning Poker Network / Americas Cardroom -> PT4 legacy "Yatahay Network" (2400).
+	// The android ACR tablemap's sitename is "wpn"; without these aliases GetSiteId()
+	// returned kUndefined and ALL PT4 lookups were disabled -> no HUD.
+	_pt4_siteid.insert(std::pair<CString, int> ("wpn", 2400));
+	_pt4_siteid.insert(std::pair<CString, int> ("winning", 2400));
+	_pt4_siteid.insert(std::pair<CString, int> ("americas", 2400));
+	_pt4_siteid.insert(std::pair<CString, int> ("acr", 2400));
 	_pt4_siteid.insert(std::pair<CString, int> ("tribeca", 1900));
 	// 2000 not (yet) supported, whatever it is
 	_pt4_siteid.insert(std::pair<CString, int> ("merge", 2100));

@@ -18,6 +18,7 @@
 #include "libpq-fe.h"
 
 #pragma comment(lib, "comctl32.lib")
+#pragma comment(lib, "shell32.lib")   // ExtractIconEx / ShellExecute
 // Opt into Common-Controls v6 so buttons can show an image list (icon + text).
 #pragma comment(linker, "\"/manifestdependency:type='win32' "             \
   "name='Microsoft.Windows.Common-Controls' version='6.0.0.0' "            \
@@ -31,11 +32,9 @@ static const char kEyeIcoPath[]     = "C:\\www\\openholdembot_old\\Vision\\res\\
 static const char kBarbellIcoPath[] = "C:\\www\\openholdembot_old\\trainer\\res\\trainer.ico";
 static const char kFeatherIcoPath[] = "C:\\www\\openholdembot_old\\learner\\res\\learner.ico";
 
-// Put a small icon (kept with the button's text) on a button via its image list.
-static void SetButtonIcon(HWND button, const char *ico_path) {
-  if (button == NULL) return;
-  HICON icon = (HICON)LoadImageA(NULL, ico_path, IMAGE_ICON, 18, 18, LR_LOADFROMFILE);
-  if (icon == NULL) return;
+// Attach an HICON to a button via its image list (icon sits left of the text).
+static void SetButtonIconHandle(HWND button, HICON icon) {
+  if (button == NULL || icon == NULL) return;
   HIMAGELIST himl = ImageList_Create(18, 18, ILC_COLOR32 | ILC_MASK, 1, 1);
   ImageList_AddIcon(himl, icon);
   BUTTON_IMAGELIST bil = {0};
@@ -43,7 +42,30 @@ static void SetButtonIcon(HWND button, const char *ico_path) {
   bil.margin.left = 4; bil.margin.right = 4;
   bil.uAlign = BUTTON_IMAGELIST_ALIGN_LEFT;
   SendMessage(button, BCM_SETIMAGELIST, 0, (LPARAM)&bil);
+}
+
+// Put a small icon (kept with the button's text) on a button via its image list.
+static void SetButtonIcon(HWND button, const char *ico_path) {
+  if (button == NULL) return;
+  HICON icon = (HICON)LoadImageA(NULL, ico_path, IMAGE_ICON, 18, 18, LR_LOADFROMFILE);
+  if (icon == NULL) return;
+  SetButtonIconHandle(button, icon);
   DestroyIcon(icon);
+}
+
+// Clever: use a program's OWN embedded icon for its launch button (so the MD Viewer
+// button shows the actual MarkdownViewer icon). Falls back to a stock document icon.
+static void SetButtonIconFromExe(HWND button, const char *exe_path) {
+  if (button == NULL) return;
+  HICON small_icon = NULL;
+  ExtractIconExA(exe_path, 0, NULL, &small_icon, 1);
+  if (small_icon == NULL) small_icon = ExtractIconA(GetModuleHandle(NULL), exe_path, 0);
+  if (small_icon == NULL) {
+    small_icon = (HICON)LoadImageA(NULL, IDI_INFORMATION, IMAGE_ICON, 18, 18, LR_SHARED);
+  }
+  if (small_icon == NULL) return;
+  SetButtonIconHandle(button, small_icon);
+  DestroyIcon(small_icon);
 }
 
 #define IDC_WIDTH_EDIT 1001
@@ -61,6 +83,7 @@ static void SetButtonIcon(HWND button, const char *ico_path) {
 #define IDC_OPEN_TRAINER_BUTTON 1013
 #define IDC_REC_SCRCPY_BUTTON 1014
 #define IDC_OPEN_LEARNER_BUTTON 1015
+#define IDC_OPEN_MDVIEWER_BUTTON 1016
 
 #define TIMER_WINDOW_MONITOR 2001
 
@@ -71,6 +94,8 @@ static void SetButtonIcon(HWND button, const char *ico_path) {
 static const char kWindowClassName[] = "HissDeveloperToolbar";
 static const char kAppTitle[] = "Developer Toolbar";
 static const char kScrcpyPath[] = "C:\\www\\scrcpy-win64-v4.0\\scrcpy.exe";
+static const char kMdViewerPath[] = "C:\\www\\mdviewer\\dist\\MarkdownViewer.exe";
+static const char kPlansDir[] = "C:\\Users\\scarl\\.claude\\plans";
 static HWND g_main_window = NULL;
 static HWND g_width_edit = NULL;
 static HWND g_height_edit = NULL;
@@ -83,6 +108,7 @@ static HWND g_open_openholdem_button = NULL;
 static HWND g_open_scrcpy_button = NULL;
 static HWND g_open_trainer_button = NULL;
 static HWND g_open_learner_button = NULL;
+static HWND g_open_mdviewer_button = NULL;
 static HWND g_rec_scrcpy_button = NULL;
 static HWND g_close_all_button = NULL;
 static HWND g_build_progress = NULL;
@@ -1079,6 +1105,47 @@ static void OpenExternalExecutable(const char *exe_path, const char *display_nam
   }
 }
 
+// Find the most-recently-modified *.md in a directory (non-recursive).
+static std::string FindLatestMarkdown(const std::string &directory) {
+  std::string latest_path;
+  FILETIME latest_time = {0};
+  const std::string spec = JoinPath(directory, "*.md");
+  WIN32_FIND_DATA fd = {0};
+  HANDLE find = FindFirstFile(spec.c_str(), &fd);
+  if (find == INVALID_HANDLE_VALUE) return latest_path;
+  do {
+    if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+    if (latest_path.empty() || FileTimeIsNewer(fd.ftLastWriteTime, latest_time)) {
+      latest_path = JoinPath(directory, fd.cFileName);
+      latest_time = fd.ftLastWriteTime;
+    }
+  } while (FindNextFile(find, &fd));
+  FindClose(find);
+  return latest_path;
+}
+
+// Open the newest plan markdown in MarkdownViewer (bare launch if none / not found).
+static void OpenMarkdownViewer() {
+  if (!FileExists(kMdViewerPath)) {
+    char message[512] = {0};
+    sprintf_s(message, "MarkdownViewer was not found:\r\n%s", kMdViewerPath);
+    MessageBox(g_main_window, message, kAppTitle, MB_OK | MB_ICONWARNING | MB_TOPMOST);
+    return;
+  }
+  const std::string latest = FindLatestMarkdown(kPlansDir);
+  HINSTANCE result = ShellExecute(g_main_window, "open", kMdViewerPath,
+    latest.empty() ? NULL : Quote(latest).c_str(),
+    ParentDirectory(kMdViewerPath).c_str(), SW_SHOWNORMAL);
+  if ((INT_PTR)result <= 32) {
+    MessageBox(g_main_window, "Could not open MarkdownViewer.", kAppTitle,
+      MB_OK | MB_ICONERROR | MB_TOPMOST);
+  } else if (!latest.empty()) {
+    char status[512] = {0};
+    sprintf_s(status, "Opened %s in MarkdownViewer.", FileNameOnly(latest).c_str());
+    SetStatusText(status);
+  }
+}
+
 // ---- scrcpy window auto-positioning (placement persisted to the Hiss postgres DB) ---
 // The scrcpy mirror window is created by scrcpy.exe (its title is the device name); it
 // is NOT the console/terminal window scrcpy may also spawn. We locate it as a visible,
@@ -1369,11 +1436,16 @@ static void CreateChildControls(HWND hwnd) {
     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
     16, 190, 104, 28, hwnd, (HMENU)IDC_OPEN_LEARNER_BUTTON, g_instance, NULL);
 
+  g_open_mdviewer_button = CreateWindow("BUTTON", "MD Viewer",
+    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+    126, 190, 220, 28, hwnd, (HMENU)IDC_OPEN_MDVIEWER_BUTTON, g_instance, NULL);
+
   // App icons on the launch buttons.
   SetButtonIcon(g_open_openholdem_button, kSnakeIcoPath);   // Hiss
   SetButtonIcon(g_open_openscrape_button, kEyeIcoPath);     // Vision
   SetButtonIcon(g_open_trainer_button,    kBarbellIcoPath); // trainer
   SetButtonIcon(g_open_learner_button,    kFeatherIcoPath); // learner (feather)
+  SetButtonIconFromExe(g_open_mdviewer_button, kMdViewerPath); // MD Viewer's own icon
 
   g_build_progress = CreateWindowEx(0, PROGRESS_CLASS, "",
     WS_CHILD | WS_VISIBLE,
@@ -1430,6 +1502,10 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARA
     }
     if (LOWORD(wparam) == IDC_OPEN_LEARNER_BUTTON) {
       OpenRepoExecutable("learner.exe", "Learner");
+      return 0;
+    }
+    if (LOWORD(wparam) == IDC_OPEN_MDVIEWER_BUTTON) {
+      OpenMarkdownViewer();
       return 0;
     }
     if (LOWORD(wparam) == IDC_CLOSE_ALL_BUTTON) {
