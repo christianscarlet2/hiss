@@ -135,6 +135,7 @@ void CHandHistoryWriter::ResetHand() {
   _showdown_winner = kUndefined;
   _joined_midhand = false;
   _final_pot = 0.0;
+  _hand_decided = false;
   for (int i = 0; i < kMaxNumberOfPlayers; ++i) {
     _seat_name[i]    = "";
     _seat_stack[i]   = 0.0;
@@ -264,6 +265,7 @@ void CHandHistoryWriter::CaptureMetadata() {
 }
 
 void CHandHistoryWriter::ObserveStreetTransition() {
+  if (_hand_decided) return;   // hand already won -> no more streets (no phantom board)
   int br = BETROUND;
   if (br <= _cur_street) return;
   // The previous street's betting just closed: return any uncalled bet first.
@@ -293,6 +295,7 @@ void CHandHistoryWriter::ObserveStreetTransition() {
 }
 
 void CHandHistoryWriter::ObserveActions() {
+  if (_hand_decided) return;   // hand already won -> no more action lines
   if (BETROUND < kBetroundPreflop) return;
   int activebits = p_engine_container->symbol_engine_active_dealt_playing()->playersactivebits();
   for (int i = 0; i < _nchairs; ++i) {
@@ -351,6 +354,7 @@ void CHandHistoryWriter::ObserveActions() {
 }
 
 void CHandHistoryWriter::ObserveResult() {
+  if (_hand_decided) return;   // result already recorded -> freeze pot/cards/winner
   // Track the largest pot we ever saw this hand.
   double pot = p_engine_container->symbol_engine_chip_amounts()->pot();
   if (pot > _final_pot) _final_pot = pot;
@@ -373,6 +377,7 @@ void CHandHistoryWriter::ObserveResult() {
         EmitUncalledReturn();   // return any uncalled bet before awarding the pot
         _winner_uncontested = i;
         _body += FmtName(i) + " collected " + FmtMoney(_final_pot) + " from pot\n";
+        _hand_decided = true;   // terminal result: stop appending streets/actions/pot
         break;
       }
     }
@@ -407,6 +412,7 @@ void CHandHistoryWriter::ObserveResult() {
       if (_showdown_winner != kUndefined) {
         _body += FmtName(_showdown_winner) + " collected " + FmtMoney(_final_pot) + " from main pot\n";
       }
+      _hand_decided = true;   // showdown recorded: terminal result, stop appending
     }
   }
 }

@@ -145,6 +145,11 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
   CString _hand_desc[kMaxNumberOfPlayers];    // ACR hand description per shown player
   CString _hand_bracket[kMaxNumberOfPlayers]; // best-5 bracket per shown player
   double  _final_pot;
+  // Set once the hand has a terminal result (uncontested win or showdown). Stops
+  // ObserveStreetTransition/ObserveActions/ObserveResult from appending phantom
+  // streets/folds and from inflating _final_pot with the NEXT hand's scrapes before
+  // the flush -- the root of the malformed observer-mode histories.
+  bool    _hand_decided;
 };
 
 extern CHandHistoryWriter *p_handhistory_writer;
