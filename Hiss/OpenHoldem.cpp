@@ -34,6 +34,22 @@
 #include "Singletons.h"
 #include "COcrWorker.h"
 #include "CrashHandler.h"
+#include "..\CTablemap\CTablemapDB.h"
+
+// DB-backed preferences hooks. The Preferences DLL stays libpq-free; Hiss injects these so
+// every setting reads/writes the postgres `settings` table (key "prefs") instead of the INI.
+// A DB miss falls back to the legacy INI ONCE and seeds the DB (see CPreferences::ReadReg).
+static bool PrefDbReadHook(const char *key, char *out, int out_size) {
+  if (p_tablemap_db == NULL || out == NULL || out_size <= 0) return false;
+  CString v = p_tablemap_db->GetSettingString("prefs", CString(key));
+  if (v.IsEmpty()) return false;                       // miss -> DLL migrates from INI
+  strncpy_s(out, out_size, v.GetString(), _TRUNCATE);
+  return true;
+}
+static void PrefDbWriteHook(const char *key, const char *value) {
+  if (p_tablemap_db == NULL) return;
+  p_tablemap_db->SetSettingString("prefs", CString(key), CString(value == NULL ? "" : value));
+}
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -126,6 +142,11 @@ BOOL COpenHoldemApp::InitInstance() {
   // as start_log() needs to know if the old log has to be deleted...
   free((void*)m_pszProfileName);
   m_pszProfileName = _strdup(IniFilePath().GetString());
+  // Settings live in the postgres `settings` table, not the INI. Create the DB handle and
+  // wire the preference hooks BEFORE loading, so LoadPreferences() reads from the DB (and
+  // one-time-migrates any legacy INI values into it). CTablemapDB self-bootstraps its conn.
+  if (p_tablemap_db == NULL) p_tablemap_db = new CTablemapDB;
+  Preferences()->SetDbHooks(PrefDbReadHook, PrefDbWriteHook);
   Preferences()->LoadPreferences();
 
   // OCR-worker mode detection MUST happen before we grab a session slot. Worker

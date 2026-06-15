@@ -111,7 +111,12 @@ BOOL CHudOverlayWindow::OnEraseBkgnd(CDC * /*pDC*/) {
 void CHudOverlayWindow::TrackTableWindow() {
 	if (!::IsWindow(GetSafeHwnd())) return;
 	HWND table = (p_autoconnector != NULL) ? p_autoconnector->attached_hwnd() : NULL;
-	bool show = (table != NULL && ::IsWindow(table)
+	// Hide the overlay whenever the scrcpy table window is hidden or minimized, so the HUD
+	// never floats orphaned over the desktop / other apps; the 200ms timer restores it as
+	// soon as scrcpy is visible again.
+	bool table_visible = (table != NULL && ::IsWindow(table)
+		&& ::IsWindowVisible(table) && !::IsIconic(table));
+	bool show = (table_visible
 		&& p_hud_manager != NULL && p_hud_manager->IsEnabled());
 	if (!show) {
 		if (IsWindowVisible()) ShowWindow(SW_HIDE);

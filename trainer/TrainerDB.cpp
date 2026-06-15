@@ -3,31 +3,27 @@
 
 #include "libpq-fe.h"
 
-static const char *kTrainerRegKey = "Software\\Hiss\\Trainer";
-
-// Reads the optional "hiss_conn" registry override (HKCU\Software\Hiss\Trainer).
-static CString ReadConnOverride()
+// Bootstrap value for the hiss-DB connection. No registry / INI: a hardcoded localhost
+// default, overridable only via the standard PG* environment variables (matches CTablemapDB).
+static CString EnvOrDefault(const char *name, const char *def)
 {
-	CString out;
-	HKEY key;
-	if (RegOpenKeyEx(HKEY_CURRENT_USER, kTrainerRegKey, 0, KEY_READ, &key) == ERROR_SUCCESS) {
-		char buf[1024] = { 0 };
-		DWORD size = sizeof(buf), type = 0;
-		if (RegQueryValueEx(key, "hiss_conn", NULL, &type, (LPBYTE)buf, &size) == ERROR_SUCCESS
-				&& type == REG_SZ) {
-			out = buf;
-		}
-		RegCloseKey(key);
+	char buf[512] = { 0 };
+	size_t n = 0;
+	if (getenv_s(&n, buf, sizeof(buf), name) == 0 && n > 0 && buf[0] != '\0') {
+		return CString(buf);
 	}
-	return out;
+	return CString(def);
 }
 
 pconn *TrainerDB_Connect()
 {
-	CString conn = ReadConnOverride();
-	if (conn.IsEmpty()) {
-		conn = "host=127.0.0.1 port=5432 user=postgres password='dbpass' dbname='hiss'";
-	}
+	CString conn;
+	conn.Format("host=%s port=%s user=%s password='%s' dbname='%s'",
+		EnvOrDefault("PGHOST", "127.0.0.1").GetString(),
+		EnvOrDefault("PGPORT", "5432").GetString(),
+		EnvOrDefault("PGUSER", "postgres").GetString(),
+		EnvOrDefault("PGPASSWORD", "dbpass").GetString(),
+		EnvOrDefault("PGDATABASE", "hiss").GetString());
 	PGconn *c = PQconnectdb(conn.GetString());
 	if (c == NULL || PQstatus(c) != CONNECTION_OK) {
 		if (c) PQfinish(c);

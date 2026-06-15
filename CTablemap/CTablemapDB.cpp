@@ -81,16 +81,27 @@ CTablemapDB::~CTablemapDB() {
 	Disconnect();
 }
 
+// Bootstrap value for the hiss-DB connection. Read an env var, else a default.
+static CString EnvOrDefault(const char *name, const char *def) {
+	char buf[512] = {0};
+	size_t n = 0;
+	if (getenv_s(&n, buf, sizeof(buf), name) == 0 && n > 0 && buf[0] != '\0') {
+		return CString(buf);
+	}
+	return CString(def);
+}
+
 CString CTablemapDB::DefaultConnString() {
+	// BOOTSTRAP connection to the hiss DB. This must NOT depend on Preferences(), because
+	// preferences now load FROM this database (a circular dependency). Hardcoded localhost
+	// defaults, overridable only via the standard PG* environment variables. No registry/INI.
 	CString s;
-#ifdef OPENHOLDEM_PROGRAM
-	// Reuse the PokerTracker server credentials, but a fixed dbname=hiss.
-	s.Format("host=%s port=%s user=%s password='%s' dbname='hiss'",
-		Preferences()->pt_ip_addr(), Preferences()->pt_port(),
-		Preferences()->pt_user(), Preferences()->pt_pass());
-#else
-	s = "host=127.0.0.1 port=5432 user=postgres password='dbpass' dbname='hiss'";
-#endif
+	s.Format("host=%s port=%s user=%s password='%s' dbname='%s'",
+		EnvOrDefault("PGHOST", "127.0.0.1").GetString(),
+		EnvOrDefault("PGPORT", "5432").GetString(),
+		EnvOrDefault("PGUSER", "postgres").GetString(),
+		EnvOrDefault("PGPASSWORD", "dbpass").GetString(),
+		EnvOrDefault("PGDATABASE", "hiss").GetString());
 	return s;
 }
 

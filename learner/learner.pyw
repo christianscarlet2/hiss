@@ -125,15 +125,25 @@ def hiss_get(path):
 def esc(s):
     return ("" if s is None else str(s)).replace("'", "''")
 
-PREF_FILE = os.path.join(os.path.expanduser("~"), ".hiss_learner.json")
+# UI prefs live in the postgres `settings` table (key 'learner_prefs', field 'data' = JSON blob),
+# not a local file -- single source of truth across all apps. (run_sql is defined just below;
+# Python resolves it at call time, so referencing it here is fine.)
+PREFS_KEY = "learner_prefs"
 def load_prefs():
     try:
-        return json.load(open(PREF_FILE))
+        out = run_sql("SELECT value->>'data' FROM settings WHERE key='%s'" % PREFS_KEY, read=True).strip()
+        return json.loads(out) if out else {}
     except Exception:
         return {}
 def save_prefs(p):
     try:
-        json.dump(p, open(PREF_FILE, "w"))
+        blob = esc(json.dumps(p))
+        run_sql(
+            "INSERT INTO settings(key,value,updated_at) VALUES ('%s', "
+            "jsonb_build_object('data', to_jsonb('%s'::text)), now()) "
+            "ON CONFLICT (key) DO UPDATE SET value = jsonb_set("
+            "COALESCE(settings.value,'{}'::jsonb), '{data}', to_jsonb('%s'::text)), updated_at=now()"
+            % (PREFS_KEY, blob, blob))
     except Exception:
         pass
 

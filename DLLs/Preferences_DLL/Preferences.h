@@ -329,6 +329,11 @@ public:
   // otherwise we get an "error c2668  ambiguous call to overloaded function"
   // http://msdn.microsoft.com/en-us/library/da60x087.aspx
   void SetValue(int index_of_variable, double value);
+  // DB-backed settings hooks: when set by the host app, ReadReg/WriteReg use the postgres
+  // settings table instead of the legacy INI. The DLL stays libpq-free; the host injects these.
+  typedef bool (*PrefDbReadFn)(const char *key, char *out, int out_size);   // true if found
+  typedef void (*PrefDbWriteFn)(const char *key, const char *value);
+  void SetDbHooks(PrefDbReadFn read_fn, PrefDbWriteFn write_fn);
 private:
   void CheckForOutdatedICMConfig();
 private:
@@ -347,6 +352,8 @@ private:
   void WriteReg(const LPCTSTR registry_key, const CString &registry_value);
   void WriteReg(const LPCTSTR registry_key, const double registry_value);
 private:
+  static PrefDbReadFn  s_db_read;    // when non-NULL, settings come from the DB, not the INI
+  static PrefDbWriteFn s_db_write;
   CCritSec m_critsec;
   const char* kPreferencesSectionInIniFile = "Preferences";;
   CString ini_filename;

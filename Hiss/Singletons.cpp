@@ -114,7 +114,7 @@ void InstantiateAllSingletons() {
   p_tablemap_access = new CTablemapAccess;
   write_log(Preferences()->debug_singletons(), "[Singletons] Going to create CTablemapDB\n");
   assert(!p_tablemap_db);
-  p_tablemap_db = new CTablemapDB;
+  if (p_tablemap_db == NULL) p_tablemap_db = new CTablemapDB;  // may already exist (prefs hooks)
   write_log(Preferences()->debug_singletons(), "[Singletons] Going to create CParserSymbolTable\n");
   assert(!p_parser_symbol_table);
   p_parser_symbol_table = new CParserSymbolTable;

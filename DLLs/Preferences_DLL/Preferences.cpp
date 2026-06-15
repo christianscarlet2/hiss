@@ -306,7 +306,35 @@ void CPreferences::ReadPreferences() {
   }
 }
 
+// DB-backed settings hooks (set by the host app via SetDbHooks). NULL => legacy INI.
+CPreferences::PrefDbReadFn  CPreferences::s_db_read  = NULL;
+CPreferences::PrefDbWriteFn CPreferences::s_db_write = NULL;
+
+void CPreferences::SetDbHooks(PrefDbReadFn read_fn, PrefDbWriteFn write_fn) {
+  s_db_read = read_fn;
+  s_db_write = write_fn;
+}
+
 void CPreferences::ReadReg(const LPCTSTR registry_key, CString *registry_value) {
+  // DB-backed: read from the postgres settings table. On a DB miss, migrate the value
+  // from the legacy INI ONCE (seed the DB), so existing installs lose nothing. After that
+  // first run every key is in the DB and the INI is never read again.
+  if (s_db_read != NULL) {
+    char db_buf[4096] = {0};
+    if (s_db_read(registry_key, db_buf, sizeof(db_buf))) {
+      *registry_value = CString(db_buf);
+      return;
+    }
+    char ini_buf[1000] = {0};
+    GetPrivateProfileString(kPreferencesSectionInIniFile, registry_key, "",
+      ini_buf, sizeof(ini_buf), ini_filename);
+    if (ini_buf[0] != '\0') {
+      *registry_value = CString(ini_buf);
+      if (s_db_write != NULL) s_db_write(registry_key, ini_buf);   // seed DB once
+    }
+    // else: leave the in-memory default (set by InitDefaults).
+    return;
+  }
   const int kSizeOgInputBuffer = 1000;
   char input_buffer[kSizeOgInputBuffer];
   // https://msdn.microsoft.com/en-us/library/windows/desktop/ms724353(v=vs.85).aspx
@@ -343,12 +371,11 @@ void CPreferences::ReadReg(const LPCTSTR registry_key, double *registry_value) {
 }
 
 void CPreferences::WriteReg(const LPCTSTR registry_key, const CString &registry_value) {
-  // https://msdn.microsoft.com/en-us/library/windows/desktop/ms725501(v=vs.85).aspx
-  // Parameters
-  //   * ini-file-section
-  //   * ini-file-key
-  //   * value
-  //   * filename
+  // DB-backed: write to the postgres settings table; never touch the INI.
+  if (s_db_write != NULL) {
+    s_db_write(registry_key, registry_value.GetString());
+    return;
+  }
   WritePrivateProfileString(
     kPreferencesSectionInIniFile,
     registry_key,
