@@ -660,6 +660,14 @@ class Learner(tk.Tk):
         # CALL (a different FCKRA function), so send the right one or the click no-ops.
         if action == "call" and self._fnum(c.get("amount_to_call")) <= 0:
             action = "check"
+        # All-In: many tables have no dedicated All-In button -- you ship via a raise to
+        # your whole stack. Convert All-In to a raise for the full balance (current bet
+        # included) so it fires with or without an All-in button (incl. a charged All-In).
+        if action == "allin":
+            bbv = self._fnum((c.get("raw", {}).get("limits", {}) or {}).get("bblind")) or 1.0
+            stack_bb = (self._fnum(c.get("balance")) + self._fnum(c.get("currentbet"))) / bbv
+            if stack_bb > 0:
+                action = "raise"; amount = round(stack_bb, 2)
         amt = (str(amount) if amount is not None else self.amount.get()).strip()
         ok, err = self.execute_on_table(action, amt, force=True)
         self._pending = {"action": action, "amount": amt, "ctx": c}
