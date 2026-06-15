@@ -250,6 +250,18 @@ bool CBetsizeInputBox::ClickNumpadRegion(CString region_name) {
 // Enter the betsize by tapping the on-screen numpad: clear with 1x nBackspace,
 // "type" each character by clicking n0..n9 / nDecimalPoint, then click nOkay.
 void CBetsizeInputBox::EnterBetsizeByNumpad(CString amount) {
+	// Trim trailing zeros after the decimal point: type "2.5" not "2.50", and "2"
+	// not "2.00". Some casino keypads reject/misparse a trailing zero, and it matches
+	// how a human enters the bet. (Number2CString already drops decimals for whole
+	// numbers; this also guards any "2.00"-style string that reaches here.)
+	if (amount.Find('.') >= 0) {
+		while (amount.GetLength() > 0 && amount[amount.GetLength() - 1] == '0') {
+			amount = amount.Left(amount.GetLength() - 1);
+		}
+		if (amount.GetLength() > 0 && amount[amount.GetLength() - 1] == '.') {
+			amount = amount.Left(amount.GetLength() - 1);
+		}
+	}
 	// Use the configurable "delay (ms)" from the two-successive-clicks settings
 	// between each numpad click.
 	int kNumpadClickDelayMs = (p_two_successive_clicks != NULL) ? p_two_successive_clicks->DelayMs() : 120;
