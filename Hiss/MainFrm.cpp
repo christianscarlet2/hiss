@@ -420,15 +420,12 @@ BOOL CMainFrame::PreCreateWindow(CREATESTRUCT& cs) {
 		wnd.hbrBackground	= (HBRUSH) (COLOR_3DFACE + 1);
 		wnd.lpszMenuName	= NULL;
 		wnd.lpszClassName	= Preferences()->window_class_name();
-    // Fixed size window, not resizable 
-    // Because bad-sized windows are annoying
-    // and because of potential support for a 4th user-card ;-)
-    // http://arstechnica.com/civis/viewtopic.php?f=20&t=848676
-    // http://msdn.microsoft.com/en-us/library/aa925944.aspx
+    // Resizable window: the table view + HUD scale to the client area,
+    // and the FCKRA/TIOLP indicators stay locked to the bottom corners.
     cs.dwExStyle &= ~WS_EX_CLIENTEDGE;
-	  cs.style &= (0xFFFFFFFF ^ WS_SIZEBOX);
+	  cs.style |= WS_SIZEBOX;
 	  cs.style |= WS_BORDER;
-	  cs.style &= (0xFFFFFFFF ^ WS_MAXIMIZEBOX);
+	  cs.style |= WS_MAXIMIZEBOX;
 
 		AfxRegisterClass( &wnd );
 	}

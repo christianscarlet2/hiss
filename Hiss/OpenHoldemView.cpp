@@ -73,6 +73,10 @@ const int kNumberOfScreenDimensions = 2;
 // Height (px) of the bottom HUD strip reserved below the table when the HUD is enabled
 // (2 rows of per-player cells), so HUD boxes never overlap the table.
 static const int kHudStripHeight = 104;
+// Height (px) of the indicator row reserved at the very bottom of the window for the
+// FCKRA (right corner) / TIOLP (left corner) autoplayer button indicators, so they sit
+// BELOW the HUD strip locked to the bottom corners instead of overlapping the table.
+static const int kIndicatorRowHeight = 18;
 double	pc[kMaxNumberOfPlayers+1][kMaxNumberOfPlayers][kNumberOfScreenDimensions] = {
   // 0 chairs
 	{ {0,0}, {0,0}, {0,0}, {0,0}, {0,0}, {0,0}, {0,0}, {0,0}, {0,0}, {0,0} },	
@@ -123,6 +127,7 @@ BEGIN_MESSAGE_MAP(COpenHoldemView, CView)
 	ON_WM_ERASEBKGND()
 	ON_WM_TIMER()
 	ON_WM_MOUSEMOVE()
+	ON_WM_SIZE()
 END_MESSAGE_MAP()
 
 // COpenHoldemView construction/destruction
@@ -223,6 +228,13 @@ void COpenHoldemView::OnMouseMove(UINT nFlags, CPoint point) {
 void COpenHoldemView::OnDraw(CDC* pDC) {
 	UpdateDisplay(true);
   write_log(Preferences()->debug_alltherest(), "[GUI] location Johnny_1\n");
+}
+
+void COpenHoldemView::OnSize(UINT nType, int cx, int cy) {
+	CView::OnSize(nType, cx, cy);
+	// The table, HUD strip and corner indicators are all laid out relative to the
+	// client rect, so a full repaint re-flows everything to the new window size.
+	Invalidate(TRUE);
 }
 
 void COpenHoldemView::OnTimer(UINT_PTR nIDEvent) {
@@ -455,39 +467,39 @@ void COpenHoldemView::DrawButtonIndicators(void) {
   // Draw "on" buttons
   assert(p_casino_interface != NULL);
   if (p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_fold)->IsClickable()) {
-    DrawSpecificButtonIndicator('F', true, _client_rect.right - 84, _client_rect.bottom - 16, _client_rect.right - 70, _client_rect.bottom - 2);
+    DrawSpecificButtonIndicator('F', true, _client_rect.right - 84, _full_client_bottom - 16, _client_rect.right - 70, _full_client_bottom - 2);
     fold_drawn = true;
   }
   if (p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_call)->IsClickable()) {
-    DrawSpecificButtonIndicator('C', true, _client_rect.right - 67, _client_rect.bottom - 16, _client_rect.right - 53, _client_rect.bottom - 2);
+    DrawSpecificButtonIndicator('C', true, _client_rect.right - 67, _full_client_bottom - 16, _client_rect.right - 53, _full_client_bottom - 2);
     call_drawn = true;
   }
   if (p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_check)->IsClickable()) {
-    DrawSpecificButtonIndicator('K', true, _client_rect.right - 50, _client_rect.bottom - 16, _client_rect.right - 36, _client_rect.bottom - 2);
+    DrawSpecificButtonIndicator('K', true, _client_rect.right - 50, _full_client_bottom - 16, _client_rect.right - 36, _full_client_bottom - 2);
     check_drawn = true;
   }
   if (p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_raise)->IsClickable()) {
-    DrawSpecificButtonIndicator('R', true, _client_rect.right - 33, _client_rect.bottom - 16, _client_rect.right - 19, _client_rect.bottom - 2);
+    DrawSpecificButtonIndicator('R', true, _client_rect.right - 33, _full_client_bottom - 16, _client_rect.right - 19, _full_client_bottom - 2);
     raise_drawn = true;
   }
   if (p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_allin)->IsClickable()) {
-    DrawSpecificButtonIndicator('A', true, _client_rect.right - 16, _client_rect.bottom - 16, _client_rect.right - 2, _client_rect.bottom - 2);
+    DrawSpecificButtonIndicator('A', true, _client_rect.right - 16, _full_client_bottom - 16, _client_rect.right - 2, _full_client_bottom - 2);
     allin_drawn = true;
   }
   if (p_casino_interface->LogicalAutoplayerButton(k_hopper_function_autopost)->IsClickable()) {
-    DrawSpecificButtonIndicator('T', true, _client_rect.left + 2, _client_rect.bottom - 16, _client_rect.left + 16, _client_rect.bottom - 2);
+    DrawSpecificButtonIndicator('T', true, _client_rect.left + 2, _full_client_bottom - 16, _client_rect.left + 16, _full_client_bottom - 2);
     autopost_drawn = true;
   }
   if (p_casino_interface->LogicalAutoplayerButton(k_hopper_function_sitin)->IsClickable()) {
-    DrawSpecificButtonIndicator('I', true, _client_rect.left + 19, _client_rect.bottom - 16, _client_rect.left + 33, _client_rect.bottom - 2);
+    DrawSpecificButtonIndicator('I', true, _client_rect.left + 19, _full_client_bottom - 16, _client_rect.left + 33, _full_client_bottom - 2);
     sitin_drawn = true;
   }
   if (p_casino_interface->LogicalAutoplayerButton(k_hopper_function_sitout)->IsClickable()) {
-    DrawSpecificButtonIndicator('O', true, _client_rect.left + 36, _client_rect.bottom - 16, _client_rect.left + 50, _client_rect.bottom - 2);
+    DrawSpecificButtonIndicator('O', true, _client_rect.left + 36, _full_client_bottom - 16, _client_rect.left + 50, _full_client_bottom - 2);
     sitout_drawn = true;
   }
   if (p_casino_interface->LogicalAutoplayerButton(k_hopper_function_leave)->IsClickable()) {
-    DrawSpecificButtonIndicator('L', true, _client_rect.left + 53, _client_rect.bottom - 16, _client_rect.left + 67, _client_rect.bottom - 2);
+    DrawSpecificButtonIndicator('L', true, _client_rect.left + 53, _full_client_bottom - 16, _client_rect.left + 67, _full_client_bottom - 2);
     leave_drawn = true;
   }
 	if (p_casino_interface->LogicalAutoplayerButton(k_standard_function_prefold)->IsClickable()) {
@@ -498,34 +510,34 @@ void COpenHoldemView::DrawButtonIndicators(void) {
   
 	// Draw "off" buttons
   if (!fold_drawn) {
-    DrawSpecificButtonIndicator('F', false, _client_rect.right - 84, _client_rect.bottom - 16, _client_rect.right - 70, _client_rect.bottom - 2);
+    DrawSpecificButtonIndicator('F', false, _client_rect.right - 84, _full_client_bottom - 16, _client_rect.right - 70, _full_client_bottom - 2);
   }
   if (!call_drawn) {
-    DrawSpecificButtonIndicator('C', false, _client_rect.right - 67, _client_rect.bottom - 16, _client_rect.right - 53, _client_rect.bottom - 2);
+    DrawSpecificButtonIndicator('C', false, _client_rect.right - 67, _full_client_bottom - 16, _client_rect.right - 53, _full_client_bottom - 2);
   }
   if (!check_drawn) {
-    DrawSpecificButtonIndicator('K', false, _client_rect.right - 50, _client_rect.bottom - 16, _client_rect.right - 36, _client_rect.bottom - 2);
+    DrawSpecificButtonIndicator('K', false, _client_rect.right - 50, _full_client_bottom - 16, _client_rect.right - 36, _full_client_bottom - 2);
   }
   if (!raise_drawn) {
-    DrawSpecificButtonIndicator('R', false, _client_rect.right - 33, _client_rect.bottom - 16, _client_rect.right - 19, _client_rect.bottom - 2);
+    DrawSpecificButtonIndicator('R', false, _client_rect.right - 33, _full_client_bottom - 16, _client_rect.right - 19, _full_client_bottom - 2);
   }
   if (!allin_drawn) {
-    DrawSpecificButtonIndicator('A', false, _client_rect.right - 16, _client_rect.bottom - 16, _client_rect.right - 2, _client_rect.bottom - 2);
+    DrawSpecificButtonIndicator('A', false, _client_rect.right - 16, _full_client_bottom - 16, _client_rect.right - 2, _full_client_bottom - 2);
   }
   if (!autopost_drawn) {
-    DrawSpecificButtonIndicator('T', false, _client_rect.left + 2, _client_rect.bottom - 16, _client_rect.left + 16, _client_rect.bottom - 2);
+    DrawSpecificButtonIndicator('T', false, _client_rect.left + 2, _full_client_bottom - 16, _client_rect.left + 16, _full_client_bottom - 2);
   }
   if (!sitin_drawn) {
-    DrawSpecificButtonIndicator('I', false, _client_rect.left + 19, _client_rect.bottom - 16, _client_rect.left + 33, _client_rect.bottom - 2);
+    DrawSpecificButtonIndicator('I', false, _client_rect.left + 19, _full_client_bottom - 16, _client_rect.left + 33, _full_client_bottom - 2);
   }
   if (!sitout_drawn) {
-    DrawSpecificButtonIndicator('O', false, _client_rect.left + 36, _client_rect.bottom - 16, _client_rect.left + 50, _client_rect.bottom - 2);
+    DrawSpecificButtonIndicator('O', false, _client_rect.left + 36, _full_client_bottom - 16, _client_rect.left + 50, _full_client_bottom - 2);
   }
   if (!leave_drawn) {
-    DrawSpecificButtonIndicator('L', false, _client_rect.left + 53, _client_rect.bottom - 16, _client_rect.left + 67, _client_rect.bottom - 2);
+    DrawSpecificButtonIndicator('L', false, _client_rect.left + 53, _full_client_bottom - 16, _client_rect.left + 67, _full_client_bottom - 2);
   }
   if (!prefold_drawn) {
-    DrawSpecificButtonIndicator('P', false, _client_rect.left + 70, _client_rect.bottom - 16, _client_rect.left + 84, _client_rect.bottom - 2);
+    DrawSpecificButtonIndicator('P', false, _client_rect.left + 70, _full_client_bottom - 16, _client_rect.left + 84, _full_client_bottom - 2);
   }
 }
 
@@ -971,7 +983,8 @@ void COpenHoldemView::DrawHudStats(const int chair) {
 	// cell is headed by the player's name so you know whose stats they are.
 	const int cols = 5;
 	int strip_top = _client_rect.bottom;
-	int strip_h = _full_client_bottom - strip_top;
+	// Reserve the bottom indicator row (FCKRA/TIOLP) so the HUD strip ends above it.
+	int strip_h = (_full_client_bottom - kIndicatorRowHeight) - strip_top;
 	if (strip_h <= 4) { ReleaseDC(pDC); return; }
 	int cellw = _client_rect.right / cols;
 	int cellh = strip_h / 2;

@@ -29,6 +29,7 @@ class COpenHoldemView : public CView {
 	DECLARE_MESSAGE_MAP()
   afx_msg void OnTimer(UINT_PTR nIDEvent);
   afx_msg void OnMouseMove(UINT nFlags, CPoint point);
+  afx_msg void OnSize(UINT nType, int cx, int cy);
  public:
 	COpenHoldemDoc* GetDocument() const;
 	virtual void OnDraw(CDC* pDC);  // overridden to draw this view
