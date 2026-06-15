@@ -136,7 +136,11 @@ BOOL CReactTableWindow::Create(CWnd *owner, unsigned short port)
 		CW_USEDEFAULT,
 		kReactTableWidth,
 		kReactTableHeight,
-		owner == NULL ? NULL : owner->GetSafeHwnd(),
+		// NO owner HWND: an owned window is force-minimized/hidden whenever its owner is
+		// minimized. We want the table view, terminal and main window to minimize fully
+		// independently, so create this as a top-level UNOWNED window. (_owner is still kept
+		// as a CWnd* for docking/positioning -- that does not create the ownership link.)
+		NULL,
 		NULL);
 	if (created) {
 		AttachToOwner();

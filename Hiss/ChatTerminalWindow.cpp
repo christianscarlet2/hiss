@@ -527,7 +527,10 @@ BOOL CChatTerminalWindow::Create(CWnd *owner)
 		CW_USEDEFAULT,
 		kTerminalWidth,
 		kTerminalHeight,
-		owner == NULL ? NULL : owner->GetSafeHwnd(),
+		// NO owner HWND: an owned window is force-minimized/hidden when its owner minimizes.
+		// Keep the terminal independent of the main window (and the React table view) for
+		// minimize/restore. (_owner remains a CWnd* used only for docking/positioning.)
+		NULL,
 		NULL);
 	if (created) {
 		AttachToOwner(true);
