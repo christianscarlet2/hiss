@@ -230,6 +230,10 @@ void CAutoOcr::LoadModelSettings() {
 		extern bool g_ocr_memory;   // defined in CScraper.cpp
 		g_ocr_memory = (p_tablemap_db != NULL
 			&& p_tablemap_db->GetSettingString("ocr_memory", "enabled") == "1");
+		// The user's own ACR usernames (for the p3 observer-vs-playing gate).
+		extern CString g_my_usernames;
+		if (p_tablemap_db != NULL)
+			g_my_usernames = p_tablemap_db->GetSettingString("my_usernames", "list");
 	}
 	_models_loaded = true;
 

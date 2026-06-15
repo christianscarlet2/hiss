@@ -133,6 +133,8 @@ static int CountHissInstances() {
 // Defined further down (near the name-scrape helpers); used by ScrapeSeated's OCR-memory
 // cache to avoid caching a status-indicator string as a name.
 static bool IsLikelyNameStatusIndicator(const CString &normalized_name);
+// Defined further down; used by RefreshObserverState's p3 observer-vs-playing gate.
+static bool IsConfiguredUsername(const CString &name);
 
 CScraper::CScraper(void) {
 	p_table_state->Reset();
@@ -151,6 +153,8 @@ CScraper::CScraper(void) {
     _mem_name[i] = "";
     _mem_out_frames[i] = 0;
   }
+  _mem_p3observer = false;
+  _mem_p3observer_name = "";
 }
 
 // Read change-detection tolerance from the `scrape_tuning` DB setting (fields
@@ -270,11 +274,28 @@ CString CScraper::RedirectObserverName(const CString &name) {
 void CScraper::RefreshObserverState() {
 	_observer_active = false;
 	if (p_tablemap->r$()->find("p3observer") == p_tablemap->r$()->end()) return;
+	bool raw = false;
 	CString r;
 	if (EvaluateRegion("p3observer", &r)) {
 		r.MakeLower();
 		r.Trim();
-		_observer_active = (r == "true");
+		raw = (r == "true");
+	}
+	// p3 observer memory + hero gate. The seat-3 name (prior frame's last-good value):
+	CString p3name = p_table_state->Player(3)->name();
+	if (IsConfiguredUsername(p3name)) {
+		// The user is SEATED at p3 (their own username) -> they are PLAYING, not observing.
+		_observer_active = false;
+		_mem_p3observer = false;
+	} else if (raw) {
+		_observer_active = true;
+		_mem_p3observer_name = p3name;   // remember whose seat we are observing
+		_mem_p3observer = true;
+	} else {
+		// Scrape says false. Override to true (keep observing) if we WERE observing and the
+		// seat-3 name has not changed (same non-hero player still there) -- a flickered scrape.
+		_observer_active = (_mem_p3observer && !p3name.IsEmpty() && p3name == _mem_p3observer_name);
+		_mem_p3observer = _observer_active;
 	}
 }
 
@@ -1353,6 +1374,29 @@ static CString NormalizeScrapedPlayerName(CString name) {
 // ---- OCR memory ----------------------------------------------------------------
 // Toggle loaded from the shared settings table in CAutoOcr::LoadModelSettings().
 bool g_ocr_memory = false;
+CString g_my_usernames;   // user's own ACR usernames (settings "my_usernames"/"list")
+
+// True if `name` is one of the user's own ACR usernames -> the user is PLAYING that seat,
+// not observing it. Checks the configurable list (g_my_usernames, any of , ; | whitespace
+// separated) plus the always-on defaults scarletchrist / christianbeast. Case-insensitive.
+static bool IsConfiguredUsername(const CString &name) {
+	CString n = name; n.MakeLower(); n.Trim();
+	if (n.IsEmpty()) return false;
+	if (n == "scarletchrist" || n == "christianbeast") return true;   // always-on defaults
+	CString list = g_my_usernames; list.MakeLower();
+	int pos = 0;
+	while (pos < list.GetLength()) {
+		// next token delimited by , ; | or whitespace
+		while (pos < list.GetLength() && strchr(",;| \t", list[pos])) ++pos;
+		int start = pos;
+		while (pos < list.GetLength() && !strchr(",;| \t", list[pos])) ++pos;
+		if (pos > start) {
+			CString tok = list.Mid(start, pos - start); tok.Trim();
+			if (!tok.IsEmpty() && tok == n) return true;
+		}
+	}
+	return false;
+}
 
 // Levenshtein edit distance for short strings (status-indicator fuzzy match).
 // Early-out: the |length difference| lower-bounds the distance, so a long real name

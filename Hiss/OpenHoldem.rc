@@ -946,7 +946,8 @@ BEGIN
     PUSHBUTTON      "Browse...",IDC_OCR_BROWSE3,178,136,52,13
     CONTROL         "Decimal correction (re-insert a dropped decimal point)",IDC_OCR_DCORR3,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,151,226,10
     CONTROL         "OCR memory (keep a seated player's last-good name/balance on mis-scrapes)",IDC_OCR_MEMORY,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,4,163,226,10
-    LTEXT           "Model paths stored full; blank = default ""my_model"". ""OCR memory"" ignores status indicators (SITTING OUT/FOLD...) and bogus-0 balances scraped over a seated player, keeping the last good value (also shown on the React table).",IDC_STATIC,4,176,226,34
+    LTEXT           "My ACR usernames (comma-separated). Seats showing these names are ME (playing), so they are never treated as observed:",IDC_STATIC,4,176,226,16
+    EDITTEXT        IDC_OCR_USERNAMES,4,194,226,13,ES_AUTOHSCROLL
 END
 
 IDD_SAPREFS24 DIALOGEX 0, 0, 237, 213

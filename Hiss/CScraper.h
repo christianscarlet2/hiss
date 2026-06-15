@@ -176,6 +176,10 @@ class CScraper : public CSpaceOptimizedGlobalObject {
 	double  _mem_bet[kMaxNumberOfPlayers];   // last-good bet per chair (bet memory)
 	CString _mem_name[kMaxNumberOfPlayers];
 	int     _mem_out_frames[kMaxNumberOfPlayers];
+	// p3 observer-state memory: keep observing while the seat-3 name is unchanged even if
+	// the p3observer scrape flickers to false (unless that name is one of the user's).
+	bool    _mem_p3observer;
+	CString _mem_p3observer_name;
 	// Parallel-OCR pre-pass results for this scrape cycle (region name -> text).
 	std::map<CString, CString> _ocr_cache;
 	// Last OCR result per AutoOcr region, kept ACROSS frames. When a region's
@@ -235,6 +239,12 @@ extern double g_tgi2_prev_handnumber;
 // Loaded from the shared settings table ("ocr_memory"/"enabled") in
 // CAutoOcr::LoadModelSettings(), edited on the Hiss OCR preferences page.
 extern bool g_ocr_memory;
+
+// The user's own ACR usernames (comma/;/| separated). Loaded from the settings table
+// ("my_usernames"/"list") in CAutoOcr::LoadModelSettings(); edited on the OCR prefs page.
+// Used to tell "I am playing this seat" from "I am observing it" -- defaults always
+// include scarletchrist + christianbeast even if the setting is empty.
+extern CString g_my_usernames;
 
 #endif // INC_CSCRAPER_H
 

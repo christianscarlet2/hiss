@@ -42,6 +42,7 @@ protected:
 	CEdit m_model0, m_model1, m_model2, m_model3;
 	CButton m_dcorr0, m_dcorr1, m_dcorr2, m_dcorr3;
 	CButton m_ocr_memory;   // keep last-good name/balance on mis-scrapes
+	CEdit   m_usernames;    // the user's own ACR usernames (comma-separated)
 
 	void BrowseForModel(CEdit *target);
 
