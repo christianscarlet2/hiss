@@ -197,6 +197,7 @@ class Learner(tk.Tk):
         self.configure(padx=10, pady=8)
         self.ctx = {}
         self.cur_q = None  # (id, text)
+        self._pending = None  # staged play: ("action",act,amt) | ("bet",frac,min_bb)
 
         # --- menu: Tools -> Always on Top ---
         menubar = tk.Menu(self)
@@ -243,27 +244,39 @@ class Learner(tk.Tk):
         ttk.Label(af, text="amount (bet/raise):").pack(side="left")
         self.amount = ttk.Entry(af, width=10); self.amount.pack(side="left", padx=6)
 
+        # Clicking an action STAGES it (does not fire yet). Type your reason, then SUBMIT
+        # PLAY (or Ctrl+Enter in the reason box) executes it on the table + logs it.
         bf = ttk.Frame(self); bf.pack(fill="x", pady=4)
         for txt, act, col in (("Fold","fold","#c0392b"), ("Call/Check","call","#2e7d32"),
                               ("Bet","bet","#1565c0"), ("Raise","raise","#6a1b9a")):
             b = tk.Button(bf, text=txt, width=11, bg=col, fg="white",
                           font=("Segoe UI", 10, "bold"),
-                          command=lambda a=act: self.submit_action(a))
+                          command=lambda a=act: self.stage_action(a))
             b.pack(side="left", padx=4, ipady=6)
 
-        # --- preset sizing + all-in ---
+        # --- preset sizing + all-in (also stage) ---
         pf = ttk.Frame(self); pf.pack(fill="x", pady=2)
         tk.Button(pf, text="All-In", width=8, bg="#922b21", fg="white",
                   font=("Segoe UI", 10, "bold"),
-                  command=lambda: self.submit_action("allin")).pack(side="left", padx=3, ipady=4)
+                  command=lambda: self.stage_action("allin")).pack(side="left", padx=3, ipady=4)
         tk.Button(pf, text="Min 2bb", width=8, bg="#1565c0", fg="white",
-                  command=lambda: self.submit_bet(min_bb=2)).pack(side="left", padx=3, ipady=4)
+                  command=lambda: self.stage_bet(min_bb=2)).pack(side="left", padx=3, ipady=4)
         tk.Button(pf, text="Bet 1/4", width=7, bg="#1565c0", fg="white",
-                  command=lambda: self.submit_bet(frac=0.25)).pack(side="left", padx=3, ipady=4)
+                  command=lambda: self.stage_bet(frac=0.25)).pack(side="left", padx=3, ipady=4)
         tk.Button(pf, text="Bet 1/2", width=7, bg="#1565c0", fg="white",
-                  command=lambda: self.submit_bet(frac=0.50)).pack(side="left", padx=3, ipady=4)
+                  command=lambda: self.stage_bet(frac=0.50)).pack(side="left", padx=3, ipady=4)
         tk.Button(pf, text="Bet 3/4", width=7, bg="#1565c0", fg="white",
-                  command=lambda: self.submit_bet(frac=0.75)).pack(side="left", padx=3, ipady=4)
+                  command=lambda: self.stage_bet(frac=0.75)).pack(side="left", padx=3, ipady=4)
+        tk.Button(pf, text="Pot", width=6, bg="#0d47a1", fg="white",
+                  font=("Segoe UI", 9, "bold"),
+                  command=lambda: self.stage_bet(frac=1.0)).pack(side="left", padx=3, ipady=4)
+
+        # --- SUBMIT PLAY: commit the staged action with your reason ---
+        sf = ttk.Frame(self); sf.pack(fill="x", pady=4)
+        self.btn_submit_play = tk.Button(sf, text="SUBMIT PLAY  (Ctrl+Enter)",
+                  bg="#0b6e2e", fg="white", font=("Segoe UI", 11, "bold"),
+                  command=self.commit_pending)
+        self.btn_submit_play.pack(fill="x", padx=4, ipady=8)
 
         # --- follow-up: rate your own past decisions after seeing the result ---
         ff = ttk.LabelFrame(self, text="Follow-up: review a past decision (after you've seen how it played out)")
@@ -286,7 +299,7 @@ class Learner(tk.Tk):
         qf.pack(fill="x", pady=6)
         qtw = ttk.Frame(qf); qtw.pack(fill="both", expand=True, padx=6, pady=4)
         qsb = ttk.Scrollbar(qtw); qsb.pack(side="right", fill="y")
-        self.q_text = tk.Text(qtw, height=24, wrap="word", state="disabled",
+        self.q_text = tk.Text(qtw, height=17, wrap="word", state="disabled",
                               background="#fffbe6", font=("Segoe UI", 8),
                               yscrollcommand=qsb.set)
         self.q_text.pack(side="left", fill="both", expand=True)
@@ -318,21 +331,24 @@ class Learner(tk.Tk):
         self.bind_all("<F2>", lambda e: self._focus(self.fu_note))
         self.bind_all("<F3>", lambda e: self._focus(self.answer))
         self.bind_all("<F4>", lambda e: self.focus_target())
+        # Ctrl+Enter (works inside the reason box too) commits the staged play.
+        self.bind_all("<Control-Return>", lambda e: self.commit_pending())
         # Single-key action shortcuts (only fire when NOT typing in a text field, so
         # they don't interfere with the reasoning/answer/amount boxes):
         #   f=fold  c=call/check  b=bet  r=raise  a=allin  v=focus amount box
         #   1=min2bb  2=1/4  3=1/2  4=3/4
         keymap = {
-            "f": lambda: self.submit_action("fold"),
-            "c": lambda: self.submit_action("call"),
-            "b": lambda: self.submit_action("bet"),
-            "r": lambda: self.submit_action("raise"),
-            "a": lambda: self.submit_action("allin"),
+            "f": lambda: self.stage_action("fold"),
+            "c": lambda: self.stage_action("call"),
+            "b": lambda: self.stage_action("bet"),
+            "r": lambda: self.stage_action("raise"),
+            "a": lambda: self.stage_action("allin"),
             "v": lambda: self._focus(self.amount),
-            "1": lambda: self.submit_bet(min_bb=2),
-            "2": lambda: self.submit_bet(frac=0.25),
-            "3": lambda: self.submit_bet(frac=0.50),
-            "4": lambda: self.submit_bet(frac=0.75),
+            "1": lambda: self.stage_bet(min_bb=2),
+            "2": lambda: self.stage_bet(frac=0.25),
+            "3": lambda: self.stage_bet(frac=0.50),
+            "4": lambda: self.stage_bet(frac=0.75),
+            "5": lambda: self.stage_bet(frac=1.0),
         }
         for key, fn in keymap.items():
             self.bind_all("<KeyPress-%s>" % key, lambda e, f=fn: self._key_action(f))
@@ -562,13 +578,45 @@ class Learner(tk.Tk):
         return (len(w) == 0, hard, w)
 
     # ---- preset bet sizing (round-bets fraction / min), validated before firing ----
+    # ---- staged-play flow: click action -> type reason -> SUBMIT PLAY -----------
+    def stage_action(self, action, amount=None):
+        self._pending = ("action", action, amount)
+        lbl = action.upper() + (("  " + str(amount) + "bb") if amount else "")
+        self.status.config(text="STAGED: %s   -- type your reason, then SUBMIT PLAY (Ctrl+Enter)" % lbl)
+        try: self.btn_submit_play.config(text="SUBMIT PLAY: %s  (Ctrl+Enter)" % lbl)
+        except Exception: pass
+        self._focus(self.reason)
+
+    def stage_bet(self, frac=None, min_bb=None):
+        self._pending = ("bet", frac, min_bb)
+        lbl = ("BET min %gbb" % min_bb) if min_bb is not None else ("BET %d%% of round bets" % int(round(frac * 100)))
+        self.status.config(text="STAGED: %s   -- type your reason, then SUBMIT PLAY (Ctrl+Enter)" % lbl)
+        try: self.btn_submit_play.config(text="SUBMIT PLAY: %s  (Ctrl+Enter)" % lbl)
+        except Exception: pass
+        self._focus(self.reason)
+
+    def commit_pending(self):
+        p = self._pending
+        if not p:
+            self.status.config(text="Nothing staged -- click an action first, type why, then Submit.")
+            return "break"
+        self._pending = None
+        try: self.btn_submit_play.config(text="SUBMIT PLAY  (Ctrl+Enter)")
+        except Exception: pass
+        if p[0] == "action":
+            self.submit_action(p[1], amount=p[2])
+        elif p[0] == "bet":
+            self.submit_bet(frac=p[1], min_bb=p[2])
+        return "break"
+
     def submit_bet(self, frac=None, min_bb=None):
         c = self.ctx or {}
         raw = c.get("raw", {})
         bb = (raw.get("limits", {}) or {}).get("bblind") or 1.0
         f = self._fnum
-        # Bet basis = TOTAL CURRENT BETS FOR THE ROUND (potplayer). Fall back to full pot.
-        basis = f(c.get("potplayer")) or f(c.get("pot"))
+        # Bet basis = TOTAL CURRENT BETS FOR THE ROUND (potplayer) ONLY -- the 1/4,1/2,3/4
+        # buttons size off the round's bet total, NOT the full/main pot. No pot fallback.
+        basis = f(c.get("potplayer")) or 0.0
         basis_bb = (basis / bb) if bb else basis
         if min_bb is not None:
             amt = float(min_bb)
@@ -633,7 +681,7 @@ class Learner(tk.Tk):
                 "SELECT id, answered, COALESCE(replace(summary, chr(10), ' '), ''), "
                 "replace(question, chr(10), ' '), "
                 "COALESCE(replace(answer, chr(10), ' '), '') "
-                "FROM learner_questions ORDER BY id DESC LIMIT 60;", read=True)
+                "FROM learner_questions WHERE answered=false ORDER BY id DESC LIMIT 60;", read=True)
         except Exception:
             log = ""
         rows = [l for l in log.strip().splitlines() if l.strip()]
