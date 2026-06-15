@@ -73,6 +73,7 @@
 #define IDC_OCR_MODEL3                  1450
 #define IDC_OCR_BROWSE3                 1451
 #define IDC_OCR_DCORR3                  1452
+#define IDC_OCR_MEMORY                  1453
 #define IDC_NEW                         1006
 #define IDC_DELETE                      1007
 #define IDC_RENAME                      1013

@@ -1309,6 +1309,93 @@ static CString NormalizeScrapedPlayerName(CString name) {
 	return result;
 }
 
+// ---- OCR memory ----------------------------------------------------------------
+// Toggle loaded from the shared settings table in CAutoOcr::LoadModelSettings().
+bool g_ocr_memory = false;
+
+// Levenshtein edit distance for short strings (status-indicator fuzzy match).
+// Early-out: the |length difference| lower-bounds the distance, so a long real name
+// is never "close" to a short status keyword.
+static int NameEditDistance(const CString &a, const CString &b, int give_up) {
+	int la = a.GetLength(), lb = b.GetLength();
+	if (la - lb > give_up || lb - la > give_up) return give_up + 1;
+	if (la == 0) return lb;
+	if (lb == 0) return la;
+	if (la > 60) la = 60;
+	if (lb > 60) lb = 60;
+	int prev[64], cur[64];
+	for (int j = 0; j <= lb; ++j) prev[j] = j;
+	for (int i = 1; i <= la; ++i) {
+		cur[0] = i;
+		for (int j = 1; j <= lb; ++j) {
+			int cost = (a[i - 1] == b[j - 1]) ? 0 : 1;
+			int d = prev[j] + 1;
+			if (cur[j - 1] + 1 < d) d = cur[j - 1] + 1;
+			if (prev[j - 1] + cost < d) d = prev[j - 1] + cost;
+			cur[j] = d;
+		}
+		for (int j = 0; j <= lb; ++j) prev[j] = cur[j];
+	}
+	return prev[lb];
+}
+
+// True if a scraped (alphanumeric-normalized) "name" is really a table status
+// indicator (SITTING OUT, FOLD, WAIT FOR BB, POST BB, ALL IN, ...) overlaid on the
+// name region. Tolerant of OCR garble via a small length-scaled Levenshtein
+// threshold, so e.g. "5ITTlNG0UT" still matches "sittingout".
+static bool IsLikelyNameStatusIndicator(const CString &normalized_name) {
+	if (normalized_name.IsEmpty()) return false;
+	CString s = normalized_name; s.MakeLower();
+	static const char *kStatus[] = {
+		"sittingout", "sittingoutnextbb", "sitout", "sittingin", "sitin",
+		"fold", "folded", "waitforbb", "waitingforbb", "waitfornextbb",
+		"waitforbigblind", "waiting", "postbb", "postblind", "post", "away",
+		"inactive", "allin", "newplayer", "reserved", "disconnected", "timebank",
+		"joining", "muck", "mucked", "seatopen", "emptyseat"
+	};
+	for (int i = 0; i < (int)(sizeof(kStatus) / sizeof(kStatus[0])); ++i) {
+		CString key = kStatus[i];
+		int kl = key.GetLength();
+		int thresh = (kl >= 6) ? (kl / 3) : (kl >= 4 ? 1 : 0);
+		if (NameEditDistance(s, key, thresh) <= thresh) return true;
+	}
+	return false;
+}
+
+// Refresh the OCR-memory toggle from the shared settings table. GetSettingString is a
+// live DB query, so throttle to ~1 read per 32 calls (a couple per second across all
+// chairs). This makes the toggle engage even before the first AutoOcr call loads it and
+// picks up live changes from the OCR preferences page.
+static void RefreshOcrMemoryToggle() {
+	static int n = 0;
+	if ((n++ & 31) == 0 && p_tablemap_db != NULL) {
+		g_ocr_memory = (p_tablemap_db->GetSettingString("ocr_memory", "enabled") == "1");
+	}
+}
+
+// Set a scraped player name, honouring OCR memory: while the player remains seated, a
+// status-indicator mis-scrape never becomes the displayed name. A remembered REAL name
+// is kept; an empty/garbage current name is cleared (so SITTING OUT etc. never sticks).
+// Keeping the value in the table state means the React table view shows it too.
+static void SetScrapedNameWithMemory(int chair, const CString &result) {
+	RefreshOcrMemoryToggle();
+	if (g_ocr_memory
+			&& p_table_state->Player(chair)->seated()
+			&& IsLikelyNameStatusIndicator(result)) {
+		CString cur = p_table_state->Player(chair)->name();
+		if (!cur.IsEmpty() && !IsLikelyNameStatusIndicator(cur)) {
+			write_log(Preferences()->debug_scraper(),
+				"[CScraper] name-memory: chair %d kept '%s' (rejected status-OCR '%s')\n",
+				chair, cur.GetString(), result.GetString());
+			return;   // keep the remembered real name
+		}
+		// current name is empty or itself a status string -> never show a status indicator
+		if (!cur.IsEmpty()) p_table_state->Player(chair)->set_name("");
+		return;
+	}
+	p_table_state->Player(chair)->set_name(result);
+}
+
 void CScraper::ScrapeName(int chair) {
 	RETURN_IF_OUT_OF_RANGE (chair, p_tablemap->LastChair())
 
@@ -1342,7 +1429,7 @@ void CScraper::ScrapeName(int chair) {
 			//Handle all user tokens with bregex and eregex added
 			if (regex_match((string)temp, regex(bregex + Token + eregex))) { return; }			
 		}
-		p_table_state->Player(chair)->set_name(result);
+		SetScrapedNameWithMemory(chair, result);
 		return;
 	}
 	// Player name pXname
@@ -1367,7 +1454,7 @@ void CScraper::ScrapeName(int chair) {
 			//Handle all user tokens with bregex and eregex added
 			if (regex_match((string)temp, regex(bregex + Token + eregex))) { return; }
 		}
-		p_table_state->Player(chair)->set_name(result);
+		SetScrapedNameWithMemory(chair, result);
     return;
 	}
 }
@@ -1401,14 +1488,30 @@ CString CScraper::ScrapeUPBalance(int chair, char scrape_u_else_p) {
 
 void CScraper::ScrapeBalance(int chair) {
 	RETURN_IF_OUT_OF_RANGE (chair, p_tablemap->LastChair())
+  RefreshOcrMemoryToggle();
+  double old_balance = p_table_state->Player(chair)->_balance.GetValue();
   // Scrape uXbalance and pXbalance
   CString balance = ScrapeUPBalance(chair, 'p');
-  if (p_table_state->Player(chair)->_balance.SetValue(balance)) {
-    return;
+  bool ok = p_table_state->Player(chair)->_balance.SetValue(balance);
+  if (!ok) {
+    balance = ScrapeUPBalance(chair, 'u');
+    ok = p_table_state->Player(chair)->_balance.SetValue(balance);
   }
-  balance = ScrapeUPBalance(chair, 'u');
-  if (p_table_state->Player(chair)->_balance.SetValue(balance)) {
-    return;
+  // OCR memory: a seated player's balance should not flip to 0/invalid because the
+  // balance region OCR'd a status indicator. A player only legitimately reaches 0 by
+  // committing their stack, which leaves a bet THIS hand (ScrapeBet runs first). So a
+  // 0/invalid balance on a seated player WITH NO bet committed is a mis-scrape -> keep
+  // the last-good value (also what the React table view then shows). A real all-in
+  // (bet > 0) keeps its genuine 0.
+  if (g_ocr_memory && p_table_state->Player(chair)->seated() && old_balance > 0.0) {
+    double now = p_table_state->Player(chair)->_balance.GetValue();
+    bool committed = (p_table_state->Player(chair)->_bet.GetValue() > 0.0);
+    if ((!ok || now <= 0.0) && !committed) {
+      p_table_state->Player(chair)->_balance.SetValue(old_balance);
+      write_log(Preferences()->debug_scraper(),
+        "[CScraper] balance-memory: chair %d kept %.2f (0/invalid scrape, no bet -> not all-in)\n",
+        chair, old_balance);
+    }
   }
 }
 

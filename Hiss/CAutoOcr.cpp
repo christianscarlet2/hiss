@@ -225,6 +225,12 @@ void CAutoOcr::LoadModelSettings() {
 			_dcorr[g] = (p_tablemap_db->GetSettingString(keys[g], "decimal_correct") == "1");
 		}
 	}
+	// OCR memory toggle (names/balances) -- shared settings table, edited on the OCR page.
+	{
+		extern bool g_ocr_memory;   // defined in CScraper.cpp
+		g_ocr_memory = (p_tablemap_db != NULL
+			&& p_tablemap_db->GetSettingString("ocr_memory", "enabled") == "1");
+	}
 	_models_loaded = true;
 
 	// Flush the per-model engine pool so the (possibly changed) models are reloaded

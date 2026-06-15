@@ -41,6 +41,7 @@ protected:
 	enum { IDD = IDD_SAPREFS23 };
 	CEdit m_model0, m_model1, m_model2, m_model3;
 	CButton m_dcorr0, m_dcorr1, m_dcorr2, m_dcorr3;
+	CButton m_ocr_memory;   // keep last-good name/balance on mis-scrapes
 
 	void BrowseForModel(CEdit *target);
 

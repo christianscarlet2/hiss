@@ -210,6 +210,13 @@ extern CString g_tgi_gametype;       // e.g. "No Limit"
 extern double g_tgi2_handnumber;
 extern double g_tgi2_prev_handnumber;
 
+// OCR memory: when true, a seated player's name/balance is NOT overwritten by a
+// status-indicator mis-scrape (SITTING OUT, FOLD, ...) or a bogus 0 balance; the
+// last-good table-state value is kept (and so shown by the React table view).
+// Loaded from the shared settings table ("ocr_memory"/"enabled") in
+// CAutoOcr::LoadModelSettings(), edited on the Hiss OCR preferences page.
+extern bool g_ocr_memory;
+
 #endif // INC_CSCRAPER_H
 
 

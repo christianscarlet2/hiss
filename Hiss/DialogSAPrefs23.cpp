@@ -50,6 +50,7 @@ void CDlgSAPrefs23::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_OCR_DCORR1, m_dcorr1);
 	DDX_Control(pDX, IDC_OCR_DCORR2, m_dcorr2);
 	DDX_Control(pDX, IDC_OCR_DCORR3, m_dcorr3);
+	DDX_Control(pDX, IDC_OCR_MEMORY, m_ocr_memory);
 }
 
 BEGIN_MESSAGE_MAP(CDlgSAPrefs23, CSAPrefsSubDlg)
@@ -73,6 +74,7 @@ BOOL CDlgSAPrefs23::OnInitDialog()
 		m_dcorr1.SetCheck(p_tablemap_db->GetSettingString(kOcrKeys[1], "decimal_correct") == "1" ? BST_CHECKED : BST_UNCHECKED);
 		m_dcorr2.SetCheck(p_tablemap_db->GetSettingString(kOcrKeys[2], "decimal_correct") == "1" ? BST_CHECKED : BST_UNCHECKED);
 		m_dcorr3.SetCheck(p_tablemap_db->GetSettingString(kOcrKeys[3], "decimal_correct") == "1" ? BST_CHECKED : BST_UNCHECKED);
+		m_ocr_memory.SetCheck(p_tablemap_db->GetSettingString("ocr_memory", "enabled") == "1" ? BST_CHECKED : BST_UNCHECKED);
 	}
 
 	return TRUE;  // return TRUE unless you set the focus to a control
@@ -98,8 +100,9 @@ void CDlgSAPrefs23::OnOK()
 		p_tablemap_db->SetSettingString(kOcrKeys[1], "decimal_correct", m_dcorr1.GetCheck() == BST_CHECKED ? "1" : "0");
 		p_tablemap_db->SetSettingString(kOcrKeys[2], "decimal_correct", m_dcorr2.GetCheck() == BST_CHECKED ? "1" : "0");
 		p_tablemap_db->SetSettingString(kOcrKeys[3], "decimal_correct", m_dcorr3.GetCheck() == BST_CHECKED ? "1" : "0");
+		p_tablemap_db->SetSettingString("ocr_memory", "enabled", m_ocr_memory.GetCheck() == BST_CHECKED ? "1" : "0");
 		// Re-read into the running AutoOcr engine so the change takes effect without
-		// a restart (the next OCR call re-Inits Tesseract with the new model).
+		// a restart (also reloads the OCR-memory toggle into g_ocr_memory).
 		AutoOcr()->LoadModelSettings();
 	}
 
