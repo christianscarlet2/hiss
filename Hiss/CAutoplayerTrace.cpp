@@ -43,8 +43,18 @@ CAutoplayerTrace::~CAutoplayerTrace() {
   Clear();
 }
 
+CString CAutoplayerTrace::GetTraceText() {
+  ENT
+  CString out;
+  for (int i = 0; i < _symboltrace_collection.GetSize(); ++i) {
+    out += _symboltrace_collection.GetAt(i);
+    out += "\n";
+  }
+  return out;
+}
+
 void CAutoplayerTrace::Clear() {
-  ENT 
+  ENT
   _indentation = 0;
   _number_of_log_lines = 0;
   _symboltrace_collection.RemoveAll();

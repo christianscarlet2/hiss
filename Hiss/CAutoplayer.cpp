@@ -46,6 +46,8 @@
 #include "CSymbolEngineUserchair.h"
 #include "CSymbolEnginePrwin.h"
 #include "CTableState.h"
+#include "CHandresetDetector.h"
+#include "CLogWriter.h"
 #include "MainFrm.h"
 #include "OpenHoldem.h"
 #include "PokerChat.hpp"

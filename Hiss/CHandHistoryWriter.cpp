@@ -35,6 +35,7 @@
 #include "CEngineContainer.h"
 #include "CHandresetDetector.h"
 #include "CScraper.h"
+#include "CLogWriter.h"
 #include "CSessionCounter.h"
 #include "CSymbolEngineActiveDealtPlaying.h"
 #include "CSymbolEngineTimingTells.h"
@@ -508,6 +509,13 @@ void CHandHistoryWriter::Flush() {
 
   // ---- route to complete\ or incomplete\ depending on import quality ----
   bool complete = HandLooksComplete();
+  // Replay logging: store the full ACR hand text as a hiss_log_hands row (background writer).
+  if (p_log_writer != NULL && p_log_writer->Enabled()) {
+    FILETIME ft; GetSystemTimeAsFileTime(&ft);
+    ULARGE_INTEGER u; u.LowPart = ft.dwLowDateTime; u.HighPart = ft.dwHighDateTime;
+    long long ms = (long long)((u.QuadPart - 116444736000000000ULL) / 10000ULL);
+    p_log_writer->LogHand(ms, CStringA(_hand_number).GetString(), complete, CStringA(out).GetString());
+  }
   CString path = complete ? _output_complete : _output_incomplete;
   if (path.IsEmpty()) { _hand_dirty = false; return; }
 

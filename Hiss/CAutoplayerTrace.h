@@ -31,6 +31,9 @@ class CAutoplayerTrace : public CSpaceOptimizedGlobalObject {
   void BackPatchValueAndLine(int index, double value, int starting_line_of_function, CString path);  
   void Indent(bool more);
   void Print(const char *action_taken, bool full_log_for_primary_formulas);
+  // Full decision-tree transcript as one string (for replay logging). Call BEFORE Print(),
+  // which clears the collection.
+  CString GetTraceText();
  public:
   void SetLastEvaluatedRelativeLineNumber(int relative_line_number) { _last_evaluated_relative_line_number = relative_line_number; }
   int  GetLastEvaluatedRelativeLineNumber() { return _last_evaluated_relative_line_number; }
