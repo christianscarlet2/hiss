@@ -38,6 +38,8 @@
 #include "CFunctionCollection.h"
 #include "CScarletBeast.h"
 #include "CScraper.h"
+#include "CHandresetDetector.h"
+#include "HudManager.h"
 #include "HudOverlayWindow.h"
 #include "CSymbolEngineAutoplayer.h"
 #include "CSymbolEngineChipAmounts.h"

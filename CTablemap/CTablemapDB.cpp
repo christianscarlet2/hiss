@@ -239,7 +239,35 @@ bool CTablemapDB::EnsureSchema() {
 		" tablemap_id INT REFERENCES tablemaps(id) ON DELETE CASCADE,"
 		" name TEXT, rgn_left INT, rgn_top INT, rgn_right INT, rgn_bottom INT,"
 		" width INT, height INT, use_default BOOL, match_mode INT, created BOOL,"
-		" pixels TEXT, PRIMARY KEY (tablemap_id, name));";
+		" pixels TEXT, PRIMARY KEY (tablemap_id, name));"
+		// ---- Logging / replay outbox (Phase A). Every row carries ts_ms + handnumber +
+		// betround and a `shipped` flag (the shipper marks rows once sent to the server).
+		"CREATE TABLE IF NOT EXISTS hiss_log_frames ("
+		" id BIGSERIAL PRIMARY KEY, ts_ms BIGINT NOT NULL, handnumber TEXT, betround INT,"
+		" png_path TEXT, sha256 TEXT, changed BOOL DEFAULT true, shipped BOOL DEFAULT false);"
+		"CREATE TABLE IF NOT EXISTS hiss_log_scrapes ("
+		" id BIGSERIAL PRIMARY KEY, ts_ms BIGINT NOT NULL, handnumber TEXT, betround INT,"
+		" region_name TEXT, ocr_text TEXT, is_crop BOOL DEFAULT true, shipped BOOL DEFAULT false);"
+		"CREATE TABLE IF NOT EXISTS hiss_log_symbols ("
+		" id BIGSERIAL PRIMARY KEY, ts_ms BIGINT NOT NULL, handnumber TEXT, betround INT,"
+		" name TEXT, value TEXT, shipped BOOL DEFAULT false);"
+		"CREATE TABLE IF NOT EXISTS hiss_log_decisions ("
+		" id BIGSERIAL PRIMARY KEY, ts_ms BIGINT NOT NULL, handnumber TEXT, betround INT,"
+		" hero_cards TEXT, action TEXT, amount DOUBLE PRECISION,"
+		" f_fold DOUBLE PRECISION, f_call DOUBLE PRECISION, f_check DOUBLE PRECISION,"
+		" f_raise DOUBLE PRECISION, f_allin DOUBLE PRECISION, f_betsize DOUBLE PRECISION,"
+		" trace TEXT, shipped BOOL DEFAULT false);"
+		"CREATE TABLE IF NOT EXISTS hiss_log_debug ("
+		" id BIGSERIAL PRIMARY KEY, ts_ms BIGINT NOT NULL, handnumber TEXT, category TEXT,"
+		" line TEXT, shipped BOOL DEFAULT false);"
+		"CREATE TABLE IF NOT EXISTS hiss_log_hands ("
+		" id BIGSERIAL PRIMARY KEY, ts_ms BIGINT NOT NULL, handnumber TEXT, complete BOOL,"
+		" hh_text TEXT, shipped BOOL DEFAULT false);"
+		"CREATE INDEX IF NOT EXISTS idx_hlframes_hand ON hiss_log_frames(handnumber);"
+		"CREATE INDEX IF NOT EXISTS idx_hlframes_shipped ON hiss_log_frames(shipped);"
+		"CREATE INDEX IF NOT EXISTS idx_hlscrapes_hand ON hiss_log_scrapes(handnumber);"
+		"CREATE INDEX IF NOT EXISTS idx_hlsymbols_hand ON hiss_log_symbols(handnumber);"
+		"CREATE INDEX IF NOT EXISTS idx_hldecisions_hand ON hiss_log_decisions(handnumber);";
 	return ExecCommand(ddl);
 }
 
