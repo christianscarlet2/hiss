@@ -29,6 +29,7 @@
 #include "CHandresetDetector.h"
 #include "CHeartbeatThread.h"
 #include "HudManager.h"
+#include "CLogWriter.h"
 #include "CIteratorThread.h"
 #include "CLazyScraper.h"
 #include "CMemoryPool.h"
@@ -130,6 +131,8 @@ void InstantiateAllSingletons() {
   write_log(Preferences()->debug_singletons(), "[Singletons] Going to create CPokerTrackerThread\n");
   assert(!p_pokertracker_thread);
   p_pokertracker_thread = new CPokerTrackerThread;
+  write_log(Preferences()->debug_singletons(), "[Singletons] Going to create CLogWriter\n");
+  if (p_log_writer == NULL) { p_log_writer = new CLogWriter; p_log_writer->Start(); }
   write_log(Preferences()->debug_singletons(), "[Singletons] Going to create CHudManager\n");
   assert(!p_hud_manager);
   p_hud_manager = new CHudManager;
@@ -229,6 +232,8 @@ void DeleteAllSingletons() {
   // that depends on other classes, e.g. the destructor of the autoconnector
   // needs its session_id (CSessionCounter).
   //
+  write_log(Preferences()->debug_singletons(), "[Singletons] Deleting log writer\n");
+  DELETE_AND_CLEAR(p_log_writer)   // destructor joins the writer thread
   write_log(Preferences()->debug_singletons(), "[Singletons] Deleting casino interface\n");
   DELETE_AND_CLEAR(p_casino_interface)
   write_log(Preferences()->debug_singletons(), "[Singletons] Deleting occlusion check\n");

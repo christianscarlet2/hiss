@@ -50,7 +50,11 @@ using namespace std;
 #include "..\Shared\ParallelWorkerPool.h"
 #include "..\CTablemap\CTablemapDB.h"
 #include "COcrWorker.h"
+#include "CLogWriter.h"
+#include "CHandresetDetector.h"
+#include "CBetroundCalculator.h"
 #include <tlhelp32.h>
+#include <vector>
 
 CScraper *p_scraper = NULL;
 bool g_dump_scrapes_once = false;
@@ -1958,6 +1962,34 @@ void CScraper::SaveHeartbeatFrame() {
 	// be wasteful, so only sweep every ~60 frames.
 	if ((++_frame_prune_counter % 60) == 0) {
 		PruneFramesOlderThan(ms - 600000ULL);   // 10 minutes
+	}
+
+	// Replay logging: copy this frame as top-down BGRA and hand it to the background writer
+	// (PNG encode + hiss_log_frames row happen off this thread). Cheap memcpy here only.
+	if (p_log_writer != NULL && p_log_writer->Enabled()) {
+		BITMAP bm = {0};
+		if (GetObject(_entire_window_cur, sizeof(bm), &bm) && bm.bmWidth > 0 && bm.bmHeight > 0) {
+			int w = bm.bmWidth, h = bm.bmHeight;
+			std::vector<BYTE> buf((size_t)w * h * 4);
+			BITMAPINFO bi = {0};
+			bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+			bi.bmiHeader.biWidth = w;
+			bi.bmiHeader.biHeight = -h;                 // top-down for cv::imwrite
+			bi.bmiHeader.biPlanes = 1;
+			bi.bmiHeader.biBitCount = 32;
+			bi.bmiHeader.biCompression = BI_RGB;
+			HDC hdc = GetDC(NULL);
+			if (hdc != NULL) {
+				if (GetDIBits(hdc, _entire_window_cur, 0, h, buf.data(), &bi, DIB_RGB_COLORS)) {
+					CString hand = (p_handreset_detector != NULL)
+						? p_handreset_detector->GetHandNumber() : CString("");
+					int br = (p_betround_calculator != NULL) ? p_betround_calculator->betround() : 0;
+					p_log_writer->LogFrame(buf.data(), w, h, (long long)ms,
+						CStringA(hand).GetString(), br);
+				}
+				ReleaseDC(NULL, hdc);
+			}
+		}
 	}
 }
 

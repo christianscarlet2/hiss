@@ -184,6 +184,7 @@
     <ClCompile Include="CReplayFrame.cpp" />
     <ClCompile Include="Bitmaps.cpp" />
     <ClCompile Include="CLazyScraper.cpp" />
+    <ClCompile Include="CLogWriter.cpp" />
     <ClCompile Include="CScraper.cpp" />
     <ClCompile Include="CardFunctions.cpp" />
     <ClCompile Include="CStringHashtableTemplate.cpp" />
@@ -236,6 +237,7 @@
     <ClInclude Include="ChatTerminalServer.h" />
     <ClInclude Include="ChatTerminalWindow.h" />
     <ClInclude Include="CLazyScraper.h" />
+    <ClInclude Include="CLogWriter.h" />
     <ClInclude Include="CLevDistance.h" />
     <ClInclude Include="CLimitScraper.h" />
     <ClInclude Include="CMemoryPool.h" />

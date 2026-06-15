@@ -409,6 +409,7 @@
     <ClCompile Include="CReplayFrame.cpp" />
     <ClCompile Include="Bitmaps.cpp" />
     <ClCompile Include="CLazyScraper.cpp" />
+    <ClCompile Include="CLogWriter.cpp" />
     <ClCompile Include="COcrWorker.cpp" />
     <ClCompile Include="CrashHandler.cpp" />
     <ClCompile Include="CSymbolEngineTimingTells.cpp" />
@@ -564,6 +565,7 @@
     <ClInclude Include="ChatTerminalServer.h" />
     <ClInclude Include="ChatTerminalWindow.h" />
     <ClInclude Include="CLazyScraper.h" />
+    <ClInclude Include="CLogWriter.h" />
     <ClInclude Include="CLevDistance.h" />
     <ClInclude Include="CLimitScraper.h" />
     <ClInclude Include="CMemoryPool.h" />
