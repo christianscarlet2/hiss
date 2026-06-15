@@ -204,6 +204,12 @@ class Learner(tk.Tk):
         menubar = tk.Menu(self)
         tools = tk.Menu(menubar, tearoff=0)
         self.prefs = load_prefs()
+        # Restore last window size+position (saved on exit).
+        _g = self.prefs.get("geometry")
+        if _g:
+            try: self.geometry(_g)
+            except Exception: pass
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.on_top = tk.BooleanVar(value=bool(self.prefs.get("always_on_top", False)))
         tools.add_checkbutton(label="Always on Top", variable=self.on_top,
                               command=self.toggle_on_top)
@@ -239,6 +245,9 @@ class Learner(tk.Tk):
         rf = ttk.LabelFrame(self, text="Your reasoning (why are you making this play?)")
         rf.pack(fill="both", expand=False, pady=4)
         self.reason = tk.Text(rf, height=5, wrap="word"); self.reason.pack(fill="x", padx=6, pady=4)
+        # Ctrl+Enter inside the reason box submits the play (returns "break" -> no newline).
+        self.reason.bind("<Control-Return>", lambda e: self.commit_pending())
+        self.reason.bind("<Control-KP_Enter>", lambda e: self.commit_pending())
 
         # --- amount + action buttons ---
         af = ttk.Frame(self); af.pack(fill="x", pady=4)
@@ -390,6 +399,14 @@ class Learner(tk.Tk):
             return
         fn()
         return "break"
+
+    def _on_close(self):
+        # Remember window size+position so it reopens in the same spot.
+        try:
+            self.prefs["geometry"] = self.geometry()
+            save_prefs(self.prefs)
+        except Exception: pass
+        self.destroy()
 
     def pick_target(self):
         self.status.config(text="Click the target window (e.g. the Claude box in VSCode) within 4 seconds...")
