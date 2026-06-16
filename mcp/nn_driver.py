@@ -4,23 +4,42 @@
 The "special setting" is simply running this script: start it = the NN plays; stop it = the
 OHF plays. It uses only the bot's existing HTTP API, so it can't touch the live binary.
 
-Flow (mirrors the proven poker-server decideHissNN path):
-  1. GET  http://127.0.0.1:27654/api/table-state         -> live table (hero hole, board, stacks)
-  2. POST http://192.168.1.39:8087/decide  (seat-view)   -> {sym}  (headless ScarletBeast = full infoset)
-  3. POST http://192.168.1.39:8088/nn-decide ({sym,hole,board,bblind}) -> {action, f$betsize, f$allin}
-  4. GET  http://127.0.0.1:27654/api/action?do=<a>[&amount=<bb>]&force=1   -> the bot clicks it
+Flow (turn-gated on ismyturn; the sym comes from the LIVE bot, not swiftsnake's /decide):
+  1. poll http://127.0.0.1:27654/api/symbols?names=ismyturn   -> rising edge = the hero's turn
+  2. GET  http://127.0.0.1:27654/api/table-state               -> hero hole, board, bblind
+  3. GET  http://127.0.0.1:27654/api/symbols?names=<86 NUMERIC_SYMBOLS> -> the full sym (local, DB-free)
+  4. POST http://192.168.1.39:8088/nn-decide ({sym,hole,board,bblind}) -> {action, f$betsize, f$allin}
+  5. GET  http://127.0.0.1:27654/api/action?do=<a>[&amount=<bb>]&force=1   -> the bot clicks it
 
-Run the bot with the AUTOPLAYER OFF so the NN (not the OHF) drives. One action per (hand,street).
+Only /nn-decide is remote (pure inference, ~10ms); everything else is local, so a swamped
+swiftsnake DB can't stall the NN. Run the bot with the AUTOPLAYER OFF so the NN drives.
   python nn_driver.py            # live: NN plays
   python nn_driver.py --dry-run  # read + decide + print, but DON'T click (safe test)
 """
 import os, sys, json, time, subprocess, urllib.parse
 
 BOT    = os.environ.get("NN_BOT_URL",    "http://127.0.0.1:27654")
-DECIDE = os.environ.get("NN_DECIDE_URL", "http://192.168.1.39:8087/decide")
 NN     = os.environ.get("NN_URL",        "http://192.168.1.39:8088/nn-decide")
-POLL   = float(os.environ.get("NN_POLL_S", "0.8"))
+POLL   = float(os.environ.get("NN_POLL_S", "0.6"))
 DRY    = "--dry-run" in sys.argv
+
+# The infoset the NN was trained on (features.py NUMERIC_SYMBOLS). The LIVE bot resolves all of
+# these locally via /api/symbols (verified 86/86), so we read the sym straight from the bot --
+# fast and reliable -- instead of swiftsnake's /decide (which hangs under postgres load).
+NUMERIC_SYMBOLS = ("prwin,handrank169,f$BoardWet,f$BoardDry,f$ScaryBoard,f$BoardHighCardFoldy,"
+    "f$BoardHighCardSticky,f$BoardParched,HaveTopPair,HaveOverPair,HaveSet,HaveTwoPair,HaveFlush,"
+    "HaveStraight,FlushPossible,StraightPossible,f$HaveStrongMade,f$HaveBigMade,f$HaveOnePair,"
+    "f$HaveComboDraw,f$HaveBigDraw,f$HaveWeakDraw,betround,nplayersdealt,nopponentsplaying,"
+    "f$InPositionPre,f$InPositionPost,f$HeadsUpPot,f$Is6Max,StackSize,f$EffStack,PotSize,"
+    "AmountToCall,f$SPR,f$Committed,f$M,f$Mzone,f$DeepStack,f$ShortStack,f$PushFoldStack,"
+    "f$ReshoveSpot,bblind,sblind,f$AnteTotal,f$Stage,tgi_players_remaining,f$NearBubble,f$InMoney,"
+    "f$BubbleTighten,icm_fold,icm_callwin,icm_calllose,f$Opp_VPIP,f$Opp_PFR,f$Opp_AF,f$Opp_WTSD,"
+    "f$Opp_Hands,f$Opp_Known,f$Opp_IsNit,f$Opp_IsLoose,f$Opp_IsStation,f$Opp_IsPassive,"
+    "f$Opp_IsAggro,f$Opp_IsTAG,f$Opp_IsLAG,f$Opp_IsFish,f$Opp_IsManiac,f$Opp_Foldy,"
+    "f$Opp_ThreeBetsLight,f$Opp_PotCommitted,lastraiseractiontime,f$TimingSaysWeak,"
+    "f$TimingSaysStrong,Raises,Calls,Bets,BotRaisedBeforeFlop,BotRaisedOnFlop,BotRaisedOnTurn,"
+    "f$Style,f$OpenBase,f$CbetFreq,f$ThreeBetBluffFreq,f$DoubleBarrel,validator_ok,"
+    "validator_confidence")
 
 # Use curl, not urllib: on this box something (Defender/firewall app-filtering) resets python's
 # outbound LAN POSTs mid-body, but curl is reliable on every leg. Keeps the driver dependency-free.
@@ -95,8 +114,8 @@ def decide_and_act(mono):
     if not sv:
         print("[nn_driver] my turn but no readable hole (sat out / between hands) -- skip", flush=True)
         return
-    dr = _post(DECIDE, {k: v for k, v in sv.items() if not k.startswith("_")})
-    sym = dr.get("sym", {}) if isinstance(dr, dict) else {}
+    # Sym straight from the live bot (local, DB-free) -- not swiftsnake's /decide.
+    sym = _get(BOT + "/api/symbols?names=" + NUMERIC_SYMBOLS)
     nn = _post(NN, {"sym": sym, "hole": sv["hole"], "board": sv["board"], "bblind": sv["bblind"]})
     a = nn.get("action", "fold")
     bb = float(nn.get("f$betsize", 0) or 0)
@@ -116,7 +135,7 @@ def decide_and_act(mono):
 
 
 def main():
-    print("[nn_driver] %s  bot=%s decide=%s nn=%s" % ("DRY-RUN" if DRY else "LIVE", BOT, DECIDE, NN), flush=True)
+    print("[nn_driver] %s  bot=%s nn=%s" % ("DRY-RUN" if DRY else "LIVE", BOT, NN), flush=True)
     print("[nn_driver] gating on ismyturn (rising edge). Waiting for your turn...", flush=True)
     prev = False
     last_act = 0.0
