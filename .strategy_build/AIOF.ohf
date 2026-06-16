@@ -34,6 +34,8 @@ WHEN Others Fold FORCE
 //  wider than early/middle at every depth. >25bb: stop open-jamming, fold.
 //-----------------------------------------------------------------------------
 ##f$AIOF_Open##
+// Never fold the nut tier, at ANY depth -- freeroll fields are loose and pay off jams.
+WHEN listAlwaysJam RaiseMax FORCE
 WHEN f$AIOF_Late AND StackSize <= 7  AND listShove75 RaiseMax FORCE
 WHEN f$AIOF_Late AND StackSize <= 12 AND listShove50 RaiseMax FORCE
 WHEN f$AIOF_Late AND StackSize <= 18 AND listShove30 RaiseMax FORCE
@@ -50,6 +52,8 @@ WHEN Others Fold FORCE
 //  Reshove (call-off all-in over a raise): value-weighted, widening when shorter.
 //-----------------------------------------------------------------------------
 ##f$AIOF_Reshove##
+// Re-jam the nut tier over any raise, at any depth.
+WHEN listAlwaysJam RaiseMax FORCE
 WHEN StackSize <= 10 AND listReshoveWide  RaiseMax FORCE
 WHEN StackSize <= 16 AND listReshoveMid   RaiseMax FORCE
 WHEN StackSize <= 22 AND listReshoveTight RaiseMax FORCE
@@ -63,6 +67,10 @@ WHEN Others RETURN 0 FORCE
 //=============================================================================
 //  SHOVE RANGES (open).  ~75 / 50 / 30 / 15 / 8 percent of hands.
 //=============================================================================
+##listAlwaysJam##
+// Get-it-in at ANY depth -- the tier you never fold, even deep.
+AA KK QQ JJ AKs AKo
+
 ##listShove75##
 // ultra-short late jam (~75%)
 22 33 44 55 66 77 88 99 TT JJ QQ KK AA
