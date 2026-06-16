@@ -1,0 +1,177 @@
+//*****************************************************************************
+//  AIOF.ohf  --  ALL-IN or FOLD  (a complete, self-contained push/fold profile)
+//
+//  Every preflop decision is RaiseMax (jam the whole stack) or Fold. No limping,
+//  no flat-calling, no sized raises. Built for hyper-turbo / spin&go / very short
+//  stacks, and as a clean Nash-style push/fold base you can tune.
+//
+//  Engine conventions (matches the ScarletBeast tree):
+//    - StackSize and bet symbols are in BIG BLINDS.
+//    - Hand-range LISTS are ##named## (hands spelled out) and referenced bare.
+//    - All-in == RaiseMax.  OpenPPL has NO not-equal operator (use ==, >=, <=, NOT).
+//
+//  Width scales with effective stack depth and position; tighter when facing a
+//  raise (reshove). Above ~25bb it stops open-jamming (deep AIOF is -EV) and folds.
+//  Postflop never voluntarily invests (you are all-in or folded before the flop).
+//
+//  TUNING: widen / tighten purely by editing the ##listShove*## / ##listReshove*##
+//  blocks. The decision logic never needs to change.
+//*****************************************************************************
+
+##f$preflop##
+// Scrape-safety gate: on a HARD mis-scrape, never jam the stack on garbage data.
+// Take the free check if there is one, otherwise fold. (validator_ok is engine-native.)
+WHEN validator_ok == 0 AND AmountToCall == 0 Check FORCE
+WHEN validator_ok == 0 Fold FORCE
+// Facing a raise / 3-bet -> re-shove a value range, else fold.
+WHEN Raises >= 1 RETURN f$AIOF_Reshove FORCE
+// Unopened or limped to us -> open-shove by stack depth x position.
+WHEN Raises == 0 RETURN f$AIOF_Open FORCE
+WHEN Others Fold FORCE
+
+//-----------------------------------------------------------------------------
+//  Open-shove (folded / limped to us): late position (CO/BTN/SB heads-up) jams
+//  wider than early/middle at every depth. >25bb: stop open-jamming, fold.
+//-----------------------------------------------------------------------------
+##f$AIOF_Open##
+WHEN f$AIOF_Late AND StackSize <= 7  AND listShove75 RaiseMax FORCE
+WHEN f$AIOF_Late AND StackSize <= 12 AND listShove50 RaiseMax FORCE
+WHEN f$AIOF_Late AND StackSize <= 18 AND listShove30 RaiseMax FORCE
+WHEN f$AIOF_Late AND StackSize <= 25 AND listShove15 RaiseMax FORCE
+WHEN StackSize <= 7  AND listShove50 RaiseMax FORCE
+WHEN StackSize <= 12 AND listShove30 RaiseMax FORCE
+WHEN StackSize <= 18 AND listShove15 RaiseMax FORCE
+WHEN StackSize <= 25 AND listShovePremium RaiseMax FORCE
+// Free option in the big blind: take the check, never fold for free.
+WHEN InBigBlind AND AmountToCall == 0 Check FORCE
+WHEN Others Fold FORCE
+
+//-----------------------------------------------------------------------------
+//  Reshove (call-off all-in over a raise): value-weighted, widening when shorter.
+//-----------------------------------------------------------------------------
+##f$AIOF_Reshove##
+WHEN StackSize <= 10 AND listReshoveWide  RaiseMax FORCE
+WHEN StackSize <= 16 AND listReshoveMid   RaiseMax FORCE
+WHEN StackSize <= 22 AND listReshoveTight RaiseMax FORCE
+WHEN Others Fold FORCE
+
+// "Late" = cutoff, button, the late seat, or the small blind (heads-up vs the BB).
+##f$AIOF_Late##
+WHEN InLatePosition OR InCutOff OR InButton OR InSmallBlind RETURN 1 FORCE
+WHEN Others RETURN 0 FORCE
+
+//=============================================================================
+//  SHOVE RANGES (open).  ~75 / 50 / 30 / 15 / 8 percent of hands.
+//=============================================================================
+##listShove75##
+// ultra-short late jam (~75%)
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+A2o A3o A4o A5o A6o A7o A8o A9o ATo AJo AQo AKo
+K2s K3s K4s K5s K6s K7s K8s K9s KTs KJs KQs
+K5o K6o K7o K8o K9o KTo KJo KQo
+Q4s Q5s Q6s Q7s Q8s Q9s QTs QJs
+Q8o Q9o QTo QJo
+J6s J7s J8s J9s JTs
+J8o J9o JTo
+T6s T7s T8s T9s
+T8o T9o
+96s 97s 98s
+97o 98o
+85s 86s 87s
+86o 87o
+74s 75s 76s
+64s 65s
+53s 54s
+43s
+
+##listShove50##
+// short jam (~50%)
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+A4o A5o A6o A7o A8o A9o ATo AJo AQo AKo
+K4s K5s K6s K7s K8s K9s KTs KJs KQs
+K8o K9o KTo KJo KQo
+Q7s Q8s Q9s QTs QJs
+Q9o QTo QJo
+J7s J8s J9s JTs
+J9o JTo
+T7s T8s T9s
+T9o
+96s 97s 98s
+98o
+86s 87s
+75s 76s
+65s
+54s
+
+##listShove30##
+// medium jam (~30%)
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+A8o A9o ATo AJo AQo AKo
+K8s K9s KTs KJs KQs
+KTo KJo KQo
+Q9s QTs QJs
+QJo
+J9s JTs
+T8s T9s
+98s
+87s
+
+##listShove15##
+// tight jam (~15%)
+44 55 66 77 88 99 TT JJ QQ KK AA
+A8s A9s ATs AJs AQs AKs
+ATo AJo AQo AKo
+KTs KJs KQs
+KJo KQo
+QJs
+
+##listShovePremium##
+// nut-only jam (~8%) -- used when deeper than ideal for AIOF
+88 99 TT JJ QQ KK AA
+AQs AKs
+AKo
+
+//=============================================================================
+//  RESHOVE RANGES (re-jam over a raise).  value-weighted.
+//=============================================================================
+##listReshoveWide##
+// <=10bb call-off (~22%)
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A7s A8s A9s ATs AJs AQs AKs
+A9o ATo AJo AQo AKo
+KTs KJs KQs
+KJo KQo
+QJs
+
+##listReshoveMid##
+// <=16bb call-off (~12%)
+55 66 77 88 99 TT JJ QQ KK AA
+A9s ATs AJs AQs AKs
+AJo AQo AKo
+KQs
+
+##listReshoveTight##
+// <=22bb call-off (~7%)
+88 99 TT JJ QQ KK AA
+AJs AQs AKs
+AQo AKo
+KQs
+
+//=============================================================================
+//  POSTFLOP -- safety net only. An AIOF bot is all-in or folded preflop, so it
+//  should never reach a postflop decision with chips behind. Never invest here.
+//=============================================================================
+##f$flop##
+WHEN AmountToCall == 0 Check FORCE
+WHEN Others Fold FORCE
+
+##f$turn##
+WHEN AmountToCall == 0 Check FORCE
+WHEN Others Fold FORCE
+
+##f$river##
+WHEN AmountToCall == 0 Check FORCE
+WHEN Others Fold FORCE
