@@ -47,15 +47,13 @@ def _cards(arr):
 
 
 def seat_view(gs):
-    """live /api/table-state -> the /decide seat-view, or None if it's not the hero's turn."""
+    """live /api/table-state -> the /decide seat-view. The CALLER gates on ismyturn (the bot's
+    real turn signal); `toact` in table-state is unreliable (often -1) so we do NOT gate on it."""
     hero = gs.get("userchair", -1)
-    toact = gs.get("toact", -1)
     players = gs.get("players", []) or []
     nchairs = gs.get("nchairs", len(players)) or len(players)
     if hero is None or hero < 0:
         return None                       # observer / not seated -> nothing to drive
-    if toact != hero:
-        return None                       # not our turn
     by = {p.get("chair"): p for p in players}
     h = by.get(hero, {})
     hole = _cards(h.get("cards"))
@@ -82,35 +80,53 @@ def click(action, amount):
     return _get(BOT + "/api/action?" + urllib.parse.urlencode(q))
 
 
+def ismyturn():
+    """The bot's real turn signal (toact is unreliable). 1 == it's the hero's turn to act."""
+    try:
+        v = _get(BOT + "/api/symbols?names=ismyturn").get("ismyturn", 0)
+        return (v or 0) >= 1
+    except Exception:
+        return False
+
+
+def decide_and_act(mono):
+    gs = _get(BOT + "/api/table-state")
+    sv = seat_view(gs)
+    if not sv:
+        print("[nn_driver] my turn but no readable hole (sat out / between hands) -- skip", flush=True)
+        return
+    dr = _post(DECIDE, {k: v for k, v in sv.items() if not k.startswith("_")})
+    sym = dr.get("sym", {}) if isinstance(dr, dict) else {}
+    nn = _post(NN, {"sym": sym, "hole": sv["hole"], "board": sv["board"], "bblind": sv["bblind"]})
+    a = nn.get("action", "fold")
+    bb = float(nn.get("f$betsize", 0) or 0)
+    allin = ((float(nn.get("f$allin", 0) or 0)) > 0) or a == "allin"
+    do = "allin" if allin else ("raise" if a == "raise" else a)
+    amount = bb if (do == "raise") else 0
+    note = ""
+    if do == "raise" and amount <= 0:
+        # NN said raise but gave no numpad size -> an unsized raise can misfire on the real
+        # table; downgrade to the always-legal call rather than guess.
+        do, amount, note = "call", 0, "  (raise->call: no size)"
+    print("[nn_driver] %s hole=%s board=%s -> NN: %s%s%s  (val=%s)" %
+          (sv["_handnumber"], sv["hole"], sv["board"] or "-", do,
+           (" to %.1fbb" % amount) if amount else "", note, nn.get("value")), flush=True)
+    if not DRY:
+        click(do, amount)
+
+
 def main():
     print("[nn_driver] %s  bot=%s decide=%s nn=%s" % ("DRY-RUN" if DRY else "LIVE", BOT, DECIDE, NN), flush=True)
-    last_key = None
+    print("[nn_driver] gating on ismyturn (rising edge). Waiting for your turn...", flush=True)
+    prev = False
+    last_act = 0.0
     while True:
         try:
-            gs = _get(BOT + "/api/table-state")
-            sv = seat_view(gs)
-            if sv:
-                key = (sv["_handnumber"], sv["_board"], sv["hole"])     # one action per (hand,street)
-                if key != last_key:
-                    dr = _post(DECIDE, {k: v for k, v in sv.items() if not k.startswith("_")})
-                    sym = dr.get("sym", {}) if isinstance(dr, dict) else {}
-                    nn = _post(NN, {"sym": sym, "hole": sv["hole"], "board": sv["board"], "bblind": sv["bblind"]})
-                    a = nn.get("action", "fold")
-                    bb = float(nn.get("f$betsize", 0) or 0)
-                    allin = ((float(nn.get("f$allin", 0) or 0)) > 0) or a == "allin"
-                    do = "allin" if allin else ("raise" if a == "raise" else a)
-                    amount = bb if (do == "raise") else 0
-                    note = ""
-                    if do == "raise" and amount <= 0:
-                        # NN said raise but gave no numpad size -> an unsized raise can misfire on
-                        # the real table; downgrade to the always-legal call rather than guess.
-                        do, amount, note = "call", 0, "  (raise->call: no size)"
-                    print("[nn_driver] %s hole=%s board=%s -> NN: %s%s%s  (val=%s)" %
-                          (sv["_handnumber"], sv["hole"], sv["board"] or "-", do,
-                           (" to %.1fbb" % amount) if amount else "", note, nn.get("value")), flush=True)
-                    if not DRY:
-                        click(do, amount)
-                    last_key = key
+            now = ismyturn()
+            if now and not prev and (time.monotonic() - last_act) > 3.0:   # rising edge + cooldown
+                decide_and_act(time.monotonic())
+                last_act = time.monotonic()
+            prev = now
         except Exception as e:
             print("[nn_driver] err:", e, flush=True)
         time.sleep(POLL)
