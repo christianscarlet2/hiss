@@ -373,7 +373,6 @@ def call_tool(name, args):
             return [{"type": "text", "text": "logs/scrapes does not exist yet (run trigger_scrape_dump)."}]
         return [{"type": "text", "text": "\n".join(list_files(SCRAPES, ["*"], rel_to=SCRAPES))}]
     if name == "open_md_viewer":
-        import subprocess
         raw = str(args.get("path", "")).strip()
         if not raw:
             return [{"type": "text", "text": "No path given."}]
