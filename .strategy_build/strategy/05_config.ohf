@@ -365,6 +365,12 @@ WHEN Others RETURN 2.5 FORCE
 // over exactly one raise, in/near position or the blinds, vs a wide opener. [JL p1161][RE p2280]
 // Win the pot uncontested - subdue the enemy without fighting. [SunTzu III.2 "supreme
 // excellence is to subdue the enemy without fighting"][48L L28 "enter action with boldness"].
+// NOT f$PushFoldStack makes the band genuinely DISJOINT from push/fold: on an ante table
+// the Red-zone M<=5 trigger can push the jam regime above 15bb, so the raw 15<EffStack<=25
+// window would otherwise overlap it. The push/fold tree (open-jam, ICM call) owns that case;
+// this re-steal owns only the truly-deeper 16-25bb spots. Honors the "no gap or overlap"
+// handoff invariant in the dial itself, not just by f$preflop dispatch order. [HoH2 p140]
+WHEN f$PushFoldStack RETURN false FORCE
 WHEN Raises = 1 AND f$EffStack > 15 AND f$EffStack <= 25 AND (f$Opp_IsLoose OR f$Opp_IsAggro) AND (InButton OR InCutOff OR InSmallBlind OR InBigBlind) AND listReshove RETURN true FORCE
 WHEN Others RETURN false FORCE
 
