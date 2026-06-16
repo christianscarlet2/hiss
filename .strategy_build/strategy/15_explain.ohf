@@ -32,7 +32,7 @@
 0
 
 ##f$expl_call_setmine##
-//~ CALL to SET-MINE. Risking {AmountToCall}bb (<=~10% of my {f$EffStack}bb) with a small/medium pair for the implied odds - I am hunting a flopped set to stack him; folding everything else. Pot {PotSize}bb, ~{tgi_players_remaining} left.
+//~ CALL to SET-MINE. Risking {AmountToCall}bb of my {f$EffStack}bb with a small/medium pair for the implied odds (enough stack behind to get paid - ~15x+ vs an open, or <=~10% of stack vs a 3-bet) - I am hunting a flopped set to stack him; folding everything else. Pot {PotSize}bb, ~{tgi_players_remaining} left.
 0
 
 ##f$expl_flat_ip##
@@ -44,7 +44,7 @@
 0
 
 ##f$expl_pushfold##
-//~ PUSH/FOLD MODE. Effective {f$EffStack}bb (<=~10) - too short to play postflop, so it is shove-or-fold. Jamming a position-scaled near-Nash range to maximize fold equity + pick up {PotSize}bb of blinds/antes. Survival = chips; a timely jam beats blinding out. ~{tgi_players_remaining} left.
+//~ PUSH/FOLD MODE. Effective {f$EffStack}bb (<=~15, or M<=5) - too short to play postflop, so it is shove-or-fold. Jamming a position-scaled near-Nash range to maximize fold equity + pick up {PotSize}bb of blinds/antes. Survival = chips; a timely jam beats blinding out. ~{tgi_players_remaining} left.
 0
 
 ##f$expl_jam##

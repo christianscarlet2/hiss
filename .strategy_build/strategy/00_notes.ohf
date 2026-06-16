@@ -55,9 +55,9 @@
 //  PokerBooks library, distilled and reconciled into the dials above. Each new
 //  source carries a citation tag used inline in 05_config / 20_lists / 10_opponents:
 //
-//    [HoH] Harrington on Hold'em I-II (Harrington & Robertie) - the M-ratio /
-//          inflection-point endgame. Drives f$M / f$Mzone and the antes-aware
-//          push/fold + short-stack triggers. "First-in vigorish" as M falls.
+//    [HoH] Harrington on Hold'em I-II (Harrington & Robertie); [HoH2] = Vol-II page
+//          cites - the M-ratio / inflection-point endgame. Drives f$M / f$Mzone and
+//          the antes-aware push/fold + short-stack triggers. "First-in vigorish" as M falls.
 //    [KE]  Kill Everyone / [KP] Kill Phil (Nelson, Rodman, Streib, Heston) -
 //          CSI stages, equilibrium (Nash) push/fold, ICM bubble factor. Drives
 //          the bubble-tightened ICM call gate and the move-in-or-fold short game.
@@ -73,11 +73,40 @@
 //    [PMM] Poker Math That Matters (Gaines) / [MoH] Math of Hold'em (Moshman) -
 //          exact pot odds (f$RequiredEquity), fold-equity / MDF, the 15x set-mine
 //          rule (f$SetMineOK, tighter than the old 10% f$WithinSpecRisk).
-//    [SNG] SNG Blueprint / Moshman SNG / Shaw "Secrets of Sit'n'gos" - stage &
-//          bubble play. Drives f$Stage / f$NearBubble / f$BubbleTighten + listCallShoveBubble.
+//    [SNG] SNG Blueprint / Moshman SNG / [SoS] Shaw "Secrets of Sit'n'gos" - stage
+//          & bubble play. Drives f$Stage / f$NearBubble / f$BubbleTighten + the
+//          listCallShove/listCallShoveBubble split and f$HeadsUpTourney. ([SoS] is
+//          cited inline as its own tag where Shaw's bubble/HU calls are specific.)
+//    [V6]  "How to Beat 6-Max Cash" (Vosti) - 6-max range widths; drives f$Is6Max
+//          and the listOpenEP6 / listOpenMP6 6-max open branch (with [RF]).
 //    [EM]  Ed Miller "Playing the Player" / "How to Read Hands" / [TN] Tri Nguyen
 //          "Poker Blueprint" - stat-based opponent typing: the new TAG/LAG/fish/
 //          maniac archetypes in 10_opponents (fixes IsAggro firing on AF alone).
+//
+//  ---------------------------------------------------------------------------
+//  TIER-2 WAVE-1 LIBRARY EXPANSION (2026-06-15) - cash/MTT/SNG/HU technique. 18
+//  books, deployed live, lint/parse clean (full legend + per-book deltas in
+//  BOOKS_PROGRESS.md). These tags are also bundled at the head of the Tier-2 dials
+//  in 05_config; registered here so EVERY inline tag resolves from this file:
+//
+//    [PNL] Flynn/Mehta/Miller "Professional No-Limit Hold'em" - the hand-class-aware
+//          SPR/commitment bands (f$Committed; corrected the Tier-1 flat SSNL version).
+//    [HC]  Harrington on Cash Games - deeper-stack value/commitment & the donk/min-bet
+//          read; the tighter ~25x set-mine floor vs a nit (f$SetMineOK).
+//    [RE]  Bertok/Nelson "The Raiser's Edge" - re-steal/3-bet-jam band (f$ReshoveSpot,
+//          listReshove) and the <=15bb all-in zone.
+//    [JL]  Jonathan Little "Secrets of Pro Tournament Poker" - the same re-steal band.
+//    [ASH] Danny Ashman "Secrets of Short-handed NL" - short-handed barreling.
+//    [EG]  Seidman "Easy Game" / [ER] Nguyen "NL Workbook: Exploiting Regulars" (the
+//          [W] workbook) / [LTBR] "Let There Be Range" (Nguyen/CTS) - the double-barrel
+//          gate (f$DoubleBarrel) and opponent-typed 3-bet-bluff freq (f$ThreeBetBluffFreq).
+//    [DFR] "Dynamic Full Ring Poker" (Splitsuit) - full-ring tightening / the c-bet cap.
+//    [RF]  Ryan Fees 6-max NL guide - the 6-max EP/MP open widths (with [V6]).
+//    [HUM] Moshman "Heads-Up No-Limit" / [HUSNG] Mersenneary HUSNG guide - the HU open/
+//          defend widths (listOpenHU/listDefendHU) and HU open size (f$Open_RaiseTo_HU).
+//    [SNF] Snyder "Tournament Formula" / [SYS] "Systematic SNG" / [NSS] Shaw "Secrets of
+//          Non-Standard SNGs" - structure-speed & DON/satellite survival (specified, mostly
+//          DEFERRED to backlog; cited where a live dial leans on them, e.g. the all-in zone).
 //
 //  ---------------------------------------------------------------------------
 //  TIER-2 WAVE-2 LIBRARY EXPANSION (2026-06-15) - MTT decision-logs, Gordon's
