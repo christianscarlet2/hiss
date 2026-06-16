@@ -538,7 +538,10 @@ void CHandHistoryWriter::Flush() {
 bool CHandHistoryWriter::HandLooksComplete() {
   if (_joined_midhand) return false;
   if (!_have_names || !_have_balance || !_have_bet || !_have_dealer) return false;
-  if (_hero < 0 || _hero >= _nchairs) return false;
+  // Observer hands have NO hero (userchair = -1) yet are fully import-quality for PT4
+  // opponent stats -- PT4 does not need a hero to import a hand. Only reject a hero
+  // index that is out of range (a corrupt scrape), not the legitimate "no hero" case.
+  if (_hero >= _nchairs) return false;
   if (!_blinds_done) return false;
   if (_button < 0 || _button >= _nchairs) return false;
   if (_winner_uncontested < 0 && !_showdown_logged) return false;

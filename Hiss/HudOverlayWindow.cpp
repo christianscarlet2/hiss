@@ -40,6 +40,8 @@ static const COLORREF kHudName      = RGB(120, 200, 255);
 
 static const int kHudBoxWidth = 100;
 static const int kHudLineH    = 13;
+static const int kHudCols     = 3;    // stats drawn in a |-separated grid: 3 columns
+static const int kHudColW     = 66;   // px per stat column
 
 CHudOverlayWindow *p_hud_overlay_window = NULL;
 
