@@ -179,6 +179,8 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "validate", "description": "Run the scrape + game-state sanity heuristics (CSymbolEngineValidator) on the CURRENT table state and return the verdict: ok, confidence (0..1), error/warning counts, per-category flags (cards/pot/stacks/bets), and a human-readable report of every issue. Use to decide whether a scraped value (pot, stacks, bets, cards) is trustworthy before acting on it.",
      "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "log_settings", "description": "Read or toggle the Hiss advanced-logging settings (hiss_log_settings table: advanced_logging | reporting | replays), per daemon identity ('*' = global default; a daemon_id row overrides it, each flag falling back to '*'). action='list' (default) shows all rows; action='set' with kind + value (+ optional identity) flips one flag. This DB table is the single source of truth shared by the Linux headless daemons, hiss.exe, and the hiss.scarletbeast.com web control.",
+     "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["list", "set"]}, "kind": {"type": "string"}, "value": {"type": "boolean"}, "identity": {"type": "string"}}}},
     {"name": "validate_ohf", "description": "VALIDATE THE OHF STRATEGY before deploying. Runs the hardened build_and_lint.py over .strategy_build/strategy/*.ohf: concatenates the master, checks structural rules (WHEN/FORCE/action, balanced parens), the symbol whitelist, AND the OpenPPL operator grammar (e.g. it rejects '<>' / '!=' -- OpenPPL has no not-equal operator; use NOT (a = b) -- which the real parser rejects but a text lint would miss). Also returns the latest real-parser errors logged by Hiss (logs/ohf_parse_errors.log) if present. ALWAYS call this after editing any .ohf and BEFORE restarting Hiss; fix every reported error first. Returns PASS or the full error list.",
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "game_state", "description": "Live internal-engine game state JSON (seats, cards, pot, blinds, button, hero, HUD) from the running hiss.exe.",
@@ -354,6 +356,24 @@ def call_tool(name, args):
         return [{"type": "text", "text": hiss_get("/api/reload-ohf")}]
     if name == "validate":
         return [{"type": "text", "text": hiss_get("/api/validate")}]
+    if name == "log_settings":
+        action = (args.get("action") or "list").lower()
+        if action == "set":
+            amap = {"advanced": "advanced_logging", "logging": "advanced_logging", "adv": "advanced_logging",
+                    "advanced_logging": "advanced_logging", "report": "reporting", "reports": "reporting",
+                    "reporting": "reporting", "replay": "replays", "replays": "replays"}
+            col = amap.get(str(args.get("kind", "")).lower())
+            if col is None:
+                return [{"type": "text", "text": "unknown kind (use advanced_logging | reporting | replays)"}]
+            ident = str(args.get("identity") or "*").replace("'", "")
+            val = "true" if args.get("value") else "false"
+            psql_query("INSERT INTO hiss_log_settings(identity,%s,updated_by) VALUES ('%s',%s,'mcp') "
+                       "ON CONFLICT (identity) DO UPDATE SET %s=EXCLUDED.%s, updated_at=now(), updated_by='mcp'"
+                       % (col, ident, val, col, col), tuples_only=False)
+        out = psql_query("SELECT identity, advanced_logging, reporting, replays, "
+                         "to_char(updated_at,'YYYY-MM-DD HH24:MI') AS updated_at, updated_by "
+                         "FROM hiss_log_settings ORDER BY (identity='*') DESC, identity", tuples_only=False)
+        return [{"type": "text", "text": out}]
     if name == "validate_ohf":
         out_parts = []
         lintdir = os.path.join(REPO, ".strategy_build")

@@ -37,6 +37,22 @@ def emit_jsonl(row: dict, path: str) -> None:
         fh.write(json.dumps(row, separators=(",", ":")) + "\n")
 
 
+def emit_decision(table_view: dict, decide_response: dict, *, hand_id: str,
+                  jsonl_path: str | None = None, conn=None, identity: str | None = None) -> bool:
+    """Gated emit: stamps the daemon identity and only writes when advanced_logging is ON
+    for this daemon (resolved from hiss_log_settings, identity-row || global '*')."""
+    from logging_control import resolve_identity, is_enabled
+    identity = identity or resolve_identity()
+    if not is_enabled("advanced_logging", identity):
+        return False  # logging toggled off for this daemon -> nothing flows
+    row = build_row(table_view, decide_response, daemon_id=identity, hand_id=hand_id)
+    if conn is not None:
+        emit_postgres(row, conn)
+    if jsonl_path:
+        emit_jsonl(row, jsonl_path)
+    return True
+
+
 # postgres sink — schema mirrors the row; reward_bb back-filled by a join job.
 DDL = """
 CREATE TABLE IF NOT EXISTS hiss_training (

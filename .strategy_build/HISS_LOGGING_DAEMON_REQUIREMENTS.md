@@ -106,8 +106,41 @@ honor them. Wire into the existing outbox/shipper so replays/logs only flow when
      settings UI / API), so the Windows bot and the web both drive the same settings.
 Both write the same DB settings; daemons + hiss.exe converge on the DB as source of truth.
 
+## BUILD STATUS (2026-06-15) — B/C/D core DONE & working
+- **DB source of truth (C):** `hiss_log_settings` created in the hiss postgres DB —
+  `identity PK ('*'=global; daemon-id overrides), advanced_logging|reporting|replays`
+  (NULLable so a daemon inherits unset flags from `*`), + `identity` column added to
+  hiss_log_decisions/hands/frames/symbols/scrapes/debug for multi-daemon separation.
+- **Identity (B) + gating:** `sagemaker/logging_control.py` — resolve_identity()
+  (HISS_IDENTITY || host[-table]), get_effective() (per-flag fallback to `*`), set_flag(),
+  is_enabled(), list_all(); CLI `python logging_control.py advanced off`. psycopg2 (Linux,
+  HISS_PG_DSN) or psql.exe fallback (Windows-local). TESTED against the live DB.
+  `sagemaker/emit.py emit_decision()` stamps identity + only writes when advanced_logging
+  is ON for that daemon.
+- **Control surfaces (D):**
+  - **MCP `log_settings` tool** (hiss_mcp_server.py) — list/set the flags from Claude/MCP
+    (effective on next MCP reload).
+  - **logging_control.py CLI** — works on the Windows box NOW (the "via hiss.exe machine" path).
+  - **Web (`sagemaker/web/hiss-log.php`)** — standalone control panel for hiss.scarletbeast.com's
+    Laravel `public/` dir; PDO pgsql via HISS_PG_DSN, toggle UI + JSON API. Deploy-ready.
+  - **hiss.exe Terminal `/log` command (TODO, needs a Hiss.exe rebuild):** add to the same
+    command handler as `/strategy` — `/log advanced on|off`, `/log replays on|off`,
+    `/log reporting on|off`, `/log status` → upsert hiss_log_settings (hiss.exe already has the
+    local DB connection). Code is a ~15-line addition mirroring logging_control.set_flag.
+
+## ⚠️ ONE INFRA DECISION (yours) — cross-LAN reachability of the toggle DB
+The hiss postgres lives on the **Windows** bot machine (localhost). hiss.exe + the MCP reach
+it natively. For the **Linux daemons + the web panel** to read/write the SAME table, the
+Windows postgres must be reachable on the LAN. Options:
+  (a) open Windows postgres on the LAN (postgresql.conf listen_addresses + pg_hba allow the
+      swiftsnake box) — simplest, set HISS_PG_DSN to the Windows host on the Linux side;
+  (b) relocate hiss_log_settings to the swiftsnake postgres + have hiss.exe reach THAT;
+  (c) sync the table both ways via the existing shipper.
+Recommend (a). Until chosen, the toggles are fully controllable from the **Windows side**
+(CLI + MCP); the Linux daemons + web activate once the DSN can reach the DB.
+
 ## Sequence
-Finish A (shim load) → B (identity) → C (DB settings + shipper gating) → D (web + hiss.exe toggles).
+Finish A (shim load ✅) → B/C ✅ → D (wire the reachability + the /log command) → SageMaker AIL.
 Server access: ssh asterisk@192.168.1.39 (swiftsnake host, key-based, passwordless sudo);
 hiss.scarletbeast.com is the ingest/replay app on the same box ([[scarletbeast-web-server]]).
 SageMaker plan still follows after.
