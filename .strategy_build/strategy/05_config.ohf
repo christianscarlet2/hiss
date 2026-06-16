@@ -39,8 +39,9 @@ WHEN Others RETURN false FORCE
 // (learner_decisions #42: liked jamming QJs at 12.5bb instead of min-raising). [N p.34]
 // Antes-aware: also jam in the Red/Dead M-zone (M<=5), which with live antes can be
 // reached at a higher bb-count than 13. Additive - never removes the 13bb behavior. [HoH2 p140]
+// Ceiling raised 13 -> 15bb: the SNG/HU canon's "all-in zone" is <=15bb. [NSS p106][RE p2375]
 WHEN f$Mzone <= 1 RETURN true FORCE
-WHEN f$EffStack <= 13 RETURN true FORCE
+WHEN f$EffStack <= 15 RETURN true FORCE
 WHEN Others RETURN false FORCE
 
 //-----------------------------------------------------------------------------
@@ -129,7 +130,10 @@ WHEN Others RETURN 100 FORCE
 // bluffing into calling stations just donates -- "you still have to win once in a while."
 // So the hybrid air c-bet is dialed DOWN (0.72 -> 0.60): bluff less, value-bet more. (The
 // bot already CHECKS air vs an identified station in 50_flop -- f$Opp_IsStation Check.)
-WHEN f$Style = 1 RETURN 0.90 FORCE
+// Heads-up: c-bet ~80% of missed flops (tiny pots, villain whiffs too) UNLESS a station.
+// [HUM p49][HUSNG p11]. Power c-bet capped 0.90 -> 0.80 (the >80% over-bluff leak). [DFR p127]
+WHEN f$HeadsUpPot AND NOT f$Opp_IsStation RETURN 0.80 FORCE
+WHEN f$Style = 1 RETURN 0.80 FORCE
 WHEN f$Style = 0 RETURN 0.60 FORCE
 WHEN Others RETURN 0.60 FORCE
 
@@ -206,14 +210,23 @@ WHEN PotSize <= 0 RETURN 999 FORCE
 WHEN Others RETURN f$EffStack / PotSize FORCE
 
 ##f$Committed##
-// True when SPR is low enough to get top-pair/overpair-strength hands all in.
-// Opponent- and board-texture-aware. Gate the get-it-in line on this; gate the
-// "never go broke with one pair" pot-control on NOT f$Committed. [SSNL SPR sidebar]
+// Low SPR => stack off top-pair/overpair. Hand-class-specific SPR bands from [PNL p182-186]
+// (the source text of the SPR/commitment framework, refining the Tier-1 SSNL approximation):
+// overpairs commit at a higher SPR than top pair; aggro opp & wet boards raise the band,
+// tight/passive opp lowers it. Multiway (>2): never auto-commit one pair - SPR is measured
+// vs the shortest covering stack only. Gate the get-it-in line on this; gate the
+// "never go broke with one pair" pot-control on NOT f$Committed. [PNL p182-186][SSNL]
+WHEN nopponentsplaying > 2 RETURN false FORCE
 WHEN f$SPR <= 1 RETURN true FORCE
-WHEN f$Opp_IsAggro AND f$SPR <= 8 RETURN true FORCE
-WHEN f$BoardWet AND f$SPR <= 7 RETURN true FORCE
-WHEN f$Opp_IsPassive AND f$SPR <= 3 RETURN true FORCE
-WHEN f$SPR <= 4 RETURN true FORCE
+WHEN HaveOverPair AND f$Opp_IsAggro AND f$SPR <= 10 RETURN true FORCE
+WHEN HaveOverPair AND f$BoardWet AND f$SPR <= 8 RETURN true FORCE
+WHEN HaveOverPair AND f$Opp_IsPassive AND f$SPR <= 4 RETURN true FORCE
+WHEN HaveOverPair AND f$SPR <= 6 RETURN true FORCE
+WHEN HaveTopPair AND f$Opp_IsAggro AND f$SPR <= 7 RETURN true FORCE
+WHEN HaveTopPair AND f$BoardWet AND f$SPR <= 6 RETURN true FORCE
+WHEN HaveTopPair AND f$Opp_IsPassive AND f$SPR <= 2 RETURN true FORCE
+WHEN HaveTopPair AND f$SPR <= 4 RETURN true FORCE
+WHEN f$SPR <= 3 RETURN true FORCE
 WHEN Others RETURN false FORCE
 
 //-----------------------------------------------------------------------------
@@ -227,11 +240,14 @@ WHEN (PotSize + AmountToCall) <= 0 RETURN 1 FORCE
 WHEN Others RETURN AmountToCall / (PotSize + AmountToCall) FORCE
 
 ##f$SetMineOK##
-// Set-mine a small pair only with ~15x the call behind (real implied odds), and
-// not vs a 3-bet or a tight opener (SPR too low / won't get paid). The current
-// f$WithinSpecRisk (10x) was too loose for a pure set-mine. [CtM p122][SSNL p143][PMM]
+// Set-mine a small pair only with enough effective stack behind for real implied odds.
+// Tiered: loose/station pay off (15x ok); regs/foldy need more (~22x); full-ring deeper
+// than 6-max (20x vs 15x); never vs a nit. [CtM p122 15x][PMM 15x][DFR p41 20x FR][HC p148 ~25x tight]
 WHEN f$Opp_IsNit RETURN false FORCE
-WHEN AmountToCall * 15 <= f$EffStack RETURN true FORCE
+WHEN (f$Opp_IsStation OR f$Opp_IsFish OR f$Opp_IsLoose) AND AmountToCall * 15 <= f$EffStack RETURN true FORCE
+WHEN (f$Opp_IsTAG OR f$Opp_Foldy) AND AmountToCall * 22 <= f$EffStack RETURN true FORCE
+WHEN f$Is6Max AND AmountToCall * 15 <= f$EffStack RETURN true FORCE
+WHEN AmountToCall * 20 <= f$EffStack RETURN true FORCE
 WHEN Others RETURN false FORCE
 
 //-----------------------------------------------------------------------------
@@ -291,6 +307,42 @@ WHEN Others RETURN 0 FORCE
 WHEN f$Stage = 2 RETURN 1.06 FORCE
 WHEN f$Stage = 3 RETURN 0.97 FORCE
 WHEN Others RETURN 1.00 FORCE
+
+//=============================================================================
+//  TIER-2 WAVE-1 dials (cash/MTT/SNG/HU library). Engine-native symbols only.
+//    [PNL][HC][EG][ER][LTBR][ASH][JL][RE][SNF][W][SYS][NSS][HUM][HUSNG][DFR][RF]
+//=============================================================================
+
+##f$Open_RaiseTo_HU##
+// Heads-up button/SB open size: minraise when short, 2.5bb deeper. [HUM p51][HUSNG p37]
+WHEN f$EffStack <= 25 RETURN 2 FORCE
+WHEN Others RETURN 2.5 FORCE
+
+##f$ReshoveSpot##
+// 3-bet-JAM over a single open in the ~16-25bb band - the fold-equity re-steal the
+// push/fold tree misses (too deep to open-jam, too short to flat-and-play). Fires only
+// over exactly one raise, in/near position or the blinds, vs a wide opener. [JL p1161][RE p2280]
+WHEN Raises = 1 AND f$EffStack > 15 AND f$EffStack <= 25 AND (f$Opp_IsLoose OR f$Opp_IsAggro) AND (InButton OR InCutOff OR InSmallBlind OR InBigBlind) AND listReshove RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$DoubleBarrel##
+// Fire a 2nd barrel as the flop aggressor: vs reg/foldy types (NEVER stations/fish),
+// heads-up, on a scary or dry board that missed villain's peeling range; suppress when
+// way behind on a wet board. The turn is an under-bet street. [EG p52][ER p8][LTBR p14][ASH p61]
+WHEN f$Opp_IsStation OR f$Opp_IsFish RETURN false FORCE
+WHEN NOT (f$WasPreflopRaiser AND BotRaisedOnFlop AND f$HeadsUpPot) RETURN false FORCE
+WHEN StraightPossible AND prwin < 0.50 RETURN false FORCE
+WHEN (f$ScaryBoard OR f$BoardDry) AND f$Opp_Foldy RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$ThreeBetBluffFreq##
+// Frequency cap for 3-bet bluffs by opponent type: bluff foldy/nits often (they over-fold),
+// never stations/fish or light-3-bettors (no fold equity / they fight back). [ER p7][LTBR p11]
+WHEN f$Opp_IsStation OR f$Opp_IsFish RETURN 0 FORCE
+WHEN f$Opp_ThreeBetsLight RETURN 0 FORCE
+WHEN f$Opp_IsNit RETURN 0.70 FORCE
+WHEN f$Opp_Foldy RETURN 0.55 FORCE
+WHEN Others RETURN 0.30 FORCE
 
 //-----------------------------------------------------------------------------
 //  Bet-timing tells.  Hiss measures how long each chair dwells on its to-act

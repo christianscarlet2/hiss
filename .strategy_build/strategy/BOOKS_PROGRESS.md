@@ -35,6 +35,28 @@ NOT YET DEPLOYED — source tree only. Mirror + restart Hiss at an idle moment.
 
 ---
 
+## TIER 2 WAVE 1 — DONE (2026-06-15, deployed live + lint/parse clean)
+
+18 books parsed (HC, PNL, ASH, EG, ER, LTBR, JL, RE, SNF1/2, W, SYS, NSS, HUM, HUSNG, DFR, RF).
+Reconciled & LIVE: hand-class-aware `f$Committed` (PNL precise SPR bands — corrected the Tier-1 flat
+version), tiered `f$SetMineOK`, `f$PushFoldStack` 13→15, HU `f$CbetFreq` bump + power cap, new
+`f$ReshoveSpot`+`listReshove`, `f$DoubleBarrel` turn gate, `f$ThreeBetBluffFreq`, `f$Open_RaiseTo_HU`,
+`listOpenHU`/`listDefendHU` (+wired), `listOpenEP6`/`listOpenMP6` 6-max branch (+wired).
+
+### Tier 2 Wave 1 — SPECIFIED but DEFERRED (ready to wire in the harmonization pass)
+- **f$StructureSpeed / f$SpeedShade** [SNF] — tournament structure-speed axis (patience/utility factor);
+  needs blind-clock/structure sheet for precision, coarse proxy via bblind/tgi_level. Backlog.
+- **f$SurvivalMode / f$FlatPayout / f$BigStack / f$WinnerTakeAll / f$NearBust** [NSS][SYS] — DON/satellite
+  pure-survival + winner-take-all modes; needs a new `tgi_flat_payout` lobby field (format detection).
+- **f$TripleBarrel** [ER][LTBR] — river third-barrel gate (scare/draw-completing rivers, foldy non-stations).
+- **f$FourBetBluff / list4betBluff** [ER][RE] — 4-bet-bluff the unbalanced reg (ace-blockers); band-gated 35-55bb.
+- **f$BubblePressureSpot** [RE] — aggressor-side bubble jam (don't let bubble-tighten suppress fold-equity jams).
+- **f$Light4betBand** [RE] — gate light 4-bets to 35-55bb (dies <35bb).
+- **listReshove18_25 widen, listJamEP +K8s/K9o/QTo** [RE][NSS], **HU depth-tiered BB jam lists** [HUSNG],
+  **listSmallBallDeep (100bb full-utility)** [SNF], **f$ThinValue river sizing** [EG], **donk/min-bet read** [HC][CtM].
+- **Full-ring EP/MP tightening** [DFR] — current full-ring EP (~16%) is over-wide vs DFR (~9-12%); only the
+  6-max branch was added this round.
+
 ## TIER 2 — QUEUE (on-target NLHE, not yet parsed)
 
 Cash / 6-max / full-ring:

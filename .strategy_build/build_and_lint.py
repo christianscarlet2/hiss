@@ -128,6 +128,14 @@ for name, body in func_bodies.items():
         # balanced parens
         if s_nocom.count("(") != s_nocom.count(")"):
             errors.append(f"{name}:{n}: unbalanced parentheses -> {s_nocom}")
+        # illegal operators the REAL OpenHoldem parser rejects but a text-concat lint
+        # would otherwise miss. OpenPPL has NO not-equal operator: '<' only forms '<=' or
+        # '<<', so '<>' tokenizes as two binary operators ('<' then '>') and the parser
+        # dies with "Unexpected token ... Found: binary operator >". Use NOT (a = b).
+        for badop in ("<>", "!=", "=<", "=>"):
+            if badop in s_nocom:
+                errors.append(f"{name}:{n}: illegal operator '{badop}' "
+                              f"(OpenPPL has no not-equal; rewrite as NOT (a = b)) -> {s_nocom}")
         # identifier validation
         for tok in ident_re.findall(s_nocom):
             if tok in valid: continue

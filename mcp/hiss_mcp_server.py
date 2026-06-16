@@ -179,6 +179,8 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "validate", "description": "Run the scrape + game-state sanity heuristics (CSymbolEngineValidator) on the CURRENT table state and return the verdict: ok, confidence (0..1), error/warning counts, per-category flags (cards/pot/stacks/bets), and a human-readable report of every issue. Use to decide whether a scraped value (pot, stacks, bets, cards) is trustworthy before acting on it.",
      "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "validate_ohf", "description": "VALIDATE THE OHF STRATEGY before deploying. Runs the hardened build_and_lint.py over .strategy_build/strategy/*.ohf: concatenates the master, checks structural rules (WHEN/FORCE/action, balanced parens), the symbol whitelist, AND the OpenPPL operator grammar (e.g. it rejects '<>' / '!=' -- OpenPPL has no not-equal operator; use NOT (a = b) -- which the real parser rejects but a text lint would miss). Also returns the latest real-parser errors logged by Hiss (logs/ohf_parse_errors.log) if present. ALWAYS call this after editing any .ohf and BEFORE restarting Hiss; fix every reported error first. Returns PASS or the full error list.",
+     "inputSchema": {"type": "object", "properties": {}}},
     {"name": "game_state", "description": "Live internal-engine game state JSON (seats, cards, pot, blinds, button, hero, HUD) from the running hiss.exe.",
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "symbols", "description": "Evaluate OpenPPL / engine symbols live. Pass a comma-separated list of symbol names.",
@@ -352,6 +354,26 @@ def call_tool(name, args):
         return [{"type": "text", "text": hiss_get("/api/reload-ohf")}]
     if name == "validate":
         return [{"type": "text", "text": hiss_get("/api/validate")}]
+    if name == "validate_ohf":
+        out_parts = []
+        lintdir = os.path.join(REPO, ".strategy_build")
+        try:
+            proc = subprocess.run([sys.executable, "build_and_lint.py"],
+                                  cwd=lintdir, capture_output=True, text=True, timeout=120)
+            verdict = "PASS" if proc.returncode == 0 else "FAIL"
+            out_parts.append("OHF lint: %s\n%s" % (verdict, (proc.stdout or "") + (proc.stderr or "")))
+        except Exception as e:
+            out_parts.append("OHF lint could not run: %s" % e)
+        # real-parser errors logged by Hiss at load time (if the C++ logger is present)
+        perr = os.path.join(RELEASE, "logs", "ohf_parse_errors.log")
+        if os.path.isfile(perr):
+            try:
+                tail = open(perr, encoding="utf-8", errors="replace").read()[-4000:]
+                if tail.strip():
+                    out_parts.append("--- Hiss real-parser errors (logs/ohf_parse_errors.log, tail) ---\n" + tail)
+            except Exception as e:
+                out_parts.append("could not read parse-error log: %s" % e)
+        return [{"type": "text", "text": "\n\n".join(out_parts)}]
     if name == "game_state":
         return [{"type": "text", "text": hiss_get("/api/table-state")}]
     if name == "symbols":

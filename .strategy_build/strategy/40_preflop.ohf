@@ -22,6 +22,8 @@ WHEN validator_ok = 0 AND AmountToCall = 0 Check FORCE
 // (<= -1000), so this never fires and play is unchanged. [steering]
 WHEN openai_action > -1000 RETURN openai_action FORCE
 WHEN f$PushFoldStack RETURN f$preflop_pushfold FORCE
+// 16-25bb fold-equity 3-bet-jam over a single open (re-steal band). [JL][RE]
+WHEN f$ReshoveSpot AND explain_jam RaiseMax FORCE
 WHEN Raises >= 2 RETURN f$preflop_vs_3bet FORCE
 WHEN Raises == 1 RETURN f$preflop_vs_raise FORCE
 WHEN Others RETURN f$preflop_open FORCE
@@ -34,6 +36,11 @@ WHEN Others RETURN f$preflop_open FORCE
 WHEN Calls >= 1 RETURN f$preflop_limped FORCE
 // Truly unopened: open-raise by position. Short stacks tighten to the MP range.
 WHEN f$ShortStack AND NOT listOpenMP Fold FORCE
+// Heads-up: the button/SB opens very wide at a minraise. [HUM][HUSNG]
+WHEN f$HeadsUpPot AND InSmallBlind AND listOpenHU AND explain_open RaiseTo f$Open_RaiseTo_HU FORCE
+// 6-max: tighter early/middle than the full-ring-shared lists. [RF][V6]
+WHEN f$Is6Max AND InEarlyPosition AND listOpenEP6 RaiseTo f$Open_RaiseTo FORCE
+WHEN f$Is6Max AND InMiddlePosition AND listOpenMP6 RaiseTo f$Open_RaiseTo FORCE
 WHEN InEarlyPosition AND listOpenEP RaiseTo f$Open_RaiseTo FORCE
 WHEN InMiddlePosition AND listOpenMP RaiseTo f$Open_RaiseTo FORCE
 WHEN (InLatePosition OR InCutOff) AND listOpenLP RaiseTo f$Open_RaiseTo FORCE
@@ -69,12 +76,14 @@ WHEN list3betValue AND explain_3bet_value RaiseTo f$ThreeBet_RaiseTo FORCE
 // Flatting OOP in the blinds doesn't even close the action (BB acts behind the SB), so a
 // strong broadway like AJo must squeeze rather than fold/flat multiway. [N p.26]
 WHEN Calls >= 1 AND listSqueeze AND explain_3bet_value RaiseTo f$ThreeBet_RaiseTo FORCE
-// 3-bet bluff vs a foldy / loose opener, in position, at a mixed frequency. [N p.26]
-WHEN list3betBluff AND f$Opp_Foldy AND f$InPositionPre AND randomround < 0.60 RaiseTo f$ThreeBet_RaiseTo FORCE
-WHEN list3betBluff AND f$Opp_IsLoose AND f$InPositionPre AND randomround < 0.35 RaiseTo f$ThreeBet_RaiseTo FORCE
+// 3-bet bluff in position at an opponent-typed frequency (f$ThreeBetBluffFreq returns 0
+// vs stations/light-3bettors, high vs nits/foldy). [ER p7][LTBR p11][N p.26]
+WHEN list3betBluff AND f$InPositionPre AND randomround < f$ThreeBetBluffFreq RaiseTo f$ThreeBet_RaiseTo FORCE
+// Heads-up big-blind defence: flat WIDE vs a single SB open (don't over-fold). [HUSNG p27]
+WHEN InBigBlind AND f$HeadsUpPot AND listDefendHU AND explain_bbdefend Call FORCE
 // Flat to set-mine / play suited hands, in position or getting a price.
 WHEN listCallOpen AND f$InPositionPre AND explain_flat_ip Call FORCE
-WHEN listSetMine AND f$DeepStack AND f$WithinSpecRisk AND explain_call_setmine Call FORCE
+WHEN listSetMine AND f$DeepStack AND f$SetMineOK AND explain_call_setmine Call FORCE
 // Big-blind defence: defend a price with playable hands.
 WHEN InBigBlind AND listCallOpen AND explain_bbdefend Call FORCE
 WHEN InBigBlind AND f$DecentPrice AND listOpenLP Call FORCE
