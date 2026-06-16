@@ -1,0 +1,10 @@
+# core (training + features)
+numpy
+torch>=2.3
+pandas
+pyarrow
+# AWS / SageMaker orchestration (the AIL + sm_tools)
+boto3
+sagemaker
+# data emission to the existing hiss postgres DB
+psycopg2-binary
