@@ -105,3 +105,30 @@ accounting from replay hands (a leak-finder for the improvement loop, [MoH p740]
 re-OCR of Harrington Vol 1's two-column body and the "Effective M for short tables"
 multiplier (Vol 2 p277) at higher DPI; obtain a full (non-promo) copy of *NL Theory
 and Practice* and the *Professional No-Limit* .mobi for direct mining.
+
+---
+
+# Hiss-improvement backlog — Tier-2 Wave-2 library expansion (2026-06-15)
+
+MTT decision-logs ([WPT1/2]), Gordon's combinatoric NLHE ([GG]), and the
+philosophy layer ([Tao]/[SunTzu]/[48L]/[Prince]) plus a batch of off-target
+FIXED-LIMIT / intro books ([LGY][CNL][AOW][HCC][ANL][EoP][IPP][8M][PPM][PMVT]
+[MC][NW][PKR] etc.). **Implemented this wave:** SB opens 3x ([WPT1], `f$OpenBase`);
+MTT-stage set-mine guard ([WPT2], `f$SetMineOK`); high-card c-bet texture ([GG],
+`f$BoardHighCardFoldy`/`Sticky`/`Parched` + 50_flop air-c-bet gate); turn geometry
+symbol ([GG], `f$TurnBetGeo`, available); "don't press a desperate foe" bluff gate
+([SunTzu VII.36], `f$Opp_PotCommitted` → `f$DoubleBarrel`/river-bluff/3bet-bluff-freq);
+and ~15 [Tao]/[SunTzu]/[48L]/[Prince] **citation reinforcements** on existing dials
+(no behavior change). The items below are NOT encodable today.
+
+| # | Concept (source) | Why the OHF can't do it | Engine work needed |
+|---|------------------|-------------------------|--------------------|
+| 13 | **Reshove-aware opening** [WPT1] — fold A7o/JTo-type opens when a 12-20bb light-reshove stack sits BEHIND ("never open a hand you aren't willing to call a shove with"). Hero's own short side is covered (`f$ReshoveSpot`/push-fold). | No symbol for the **minimum stack of players yet to act**; `EffectiveMaxStacksizeOfActiveOpponents` is the max, not the shortest-behind. | A new C++ `min_stack_behind` / `shortest_yet_to_act` symbol to gate `listOpenBTN`/`listOpenLP`. |
+| 14 | **`f$TurnBetGeo` wiring** [GG] — symbol is defined and available but not yet used on the turn value line. | `RaiseBy <amount-in-bb>` vs `RaiseBy <pct>%` mixing on one street is awkward and untested in the autoplayer's two-click numpad path. | A bb-amount RaiseBy turn-value branch (gated to ~SPR<=2) verified against the betsize/numpad pipeline. |
+| 15 | **4-bet sizing as %-of-stack + 4-bet-bluff range** [PKR][ANL] — `f$FourBet_RaiseTo` is a fixed 22/26bb (right only ~100bb); add A5s/Ax-blocker 4-bet-bluffs at ~1:3 vs a fold-to-4bet TAG, never vs maniac/fish. | No `pt_fold_to_4bet` / `pt_3bet` HUD stats exposed; band-gated light-4bet (35-55bb) and `list4betBluff` were specified in Tier-2 Wave-1 but deferred. | Surface fold-to-4bet/3bet% (heartbeat-thread only) + add `list4betBluff`/`f$FourBetBluffFreq`/`f$Light4betBand`. |
+| 16 | **Open-size-relative 3-bet sizing** [PKR] — 3-bet ≈ 3× the OPEN IP / 4× OOP / 5× vs a station, +per-limper; `f$ThreeBet_RaiseTo` is a fixed 9/11/13bb regardless of the open size. | OpenPPL can read `AmountToCall` but the per-villain "size up vs station" and "+per caller" tuning is a continuous function the flat dial can't express cleanly. | A 3-bet sizing function keyed on the facing raise size + caller count + opponent type. |
+| 17 | **Opponent steal-frequency-indexed 3-bet/defend** [STX] — gate light reshoves/defends by exact attempt-to-steal% & fold-BB-to-steal% rather than the coarse `f$Opp_IsLoose`. | Those positional HUD stats are not in the `pt_*_raischair` set. | Surface per-position steal% / fold-to-steal% stats. |
+| 18 | **Per-street AF & fold-to-cbet exploits** [GG][PKR][HCC] — float a high-flop-AF/low-turn-AF "one-and-done" c-bettor; >65% fold-to-flop-cbet → bluff any board, <50% → value-bet thin & stop bluffing; the vs-TAG "bet flop, CHECK turn, bet river" thin-value line. | HUD exposes only flop AF + VPIP/PFR/WTSD; no `pt_fold_flop_cbet`, no per-street AF, no own-bet street history beyond `BotRaisedOn*`. | Surface `pt_fold_flop_cbet`/`pt_turn_af`; add an `f$Opp_FoldsToCbet` archetype + a planned multi-street line state. |
+| 19 | **"Starter" archetype** [HCC] — wide VPIP-PFR gap (>=8) at moderate VPIP (~20-30): isolate/value thin, no 3-bet-bluff, no post-flop bluff. | Borderline-overlaps `f$Opp_IsLoose` + station value logic already present; low marginal value. | Optional `f$Opp_IsStarter = VPIP 20-30 AND (VPIP-PFR)>=8` if replay shows a distinct leak. |
+| 20 | **Preflop open-frequency mixing** [48L L48] — open ranges are deterministic list lookups, range-readable over a huge sample; postflop is already randomized. | No card-anchored mixing symbol; `randomround` is decision-time noise (see #6). | Per-hand hash-of-holecards → [0,1) symbol to mix the bottom-of-range opens. EV ~0 vs non-reading micro fields; defer. |
+| 21 | **Multi-hand image / leveling memory** [AOW][CNL][NW][IPP][MC] — "show a bluff to set up a value bet" (Cloutier A7-then-77), gear-shift FOR deception, per-player-behind reraise-tightness, leveling one step above villain. Plus GTO balanced bluff:value river sizing [ANL][IPP]. | Requires table-image / multi-hand opponent-model memory + a combinatoric range engine the bot deliberately does not keep (it is exploit-first, not GTO). | Per-seat session memory + a range/combo model (overlaps #2/#3/#7); GTO river balance is intentionally NOT adopted. |

@@ -17,7 +17,10 @@ WHEN Others RETURN f$turn_vs_bet FORCE
 //-----------------------------------------------------------------------------
 
 ##f$turn_nobet##
-// Value with strong made hands.
+// Value with strong made hands. Vs a calling station, size UP (pot/overbet) for
+// value - they pay on their own hand - exactly as on the flop. Carry the station
+// upsizing across the streets so the value plan stays coherent. [CtM p147,149]
+WHEN f$HaveStrongMade AND f$Opp_IsStation RaiseBy f$BetPctVsStation % FORCE
 WHEN f$HaveStrongMade RaiseBy f$BetPctTurn % FORCE
 // Keep semi-bluffing strong / combo draws.
 WHEN f$HaveComboDraw RaiseBy f$BetPctTurn % FORCE
@@ -40,6 +43,12 @@ WHEN Others Check FORCE
 ##f$turn_vs_bet##
 WHEN f$HaveBigMade RaiseBy f$BetPctTurn % FORCE
 WHEN HaveSet OR HaveTwoPair RaiseBy f$BetPctTurn % FORCE
+// Low SPR (committed): get top pair / overpair all-in rather than pot-controlling.
+// Mirrors the flop's commitment branch - the pot only grew, so a hand committed on the
+// flop is still committed here; honor it BEFORE the "never go broke" pot-control lines
+// below (which apply only at high SPR, NOT f$Committed) so a committed overpair is not
+// folded to a passive turn bet. [SSNL SPR sidebar][PNL p182-186]
+WHEN (HaveOverPair OR HaveTopPair OR f$HaveStrongMade) AND f$Committed RaiseMax FORCE
 // Combo draw -> get it in.
 WHEN f$HaveComboDraw RaiseMax FORCE
 // Big draws: continue at a price; in position can peel a bit wider.

@@ -56,7 +56,8 @@ K6s K7s K8s K9s KTs KJs KQs Q8s Q9s QTs QJs J8s J9s JTs T7s T8s T9s 96s 97s 98s 
 A7o A8o A9o ATo AJo AQo AKo K9o KTo KJo KQo Q9o QTo QJo J9o JTo T9o
 
 //-----------------------------------------------------------------------------
-//  Push/fold JAM ranges (effective stack <= ~10bb). Near-Nash, position-scaled.
+//  Push/fold JAM ranges (effective stack <= ~15bb, the f$PushFoldStack ceiling).
+//  Near-Nash, position-scaled.
 //  At these depths strong broadways (KJ/QJ/KT/QT/JT) and any ace/pair are SHOVES,
 //  not folds - folding them is the leak that blinds a short stack out. [Nash push]
 //-----------------------------------------------------------------------------
@@ -86,7 +87,7 @@ K9s KTs KJs KQs QTs QJs JTs T9s 98s
 A9o ATo AJo AQo AKo KJo KQo
 
 ##listCallShove##
-// Call / get-it-in vs a SINGLE shove at a short stack (~<=10bb), far from the money.
+// Call / get-it-in vs a SINGLE shove at a short stack (the ~<=15bb push/fold band), far from the money.
 22 33 44 55 66 77 88 99 TT JJ QQ KK AA
 A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
 K8s K9s KTs KJs KQs Q9s QTs QJs J9s JTs T9s 98s

@@ -79,10 +79,53 @@
 //          "Poker Blueprint" - stat-based opponent typing: the new TAG/LAG/fish/
 //          maniac archetypes in 10_opponents (fixes IsAggro firing on AF alone).
 //
+//  ---------------------------------------------------------------------------
+//  TIER-2 WAVE-2 LIBRARY EXPANSION (2026-06-15) - MTT decision-logs, Gordon's
+//  combinatoric NLHE, and the strategic-restraint / opponent-exploitation
+//  philosophy layer. Most of the ~30 books mined this wave were FIXED-LIMIT or
+//  pure-intro and fully subsumed (see BOOKS_PROGRESS.md); the net-new deltas are:
+//
+//    [WPT1/WPT2] Turner/Lynch/Fleet "Winning Poker Tournaments One Hand at a
+//          Time" v1/v2 - hand-by-hand MTT logs. NET-NEW: (1) the SB opens BIGGER
+//          (~3x) because it plays the whole hand OOP -> SB branch in f$OpenBase;
+//          (2) set-mining "is out of the question at THIS stage" once stacks are
+//          shallow / squeeze-risk is high -> f$SetMineOK now stage-gated (f$Stage).
+//    [GG]  Phil Gordon "Little Gold Book" - modern HUD/combinatoric NLHE. NET-NEW:
+//          (1) board HIGH-CARD texture for c-bet bluffs - K/A/Q-high dry flops miss
+//          a flat-caller's range (bluff), J/T-high dry flops HIT it (don't); low
+//          disconnected "parched" boards barrel relentlessly -> f$BoardHighCardFoldy
+//          / f$BoardParched (30_classify) gating the air c-bet (50_flop);
+//          (2) turn bet-sizing geometry TurnBet=(EffStack-PotSize)/3 to set up a
+//          clean pot-sized river jam -> f$TurnBetGeo (05_config, available symbol).
+//    [Tao] Tao Te Ching (Lao Tzu) - wu-wei / water / yielding: the strategic-
+//          RESTRAINT layer. Reinforces (as citations) the dialed-DOWN bluff freqs
+//          (over-bluffing is forcing), don't-go-broke pot-control, and adapt-to-
+//          depth/opponent. Mental-game rules route to Lilith, not here.
+//    [SunTzu] Sun Tzu "Art of War" - know-enemy-and-self, deception, attack-
+//          weakness/avoid-strength, win-without-fighting, terrain=position, "leave
+//          a golden bridge for a retreating army". The OPPONENT-EXPLOITATION layer;
+//          almost all already implemented. NET-NEW: "do not press a desperate foe"
+//          -> f$Opp_PotCommitted (10_opponents) gating bluffs vs a cornered low-M
+//          villain who cannot fold. Cited across 05_config/10_opponents/50-70.
+//    [48L]/[Prince] Greene "48 Laws of Power" / Machiavelli "The Prince" - a
+//          power-realism gloss on TAG poker (control info, crush the weak, ration
+//          aggression, stay unpredictable). Every machine-observable principle is
+//          ALREADY a live dial; added as CITATION REINFORCEMENT only, no behavior
+//          change. Interpersonal/statecraft laws are out of scope (Lilith coach).
+//    [LGY] Largay "NL: A Complete Course" - intro NLHE; every concept already
+//          encoded (implied/reverse-implied odds, value-sizing, player typing,
+//          game selection). NO new dial. [CNL] Cloutier/McEvoy, [AOW] Apostolico
+//          "Art of War" poker, [HCC] Gaines "Hole Card Confessions", [ANL]/[EoP]/
+//          [IPP]/[8M]/[PPM]/[PMVT]/[MC]/[NW]/[PKR] - mined, deltas either already
+//          present or unimplementable (range/combinatoric/multi-hand-memory); the
+//          backlog items are logged in LIMITATIONS.md.
+//
 //  Concepts the OHF/Hiss engine cannot express (per-opponent bubble factor, true
 //  Nash/ICM solver, node-by-node range narrowing, multi-street line planning,
-//  size-bucketed fold stats, real lobby payout curve) are tracked as engine work
-//  in LIMITATIONS.md. Remaining ~40 on-target books are queued in BOOKS_PROGRESS.md.
+//  size-bucketed fold stats, real lobby payout curve, opponent steal-frequency
+//  HUD stats, 4-bet-bluff range, open-size-relative 3-bet sizing, "shortest stack
+//  yet to act" reshove-aware opening) are tracked as engine work in LIMITATIONS.md.
+//  Remaining on-target books are queued in BOOKS_PROGRESS.md.
 //
 //  Bet amounts are expressed as RaiseTo <big blinds> (pre-flop) or
 //  RaiseBy <pct> % (post-flop pot-fractions). Hiss converts the resulting

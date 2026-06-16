@@ -57,6 +57,38 @@ version), tiered `f$SetMineOK`, `f$PushFoldStack` 13→15, HU `f$CbetFreq` bump 
 - **Full-ring EP/MP tightening** [DFR] — current full-ring EP (~16%) is over-wide vs DFR (~9-12%); only the
   6-max branch was added this round.
 
+## TIER 2 WAVE 2 — DONE (2026-06-15, source tree, lint/parse clean)
+
+~30 books mined; near-zero net-new (as anticipated). LIVE deltas added this wave:
+`f$OpenBase` SB-opens-3x [WPT1]; `f$SetMineOK` MTT-stage guard (~25x once f$Stage>=1
+or <=30bb, cash unchanged) [WPT2]; `f$BoardHighCardFoldy`/`BoardHighCardSticky`/
+`BoardParched` (30_classify) + 50_flop air-c-bet gate on J/T-high dry boards [GG];
+`f$TurnBetGeo` symbol (available, wiring deferred) [GG]; `f$Opp_PotCommitted`
+(10_opponents) gating `f$DoubleBarrel` + river triple-barrel + `f$ThreeBetBluffFreq`
+[SunTzu VII.36]; ~15 [Tao]/[SunTzu]/[48L]/[Prince] citation reinforcements (no
+behavior change). Backlog #13-21 in LIMITATIONS.md.
+
+- [WPT1/WPT2] Winning Poker Tournaments One Hand at a Time v1 + v2 — **net-new** (SB size, MTT set-mine guard)
+- [GG] Phil Gordon's Little Gold Book — **net-new** (high-card c-bet texture, turn geometry)
+- [Tao] Tao Te Ching · [SunTzu] Art of War — philosophy layer (1 net-new gate: don't-press-a-desperate-foe)
+- [48L] Greene 48 Laws of Power · [Prince] Machiavelli — citation reinforcement only, no new dial
+- [LGY] Largay NL: A Complete Course — intro NL, fully subsumed (implied odds/value-sizing/typing/game-selection)
+- [CNL] Cloutier/McEvoy Championship NL&PL · [AOW] Apostolico Tournament Poker & the Art of War — overlap / multi-hand-memory (backlog)
+- [SUZ] Suzuki Poker Tournament Strategy · [STC] Stomp the Competition · [DFT] Destination Final Table · [TT] Tournament Tactics — low strategy density, subsumed by spine
+- [NW] Negreanu Hold'em Wisdom — small-ball derivative of [N], subsumed
+- [HCC] Gaines Hole Card Confessions — "starter" archetype (backlog #19); rest not machine-observable
+- [PPM] Practical Poker Math (Dittmar) · [PMVT] poker_math VT — fundamentals, fully subsumed
+- [ANL] Analytical No-Limit (image-only) · [EoP] Angelo Elements of Poker · [IPP] Newall Intelligent Poker Player · [8M] Sklansky Eight Mistakes — GTO/limit/mental, no net-new dial
+- [MC] Mike Caro University Tuesday Session lectures — conceptual/live, subsumed by typing/gear/position
+- [PKR] ~69 PKR magazine articles (cash/six-max/heads-up) — ~95% in spine; 4bet/3bet sizing & per-street-AF → backlog #15-18
+
+### [SKIP] FIXED-LIMIT / off-target (mined, confirmed off-target — limit holdem does not map to NL sizing)
+- [HLG] Hilger Internet Texas Hold'em · [JON] Jones Winning Low-Limit Hold'em · [SWY] Swayne Advanced Degree in Hold'em
+- [KYO] King Yao Hold'em Brain · [STX] Stoxtrader Winning Tough Hold'em Games (steal-freq 3bet table → backlog #17)
+- [B-SS2] Brunson SS2 NLHE chapter (already [B] core, fully mined) · [H] Hellmuth Play Poker Like the Pros (text layer stripped, unmineable) · "Little Green Book"/#16 PDF = spam download page, not the book
+
+---
+
 ## TIER 2 — QUEUE (on-target NLHE, not yet parsed)
 
 Cash / 6-max / full-ring:

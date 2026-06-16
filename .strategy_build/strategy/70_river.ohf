@@ -18,7 +18,12 @@ WHEN Others RETURN f$river_vs_bet FORCE
 //-----------------------------------------------------------------------------
 
 ##f$river_nobet##
-// Value-bet made hands; thinner & smaller vs stations, fuller vs non-passive.
+// Value-bet made hands. Vs a calling station, size UP (pot/overbet) on the strong
+// made hands - they pay on their own hand - exactly as on the flop/turn, so the
+// value-big-vs-station plan stays coherent across all three streets. [CtM p147,149]
+WHEN f$HaveBigMade AND f$Opp_IsStation AND explain_value_river RaiseBy f$BetPctVsStation % FORCE
+WHEN (HaveSet OR HaveTwoPair) AND f$Opp_IsStation RaiseBy f$BetPctVsStation % FORCE
+// Value-bet made hands; fuller vs non-passive.
 WHEN f$HaveBigMade AND explain_value_river RaiseBy f$BetPctRiver % FORCE
 WHEN (HaveSet OR HaveTwoPair) AND NOT f$Opp_IsPassive RaiseBy f$BetPctRiver % FORCE
 // Thin value with one pair vs a calling station. [N p.147]
@@ -26,7 +31,10 @@ WHEN f$HaveOnePair AND f$Opp_IsStation RaiseBy f$BetPctRiver % FORCE
 // Power-style value-bets one pair heads-up vs a non-aggressive opponent. [B]
 WHEN f$HaveOnePair AND f$Style = 1 AND f$HeadsUpPot AND NOT f$Opp_IsAggro RaiseBy f$BetPctRiver % FORCE
 // Low-frequency triple-barrel bluff: only as the flop+turn aggressor, busted,
-// heads-up vs a foldy opponent. [N low bluff freq]
+// heads-up vs a foldy opponent - and NEVER vs a pot-committed/cornered villain who
+// cannot fold (no fold equity). [N low bluff freq][SunTzu VII.36 "golden bridge for a
+// retreating army"][Tao ch.9 "fill to the brim and it spills" -> keep the freq low]
+WHEN f$Opp_PotCommitted Check FORCE
 WHEN f$WasPreflopRaiser AND BotRaisedOnTurn AND f$HeadsUpPot AND f$Opp_Foldy AND randomround < 0.22 RaiseBy f$BetPctRiver % FORCE
 WHEN Others Check FORCE
 

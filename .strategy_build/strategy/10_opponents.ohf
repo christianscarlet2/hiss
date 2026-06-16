@@ -5,6 +5,12 @@
 //  cannot read physical tells or table image, but it CAN read aggregated stats,
 //  so this is our machine-observable substitute. Stats describe the LAST RAISER
 //  (the player we must react to) and default to neutral when the sample is thin.
+//
+//  PHILOSOPHY: opponent typing + own M/stack/SPR awareness (05_config) IS the
+//  oldest maxim of the craft. [SunTzu III.18 "know the enemy and know yourself,
+//  and in a hundred battles you will never be in peril"][Prince "adapt to the
+//  times" -> the whole archetype set + the depth/M regimes][48L L15 "crush your
+//  enemy totally" -> value-big vs the weak (f$BetPctVsStation)].
 //*****************************************************************************
 
 ##f$Opp_Hands##
@@ -104,4 +110,16 @@ WHEN Others RETURN false FORCE
 ##f$Opp_IsManiac##
 // Hyper-aggressive, no fold equity against him: trap & induce, never bluff. [CtM p41]
 WHEN f$Opp_Known AND f$Opp_VPIP > 45 AND f$Opp_PFR > 30 AND f$Opp_AF > 4 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_PotCommitted##
+// "Do not press a desperate foe" - a villain who CANNOT fold has no fold equity to
+// attack, so do not bluff him; value-bet or check instead. The station/fish/maniac
+// cases are already bluff-suppressed elsewhere; the NET-NEW piece is the cornered
+// SHORT-STACK opponent - an all-in-bound low-M player is pot-committed to anything he
+// continues with. Gate bluffs (f$DoubleBarrel, the river triple-barrel, f$ThreeBetBluffFreq)
+// on NOT f$Opp_PotCommitted. [SunTzu VII.36 "leave a golden bridge for a retreating army"]
+// [Tao ch.69 "no greater disaster than underestimating the enemy"]
+WHEN f$Opp_IsStation OR f$Opp_IsFish OR f$Opp_IsManiac RETURN true FORCE
+WHEN EffectiveMaxStacksizeOfActiveOpponents <= PotSize RETURN true FORCE
 WHEN Others RETURN false FORCE

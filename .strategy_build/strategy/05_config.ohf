@@ -15,6 +15,10 @@ WHEN Others RETURN 2 FORCE
 //-----------------------------------------------------------------------------
 //  Stack-depth regime (in big blinds).  Small ball requires depth; once short,
 //  both authors revert to a tight raise/limp-or-push game. [N pp.33-34][B S8.3]
+//  YIELD AND FLOW to the depth: the stiff/unyielding plan dies, the soft/adaptive
+//  one lives. [Tao ch.76 "the stiff and unyielding is the disciple of death; the
+//  soft and yielding, of life"][Tao ch.78 "water overcomes the hard"][SunTzu X
+//  "terrain" -> depth & position dictate the line][Prince "adapt to the times"].
 //-----------------------------------------------------------------------------
 
 ##f$EffStack##
@@ -35,17 +39,22 @@ WHEN f$EffStack <= 25 RETURN true FORCE
 WHEN Others RETURN false FORCE
 
 ##f$PushFoldStack##
-// Push/fold (jam, don't min-raise) at <= 13bb. Raised from 10 -> 13 per HUMAN FEEDBACK
-// (learner_decisions #42: liked jamming QJs at 12.5bb instead of min-raising). [N p.34]
+// Push/fold (jam, don't min-raise) at <= 15bb. Raised 10 -> 13 -> 15: HUMAN FEEDBACK
+// (learner_decisions #42: liked jamming QJs at 12.5bb instead of min-raising) [N p.34], then
+// the SNG/HU canon's "all-in zone" is <=15bb [NSS p106][RE p2375].
 // Antes-aware: also jam in the Red/Dead M-zone (M<=5), which with live antes can be
-// reached at a higher bb-count than 13. Additive - never removes the 13bb behavior. [HoH2 p140]
-// Ceiling raised 13 -> 15bb: the SNG/HU canon's "all-in zone" is <=15bb. [NSS p106][RE p2375]
+// reached at a higher bb-count than 15. Additive - never removes the 15bb behavior. [HoH2 p140]
+// This 15bb ceiling is the system-wide push/fold boundary: it hands off cleanly to f$ReshoveSpot
+// (the 15<EffStack<=25 re-steal band) at exactly 15bb, with no gap or overlap.
 WHEN f$Mzone <= 1 RETURN true FORCE
 WHEN f$EffStack <= 15 RETURN true FORCE
 WHEN Others RETURN false FORCE
 
 //-----------------------------------------------------------------------------
 //  Position helpers (relative to the field still to act / the raiser).
+//  Position is power - the terrain that decides the battle; play more, and more
+//  aggressively, in position. [SunTzu X "the general who knows the ground will
+//  conquer"][48L L35/L48 "control the field, stay formless"].
 //-----------------------------------------------------------------------------
 
 ##f$InPositionPre##
@@ -71,6 +80,11 @@ WHEN Others RETURN false FORCE
 
 ##f$OpenBase##
 // Standard first-in open size.
+// SB opens BIGGER (~3x): it plays the WHOLE hand out of position, so deny a cheap
+// flop / size up to discourage the BB flat. Only when not in the push/fold band
+// (there we jam, not min-raise) and not heads-up (the HU SB has its own size,
+// f$Open_RaiseTo_HU). [WPT1 "I ALWAYS raise to 3x the BB from the SB"]
+WHEN InSmallBlind AND NOT f$PushFoldStack AND NOT f$HeadsUpPot RETURN 3.0 FORCE
 WHEN f$Style = 1 RETURN 3.5 FORCE
 WHEN f$Style = 0 RETURN 2.5 FORCE
 WHEN Others RETURN 2.5 FORCE
@@ -99,6 +113,10 @@ WHEN Others RETURN 22 FORCE
 //  Post-flop bet sizing (as a percentage of the pot).  Same size for value and
 //  for bluffs - never telegraph. [N p.37-38][B "reasonable bet"]
 //  Wet (draw-heavy) boards get a larger bet to charge draws. [N p.231 analog]
+//  Uniform value=bluff sizing + randomized frequencies = formlessness/deception:
+//  the villain cannot read our hand from our size. [SunTzu I.18 "all warfare is based
+//  on deception"][SunTzu VI "be so subtle you are formless"][48L L4 "always say less
+//  than necessary"][Prince/IPP "consistent bet-sizing hides information"].
 //-----------------------------------------------------------------------------
 
 ##f$BetPctFlop##
@@ -118,6 +136,15 @@ WHEN f$Style = 1 RETURN 90 FORCE
 WHEN f$Style = 0 RETURN 55 FORCE
 WHEN Others RETURN 66 FORCE
 
+##f$TurnBetGeo##
+// Turn bet-sizing GEOMETRY (in big blinds, NOT a pot-%): size the turn bet so the
+// river is auto-set to a clean pot-sized shove. TurnBet = (EffStack - PotSize)/3.
+// Available as a value-betting turn size when stacks are ~<=2x pot; wiring it into
+// the turn value line (RaiseBy <amount> vs RaiseBy <pct>%) is deferred to the
+// harmonization pass (mixing amount/pct on one street is awkward). [GG turn geometry]
+WHEN PotSize >= f$EffStack RETURN 0 FORCE
+WHEN Others RETURN (f$EffStack - PotSize) / 3 FORCE
+
 ##f$BetPctVsStation##
 // VALUE size vs a calling station. Counter-intuitively BIGGER, not smaller: a station
 // pays off on its own hand strength and reads a big bet as a bluff. Bet ~pot with a
@@ -132,6 +159,9 @@ WHEN Others RETURN 100 FORCE
 // bot already CHECKS air vs an identified station in 50_flop -- f$Opp_IsStation Check.)
 // Heads-up: c-bet ~80% of missed flops (tiny pots, villain whiffs too) UNLESS a station.
 // [HUM p49][HUSNG p11]. Power c-bet capped 0.90 -> 0.80 (the >80% over-bluff leak). [DFR p127]
+// PHILOSOPHY: the dialed-DOWN bluff frequency is restraint, not timidity - over-bluffing
+// is forcing. [Tao ch.9 "fill a cup to its brim and it spills"][Tao ch.24 "he who strides
+// cannot keep pace"][48L L16 "use absence to increase respect" - don't over-bluff].
 WHEN f$HeadsUpPot AND NOT f$Opp_IsStation RETURN 0.80 FORCE
 WHEN f$Style = 1 RETURN 0.80 FORCE
 WHEN f$Style = 0 RETURN 0.60 FORCE
@@ -202,6 +232,9 @@ WHEN Others    RETURN 0 FORCE
 //  SPR (stack-to-pot ratio) & commitment. Refines the spine's "don't go broke
 //  with one pair" into the HIGH-SPR case: at LOW SPR you SHOULD stack off top
 //  pair / overpair. [SSNL SPR sidebar]
+//  "Don't go broke with one pair" = knowing when to stop. [Tao ch.44 "know when to
+//  stop and you will avoid danger"][48L L35 "master the art of timing"][Prince
+//  "virtu/fortuna" -> seize the +EV get-it-in, cap the variance off it].
 //-----------------------------------------------------------------------------
 
 ##f$SPR##
@@ -243,7 +276,15 @@ WHEN Others RETURN AmountToCall / (PotSize + AmountToCall) FORCE
 // Set-mine a small pair only with enough effective stack behind for real implied odds.
 // Tiered: loose/station pay off (15x ok); regs/foldy need more (~22x); full-ring deeper
 // than 6-max (20x vs 15x); never vs a nit. [CtM p122 15x][PMM 15x][DFR p41 20x FR][HC p148 ~25x tight]
+//
+// MTT MID/LATE-STAGE GUARD: in a TOURNAMENT, once we are out of the early stage
+// (f$Stage>=1: short, 6-max-deep, bubble or ITM) OR the effective stack is shallow
+// (<=30bb), the 10-to-1 implied odds set-mining needs simply are not there - the pot
+// can't grow enough and squeeze-risk behind is high. Require a much deeper ~25x, else
+// fold. CASH is unchanged (tgi_players_remaining is 0/unknown off-tournament, so this
+// guard never fires). [WPT2 "set-mining is out of the question at THIS stage"]
 WHEN f$Opp_IsNit RETURN false FORCE
+WHEN tgi_players_remaining >= 2 AND (f$Stage >= 1 OR f$EffStack <= 30) AND AmountToCall * 25 > f$EffStack RETURN false FORCE
 WHEN (f$Opp_IsStation OR f$Opp_IsFish OR f$Opp_IsLoose) AND AmountToCall * 15 <= f$EffStack RETURN true FORCE
 WHEN (f$Opp_IsTAG OR f$Opp_Foldy) AND AmountToCall * 22 <= f$EffStack RETURN true FORCE
 WHEN f$Is6Max AND AmountToCall * 15 <= f$EffStack RETURN true FORCE
@@ -322,6 +363,8 @@ WHEN Others RETURN 2.5 FORCE
 // 3-bet-JAM over a single open in the ~16-25bb band - the fold-equity re-steal the
 // push/fold tree misses (too deep to open-jam, too short to flat-and-play). Fires only
 // over exactly one raise, in/near position or the blinds, vs a wide opener. [JL p1161][RE p2280]
+// Win the pot uncontested - subdue the enemy without fighting. [SunTzu III.2 "supreme
+// excellence is to subdue the enemy without fighting"][48L L28 "enter action with boldness"].
 WHEN Raises = 1 AND f$EffStack > 15 AND f$EffStack <= 25 AND (f$Opp_IsLoose OR f$Opp_IsAggro) AND (InButton OR InCutOff OR InSmallBlind OR InBigBlind) AND listReshove RETURN true FORCE
 WHEN Others RETURN false FORCE
 
@@ -329,6 +372,9 @@ WHEN Others RETURN false FORCE
 // Fire a 2nd barrel as the flop aggressor: vs reg/foldy types (NEVER stations/fish),
 // heads-up, on a scary or dry board that missed villain's peeling range; suppress when
 // way behind on a wet board. The turn is an under-bet street. [EG p52][ER p8][LTBR p14][ASH p61]
+// Never barrel a POT-COMMITTED / cornered villain (no fold equity). [SunTzu VII.36 "leave a
+// golden bridge for a retreating army"][SunTzu IV "do not attack his strength" vs station/fish]
+WHEN f$Opp_PotCommitted RETURN false FORCE
 WHEN f$Opp_IsStation OR f$Opp_IsFish RETURN false FORCE
 WHEN NOT (f$WasPreflopRaiser AND BotRaisedOnFlop AND f$HeadsUpPot) RETURN false FORCE
 WHEN StraightPossible AND prwin < 0.50 RETURN false FORCE
@@ -338,6 +384,13 @@ WHEN Others RETURN false FORCE
 ##f$ThreeBetBluffFreq##
 // Frequency cap for 3-bet bluffs by opponent type: bluff foldy/nits often (they over-fold),
 // never stations/fish or light-3-bettors (no fold equity / they fight back). [ER p7][LTBR p11]
+// [SunTzu VI.30 "attack where he is unprepared, undefended" -> attack fold equity (foldy/nit
+// high)][SunTzu IV "first make yourself invincible; do not attack his strength" -> 0 vs
+// stations/fish, value-bet that instead][Prince "feared > loved" -> exploit the foldy image].
+// Never bluff a POT-COMMITTED / cornered villain who cannot fold (no fold equity). [SunTzu
+// VII.36 "leave a golden bridge for a retreating army"][Tao ch.69 "no greater disaster than
+// underestimating the enemy"].
+WHEN f$Opp_PotCommitted RETURN 0 FORCE
 WHEN f$Opp_IsStation OR f$Opp_IsFish RETURN 0 FORCE
 WHEN f$Opp_ThreeBetsLight RETURN 0 FORCE
 WHEN f$Opp_IsNit RETURN 0.70 FORCE

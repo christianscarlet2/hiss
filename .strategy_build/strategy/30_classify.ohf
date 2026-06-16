@@ -77,6 +77,39 @@ WHEN FlushPossible OR StraightOnBoard OR MoreThanOneStraightPossibleOnFlop RETUR
 WHEN Others RETURN false FORCE
 
 //-----------------------------------------------------------------------------
+//  HIGH-CARD board texture for c-bet bluffs (Gordon's combinatoric read). The
+//  existing wet/dry/scary symbols are DRAW-based and blind to the board's HIGH
+//  card. A flat-caller's range is loaded with broadways: a K/A/Q-high DRY flop
+//  MISSES that range (few of those cards remain) -> great bluff-c-bet card; a
+//  J/T-high DRY flop HITS it hard -> do NOT bluff-c-bet. [GG "Continuation-Bets
+//  for Bluffs", "Low/Paired/Monotone Boards", "Parched Boards"]
+//  HighestRankOnFlop is the numeric top board rank (Queen=12, King=13, Ace=14).
+//-----------------------------------------------------------------------------
+
+##f$BoardHighCardFoldy##
+// Dry board whose HIGH card is Q+ (>=12): few Q/K/A combos left in a caller's
+// flat range, so an air c-bet picks it up. Boost/keep the bluff-c-bet here.
+WHEN f$BoardDry AND HighestRankOnFlop >= 12 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$BoardHighCardSticky##
+// Dry board topped by a Jack or Ten (HighestRankOnFlop 10 or 11): HITS a flat
+// caller's broadway-heavy range - do NOT fire an air c-bet here. (Q+ excluded.)
+// Defined as the dry-board residue of the other two textures: a dry flop is exactly
+// one of Foldy (Q+), Parched (<=9, no ace), or Sticky (J/T-high) - so this wires
+// f$BoardHighCardFoldy + f$BoardParched into the live c-bet path (50_flop) instead of
+// duplicating the rank thresholds. Behaviour-identical to "HighestRankOnFlop 10-11".
+WHEN f$BoardDry AND NOT f$BoardHighCardFoldy AND NOT f$BoardParched RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$BoardParched##
+// Low, rainbow, disconnected "parched" flop (e.g. 7-4-2 / 9-6-3 / 8-5-4): top card
+// 9 or below AND dry. Misses everyone - barrel the whole range relentlessly; only
+// slow/fold when an Ace turns (handled on the turn via AcePresentOnTurn). [GG]
+WHEN f$BoardDry AND HighestRankOnFlop <= 9 AND NOT AcePresentOnFlop RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
 //  Initiative
 //-----------------------------------------------------------------------------
 

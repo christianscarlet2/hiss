@@ -19,6 +19,8 @@ WHEN Others RETURN f$flop_vs_bet FORCE
 ##f$flop_nobet##
 // Value & protection with strong made hands (bigger on wet boards - see f$BetPctFlop).
 // Vs a calling station, size UP for value (pot/overbet) - they pay on their own hand. [CtM p147]
+// Never attack his strength by bluffing it - make money from it by value-betting big.
+// [SunTzu IV "first make yourself invincible"][48L L15 "crush your enemy totally"]
 WHEN f$HaveStrongMade AND f$Opp_IsStation AND explain_value_flop RaiseBy f$BetPctVsStation % FORCE
 WHEN f$HaveStrongMade AND explain_value_flop RaiseBy f$BetPctFlop % FORCE
 // Semi-bluff strong & combo draws - two ways to win. [B D6]
@@ -33,6 +35,10 @@ WHEN f$HaveOnePair AND f$WasPreflopRaiser RaiseBy f$BetPctFlop % FORCE
 // bias to heads-up / foldy opponents; frequency set by style. [B R1.3][N ~60%]
 WHEN f$WasPreflopRaiser AND f$ScaryBoard Check FORCE
 WHEN f$WasPreflopRaiser AND f$Opp_IsStation Check FORCE
+// Gordon high-card read: a J/T-high DRY flop HITS a flat-caller's broadway-heavy
+// range - don't bluff-c-bet it; check the air. (K/A/Q-high dry "foldy" boards and
+// low "parched" boards keep firing below at f$CbetFreq.) [GG bluff-c-bet boards]
+WHEN f$WasPreflopRaiser AND f$BoardHighCardSticky Check FORCE
 WHEN f$WasPreflopRaiser AND f$HeadsUpPot AND randomround < f$CbetFreq AND explain_cbet RaiseBy f$BetPctFlop % FORCE
 WHEN f$WasPreflopRaiser AND f$Opp_Foldy AND randomround < f$CbetFreq RaiseBy f$BetPctFlop % FORCE
 // In-position stab to set up a turn take-away with a weak draw. [N float doctrine]

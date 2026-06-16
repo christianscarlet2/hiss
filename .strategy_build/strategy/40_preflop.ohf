@@ -106,7 +106,7 @@ WHEN listSetMine AND f$DeepStack AND f$WithinSpecRisk AND explain_call_setmine C
 WHEN explain_fold_pre Fold FORCE
 
 //-----------------------------------------------------------------------------
-//  Push / fold (effective stack <= ~10bb)
+//  Push / fold (effective stack <= ~15bb, or M<=5) - see f$PushFoldStack
 //-----------------------------------------------------------------------------
 
 ##f$preflop_pushfold##
@@ -119,10 +119,16 @@ WHEN Raises >= 2 AND explain_fold_pre Fold FORCE
 // borderline. Re-jam over a non-allin raise; calls an allin. [ICM + N p.34]
 WHEN Raises == 1 AND list3betValue AND explain_callshove RaiseMax FORCE
 WHEN Raises == 1 AND f$ICM_CallShove AND explain_callshove RaiseMax FORCE
+// ON THE BUBBLE (f$Stage = 2): survival has $-value, so the call-shove boundary tightens to
+// the ~top-10% listCallShoveBubble and the wide chip-EV floor is SUPPRESSED (it must not
+// re-widen past the ICM-tightened gate above). Inert until a real payout curve is scraped
+// (f$NearBubble -> f$Stage 2 stays false today), exactly like f$BubbleTighten. [SoS p61][SNG]
+WHEN Raises == 1 AND f$Stage = 2 AND listCallShoveBubble AND explain_callshove RaiseMax FORCE
+WHEN Raises == 1 AND f$Stage = 2 AND explain_fold_pre Fold FORCE
 WHEN Raises == 1 AND listCallShove AND explain_callshove RaiseMax FORCE
 WHEN Raises == 1 AND explain_fold_pre Fold FORCE
 // First in: jam a near-Nash, position-scaled range (very wide late). Folding strong
-// broadways at <=10bb is the leak that blinds you out.
+// broadways at <=15bb is the leak that blinds you out.
 WHEN (InButton OR InCutOff OR InLatePosition OR InSmallBlind) AND listJamLP AND explain_pushfold RaiseMax FORCE
 WHEN InMiddlePosition AND listJamMP AND explain_jam RaiseMax FORCE
 WHEN InEarlyPosition AND listJamEP AND explain_jam RaiseMax FORCE
