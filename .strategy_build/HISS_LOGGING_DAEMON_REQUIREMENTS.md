@@ -59,6 +59,33 @@ hiss_shipper.py → hiss.scarletbeast.com LAN ingest → replay UI + MCP replay_
 - Also port headless parse-error logging (CParseErrors::Error → file, suppress modal) — headless can't
   pop the MessageBox; needed for clean automated loads.
 
+## A-RESULT (2026-06-15): Linux port now BOOTS + PARSES the harmonized strategy.
+Fixed FIVE real engine bugs on the box (all rebuilt clean, `build/hiss` links):
+  1. `CFile::Open` `\`→`/` translation (compat/mfc_compat.h).
+  2. `OpenHoldemDirectory()` Linux base via `/proc/self/exe` (+HISS_HOME) (Files.cpp).
+  3. Forward-slash dir builders + `.GetString()` on `library_path.Format` (Files.cpp / CFormulaParser.cpp).
+  4. **CString→%s ABI fix**: templatized `CString::Format`/`AppendFormat` so CString args auto-
+     convert to const char* (the Itanium ABI passed the non-trivially-copyable CString to a `...`
+     vararg by hidden reference, corrupting paths + garbling all diagnostics). mfc_string.h.
+  5. **`CFile::ReadString` clears the string at EOF** (MFC semantics) — the stale last-body-line was
+     re-processed and threw a spurious "Shanky option settings" error per library file.
+  + `PT_DLL_IsValidSymbol` stub → return true (pt_* validate; not-connected branch returns undefined).
+  + symlinked `build/bot_logic` -> /mnt/www/openholdembot/Release/bot_logic (the 25 OpenPPL libs).
+RESULT: the OpenPPL library + ScarletBeast strategy parse; engine prints "engine booted" +
+"strategy formula loaded". Strategy combined as strategy/ScarletBeast_linux.ohf (headless_shims +
+ScarletBeast). tgi_*/openai_* resolve via shim functions; pt_* return undefined headless.
+
+## A-REMAINING (the precise last mile): the ~19 `explain_*` narration anchors still error
+("Unknown identifier") because the parser REJECTS non-f$/list function headers ("Found unknown
+function type", CFormulaParser.cpp:339) and the function-collection only exposes f$/list names as
+symbols — so the bare-name shim works for tgi_/openai_ (already-registered-name path) but NOT for
+explain_. FIX = a tiny **headless symbol engine** (e.g. CSymbolEngineHeadlessExplain) registered in
+the engine container that claims the `explain_` prefix → returns 1.0 (always-true anchor), and
+optionally `tgi_`/`openai_` → defaults (replacing the shim functions for cleanliness). Pattern: copy a
+minimal CSymbolEngine* (memcmp(name,"explain_",8)==0 → *result=1; return true), register in
+CEngineContainer's engine list. Then re-test: expect 0 parse errors + f$Style=2 via /decide "sym".
+Headless parse-error logging (CParseErrors::Error → file + skip modal) ports cleanly alongside.
+
 ## B. Multi-daemon identity for advanced logging
 - Each hiss-linux headless daemon instance (one per table/seat) must carry a DISTINCT IDENTITY when
   it does advanced logging to hiss.scarletbeast.com. Add `HISS_IDENTITY` / `daemon_id` (config +
