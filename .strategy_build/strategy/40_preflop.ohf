@@ -54,11 +54,11 @@ WHEN explain_fold_pre Fold FORCE
 // +1bb per extra limper) using the positional OPEN ranges -- this RAISES KJ/broadway-type
 // hands (e.g. KdJd) instead of flatting them. Speculative hands set-mine cheaply; trash
 // folds. [N p.24][B]
-WHEN listBigPair OR list3betValue RaiseTo f$Iso_RaiseTo FORCE
-WHEN InEarlyPosition AND listOpenEP RaiseTo f$Iso_RaiseTo FORCE
-WHEN InMiddlePosition AND listOpenMP RaiseTo f$Iso_RaiseTo FORCE
-WHEN (InLatePosition OR InCutOff OR InButton) AND listOpenLP RaiseTo f$Iso_RaiseTo FORCE
-WHEN InSmallBlind AND listOpenMP RaiseTo f$Iso_RaiseTo FORCE
+WHEN (listBigPair OR list3betValue) AND explain_iso RaiseTo f$Iso_RaiseTo FORCE
+WHEN InEarlyPosition AND listOpenEP AND explain_iso RaiseTo f$Iso_RaiseTo FORCE
+WHEN InMiddlePosition AND listOpenMP AND explain_iso RaiseTo f$Iso_RaiseTo FORCE
+WHEN (InLatePosition OR InCutOff OR InButton) AND listOpenLP AND explain_iso RaiseTo f$Iso_RaiseTo FORCE
+WHEN InSmallBlind AND listOpenMP AND explain_iso RaiseTo f$Iso_RaiseTo FORCE
 WHEN f$DeepStack AND listSetMine Call FORCE
 WHEN InBigBlind Check FORCE
 WHEN explain_fold_pre Fold FORCE
