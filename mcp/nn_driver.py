@@ -127,6 +127,14 @@ def decide_and_act(mono):
         # NN said raise but gave no numpad size -> an unsized raise can misfire on the real
         # table; downgrade to the always-legal call rather than guess.
         do, amount, note = "call", 0, "  (raise->call: no size)"
+    # Reconcile call/check with the actual spot: with no bet to call the table shows a CHECK
+    # button (not Call), so do=call would find no button and never click. AmountToCall>0 means
+    # we're facing a bet (can't check). Uses AmountToCall from the sym we already fetched.
+    amt_to_call = float(sym.get("AmountToCall", 0) or 0)
+    if do == "call" and amt_to_call <= 0.001:
+        do, note = "check", note + "  (call->check: nothing to call)"
+    elif do == "check" and amt_to_call > 0.001:
+        do, note = "call", note + "  (check->call: facing a bet)"
     print("[nn_driver] %s hole=%s board=%s -> NN: %s%s%s  (val=%s)" %
           (sv["_handnumber"], sv["hole"], sv["board"] or "-", do,
            (" to %.1fbb" % amount) if amount else "", note, nn.get("value")), flush=True)
