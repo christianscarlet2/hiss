@@ -38,22 +38,55 @@
 //
 ///////////////////////////////////////////////////////////////////////////////////
 
-#pragma data_seg(kOpenHoldemSharedmemorySegment)  
+// Cross-instance shared state, backed by a NAMED FILE MAPPING (CreateFileMapping) so it is
+// genuinely shared across every Hiss process. The legacy #pragma data_seg/.ohshmem shared-
+// segment trick was NOT reliably shared across processes on this toolchain/OS (even with ASLR
+// off): each instance kept a PRIVATE copy, so PokerWindowAttached() never saw another instance's
+// table and two instances both grabbed the same poker window. A file mapping is the robust fix.
+struct OHSharedState {
+  HWND   attached_poker_windows[MAX_SESSION_IDS];                  // auto-connector: who is on what
+  time_t last_failed_attempt_to_connect;
+  int    session_ID_of_last_instance_that_failed_to_connect;
+  HWND   dense_list_of_attached_poker_windows[MAX_SESSION_IDS];    // table positioner
+  int    size_of_dense_list_of_attached_poker_windows;
+  int    CRC_of_main_mutexname;
+  int    openholdem_PIDs[MAX_SESSION_IDS];                         // watchdog / popup-blocker / session IDs
+};
 
-__declspec(allocate(kOpenHoldemSharedmemorySegment)) static	HWND	 attached_poker_windows[MAX_SESSION_IDS] = { NULL };	// for the auto-connector
-__declspec(allocate(kOpenHoldemSharedmemorySegment)) static	time_t last_failed_attempt_to_connect;	// last time any instance failed; to avoid superflous attempts by other instances of OH
-__declspec(allocate(kOpenHoldemSharedmemorySegment)) static	int		 session_ID_of_last_instance_that_failed_to_connect;
-__declspec(allocate(kOpenHoldemSharedmemorySegment)) static	HWND	 dense_list_of_attached_poker_windows[MAX_SESSION_IDS] = { NULL }; // for the table positioner
-__declspec(allocate(kOpenHoldemSharedmemorySegment)) static	int		 size_of_dense_list_of_attached_poker_windows;
-__declspec(allocate(kOpenHoldemSharedmemorySegment)) static	int		 CRC_of_main_mutexname;
-__declspec(allocate(kOpenHoldemSharedmemorySegment)) static	int    openholdem_PIDs[MAX_SESSION_IDS] = { NULL }; // process IDs for popup-blocker
+// Returns the process-shared state, lazily creating/opening the mapping on first use. Pagefile-
+// backed mappings are zero-initialised by the OS, so a fresh segment starts clean (and a second
+// instance that opens the existing mapping sees the first instance's writes). Magic-static init
+// is thread-safe.
+static OHSharedState *SharedState() {
+  static OHSharedState *cached = NULL;
+  if (cached != NULL) return cached;
+  // "Local\\" namespace = shared within the user session (all Hiss instances run there).
+  HANDLE map = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
+    0, sizeof(OHSharedState), "Local\\HissAutoConnectorSharedState_v1");
+  if (map != NULL) {
+    OHSharedState *view = (OHSharedState *)MapViewOfFile(map, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(OHSharedState));
+    if (view != NULL) {
+      // Keep `map` open for the process lifetime (the mapping persists while any handle is open);
+      // freed automatically when the process exits.
+      cached = view;
+      return cached;
+    }
+    CloseHandle(map);
+  }
+  // Fallback (mapping unavailable): a private zeroed copy so the bot still runs (single-instance).
+  cached = (OHSharedState *)calloc(1, sizeof(OHSharedState));
+  return cached;
+}
 
-#pragma data_seg()
-#pragma comment(linker, "/SECTION:.ohshmem,RWS")		// RWS: read, write, shared
-// NOTE: ASLR must be OFF for this shared .ohshmem segment to actually be shared across instances
-// (else each instance loads at a different base, the cross-instance "attached windows" table is
-// private, and two Hiss instances both grab the same poker window). Disabled via
-// RandomizedBaseAddress=false in Hiss.vcxproj (can't be set via #pragma comment(linker)).
+// Keep the original variable names: the rest of this file references them directly; these macros
+// redirect every access into the shared mapping.
+#define attached_poker_windows                             (SharedState()->attached_poker_windows)
+#define last_failed_attempt_to_connect                     (SharedState()->last_failed_attempt_to_connect)
+#define session_ID_of_last_instance_that_failed_to_connect (SharedState()->session_ID_of_last_instance_that_failed_to_connect)
+#define dense_list_of_attached_poker_windows               (SharedState()->dense_list_of_attached_poker_windows)
+#define size_of_dense_list_of_attached_poker_windows       (SharedState()->size_of_dense_list_of_attached_poker_windows)
+#define CRC_of_main_mutexname                              (SharedState()->CRC_of_main_mutexname)
+#define openholdem_PIDs                                    (SharedState()->openholdem_PIDs)
 
 ///////////////////////////////////////////////////////////////////////////////////
 //
