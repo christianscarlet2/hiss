@@ -20,6 +20,7 @@
 #include "CSessionCounter.h"
 #include "COcrWorker.h"   // g_ocr_worker_mode
 #include "CSymbolEngineRandom.h"
+#include "..\CTablemap\CTablemapDB.h"   // postgres-backed cross-instance coordination
 #include "..\DLLs\WindowFunctions_DLL\window_functions.h"
 
 #define ENT CSLock lock(m_critsec);
@@ -96,6 +97,10 @@ static OHSharedState *SharedState() {
 
 CSharedMem *p_sharedmem = NULL;
 
+// Defined later in this file; used by the postgres-backed coordination to reap
+// stale rows left by crashed instances.
+bool isProcessRunning(DWORD processID);
+
 CSharedMem::CSharedMem() {
 	// We can verify the mutex here,
 	// because preferences have already been loaded.
@@ -105,6 +110,11 @@ CSharedMem::CSharedMem() {
 
 CSharedMem::~CSharedMem() {
   write_log(Preferences()->debug_sharedmem(), "[CSharedMem] Terminating %d\n", p_sessioncounter->session_id());
+  // Release this instance's attachment so its poker window frees up immediately
+  // on a clean shutdown (crashes are reaped lazily via pid-liveness in PokerWindowAttached).
+  if ((p_tablemap_db != NULL) && !g_ocr_worker_mode) {
+    p_tablemap_db->DBClearAttachedSession(p_sessioncounter->session_id());
+  }
 }
 
 void CSharedMem::AquireOwnProcessID() {
@@ -134,17 +144,49 @@ void CSharedMem::AquireOwnProcessID() {
 
 bool CSharedMem::PokerWindowAttached(HWND Window) {
 	ENT;
-	for (int i=0; i<MAX_SESSION_IDS; i++)	{
-		if (attached_poker_windows[i] == Window) {
-			// Window found. Already attached.
-			return true;
+	// Authoritative cross-instance check via postgres. The legacy in-process shared
+	// segment did NOT reliably share across Hiss processes on this toolchain, so two
+	// instances both grabbed the same window; the `hiss` DB is unambiguously shared.
+	if (p_tablemap_db != NULL) {
+		std::vector<SAttachedWindow> rows;
+		if (p_tablemap_db->DBListAttachedWindows(&rows)) {
+			bool served = false;
+			for (size_t i = 0; i < rows.size(); ++i) {
+				if (!isProcessRunning((DWORD)rows[i].pid)) {
+					// Crashed/exited instance: reap its row so its window frees up.
+					p_tablemap_db->DBClearAttachedSession(rows[i].session_id);
+					continue;
+				}
+				if (rows[i].hwnd != 0 && (HWND)(intptr_t)rows[i].hwnd == Window) {
+					served = true;
+				}
+			}
+			write_log(Preferences()->debug_autoconnector(),
+				"[CSharedMem] CHECK(db) window=%d served=%d my_session=%d rows=%d\n",
+				Window, (int)served, p_sessioncounter->session_id(), (int)rows.size());
+			return served;
 		}
 	}
-	// Window not found. Not attached.
+	// Fallback: best-effort local array if the DB is unreachable (single-instance only).
+	for (int i=0; i<MAX_SESSION_IDS; i++) {
+		if (attached_poker_windows[i] == Window) return true;
+	}
 	return false;
 }
 
 bool CSharedMem::AnyWindowAttached() {
+	// Postgres-backed: is any LIVE instance connected to a window?
+	if (p_tablemap_db != NULL) {
+		std::vector<SAttachedWindow> rows;
+		if (p_tablemap_db->DBListAttachedWindows(&rows)) {
+			for (size_t i = 0; i < rows.size(); ++i) {
+				if (rows[i].hwnd != 0 && isProcessRunning((DWORD)rows[i].pid)) {
+					return true;
+				}
+			}
+			return false;
+		}
+	}
 	for (int i=0; i<MAX_SESSION_IDS; i++)	{
 		if (attached_poker_windows[i] != NULL) {
 			return true;
@@ -155,7 +197,17 @@ bool CSharedMem::AnyWindowAttached() {
 
 void CSharedMem::MarkPokerWindowAsAttached(HWND Window) {
   ENT;
-	attached_poker_windows[p_sessioncounter->session_id()] = Window;	
+	// Keep the local array for the table-positioner/status helpers (best-effort).
+	attached_poker_windows[p_sessioncounter->session_id()] = Window;
+	// Authoritative: publish this instance's attachment to the shared `hiss` DB so
+	// other instances see it. OCR workers never connect, so they don't register.
+	if ((p_tablemap_db != NULL) && !g_ocr_worker_mode) {
+		p_tablemap_db->DBSetAttachedWindow(p_sessioncounter->session_id(),
+			(long)GetCurrentProcessId(), (long long)(intptr_t)Window);
+	}
+	write_log(Preferences()->debug_autoconnector(),
+		"[CSharedMem] MARK(db) session=%d window=%d\n",
+		p_sessioncounter->session_id(), Window);
 }
 
 void CSharedMem::RememberTimeOfLastFailedAttemptToConnect() {

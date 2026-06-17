@@ -263,6 +263,16 @@ bool CTablemapDB::EnsureSchema() {
 		"CREATE TABLE IF NOT EXISTS hiss_log_hands ("
 		" id BIGSERIAL PRIMARY KEY, ts_ms BIGINT NOT NULL, handnumber TEXT, complete BOOL,"
 		" hh_text TEXT, shipped BOOL DEFAULT false);"
+		// Cross-instance auto-connector coordination. Replaces the legacy in-process
+		// shared-memory segment (CSharedMem), which did NOT reliably share across Hiss
+		// processes on this toolchain (one instance got the real named mapping, the other
+		// a private copy), so two instances both grabbed the same poker window. Postgres
+		// is unambiguously shared. One row per live Hiss instance (keyed by session_id);
+		// hwnd is the attached poker window (0 = none). Stale rows from crashed instances
+		// are reaped lazily by pid-liveness checks in CSharedMem.
+		"CREATE TABLE IF NOT EXISTS oh_attached_windows ("
+		" session_id INT PRIMARY KEY, pid BIGINT NOT NULL, hwnd BIGINT NOT NULL DEFAULT 0,"
+		" updated_at TIMESTAMP DEFAULT now());"
 		"CREATE INDEX IF NOT EXISTS idx_hlframes_hand ON hiss_log_frames(handnumber);"
 		"CREATE INDEX IF NOT EXISTS idx_hlframes_shipped ON hiss_log_frames(shipped);"
 		"CREATE INDEX IF NOT EXISTS idx_hlscrapes_hand ON hiss_log_scrapes(handnumber);"
@@ -388,6 +398,57 @@ CString CTablemapDB::GetSettingsRevision() {
 	}
 	if (res) PQclear(res);
 	return result;
+}
+
+//*******************************************************************************
+// Cross-instance auto-connector coordination (oh_attached_windows table)
+//*******************************************************************************
+
+bool CTablemapDB::DBSetAttachedWindow(int session_id, long pid, long long hwnd) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
+	if (!Connect()) return false;
+	CString sql;
+	// Upsert: one row per session_id. hwnd==0 means "connected to nothing" (cleared),
+	// which we keep as a live row so the instance is still counted as present.
+	sql.Format(
+		"INSERT INTO oh_attached_windows (session_id, pid, hwnd, updated_at)"
+		" VALUES (%d, %ld, %lld, now())"
+		" ON CONFLICT (session_id) DO UPDATE SET"
+		" pid=EXCLUDED.pid, hwnd=EXCLUDED.hwnd, updated_at=now()",
+		session_id, pid, hwnd);
+	return ExecCommand(sql);
+}
+
+bool CTablemapDB::DBListAttachedWindows(std::vector<SAttachedWindow> *out) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
+	if (out == NULL) return false;
+	out->clear();
+	if (!Connect()) return false;
+	PGresult *res = PQexec((PGconn *)_conn,
+		"SELECT session_id, pid, hwnd FROM oh_attached_windows");
+	if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+		_last_error.Format("SQL error: %s", PQerrorMessage((PGconn *)_conn));
+		if (res) PQclear(res);
+		return false;
+	}
+	int rows = PQntuples(res);
+	for (int i = 0; i < rows; ++i) {
+		SAttachedWindow w;
+		w.session_id = atoi(PgVal(res, i, 0));
+		w.pid        = atol(PgVal(res, i, 1));
+		w.hwnd       = _atoi64(PgVal(res, i, 2));
+		out->push_back(w);
+	}
+	PQclear(res);
+	return true;
+}
+
+bool CTablemapDB::DBClearAttachedSession(int session_id) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
+	if (!Connect()) return false;
+	CString sql;
+	sql.Format("DELETE FROM oh_attached_windows WHERE session_id=%d", session_id);
+	return ExecCommand(sql);
 }
 
 bool CTablemapDB::GetSettingArray(const CString key, const CString field, std::vector<CString> *out) {

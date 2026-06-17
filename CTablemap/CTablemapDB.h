@@ -30,6 +30,13 @@ struct STablemapDBInfo {
 	CString titletext;
 };
 
+// One live Hiss instance's auto-connector state (oh_attached_windows row).
+struct SAttachedWindow {
+	int       session_id;
+	long      pid;
+	long long hwnd;          // attached poker window (0 = none)
+};
+
 class CTablemapDB {
 public:
 	CTablemapDB();
@@ -80,6 +87,16 @@ public:
 	// across the settings + tablemaps tables, as a text timestamp ("" on error).
 	// Hiss's heartbeat compares this against the last seen value.
 	CString GetSettingsRevision();
+
+public:
+	// Cross-instance auto-connector coordination (oh_attached_windows table).
+	// Replaces the unreliable in-process shared-memory segment. Used by CSharedMem.
+	//   DBSetAttachedWindow: upsert this instance's row (hwnd=0 clears the attachment).
+	//   DBListAttachedWindows: every instance's current row (caller checks pid liveness).
+	//   DBClearAttachedSession: remove a row (used to reap dead instances).
+	bool DBSetAttachedWindow(int session_id, long pid, long long hwnd);
+	bool DBListAttachedWindows(std::vector<SAttachedWindow> *out);
+	bool DBClearAttachedSession(int session_id);
 
 private:
 	long GetTablemapId(const CString name);   // -1 if not found / error
