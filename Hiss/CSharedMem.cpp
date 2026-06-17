@@ -50,6 +50,11 @@ __declspec(allocate(kOpenHoldemSharedmemorySegment)) static	int    openholdem_PI
 
 #pragma data_seg()
 #pragma comment(linker, "/SECTION:.ohshmem,RWS")		// RWS: read, write, shared
+// ASLR (default-on) loads each instance at a different base, which makes the shared .ohshmem
+// segment NOT actually shared across instances -> the cross-instance "attached windows" table
+// is private per process, so two Hiss instances can't see each other's tables and both grab the
+// same window. Pin the base (disable ASLR) so the shared segment is truly shared.
+#pragma comment(linker, "/DYNAMICBASE:NO")
 
 ///////////////////////////////////////////////////////////////////////////////////
 //
