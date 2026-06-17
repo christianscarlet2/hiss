@@ -79,11 +79,12 @@ static void SetButtonIconFromExe(HWND button, const char *exe_path) {
 #define IDC_OPEN_OPENHOLDEM_BUTTON 1009
 #define IDC_ALERT_TEXT 1010
 #define IDC_CLOSE_ALL_BUTTON 1011
-#define IDC_OPEN_SCRCPY_BUTTON 1012
+#define IDC_OPEN_SCRCPY_S10 1012
 #define IDC_OPEN_TRAINER_BUTTON 1013
 #define IDC_REC_SCRCPY_BUTTON 1014
 #define IDC_OPEN_LEARNER_BUTTON 1015
 #define IDC_OPEN_MDVIEWER_BUTTON 1016
+#define IDC_OPEN_SCRCPY_A17 1017
 
 #define TIMER_WINDOW_MONITOR 2001
 
@@ -105,7 +106,8 @@ static HWND g_scale_checkbox = NULL;
 static HWND g_build_button = NULL;
 static HWND g_open_openscrape_button = NULL;
 static HWND g_open_openholdem_button = NULL;
-static HWND g_open_scrcpy_button = NULL;
+static HWND g_open_scrcpy_s10_button = NULL;
+static HWND g_open_scrcpy_a17_button = NULL;
 static HWND g_open_trainer_button = NULL;
 static HWND g_open_learner_button = NULL;
 static HWND g_open_mdviewer_button = NULL;
@@ -1154,7 +1156,15 @@ static void OpenMarkdownViewer() {
 // 'scrcpy', value "x,y,w,h") and is restored when scrcpy is opened from this toolbar.
 
 static const char *kScrcpyWindowsKey = "devtoolbar_windows";
-static const char *kScrcpyWindowField = "scrcpy";
+
+// One scrcpy-able phone: adb serial, a short window title (set via --window-title so each phone's
+// mirror window can be found/positioned/recorded independently), and the settings field its
+// placement is persisted under. Add a row here to support another device.
+struct ScrcpyDevice { const char *serial; const char *title; const char *field; };
+static const ScrcpyDevice kScrcpyDevices[] = {
+  { "R58M50TB3BY", "S10", "scrcpy_s10" },   // Galaxy S10+ (SM-G975U1)
+  { "R5GL205FT7Y", "A17", "scrcpy_a17" },   // Galaxy A17  (SM-A176U1)
+};
 
 // Optional connection override at HKCU\Software\Hiss\Trainer "hiss_conn" (shared with
 // the trainer, so a single registry value points every tool at the same database).
@@ -1195,13 +1205,13 @@ static std::string SqlEscapeLiteral(const std::string &s) {
 
 // Upsert the rect as "x,y,w,h" into settings(key='devtoolbar_windows').value->'scrcpy'
 // (same JSON-merge shape as TrainerDB_SetSetting).
-static bool DbSaveScrcpyRect(const RECT &r) {
+static bool DbSaveScrcpyRect(const char *field_name, const RECT &r) {
   PGconn *conn = DbConnect();
   if (conn == NULL) return false;
   char val[64] = {0};
   sprintf_s(val, "%d,%d,%d,%d", (int)r.left, (int)r.top, (int)(r.right - r.left), (int)(r.bottom - r.top));
   const std::string v = SqlEscapeLiteral(val);
-  const std::string field = SqlEscapeLiteral(kScrcpyWindowField);
+  const std::string field = SqlEscapeLiteral(field_name);
   const std::string key = SqlEscapeLiteral(kScrcpyWindowsKey);
   const std::string sql =
     "INSERT INTO settings(key,value,updated_at) VALUES ('" + key + "', jsonb_build_object('" + field +
@@ -1214,11 +1224,11 @@ static bool DbSaveScrcpyRect(const RECT &r) {
   return ok;
 }
 
-static bool DbLoadScrcpyRect(RECT *out) {
+static bool DbLoadScrcpyRect(const char *field_name, RECT *out) {
   if (out == NULL) return false;
   PGconn *conn = DbConnect();
   if (conn == NULL) return false;
-  const std::string field = SqlEscapeLiteral(kScrcpyWindowField);
+  const std::string field = SqlEscapeLiteral(field_name);
   const std::string key = SqlEscapeLiteral(kScrcpyWindowsKey);
   const std::string sql = "SELECT value->>'" + field + "' FROM settings WHERE key='" + key + "'";
   PGresult *res = PQexec(conn, sql.c_str());
@@ -1295,6 +1305,25 @@ static HWND FindScrcpyWindow(const std::vector<HWND> *exclude) {
   return s.window;
 }
 
+// Find a scrcpy mirror window by its --window-title (used to record each phone's placement).
+struct ScrcpyTitleSearch { const std::vector<DWORD> *pids; const char *title; HWND window; };
+static BOOL CALLBACK FindScrcpyByTitleProc(HWND window, LPARAM param) {
+  ScrcpyTitleSearch *s = (ScrcpyTitleSearch*)param;
+  if (!IsScrcpyMirrorWindow(window, *s->pids)) return TRUE;
+  char t[128] = {0};
+  GetWindowTextA(window, t, sizeof(t));
+  if (_stricmp(t, s->title) == 0) { s->window = window; return FALSE; }
+  return TRUE;
+}
+static HWND FindScrcpyWindowByTitle(const char *title) {
+  std::vector<DWORD> pids;
+  CollectScrcpyPids(&pids);
+  if (pids.empty()) return NULL;
+  ScrcpyTitleSearch s = { &pids, title, NULL };
+  EnumWindows(FindScrcpyByTitleProc, (LPARAM)&s);
+  return s.window;
+}
+
 static BOOL CALLBACK CollectScrcpyWindowsProc(HWND window, LPARAM param) {
   ScrcpyWindowSearch *s = (ScrcpyWindowSearch*)param;
   if (IsScrcpyMirrorWindow(window, *s->pids)) {
@@ -1337,20 +1366,42 @@ static DWORD WINAPI ScrcpyPositionThread(LPVOID param) {
   return 0;
 }
 
-// Launch scrcpy, then (if a placement was recorded) move the new mirror window to it on
-// a background thread once the window actually appears.
-static void OpenScrcpyAndPosition() {
-  std::vector<HWND> before;
-  CollectScrcpyWindows(&before);   // so we reposition only the window this launch opens
-  RECT saved;
-  const bool have_saved = DbLoadScrcpyRect(&saved);
-
-  OpenExternalExecutable(kScrcpyPath, "Scrcpy");
-
-  if (!have_saved) {
-    SetStatusText("Opened scrcpy. No saved position yet - use \"Rec Scrcpy Pos\" to record one.");
+// Launch scrcpy.exe with command-line arguments (device serial + window title).
+static void LaunchScrcpyWithArgs(const char *args) {
+  if (!FileExists(kScrcpyPath)) {
+    char message[512] = {0};
+    sprintf_s(message, "scrcpy was not found:\r\n%s", kScrcpyPath);
+    MessageBox(g_main_window, message, kAppTitle, MB_OK | MB_ICONWARNING | MB_TOPMOST);
     return;
   }
+  HINSTANCE result = ShellExecute(g_main_window, "open", kScrcpyPath, args,
+    ParentDirectory(kScrcpyPath).c_str(), SW_SHOWNORMAL);
+  if ((INT_PTR)result <= 32) {
+    MessageBox(g_main_window, "Could not open scrcpy.", kAppTitle, MB_OK | MB_ICONERROR | MB_TOPMOST);
+  }
+}
+
+// Open scrcpy for one phone (-s <serial>), tag its window (--window-title) so it can be found,
+// and restore that phone's saved per-device placement once the mirror window appears. This is
+// the position/size persistence wrapper -- one independent saved rect per device.
+static void OpenScrcpyForDevice(const ScrcpyDevice &dev) {
+  std::vector<HWND> before;
+  CollectScrcpyWindows(&before);   // reposition only the window this launch opens
+  RECT saved;
+  const bool have_saved = DbLoadScrcpyRect(dev.field, &saved);
+
+  char args[256] = {0};
+  sprintf_s(args, "-s %s --window-title=%s", dev.serial, dev.title);
+  LaunchScrcpyWithArgs(args);
+
+  char msg[160] = {0};
+  if (!have_saved) {
+    sprintf_s(msg, "Opened scrcpy for %s. No saved position yet - use \"Rec Scrcpy Pos\".", dev.title);
+    SetStatusText(msg);
+    return;
+  }
+  sprintf_s(msg, "Opening scrcpy for %s; restoring saved window position.", dev.title);
+  SetStatusText(msg);
   ScrcpyPositionJob *job = new ScrcpyPositionJob();
   job->rect = saved;
   job->before = before;
@@ -1358,26 +1409,25 @@ static void OpenScrcpyAndPosition() {
   if (th != NULL) CloseHandle(th); else delete job;
 }
 
-// Record the current scrcpy mirror window's position + size into the Hiss database.
-static void RecordScrcpyPosition() {
-  HWND win = FindScrcpyWindow(NULL);
-  if (win == NULL) {
-    SetStatusText("scrcpy mirror window not found. Open scrcpy and connect a device first.");
-    return;
+// Record the position+size of every open, toolbar-tagged scrcpy mirror window into its
+// per-device field (matched by the --window-title we launched it with).
+static void RecordScrcpyPositions() {
+  int recorded = 0;
+  const int n = (int)(sizeof(kScrcpyDevices) / sizeof(kScrcpyDevices[0]));
+  for (int i = 0; i < n; ++i) {
+    HWND win = FindScrcpyWindowByTitle(kScrcpyDevices[i].title);
+    if (win == NULL) continue;
+    RECT r;
+    if (!GetWindowRect(win, &r)) continue;
+    if (DbSaveScrcpyRect(kScrcpyDevices[i].field, r)) recorded++;
   }
-  RECT r;
-  if (!GetWindowRect(win, &r)) {
-    SetStatusText("Could not read the scrcpy window position.");
-    return;
-  }
-  if (DbSaveScrcpyRect(r)) {
-    char msg[160] = {0};
-    sprintf_s(msg, "Recorded scrcpy position %d,%d  %dx%d to the Hiss database.",
-      (int)r.left, (int)r.top, (int)(r.right - r.left), (int)(r.bottom - r.top));
-    SetStatusText(msg);
+  char msg[160] = {0};
+  if (recorded > 0) {
+    sprintf_s(msg, "Recorded %d scrcpy window position(s) to the Hiss database.", recorded);
   } else {
-    SetStatusText("Failed to write scrcpy position to the Hiss database.");
+    sprintf_s(msg, "No tagged scrcpy windows found - open S10+ / A17 from this toolbar first.");
   }
+  SetStatusText(msg);
 }
 
 static void CreateChildControls(HWND hwnd) {
@@ -1420,9 +1470,13 @@ static void CreateChildControls(HWND hwnd) {
     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
     126, 118, 104, 28, hwnd, (HMENU)IDC_CLOSE_ALL_BUTTON, g_instance, NULL);
 
-  g_open_scrcpy_button = CreateWindow("BUTTON", "Scrcpy",
+  g_open_scrcpy_s10_button = CreateWindow("BUTTON", "S10+",
     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-    236, 118, 110, 28, hwnd, (HMENU)IDC_OPEN_SCRCPY_BUTTON, g_instance, NULL);
+    236, 118, 52, 28, hwnd, (HMENU)IDC_OPEN_SCRCPY_S10, g_instance, NULL);
+
+  g_open_scrcpy_a17_button = CreateWindow("BUTTON", "A17",
+    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+    292, 118, 54, 28, hwnd, (HMENU)IDC_OPEN_SCRCPY_A17, g_instance, NULL);
 
   g_open_trainer_button = CreateWindow("BUTTON", "Trainer",
     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
@@ -1488,12 +1542,16 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARA
       OpenRepoExecutable("Hiss.exe", "Hiss");
       return 0;
     }
-    if (LOWORD(wparam) == IDC_OPEN_SCRCPY_BUTTON) {
-      OpenScrcpyAndPosition();
+    if (LOWORD(wparam) == IDC_OPEN_SCRCPY_S10) {
+      OpenScrcpyForDevice(kScrcpyDevices[0]);   // Galaxy S10+
+      return 0;
+    }
+    if (LOWORD(wparam) == IDC_OPEN_SCRCPY_A17) {
+      OpenScrcpyForDevice(kScrcpyDevices[1]);   // Galaxy A17
       return 0;
     }
     if (LOWORD(wparam) == IDC_REC_SCRCPY_BUTTON) {
-      RecordScrcpyPosition();
+      RecordScrcpyPositions();
       return 0;
     }
     if (LOWORD(wparam) == IDC_OPEN_TRAINER_BUTTON) {
