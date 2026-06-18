@@ -40,6 +40,7 @@ static char g_control_file[MAX_PATH] = "";
 static int  g_play_seq = 0;            // last control sequence acted on
 static UINT g_play_ms  = 700;          // ms per frame during auto-play
 static int  g_last_frame_cache = -1;   // highest frame index in the current folder
+static bool g_sized_to_frame = false;  // sized the window to the first frame once (then user-resizable)
 
 // Lowest (want_lowest) or highest frame??????.bmp index in cur_working_path; -1 if none.
 static int scan_frame_extreme(bool want_lowest) {
@@ -222,7 +223,7 @@ bool InitInstance(HINSTANCE hInstance, int nCmdShow)
 
 	hInst = hInstance; // Store instance handle in our global variable
 
-	hWnd = CreateWindow(szWindowClass, szTitle, WS_BORDER | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
+	hWnd = CreateWindow(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,   // resizable (sizing border + maximize)
 						CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, NULL, NULL, hInstance, NULL);
 
 	g_hWnd = hWnd; // store hwnd in our global variable
@@ -328,6 +329,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			if (wParam == TIMER_CONTROL)  { control_tick();  return 0; }
 			break;
 
+		case WM_SIZE:
+			InvalidateRect(g_hWnd, NULL, TRUE);   // rescale the current frame to the new client size
+			break;
+
 		case WM_DESTROY:
 			DestroyWindow();
 			PostQuitMessage(0);
@@ -426,33 +431,31 @@ void draw_cur_frame()
 		width = bmp.bmWidth;
 		height = bmp.bmHeight;
 
-		// Resize window
-		SetWindowPos(g_hWnd, NULL, 0, 0, 
-					 width + GetSystemMetrics(SM_CXDLGFRAME)*2, 
-					 height + GetSystemMetrics(SM_CYDLGFRAME)*2 + GetSystemMetrics(SM_CYSIZE) + 1, 
-					 SWP_NOMOVE | SWP_NOZORDER);
+		// Size the window to the frame's natural size ONCE; after that the user controls the
+		// size and the frame is STRETCHED to fill the client area (so the window is resizable).
+		if (!g_sized_to_frame) {
+			SetWindowPos(g_hWnd, NULL, 0, 0,
+						 width + GetSystemMetrics(SM_CXSIZEFRAME)*2,
+						 height + GetSystemMetrics(SM_CYSIZEFRAME)*2 + GetSystemMetrics(SM_CYCAPTION) + 1,
+						 SWP_NOMOVE | SWP_NOZORDER);
+			g_sized_to_frame = true;
+		}
 
-		// Select file bitmap into a DC
+		// Stretch the frame to fill the current client area.
+		RECT client; GetClientRect(g_hWnd, &client);
 		hdc = GetDC(g_hWnd);
-		hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL); 
-		hdcCompatible = CreateCompatibleDC(hdcScreen); 
+		hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL);
+		hdcCompatible = CreateCompatibleDC(hdcScreen);
 		old_bitmap1 = (HBITMAP) SelectObject(hdcCompatible, hBmpFile);
-
-		// Create bitmap for window and select it to window's DC
-		hBmpWindow = CreateCompatibleBitmap(hdcScreen, width, height);
-		old_bitmap2 = (HBITMAP) SelectObject(hdc, hBmpWindow);
-
-		// Copy bitmap to window
-		BitBlt(hdc, 0, 0, width, height, hdcCompatible, 0, 0, SRCCOPY);
-		SelectObject(hdc, old_bitmap2);
+		SetStretchBltMode(hdc, HALFTONE);
+		SetBrushOrgEx(hdc, 0, 0, NULL);
+		StretchBlt(hdc, 0, 0, client.right, client.bottom, hdcCompatible, 0, 0, width, height, SRCCOPY);
 		SelectObject(hdcCompatible, old_bitmap1);
-
-		// Clean up
-		DeleteObject(hBmpWindow);
 		DeleteObject(hBmpFile);
 		DeleteDC(hdcCompatible);
 		DeleteDC(hdcScreen);
 		ReleaseDC(g_hWnd, hdc);
+		(void)hBmpWindow; (void)old_bitmap2;   // no longer used (window auto-size removed)
 
 		// Set title text
 		i=0;
