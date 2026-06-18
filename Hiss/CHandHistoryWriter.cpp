@@ -145,6 +145,7 @@ void CHandHistoryWriter::ResetHand() {
     _hand_desc[i]    = "";
     _hand_bracket[i] = "";
     _street_bet[i]   = 0.0;
+    _prev_balance[i] = -1.0;
     _folded[i]       = false;
     _fold_street[i]  = kUndefined;
     _voluntary_bet[i] = false;
@@ -190,6 +191,7 @@ void CHandHistoryWriter::CaptureMetadata() {
     _seat_name[i]    = FmtName(i);
     _seat_stack[i]   = p_table_state->Player(i)->stack();
     _street_bet[i]   = 0.0;
+    _prev_balance[i] = -1.0;
     _folded[i]       = false;
   }
   _cur_street = BETROUND;
@@ -309,8 +311,24 @@ void CHandHistoryWriter::ObserveActions() {
       _body += FmtName(i) + " folds\n";
       continue;
     }
-    if (!_have_bet) continue;
-    double cur = p_table_state->Player(i)->_bet.GetValue();
+    // Action size from STACK DROP (reliable scrape) rather than the flaky bet-chip OCR:
+    // a seat's total committed THIS STREET = chips put in since the street baseline. Track
+    // the last observed stack and accumulate decreases onto _street_bet (blinds pre-seed it).
+    // Falls back to the bet region only if balances aren't readable.
+    double cur;
+    if (_have_balance) {
+      double bal = p_table_state->Player(i)->_balance.GetValue();
+      if (bal <= 0.0) continue;                            // stack not scraped this tick / all-in edge
+      if (_prev_balance[i] < 0.0) _prev_balance[i] = bal;  // first sighting baseline
+      double delta = _prev_balance[i] - bal;               // chips committed since last observation
+      _prev_balance[i] = bal;
+      if (delta < kEpsilon) delta = 0.0;
+      cur = _street_bet[i] + delta;                        // total committed this street
+    } else if (_have_bet) {
+      cur = p_table_state->Player(i)->_bet.GetValue();
+    } else {
+      continue;
+    }
     if (cur > _street_bet[i] + kEpsilon) {
       CString allin = p_table_state->Player(i)->IsAllin() ? " and is all-in" : "";
       if (cur > _street_max + kEpsilon) {
