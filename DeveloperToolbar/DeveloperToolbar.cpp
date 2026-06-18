@@ -31,6 +31,7 @@ static const char kSnakeIcoPath[]   = "C:\\www\\openholdembot_old\\Hiss\\res\\Op
 static const char kEyeIcoPath[]     = "C:\\www\\openholdembot_old\\Vision\\res\\OpenScrape.ico";
 static const char kBarbellIcoPath[] = "C:\\www\\openholdembot_old\\trainer\\res\\trainer.ico";
 static const char kFeatherIcoPath[] = "C:\\www\\openholdembot_old\\learner\\res\\learner.ico";
+static const char kReplayerIcoPath[] = "C:\\www\\openholdembot_old\\OHReplay\\replayer.ico";
 
 // Attach an HICON to a button via its image list (icon sits left of the text).
 static void SetButtonIconHandle(HWND button, HICON icon) {
@@ -85,6 +86,8 @@ static void SetButtonIconFromExe(HWND button, const char *exe_path) {
 #define IDC_OPEN_LEARNER_BUTTON 1015
 #define IDC_OPEN_MDVIEWER_BUTTON 1016
 #define IDC_OPEN_SCRCPY_A17 1017
+#define IDC_OPEN_REPLAYER_BUTTON 1018
+#define IDC_OPEN_ADVREPLAY_BUTTON 1019
 
 #define TIMER_WINDOW_MONITOR 2001
 
@@ -111,6 +114,8 @@ static HWND g_open_scrcpy_a17_button = NULL;
 static HWND g_open_trainer_button = NULL;
 static HWND g_open_learner_button = NULL;
 static HWND g_open_mdviewer_button = NULL;
+static HWND g_open_replayer_button = NULL;
+static HWND g_open_advreplay_button = NULL;
 static HWND g_rec_scrcpy_button = NULL;
 static HWND g_close_all_button = NULL;
 static HWND g_build_progress = NULL;
@@ -1494,27 +1499,37 @@ static void CreateChildControls(HWND hwnd) {
     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
     126, 190, 220, 28, hwnd, (HMENU)IDC_OPEN_MDVIEWER_BUTTON, g_instance, NULL);
 
+  g_open_replayer_button = CreateWindow("BUTTON", "Replayer",
+    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+    16, 226, 104, 28, hwnd, (HMENU)IDC_OPEN_REPLAYER_BUTTON, g_instance, NULL);
+
+  g_open_advreplay_button = CreateWindow("BUTTON", "Advanced Replayer",
+    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+    126, 226, 220, 28, hwnd, (HMENU)IDC_OPEN_ADVREPLAY_BUTTON, g_instance, NULL);
+
   // App icons on the launch buttons.
   SetButtonIcon(g_open_openholdem_button, kSnakeIcoPath);   // Hiss
   SetButtonIcon(g_open_openscrape_button, kEyeIcoPath);     // Vision
   SetButtonIcon(g_open_trainer_button,    kBarbellIcoPath); // trainer
   SetButtonIcon(g_open_learner_button,    kFeatherIcoPath); // learner (feather)
   SetButtonIconFromExe(g_open_mdviewer_button, kMdViewerPath); // MD Viewer's own icon
+  SetButtonIcon(g_open_replayer_button,  kReplayerIcoPath); // Replayer (green felt + red play)
+  SetButtonIcon(g_open_advreplay_button, kReplayerIcoPath); // Advanced Replayer (web UI)
 
   g_build_progress = CreateWindowEx(0, PROGRESS_CLASS, "",
     WS_CHILD | WS_VISIBLE,
-    16, 230, 330, 18, hwnd, (HMENU)IDC_BUILD_PROGRESS, g_instance, NULL);
+    16, 266, 330, 18, hwnd, (HMENU)IDC_BUILD_PROGRESS, g_instance, NULL);
   SendMessage(g_build_progress, PBM_SETRANGE, 0, MAKELPARAM(0, 100));
   SendMessage(g_build_progress, PBM_SETPOS, 0, 0);
 
   g_alert_text = CreateWindow("STATIC", "",
     WS_CHILD | SS_CENTER,
-    16, 256, 330, 36, hwnd, (HMENU)IDC_ALERT_TEXT, g_instance, NULL);
+    16, 302, 330, 36, hwnd, (HMENU)IDC_ALERT_TEXT, g_instance, NULL);
   ShowWindow(g_alert_text, SW_HIDE);
 
   g_status_text = CreateWindow("STATIC", "Enter size, then click Pick Window.",
     WS_CHILD | WS_VISIBLE,
-    16, 300, 340, 54, hwnd, (HMENU)IDC_STATUS_TEXT, g_instance, NULL);
+    16, 346, 340, 54, hwnd, (HMENU)IDC_STATUS_TEXT, g_instance, NULL);
   LoadDefaultTablemapSize();
 }
 
@@ -1564,6 +1579,15 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARA
     }
     if (LOWORD(wparam) == IDC_OPEN_MDVIEWER_BUTTON) {
       OpenMarkdownViewer();
+      return 0;
+    }
+    if (LOWORD(wparam) == IDC_OPEN_REPLAYER_BUTTON) {
+      OpenRepoExecutable("replayer.exe", "Replayer");
+      return 0;
+    }
+    if (LOWORD(wparam) == IDC_OPEN_ADVREPLAY_BUTTON) {
+      ShellExecute(g_main_window, "open", "http://192.168.1.39/replay.html",
+        NULL, NULL, SW_SHOWNORMAL);
       return 0;
     }
     if (LOWORD(wparam) == IDC_CLOSE_ALL_BUTTON) {
@@ -1677,7 +1701,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show_command) {
 
   HWND hwnd = CreateWindowEx(WS_EX_TOPMOST, kWindowClassName, kAppTitle,
     WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-    CW_USEDEFAULT, CW_USEDEFAULT, 380, 421,
+    CW_USEDEFAULT, CW_USEDEFAULT, 380, 457,
     NULL, NULL, instance, NULL);
   if (hwnd == NULL) {
     return 1;
