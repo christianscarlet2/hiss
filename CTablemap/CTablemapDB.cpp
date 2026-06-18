@@ -455,11 +455,11 @@ bool CTablemapDB::GetHudPlayerStats(const CString &player, SHudDbStats *out) {
 	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	if (out == NULL) return false;
 	out->found = false; out->hands = 0;
-	out->vpip = out->pfr = out->threeb = out->af = out->cbet = out->ftc = out->steal = out->fts = out->wtsd = -1.0;
+	out->vpip = out->pfr = out->threeb = out->f3b = out->af = out->cbet = out->ftc = out->steal = out->fts = out->wtsd = -1.0;
 	if (player.IsEmpty() || !Connect()) return false;
 	CString sql;
 	sql.Format(
-		"SELECT hands, vpip_n, vpip_d, pfr_n, pfr_d, threeb_n, threeb_d, cbet_n, cbet_d,"
+		"SELECT hands, vpip_n, vpip_d, pfr_n, pfr_d, threeb_n, threeb_d, f3b_n, f3b_d, cbet_n, cbet_d,"
 		" ftc_n, ftc_d, steal_n, steal_d, fts_n, fts_d, aggr_actions, call_actions, wtsd_n, wtsd_d"
 		" FROM hud_player_stats WHERE player = '%s'", EscapeSqlLiteral(player).GetString());
 	PGresult *res = PQexec((PGconn *)_conn, sql.GetString());
@@ -474,6 +474,7 @@ bool CTablemapDB::GetHudPlayerStats(const CString &player, SHudDbStats *out) {
 		double vpip_n = atof(PgVal(res, 0, c++)), vpip_d = atof(PgVal(res, 0, c++));
 		double pfr_n = atof(PgVal(res, 0, c++)), pfr_d = atof(PgVal(res, 0, c++));
 		double threeb_n = atof(PgVal(res, 0, c++)), threeb_d = atof(PgVal(res, 0, c++));
+		double f3b_n = atof(PgVal(res, 0, c++)), f3b_d = atof(PgVal(res, 0, c++));
 		double cbet_n = atof(PgVal(res, 0, c++)), cbet_d = atof(PgVal(res, 0, c++));
 		double ftc_n = atof(PgVal(res, 0, c++)), ftc_d = atof(PgVal(res, 0, c++));
 		double steal_n = atof(PgVal(res, 0, c++)), steal_d = atof(PgVal(res, 0, c++));
@@ -484,6 +485,7 @@ bool CTablemapDB::GetHudPlayerStats(const CString &player, SHudDbStats *out) {
 		out->vpip   = vpip_d   > 0 ? 100.0 * vpip_n / vpip_d     : -1.0;
 		out->pfr    = pfr_d    > 0 ? 100.0 * pfr_n / pfr_d       : -1.0;
 		out->threeb = threeb_d > 0 ? 100.0 * threeb_n / threeb_d : -1.0;
+		out->f3b    = f3b_d    > 0 ? 100.0 * f3b_n / f3b_d       : -1.0;
 		out->cbet   = cbet_d   > 0 ? 100.0 * cbet_n / cbet_d     : -1.0;
 		out->ftc    = ftc_d    > 0 ? 100.0 * ftc_n / ftc_d       : -1.0;
 		out->steal  = steal_d  > 0 ? 100.0 * steal_n / steal_d   : -1.0;

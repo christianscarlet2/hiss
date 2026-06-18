@@ -414,25 +414,30 @@ void CHudManager::RefreshIfNeeded(CString hand_number, bool force)
 		_chair_samples[chair] = st.hands;
 		if (!build_stats) continue;
 
-		// Fixed own-data stat set. Each shown only when it has opportunities (value >= 0).
-		struct { const char *abbr; const char *full; bool important; double val; bool pct; } row[] = {
-			{ "VP",   "VPIP",          true,  st.vpip,   true  },
-			{ "PF",   "PFR",           true,  st.pfr,    true  },
-			{ "3B",   "3Bet",          true,  st.threeb, true  },
-			{ "AF",   "Aggression",    true,  st.af,     false },
-			{ "CB",   "CBet",          false, st.cbet,   true  },
-			{ "FTC",  "Fold to CBet",  false, st.ftc,    true  },
-			{ "ATS",  "Steal",         false, st.steal,  true  },
-			{ "FTS",  "Fold to Steal", false, st.fts,    true  },
-			{ "WTSD", "Went to SD",    false, st.wtsd,   true  },
-		};
-		for (size_t i = 0; i < sizeof(row) / sizeof(row[0]); ++i) {
-			if (row[i].val < 0.0) continue;
+		// PROFILE-DRIVEN: show the stats defined in the loaded HUD profile (BlackRain79),
+		// each mapped to its own-data value. Stats the aggregator doesn't track yet
+		// (rfi, 4bet, fold-to-4bet, turn/river cbets + folds, wsd, wwsf) are skipped until
+		// hud_aggregator.py computes them. AF is a ratio (1 decimal); the rest are percents.
+		for (size_t i = 0; i < _definitions.size(); ++i) {
+			CString sym = _definitions[i].symbol; sym.MakeLower();
+			double val = -1.0; bool pct = true;
+			if      (sym == "vpip")                                   val = st.vpip;
+			else if (sym == "pfr")                                    val = st.pfr;
+			else if (sym == "3bet")                                   val = st.threeb;
+			else if (sym == "fold_to_3bet_afterr" || sym == "fold_to_3bet") val = st.f3b;
+			else if (sym == "steal_attempt")                          val = st.steal;
+			else if (sym == "bb_fold_to_steal")                       val = st.fts;
+			else if (sym == "total_af" || sym == "af")              { val = st.af; pct = false; }
+			else if (sym == "flop_cbet")                              val = st.cbet;
+			else if (sym == "flop_fold_to_cbet")                      val = st.ftc;
+			else if (sym == "wtsd")                                   val = st.wtsd;
+			else continue;                                            // not yet tracked
+			if (val < 0.0) continue;
 			SHudStatValue stat;
-			stat.abbreviation = row[i].abbr;
-			stat.full_name    = row[i].full;
-			stat.important     = row[i].important;
-			stat.value.Format(row[i].pct ? "%.0f" : "%.1f", row[i].val);
+			stat.abbreviation = _definitions[i].abbreviation;
+			stat.full_name    = _definitions[i].full_name;
+			stat.important    = _definitions[i].important;
+			stat.value.Format(pct ? "%.0f" : "%.1f", val);
 			_chair_stats[chair].push_back(stat);
 		}
 	}
