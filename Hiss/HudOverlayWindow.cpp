@@ -37,8 +37,9 @@ static const COLORREF kHudBoxBorder = RGB(70, 80, 100);
 static const COLORREF kHudEditBorder= RGB(255, 210, 0);
 static const COLORREF kHudText      = RGB(235, 235, 235);
 static const COLORREF kHudName      = RGB(120, 200, 255);
+static const COLORREF kHudBalance   = RGB(60, 255, 90);   // bright green: player balance/stack
 
-static const int kHudBoxWidth = 100;
+static const int kHudBoxWidth = 210;   // wide enough for two |-separated stat lines
 static const int kHudLineH    = 13;
 static const int kHudCols     = 3;    // stats drawn in a |-separated grid: 3 columns
 static const int kHudColW     = 66;   // px per stat column
@@ -98,8 +99,9 @@ BOOL CHudOverlayWindow::Create(CWnd *owner) {
 
 int CHudOverlayWindow::OnCreate(LPCREATESTRUCT lpCreateStruct) {
 	if (CWnd::OnCreate(lpCreateStruct) == -1) return -1;
-	// Colour-key transparency: kHudColorKey pixels become fully transparent + click-through.
-	::SetLayeredWindowAttributes(GetSafeHwnd(), kHudColorKey, 0, LWA_COLORKEY);
+	// Colour-key for the transparent (click-through) background, PLUS a global alpha so the
+	// painted boxes are somewhat see-through (the table shows through them). ~78% opaque.
+	::SetLayeredWindowAttributes(GetSafeHwnd(), kHudColorKey, 200, LWA_COLORKEY | LWA_ALPHA);
 	return 0;
 }
 
@@ -189,8 +191,7 @@ void CHudOverlayWindow::ComputeBoxRects(int client_w, int client_h) {
 		if (fx < 0.0 || fy < 0.0) DefaultFractionForChair(chair, nchairs, client_w, client_h, &fx, &fy);
 
 		std::vector<SHudStatValue> stats = p_hud_manager->StatsForChair(chair);
-		int nlines = 2 + (int)stats.size();         // name + n= + stats
-		if (nlines > 9) nlines = 9;                 // safety cap
+		int nlines = 1 + (stats.empty() ? 0 : 2);   // name+balance line, then 2 |-separated stat lines
 		int bw = kHudBoxWidth;
 		int bh = nlines * kHudLineH + 4;
 		int x = (int)(fx * client_w);
@@ -246,27 +247,41 @@ void CHudOverlayWindow::OnPaint() {
 		mem.FrameRect(&r, &bb);
 
 		int x = r.left + 3, y = r.top + 2;
-		// Player name
+		// Line 1: player name (blue, left) + balance (BRIGHT GREEN, right) on the same line.
 		mem.SetTextColor(kHudName);
-		CRect nr(x, y, r.right - 2, y + kHudLineH);
+		CRect nr(x, y, r.right - 64, y + kHudLineH);   // leave room on the right for the balance
 		mem.DrawText(p_table_state->Player(chair)->name(), -1, &nr,
 			DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
+		double bal = p_table_state->Player(chair)->_balance.GetValue();
+		CString balstr;
+		if (bal == (double)(long long)bal) balstr.Format("%lld", (long long)bal);
+		else balstr.Format("%.2f", bal);
+		mem.SetTextColor(kHudBalance);
+		CRect br(r.right - 64, y, r.right - 3, y + kHudLineH);
+		mem.DrawText(balstr, -1, &br, DT_RIGHT | DT_SINGLELINE);
 		y += kHudLineH;
-		// Sample size
-		mem.SetTextColor(kHudText);
+		// Stats: two pipe(|)-separated lines underneath the name (n= seeds the first line).
 		int samples = p_hud_manager->SamplesForChair(chair);
-		CString s; s.Format("n=%d", samples < 0 ? 0 : samples);
-		CRect sr(x, y, r.right - 2, y + kHudLineH);
-		mem.DrawText(s, -1, &sr, DT_LEFT | DT_SINGLELINE);
-		y += kHudLineH;
-		// Stats
 		std::vector<SHudStatValue> stats = p_hud_manager->StatsForChair(chair);
-		for (size_t i = 0; i < stats.size() && y + kHudLineH <= r.bottom; ++i) {
-			mem.SetTextColor(stats[i].important ? kHudName : kHudText);
-			CString line;
-			line.Format("%s %s", stats[i].abbreviation.GetString(), stats[i].value.GetString());
+		CString lineA, lineB;
+		lineA.Format("n=%d", samples < 0 ? 0 : samples);
+		int half = (int)((stats.size() + 1) / 2);
+		for (size_t i = 0; i < stats.size(); ++i) {
+			CString tok;
+			tok.Format("%s %s", stats[i].abbreviation.GetString(), stats[i].value.GetString());
+			CString &dst = ((int)i < half) ? lineA : lineB;
+			if (!dst.IsEmpty()) dst += " | ";
+			dst += tok;
+		}
+		mem.SetTextColor(kHudText);
+		if (!lineA.IsEmpty() && y + kHudLineH <= r.bottom) {
 			CRect lr(x, y, r.right - 2, y + kHudLineH);
-			mem.DrawText(line, -1, &lr, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
+			mem.DrawText(lineA, -1, &lr, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
+			y += kHudLineH;
+		}
+		if (!lineB.IsEmpty() && y + kHudLineH <= r.bottom) {
+			CRect lr(x, y, r.right - 2, y + kHudLineH);
+			mem.DrawText(lineB, -1, &lr, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
 			y += kHudLineH;
 		}
 	}

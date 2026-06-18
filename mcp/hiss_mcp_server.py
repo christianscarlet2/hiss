@@ -193,7 +193,7 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "list_scrapes", "description": "List the per-region scrape files (raw images and OCR-result .txt) in logs/scrapes.",
      "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "hud_calibrate_pending", "description": "Check whether the user requested a HUD recalibration (right-clicked 'Recalibrate all HUDs (Claude)' on the scrcpy overlay). If pending, ALSO returns the fresh table screenshot so you can locate each seated player's name-plate, then call post_hud_positions with one anchor per occupied seat.",
+    {"name": "hud_calibrate_pending", "description": "Check whether the user requested a HUD recalibration (right-clicked 'Recalibrate all HUDs (Claude)' on the scrcpy overlay). If pending, ALSO returns the fresh table screenshot so you can locate each seated player's name-plate, then call post_hud_positions with one anchor per occupied seat. Anchor each box just BELOW the name-plate so it never covers the player's balance/stack or cards.",
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "post_hud_positions", "description": "Set per-seat HUD overlay box anchors. 'positions' maps chair index -> top-left pixel coords on the table screenshot, e.g. {\"0\":{\"x\":120,\"y\":300},\"3\":{\"x\":500,\"y\":80}}. Optional 'locked' bool. Hiss converts pixels to client-area fractions and repositions + persists the boxes.",
      "inputSchema": {"type": "object", "properties": {"positions": {"type": "object"}, "locked": {"type": "boolean"}}, "required": ["positions"]}},
@@ -475,7 +475,7 @@ def call_tool(name, args):
                 pass
             p = os.path.join(SCRAPES, "_table.bmp")
             if os.path.isfile(p):
-                out.append({"type": "text", "text": "Locate each seated player's name-plate below and call post_hud_positions with top-left pixel anchors per chair."})
+                out.append({"type": "text", "text": "Locate each seated player's name-plate below and call post_hud_positions with one top-left pixel anchor per chair. PLACEMENT RULES: put each anchor just BELOW the player's name-plate so the box does NOT cover their balance/stack or their cards -- the on-table balance must stay fully visible. Each box renders the player name + balance on the top line and the stats as two pipe(|)-separated lines underneath, so leave a little vertical room below the name-plate."})
                 out.append(image_content(p))
         return out
     if name == "post_hud_positions":
