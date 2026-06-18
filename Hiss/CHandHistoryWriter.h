@@ -130,6 +130,7 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
   int     _fold_street[kMaxNumberOfPlayers]; // betround a player folded on (-1 = didn't)
   bool    _voluntary_bet[kMaxNumberOfPlayers]; // put chips in voluntarily (not just a blind)
   double  _street_bet[kMaxNumberOfPlayers];
+  double  _prev_balance[kMaxNumberOfPlayers];   // last observed stack; action inferred from stack drop
   double  _street_max;
   bool    _folded[kMaxNumberOfPlayers];
   bool    _blinds_done;
