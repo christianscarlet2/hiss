@@ -577,6 +577,11 @@ void CAutoplayer::EngageAutoplayer(bool to_be_enabled_or_not) {
 	// and avoid problems with multiple threads
 	// despite we use synchronization ;-)
 	_autoplayer_engaged = to_be_enabled_or_not;
+	if (to_be_enabled_or_not) {
+		// Mutual exclusion: engaging the autoplayer disengages the NN driver (next heartbeat tick).
+		extern int g_mcp_nn_driver_request;
+		g_mcp_nn_driver_request = 0;
+	}
 }
 
 #undef ENT
