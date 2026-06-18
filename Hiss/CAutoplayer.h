@@ -62,7 +62,10 @@ private:
 	bool AnySecondaryFormulaTrue();
 	bool DoAllin();
 	bool DoBetPot();
-	bool HandleInterfacebuttonsI86(); 
+	bool HandleInterfacebuttonsI86();
+	// Fast Sit-In: re-seat ASAP. Clicks the Sit-In button EVERY heartbeat (not on the slow
+	// ~3s secondary-formula cadence) with a short cooldown so it can't double-click.
+	bool HandleSitinFast();
 	void PrepareActionSequence();
 	void FinishActionSequenceIfNecessary();
 	bool DoBetsize();

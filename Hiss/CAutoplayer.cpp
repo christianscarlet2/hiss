@@ -167,6 +167,27 @@ bool CAutoplayer::TimeToHandleSecondaryFormulas() {
 	return act_this_heartbeat;
 }
 
+bool CAutoplayer::HandleSitinFast() {
+	// Sitting out bleeds blinds, so re-seat ASAP: check + click the Sit-In button EVERY
+	// heartbeat instead of waiting for the ~3s TimeToHandleSecondaryFormulas cadence. A short
+	// cooldown stops us re-clicking before the table registers we're back in; the "I Am Back"
+	// label disappears after a good click, so this can't toggle us back out.
+	static DWORD last_sitin_click = 0;
+	if ((GetTickCount() - last_sitin_click) < 1200) {
+		return false;
+	}
+	p_autoplayer_functions->CalcSecondaryFormulas();
+	if (!p_autoplayer_functions->GetAutoplayerFunctionValue(k_hopper_function_sitin)) {
+		return false;
+	}
+	if (p_casino_interface->LogicalAutoplayerButton(k_hopper_function_sitin)->Click()) {
+		last_sitin_click = GetTickCount();
+		write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] FAST Sit-In click (re-seating)\n");
+		return true;
+	}
+	return false;
+}
+
 bool CAutoplayer::DoBetPot(void) {
 	bool success = false;
 	// Start with 2 * potsize, continue with lower betsizes, finally 1/4 pot
@@ -783,6 +804,13 @@ void CAutoplayer::DoAutoplayer(void) {
     write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Interface buttons (popups) handled\n");
     action_sequence_needs_to_be_finished = true;
 	  goto AutoPlayerCleanupAndFinalization;
+  }
+  // Fast Sit-In: re-seat ASAP -- handle the Sit-In button every heartbeat (bypasses the ~3s
+  // secondary-formula cadence), so a sat-out bot doesn't blind off waiting to click "I Am Back".
+  if (HandleSitinFast()) {
+    write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Fast Sit-In handled\n");
+    action_sequence_needs_to_be_finished = true;
+    goto AutoPlayerCleanupAndFinalization;
   }
   // Care about sitin, sitout, leave, etc.
   if (TimeToHandleSecondaryFormulas())	{
