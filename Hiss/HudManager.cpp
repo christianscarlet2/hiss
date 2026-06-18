@@ -431,13 +431,14 @@ void CHudManager::RefreshIfNeeded(CString hand_number, bool force)
 			else if (sym == "flop_cbet")                              val = st.cbet;
 			else if (sym == "flop_fold_to_cbet")                      val = st.ftc;
 			else if (sym == "wtsd")                                   val = st.wtsd;
-			else continue;                                            // not yet tracked
-			if (val < 0.0) continue;
+			else if (sym == "hands")                                  continue;  // n= already shown
+			// else: stat not yet computed by the aggregator -> val stays -1 -> rendered as "-"
 			SHudStatValue stat;
 			stat.abbreviation = _definitions[i].abbreviation;
 			stat.full_name    = _definitions[i].full_name;
 			stat.important    = _definitions[i].important;
-			stat.value.Format(pct ? "%.0f" : "%.1f", val);
+			if (val < 0.0) stat.value = "-";                          // no opportunity / not tracked yet
+			else stat.value.Format(pct ? "%.0f" : "%.1f", val);
 			_chair_stats[chair].push_back(stat);
 		}
 	}
