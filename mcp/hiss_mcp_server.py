@@ -100,6 +100,34 @@ def replay_latest_ts(hand):
     frames = replay_get("/api/frames/%s" % urllib.request.quote(str(hand)))
     return frames[-1]["ts_ms"] if frames else 0
 
+# --- replayer.exe integration (load hands/sessions as BMP frames + auto-play) ---
+REPLAYER_EXE = os.environ.get("HISS_REPLAYER_EXE", r"C:\www\openholdembot_old\Release\replayer.exe")
+REPLAYER_DIR = os.environ.get("HISS_REPLAYER_DIR", r"C:\tmp\replayer")
+
+def _hand_frames_to_bmp(hand, dest_dir, start_index=0, max_frames=0):
+    """Fetch a hand's PNG frames from the replay server and write them as
+    frame??????.bmp (replayer.exe loads BMP, not PNG). Returns the next free index."""
+    import io
+    from PIL import Image
+    os.makedirs(dest_dir, exist_ok=True)
+    frames = replay_get("/api/frames/%s" % urllib.request.quote(str(hand)))
+    if max_frames and len(frames) > max_frames:
+        step = len(frames) / float(max_frames)
+        frames = [frames[int(i * step)] for i in range(max_frames)]
+    idx = start_index
+    for f in frames:
+        ts = f.get("ts_ms")
+        if ts is None:
+            continue
+        try:
+            png = replay_get("/api/img/%s/%d" % (urllib.request.quote(str(hand)), int(ts)), raw=True)
+            Image.open(io.BytesIO(png)).convert("RGB").save(
+                os.path.join(dest_dir, "frame%06d.bmp" % idx), "BMP")
+            idx += 1
+        except Exception:
+            continue
+    return idx
+
 # --- postgres via psql ------------------------------------------------------
 def esc_sql(s):
     return ("" if s is None else str(s)).replace("'", "''")
@@ -205,6 +233,12 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {"hand": {"type": "string"}, "ts": {"type": "integer", "description": "ts_ms cutoff; omit for the latest"}}, "required": ["hand"]}},
     {"name": "replay_frame", "description": "Time-travel debugger: the actual PNG screen-grab Hiss captured for a hand at (or nearest before) a ts_ms. See exactly what the bot saw at that heartbeat.",
      "inputSchema": {"type": "object", "properties": {"hand": {"type": "string"}, "ts": {"type": "integer", "description": "ts_ms; omit for the latest frame in the hand"}}, "required": ["hand"]}},
+    {"name": "replayer_load", "description": "Load a hand (or several hands / the N most-recent as a session) from the replay server into the desktop replayer.exe and auto-play it, so you can watch the frames and inspect with vision.exe. Frames are fetched as PNG and converted to the BMP frames replayer.exe plays. Provide hand, OR hands (list), OR recent (count of newest hands).",
+     "inputSchema": {"type": "object", "properties": {
+        "hand": {"type": "string", "description": "single handnumber to load"},
+        "hands": {"type": "array", "items": {"type": "string"}, "description": "several handnumbers, concatenated in order"},
+        "recent": {"type": "integer", "description": "load the N most-recent hands as one session (played oldest->newest)"},
+        "max_frames": {"type": "integer", "description": "cap frames per hand (evenly sampled); 0 = all"}}}},
     {"name": "read_scrape", "description": "Get a region's raw scrape image and its OCR/recognition result text.",
      "inputSchema": {"type": "object", "properties": {"region": {"type": "string"}}, "required": ["region"]}},
     {"name": "list_logs", "description": "List log files in Release/logs.",
@@ -465,6 +499,48 @@ def call_tool(name, args):
             return [{"type": "text", "text": "Frame fetch failed: %s" % e}]
         return [{"type": "image", "data": base64.b64encode(png).decode("ascii"), "mimeType": "image/png"},
                 {"type": "text", "text": "hand %s @ ts %s" % (hand, ts)}]
+    if name == "replayer_load":
+        if os.name != "nt":
+            return [{"type": "text", "text": "replayer_load is Windows-only."}]
+        hand = str(args.get("hand", "")).strip()
+        hands = args.get("hands") or []
+        recent = args.get("recent")
+        max_frames = int(args.get("max_frames") or 0)
+        hand_list = []
+        if hands:
+            hand_list = [str(h).strip() for h in hands if str(h).strip()]
+        elif hand:
+            hand_list = [hand]
+        elif recent:
+            try:
+                allh = replay_get("/api/hands")
+            except Exception as e:
+                return [{"type": "text", "text": "Could not list hands: %s" % e}]
+            hand_list = [str(h.get("handnumber")) for h in allh[:int(recent)]]
+            hand_list.reverse()   # play oldest -> newest
+        if not hand_list:
+            return [{"type": "text", "text": "Provide hand, hands, or recent."}]
+        tag = hand_list[0] if len(hand_list) == 1 else ("session_%s_x%d" % (hand_list[0], len(hand_list)))
+        dest = os.path.join(REPLAYER_DIR, str(tag))
+        try:
+            if os.path.isdir(dest):
+                for old in os.listdir(dest):
+                    if old.startswith("frame") and old.endswith(".bmp"):
+                        os.remove(os.path.join(dest, old))
+            idx = 0
+            for h in hand_list:
+                idx = _hand_frames_to_bmp(h, dest, idx, max_frames)
+        except Exception as e:
+            return [{"type": "text", "text": "Frame fetch/convert failed: %s" % e}]
+        if idx == 0:
+            return [{"type": "text", "text": "No frames fetched for: %s" % ", ".join(hand_list)}]
+        if not os.path.isfile(REPLAYER_EXE):
+            return [{"type": "text", "text": "Wrote %d frames to %s but replayer.exe not found at %s" % (idx, dest, REPLAYER_EXE)}]
+        try:
+            subprocess.Popen([REPLAYER_EXE, dest])
+        except Exception as e:
+            return [{"type": "text", "text": "Wrote %d frames to %s but could not launch replayer.exe: %s" % (idx, dest, e)}]
+        return [{"type": "text", "text": "Loaded %d frames from %d hand(s) into replayer.exe and started playing.\nFolder: %s" % (idx, len(hand_list), dest)}]
     if name == "hud_calibrate_pending":
         status = hiss_get("/api/hud-calibrate-status").strip()
         out = [{"type": "text", "text": "HUD calibrate status: %s" % status}]

@@ -123,10 +123,27 @@ def decide_and_act(mono):
     do = "allin" if allin else ("raise" if a == "raise" else a)
     amount = bb if (do == "raise") else 0
     note = ""
-    if do == "raise" and amount <= 0:
-        # NN said raise but gave no numpad size -> an unsized raise can misfire on the real
-        # table; downgrade to the always-legal call rather than guess.
-        do, amount, note = "call", 0, "  (raise->call: no size)"
+    if do == "raise":
+        # Legal raise sizing (NLHE): an opening raise must be >= 2bb (when bb=1bb), and a re-raise
+        # must be >= the last raise increment. If the NN's raise-TO does NOT meet the legal minimum,
+        # do NOT raise -- fall back to call if facing a bet, else check (Emrald's rule: "otherwise
+        # hit call or check in that succession"). A full-stack shove is always legal, so a raise-TO
+        # at/over the effective stack becomes all-in.
+        bbl     = float(sv.get("bblind", 1) or 1) or 1.0
+        my_bet  = float(sv.get("bet", 0) or 0)
+        to_call = float(sym.get("AmountToCall", 0) or 0)
+        highest = my_bet + to_call                    # current highest bet, relative to hero
+        min_raise_to = highest + max(bbl, to_call)    # last increment ~ to_call; never < one bb
+        if highest <= bbl + 1e-6:                     # only the blinds are in -> opening raise
+            min_raise_to = max(min_raise_to, 2.0 * bbl)
+        eff_max = my_bet + float(sv.get("stack", 0) or 0)
+        if amount > 0 and amount >= eff_max - 1e-6:
+            do, amount, note = "allin", 0, "  (raise>=stack -> allin)"
+        elif amount < min_raise_to - 1e-6:            # below the legal minimum -> call, else check
+            if to_call > 0.001:
+                do, amount, note = "call", 0, "  (raise %.2f<min %.2f -> call)" % (amount, min_raise_to)
+            else:
+                do, amount, note = "check", 0, "  (raise %.2f<min %.2f -> check)" % (amount, min_raise_to)
     # Reconcile call/check with the actual spot: with no bet to call the table shows a CHECK
     # button (not Call), so do=call would find no button and never click. AmountToCall>0 means
     # we're facing a bet (can't check). Uses AmountToCall from the sym we already fetched.

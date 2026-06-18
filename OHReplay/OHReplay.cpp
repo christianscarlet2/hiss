@@ -21,13 +21,131 @@
 #include <stdio.h>
 #include "Registry.h"
 
+// ============================================================================
+// Hiss replayer integration: auto-play + control-file watch.
+//   replayer.exe "<folder>"            -> play that folder's frame??????.bmp once (MCP / vision use)
+//   replayer.exe --watch "<ctrlfile>"  -> poll <ctrlfile> for hands to play (continuous play
+//                                         driven by replay.html via the MCP control endpoint)
+// Control file (rewritten by the orchestrator for each new hand):
+//   seq=<int>            incrementing; a higher seq than last = a new command
+//   folder=<path|STOP>   the hand's frame folder, or the literal STOP
+//   ms=<int>             optional frame interval (default 700)
+// When a hand finishes, replayer writes "<ctrlfile>.status" = "done <seq>" so the
+// orchestrator knows to advance to the next (newer) hand.
+// ============================================================================
+#define TIMER_AUTOPLAY 101
+#define TIMER_CONTROL  102
+static bool g_autoplay = false;
+static char g_control_file[MAX_PATH] = "";
+static int  g_play_seq = 0;            // last control sequence acted on
+static UINT g_play_ms  = 700;          // ms per frame during auto-play
+static int  g_last_frame_cache = -1;   // highest frame index in the current folder
+
+// Lowest (want_lowest) or highest frame??????.bmp index in cur_working_path; -1 if none.
+static int scan_frame_extreme(bool want_lowest) {
+  if (cur_working_path[0] == '\0') return -1;
+  char spec[MAX_PATH];
+  sprintf_s(spec, MAX_PATH, "%sframe??????.bmp", cur_working_path);
+  WIN32_FIND_DATA fd; HANDLE h = FindFirstFile(spec, &fd);
+  if (h == INVALID_HANDLE_VALUE) return -1;
+  int best = want_lowest ? 1000000 : -1;
+  do {
+    char num[16]; sprintf_s(num, 16, "%s", fd.cFileName + 5); num[6] = '\0';
+    int n = atoi(num);
+    if (want_lowest) { if (n < best) best = n; } else { if (n > best) best = n; }
+  } while (FindNextFile(h, &fd));
+  FindClose(h);
+  if (want_lowest) return (best == 1000000) ? -1 : best;
+  return best;
+}
+
+static void write_status(const char *text) {
+  if (g_control_file[0] == '\0') return;
+  char status_path[MAX_PATH];
+  sprintf_s(status_path, MAX_PATH, "%s.status", g_control_file);
+  FILE *fp = NULL;
+  if (fopen_s(&fp, status_path, "w") == 0 && fp) { fputs(text, fp); fclose(fp); }
+}
+
+static void stop_autoplay() {
+  g_autoplay = false;
+  KillTimer(g_hWnd, TIMER_AUTOPLAY);
+}
+
+static void start_autoplay_folder(const char *folder, UINT ms) {
+  strcpy_s(cur_working_path, MAX_PATH, folder);
+  size_t L = strlen(cur_working_path);
+  if (L && cur_working_path[L-1] != '\\' && cur_working_path[L-1] != '/') {
+    cur_working_path[L] = '\\'; cur_working_path[L+1] = '\0';
+  }
+  int first = scan_frame_extreme(true);
+  g_last_frame_cache = scan_frame_extreme(false);
+  if (first < 0) { write_status("error no-frames"); return; }
+  cur_frame = first;
+  g_play_ms = ms ? ms : 700;
+  draw_cur_frame();
+  g_autoplay = true;
+  SetTimer(g_hWnd, TIMER_AUTOPLAY, g_play_ms, NULL);
+}
+
+// One auto-play step; when past the last frame, finish the hand + report "done".
+static void autoplay_tick() {
+  if (!g_autoplay) return;
+  if (cur_frame >= g_last_frame_cache) {
+    stop_autoplay();
+    char done[64]; sprintf_s(done, 64, "done %d", g_play_seq);
+    write_status(done);
+    return;
+  }
+  next_frame();
+}
+
+// Poll the control file; a higher seq = a new command (load+play a folder, or STOP).
+static void control_tick() {
+  if (g_control_file[0] == '\0') return;
+  FILE *fp = NULL;
+  if (fopen_s(&fp, g_control_file, "r") != 0 || !fp) return;
+  char line[1024]; int seq = 0; char folder[MAX_PATH] = ""; UINT ms = 0;
+  while (fgets(line, sizeof(line), fp)) {
+    if (!strncmp(line, "seq=", 4)) seq = atoi(line + 4);
+    else if (!strncmp(line, "folder=", 7)) sscanf_s(line + 7, "%[^\r\n]", folder, (unsigned)MAX_PATH);
+    else if (!strncmp(line, "ms=", 3)) ms = atoi(line + 3);
+  }
+  fclose(fp);
+  if (seq <= g_play_seq) return;
+  g_play_seq = seq;
+  if (!_stricmp(folder, "STOP")) { stop_autoplay(); return; }
+  if (folder[0]) start_autoplay_folder(folder, ms);
+}
+
+// Parse the launch command line (see header comment above).
+static void parse_replayer_cmdline(const char *cmd) {
+  if (!cmd || !cmd[0]) return;
+  char args[MAX_PATH * 2];
+  strcpy_s(args, sizeof(args), cmd);
+  if (!_strnicmp(args, "--watch", 7)) {
+    char *p = args + 7;
+    while (*p == ' ' || *p == '"') ++p;
+    strcpy_s(g_control_file, MAX_PATH, p);
+    size_t L = strlen(g_control_file);
+    while (L && (g_control_file[L-1]=='"' || g_control_file[L-1]==' ' || g_control_file[L-1]=='\r' || g_control_file[L-1]=='\n'))
+      g_control_file[--L] = '\0';
+    SetTimer(g_hWnd, TIMER_CONTROL, 400, NULL);
+  } else {
+    char *p = args;
+    while (*p == '"' || *p == ' ') ++p;
+    size_t L = strlen(p);
+    while (L && (p[L-1]=='"' || p[L-1]==' ' || p[L-1]=='\r' || p[L-1]=='\n')) p[--L] = '\0';
+    start_autoplay_folder(p, 700);
+  }
+}
+
 //
 //   FUNCTION: Main
 //
 int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCmdLine, int nCmdShow)
 {
 	UNREFERENCED_PARAMETER(hPrevInstance);
-	UNREFERENCED_PARAMETER(lpCmdLine);
 
  	// TODO: Place code here.
 	MSG msg;
@@ -43,6 +161,9 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCm
 	{
 		return FALSE;
 	}
+
+	// Replayer integration: open a folder to auto-play, or --watch a control file (continuous).
+	parse_replayer_cmdline(lpCmdLine);
 
 	hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_OHREPLAY));
 
@@ -196,6 +317,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			draw_cur_frame();
 
 			EndPaint(hWnd, &ps);
+			break;
+
+		case WM_TIMER:
+			if (wParam == TIMER_AUTOPLAY) { autoplay_tick(); return 0; }
+			if (wParam == TIMER_CONTROL)  { control_tick();  return 0; }
 			break;
 
 		case WM_DESTROY:
