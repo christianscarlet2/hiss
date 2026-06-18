@@ -37,6 +37,13 @@ struct SAttachedWindow {
 	long long hwnd;          // attached poker window (0 = none)
 };
 
+// Own-data HUD stats for one player (computed from hud_player_stats). -1.0 = no opportunities yet.
+struct SHudDbStats {
+	bool   found;
+	int    hands;
+	double vpip, pfr, threeb, af, cbet, ftc, steal, fts, wtsd;
+};
+
 class CTablemapDB {
 public:
 	CTablemapDB();
@@ -97,6 +104,9 @@ public:
 	bool DBSetAttachedWindow(int session_id, long pid, long long hwnd);
 	bool DBListAttachedWindows(std::vector<SAttachedWindow> *out);
 	bool DBClearAttachedSession(int session_id);
+
+	// Own-data HUD: read computed per-player stats from hud_player_stats (fed by hud_aggregator.py).
+	bool GetHudPlayerStats(const CString &player, SHudDbStats *out);
 
 private:
 	long GetTablemapId(const CString name);   // -1 if not found / error

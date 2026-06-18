@@ -5,6 +5,7 @@
 #include <float.h>
 #include "CPokerTrackerThread.h"
 #include "CTableState.h"
+#include "..\CTablemap\CTablemapDB.h"   // own-data HUD: hud_player_stats (replaces PT4)
 #include "..\PokerTracker_Query_Definitions\pokertracker_query_definitions.h"
 #include "..\Shared\MagicNumbers\MagicNumbers.h"
 
@@ -389,13 +390,9 @@ void CHudManager::RefreshIfNeeded(CString hand_number, bool force)
 	_last_hand_number = hand_number;
 	_last_refresh_tick = now;
 
-	// PT_DLL_GetStat ultimately dereferences p_pokertracker_thread, p_table_state
-	// and other singletons inside UpdateStat. Skip the whole refresh until those
-	// are wired up so that early HTTP polls / display updates don't crash.
-	bool pt_ready = (p_pokertracker_thread != NULL)
-		&& p_pokertracker_thread->IsConnected()
-		&& (p_table_state != NULL);
-	if (!pt_ready) {
+	// OWN-DATA HUD: stats come from hud_player_stats (postgres, fed by hud_aggregator.py from
+	// the bot's logged hands) instead of PokerTracker 4. Keyed by the scraped player name.
+	if (p_table_state == NULL || p_tablemap_db == NULL) {
 		for (int chair = 0; chair < kMaxNumberOfPlayers; ++chair) {
 			_chair_samples[chair] = -1;
 			_chair_stats[chair].clear();
@@ -405,27 +402,37 @@ void CHudManager::RefreshIfNeeded(CString hand_number, bool force)
 
 	bool build_stats = IsEnabled();
 	for (int chair = 0; chair < kMaxNumberOfPlayers; ++chair) {
-		// Always refresh the sample size (and, as a side effect, drive the
-		// name-matching / verification flow) so player names can highlight even
-		// when the HUD overlay is turned off. This is throttled by the guard above.
-		double hands = PT_DLL_GetStat("pt_hands", chair);
-		_chair_samples[chair] = (hands != kUndefined && hands >= 0) ? (int)hands : -1;
-
+		_chair_samples[chair] = -1;
 		_chair_stats[chair].clear();
-		if (!build_stats) {
-			continue;
-		}
-		for (size_t i = 0; i < _definitions.size(); ++i) {
-			CString pt_symbol;
-			pt_symbol.Format("pt_%s%d", _definitions[i].symbol.GetString(), chair);
-			if (!PT_DLL_IsValidSymbol(pt_symbol)) {
-				continue;
-			}
+		if (!p_table_state->Player(chair)->seated()) continue;
+		CString name = p_table_state->Player(chair)->name();
+		name.Trim();
+		if (name.IsEmpty()) continue;
+
+		SHudDbStats st;
+		if (!p_tablemap_db->GetHudPlayerStats(name, &st) || !st.found) continue;
+		_chair_samples[chair] = st.hands;
+		if (!build_stats) continue;
+
+		// Fixed own-data stat set. Each shown only when it has opportunities (value >= 0).
+		struct { const char *abbr; const char *full; bool important; double val; bool pct; } row[] = {
+			{ "VP",   "VPIP",          true,  st.vpip,   true  },
+			{ "PF",   "PFR",           true,  st.pfr,    true  },
+			{ "3B",   "3Bet",          true,  st.threeb, true  },
+			{ "AF",   "Aggression",    true,  st.af,     false },
+			{ "CB",   "CBet",          false, st.cbet,   true  },
+			{ "FTC",  "Fold to CBet",  false, st.ftc,    true  },
+			{ "ATS",  "Steal",         false, st.steal,  true  },
+			{ "FTS",  "Fold to Steal", false, st.fts,    true  },
+			{ "WTSD", "Went to SD",    false, st.wtsd,   true  },
+		};
+		for (size_t i = 0; i < sizeof(row) / sizeof(row[0]); ++i) {
+			if (row[i].val < 0.0) continue;
 			SHudStatValue stat;
-			stat.abbreviation = _definitions[i].abbreviation;
-			stat.full_name = _definitions[i].full_name;
-			stat.important = _definitions[i].important;
-			stat.value = FormatValue(_definitions[i].symbol, PT_DLL_GetStat(pt_symbol, chair));
+			stat.abbreviation = row[i].abbr;
+			stat.full_name    = row[i].full;
+			stat.important     = row[i].important;
+			stat.value.Format(row[i].pct ? "%.0f" : "%.1f", row[i].val);
 			_chair_stats[chair].push_back(stat);
 		}
 	}

@@ -451,6 +451,50 @@ bool CTablemapDB::DBClearAttachedSession(int session_id) {
 	return ExecCommand(sql);
 }
 
+bool CTablemapDB::GetHudPlayerStats(const CString &player, SHudDbStats *out) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
+	if (out == NULL) return false;
+	out->found = false; out->hands = 0;
+	out->vpip = out->pfr = out->threeb = out->af = out->cbet = out->ftc = out->steal = out->fts = out->wtsd = -1.0;
+	if (player.IsEmpty() || !Connect()) return false;
+	CString sql;
+	sql.Format(
+		"SELECT hands, vpip_n, vpip_d, pfr_n, pfr_d, threeb_n, threeb_d, cbet_n, cbet_d,"
+		" ftc_n, ftc_d, steal_n, steal_d, fts_n, fts_d, aggr_actions, call_actions, wtsd_n, wtsd_d"
+		" FROM hud_player_stats WHERE player = '%s'", EscapeSqlLiteral(player).GetString());
+	PGresult *res = PQexec((PGconn *)_conn, sql.GetString());
+	if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+		_last_error.Format("SQL error: %s", PQerrorMessage((PGconn *)_conn));
+		if (res) PQclear(res);
+		return false;
+	}
+	if (PQntuples(res) > 0) {
+		int c = 0;
+		out->hands = atoi(PgVal(res, 0, c++));
+		double vpip_n = atof(PgVal(res, 0, c++)), vpip_d = atof(PgVal(res, 0, c++));
+		double pfr_n = atof(PgVal(res, 0, c++)), pfr_d = atof(PgVal(res, 0, c++));
+		double threeb_n = atof(PgVal(res, 0, c++)), threeb_d = atof(PgVal(res, 0, c++));
+		double cbet_n = atof(PgVal(res, 0, c++)), cbet_d = atof(PgVal(res, 0, c++));
+		double ftc_n = atof(PgVal(res, 0, c++)), ftc_d = atof(PgVal(res, 0, c++));
+		double steal_n = atof(PgVal(res, 0, c++)), steal_d = atof(PgVal(res, 0, c++));
+		double fts_n = atof(PgVal(res, 0, c++)), fts_d = atof(PgVal(res, 0, c++));
+		double aggr = atof(PgVal(res, 0, c++)), call = atof(PgVal(res, 0, c++));
+		double wtsd_n = atof(PgVal(res, 0, c++)), wtsd_d = atof(PgVal(res, 0, c++));
+		out->found  = true;
+		out->vpip   = vpip_d   > 0 ? 100.0 * vpip_n / vpip_d     : -1.0;
+		out->pfr    = pfr_d    > 0 ? 100.0 * pfr_n / pfr_d       : -1.0;
+		out->threeb = threeb_d > 0 ? 100.0 * threeb_n / threeb_d : -1.0;
+		out->cbet   = cbet_d   > 0 ? 100.0 * cbet_n / cbet_d     : -1.0;
+		out->ftc    = ftc_d    > 0 ? 100.0 * ftc_n / ftc_d       : -1.0;
+		out->steal  = steal_d  > 0 ? 100.0 * steal_n / steal_d   : -1.0;
+		out->fts    = fts_d    > 0 ? 100.0 * fts_n / fts_d       : -1.0;
+		out->wtsd   = wtsd_d   > 0 ? 100.0 * wtsd_n / wtsd_d     : -1.0;
+		out->af     = call     > 0 ? aggr / call : (aggr > 0 ? aggr : -1.0);
+	}
+	PQclear(res);
+	return out->found;
+}
+
 bool CTablemapDB::GetSettingArray(const CString key, const CString field, std::vector<CString> *out) {
 	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	if (out == NULL) return false;
