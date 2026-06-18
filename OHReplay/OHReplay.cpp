@@ -89,6 +89,9 @@ static void start_autoplay_folder(const char *folder, UINT ms) {
 }
 
 // One auto-play step; when past the last frame, finish the hand + report "done".
+// NOTE: advance cur_frame directly (the control-server frames are contiguous
+// frame000000.bmp..frameNNNNNN.bmp). We do NOT call next_frame() because it scans for
+// frame??????.HTM files, which the MCP/control server doesn't write -- so it never advanced.
 static void autoplay_tick() {
   if (!g_autoplay) return;
   if (cur_frame >= g_last_frame_cache) {
@@ -97,7 +100,8 @@ static void autoplay_tick() {
     write_status(done);
     return;
   }
-  next_frame();
+  cur_frame++;
+  draw_cur_frame();
 }
 
 // Poll the control file; a higher seq = a new command (load+play a folder, or STOP).
