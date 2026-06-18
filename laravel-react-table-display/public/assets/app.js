@@ -426,6 +426,26 @@ function App() {
   var toggleUnit = function () {
     setUnit(function (u) { return u === 'bb' ? 'usd' : 'bb'; });
   };
+  var nnPair = useState(false);
+  var nnOn = nnPair[0];
+  var setNnOn = nnPair[1];
+  var toggleNn = function () {
+    fetch('/api/nn-driver?on=' + (nnOn ? '0' : '1')).catch(function () {});
+    setNnOn(!nnOn);   // optimistic; the poll below reconciles with the real engaged state
+  };
+
+  // Reflect the NN-driver engaged state (engaging it disengages the autoplayer, server-side).
+  useEffect(function () {
+    var alive = true;
+    function pollNn() {
+      fetch('/api/nn-driver').then(function (r) { return r.json(); })
+        .then(function (j) { if (alive && j && typeof j.engaged === 'boolean') setNnOn(j.engaged); })
+        .catch(function () {});
+    }
+    pollNn();
+    var t = setInterval(pollNn, 1500);
+    return function () { alive = false; clearInterval(t); };
+  }, []);
 
   useEffect(function () {
     var alive = true;
@@ -475,7 +495,20 @@ function App() {
         e('span', null, 'Hand ' + (table.handnumber || '-')),
         e('span', null, 'Blinds ' + money(limits.sblind) + ' / ' + money(limits.bblind)),
         e('span', { className: 'status' }, error ? ('API: ' + error) : 'API connected')
-      )
+      ),
+      e('button', {
+        onClick: toggleNn,
+        title: nnOn ? 'NN driver ENGAGED — click to disengage (autoplayer is off)'
+                    : 'Engage the NN driver (disengages the autoplayer)',
+        style: {
+          marginLeft: '12px', padding: '4px 12px', borderRadius: '6px', cursor: 'pointer',
+          fontWeight: 'bold', font: 'inherit',
+          border: '1px solid ' + (nnOn ? '#3fb950' : '#444'),
+          background: nnOn ? '#13351f' : '#1c1c20',
+          color: nnOn ? '#3fb950' : '#bbb',
+          boxShadow: nnOn ? '0 0 8px rgba(63,185,80,.5)' : 'none'
+        }
+      }, (nnOn ? '🧠 NN Driver ●' : '🧠 NN Driver'))
     ),
     e('section', { className: 'table' },
       e('div', { className: 'felt' },

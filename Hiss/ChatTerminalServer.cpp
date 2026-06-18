@@ -84,6 +84,7 @@ bool CChatTerminalServer::Start(unsigned short port)
 
 	_listen_socket = listen_socket;
 	_port = bound_port;
+	g_terminal_port = bound_port;   // expose the bound port so the NN driver can be aimed at us
 	_stop = false;
 	_thread = AfxBeginThread(ServerThread, this, THREAD_PRIORITY_NORMAL, 0, CREATE_SUSPENDED, NULL);
 	if (_thread == NULL) {
@@ -373,6 +374,23 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		bool want_on = (on == "1") || (on.CompareNoCase("true") == 0) || (on.CompareNoCase("on") == 0);
 		g_mcp_autoplayer_request = want_on ? 1 : 0;   // applied by the heartbeat thread
 		CStringA body; body.Format("{\"ok\":true,\"request\":\"%s\"}", want_on ? "on" : "off");
+		CStringA response;
+		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+			body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	// Engage/disengage the NN driver:  /api/nn-driver?on=1  or  ?on=0  (engaging it disengages
+	// the autoplayer and vice-versa). With no ?on= it just reports the current engaged state.
+	if (path.CompareNoCase("/api/nn-driver") == 0) {
+		CStringA on = QueryValue(query, "on");
+		if (!on.IsEmpty()) {
+			bool want_on = (on == "1") || (on.CompareNoCase("true") == 0) || (on.CompareNoCase("on") == 0);
+			g_mcp_nn_driver_request = want_on ? 1 : 0;   // applied by the heartbeat thread
+		}
+		CStringA body; body.Format("{\"ok\":true,\"engaged\":%s}", g_nn_driver_engaged ? "true" : "false");
 		CStringA response;
 		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
 			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",

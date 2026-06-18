@@ -57,6 +57,44 @@
 #include "OpenHoldem.h"
 #include "..\DLLs\Files_DLL\Files.h"
 
+// ---- NN driver engage/disengage (mutually exclusive with the autoplayer) --------------------
+// Engaging launches python nn_driver.py aimed at THIS instance's terminal port (in its own
+// console so its decisions stay visible) and disengages the autoplayer; disengaging kills it.
+static void *g_nn_driver_proc = NULL;   // HANDLE of the launched nn_driver.py (NULL = none)
+static void ApplyNNDriverEngage(bool want_on) {
+  if (want_on) {
+    if (g_nn_driver_engaged) return;
+    if (p_autoplayer != NULL && p_autoplayer->autoplayer_engaged()) {
+      p_autoplayer->EngageAutoplayer(false);   // mutual exclusion: NN on -> autoplayer off
+    }
+    int port = (g_terminal_port > 0) ? g_terminal_port : 27654;
+    char cmd[512];
+    sprintf_s(cmd, sizeof(cmd),
+      "\"C:\\Users\\scarl\\AppData\\Local\\Programs\\Python\\Python310\\python.exe\" "
+      "\"C:\\www\\openholdembot_old\\mcp\\nn_driver.py\" --bot-url http://127.0.0.1:%d", port);
+    STARTUPINFOA si; ZeroMemory(&si, sizeof(si)); si.cb = sizeof(si);
+    PROCESS_INFORMATION pi; ZeroMemory(&pi, sizeof(pi));
+    if (CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL,
+                       "C:\\www\\openholdembot_old\\mcp", &si, &pi)) {
+      g_nn_driver_proc = (void *)pi.hProcess;
+      CloseHandle(pi.hThread);
+      g_nn_driver_engaged = true;
+      write_log(k_always_log_basic_information, "[NN] driver engaged on port %d\n", port);
+    } else {
+      g_nn_driver_engaged = false;
+      write_log(k_always_log_basic_information, "[NN] driver launch FAILED (err %lu)\n", GetLastError());
+    }
+  } else {
+    if (g_nn_driver_proc != NULL) {
+      TerminateProcess((HANDLE)g_nn_driver_proc, 0);
+      CloseHandle((HANDLE)g_nn_driver_proc);
+      g_nn_driver_proc = NULL;
+    }
+    g_nn_driver_engaged = false;
+    write_log(k_always_log_basic_information, "[NN] driver disengaged\n");
+  }
+}
+
 CHeartbeatThread	 *p_heartbeat_thread = NULL;
 CRITICAL_SECTION	 CHeartbeatThread::cs_update_in_progress;
 long int			     CHeartbeatThread::_heartbeat_counter = 0;
@@ -214,6 +252,11 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
     g_mcp_autoplayer_request = -1;
     write_log(k_always_log_basic_information, "[MCP] Autoplayer -> %s (API request)\n", want_on ? "ON" : "OFF");
     p_autoplayer->EngageAutoplayer(want_on);
+  }
+  if (g_mcp_nn_driver_request >= 0) {
+    bool nn_on = (g_mcp_nn_driver_request == 1);
+    g_mcp_nn_driver_request = -1;
+    ApplyNNDriverEngage(nn_on);
   }
   if (g_mcp_action_request >= 0 && p_casino_interface != NULL) {
     bool my_turn = (p_engine_container->symbol_engine_autoplayer() != NULL

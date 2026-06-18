@@ -63,6 +63,9 @@ CString g_capture_suspect_reason;
 // MCP/API control requests, consumed by the heartbeat thread (so clicks happen on
 // the same thread the autoplayer normally acts on). -1 = no request pending.
 int g_mcp_autoplayer_request = -1;   // 0 = turn off, 1 = turn on
+int g_mcp_nn_driver_request = -1;    // -1 idle, 0 = disengage, 1 = engage
+bool g_nn_driver_engaged = false;
+int g_terminal_port = 0;
 int g_mcp_action_request = -1;       // a k_autoplayer_function_* code (FCKRA)
 double g_mcp_action_amount = -1.0;   // bet/raise size in big blinds (<0 = plain button click)
 unsigned long g_mcp_action_set_tick = 0;  // GetTickCount() when the request was set (for wait-for-turn expiry)

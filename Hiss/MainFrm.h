@@ -60,6 +60,8 @@ protected: // create from serialization only
 	afx_msg void OnSysCommand(UINT nID, LPARAM lParam);
 	afx_msg void OnUpdateStatus(CCmdUI *pCmdUI);
 	afx_msg void OnAutoplayer();
+	afx_msg void OnNnDriver();
+	afx_msg void OnUpdateNnDriver(CCmdUI *pCmdUI);
 	afx_msg void OnValidator();
 	afx_msg void OnClickedFlags();
 

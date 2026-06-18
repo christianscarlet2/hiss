@@ -18,7 +18,15 @@ swiftsnake DB can't stall the NN. Run the bot with the AUTOPLAYER OFF so the NN 
 """
 import os, sys, json, time, subprocess, urllib.parse
 
-BOT    = os.environ.get("NN_BOT_URL",    "http://127.0.0.1:27654")
+def _argval(flag, default):
+    if flag in sys.argv:
+        i = sys.argv.index(flag)
+        if i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+    return default
+# Bot URL precedence: --bot-url <url>  >  $NN_BOT_URL  >  default. Hiss launches the driver with
+# --bot-url http://127.0.0.1:<its own terminal port> when you engage it from the NN-driver button.
+BOT    = _argval("--bot-url", os.environ.get("NN_BOT_URL", "http://127.0.0.1:27654"))
 NN     = os.environ.get("NN_URL",        "http://192.168.1.39:8088/nn-decide")
 POLL   = float(os.environ.get("NN_POLL_S", "0.6"))
 DRY    = "--dry-run" in sys.argv

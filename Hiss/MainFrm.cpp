@@ -132,6 +132,8 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
 
 	// Main toolbar 
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_AUTOPLAYER, &CMainFrame::OnAutoplayer)
+	ON_BN_CLICKED(ID_MAIN_TOOLBAR_NN_DRIVER, &CMainFrame::OnNnDriver)
+	ON_UPDATE_COMMAND_UI(ID_MAIN_TOOLBAR_NN_DRIVER, &CMainFrame::OnUpdateNnDriver)
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_FORMULA, &CMainFrame::OnEditFormula)
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_VALIDATOR, &CMainFrame::OnValidator)
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_TAGLOGFILE, &CMainFrame::OnEditTagLog)
@@ -818,6 +820,19 @@ void CMainFrame::OnAutoplayer() {
 	bool is_autoplaying = p_autoplayer->autoplayer_engaged();
 	// Toggle the autoplayer-state
 	p_autoplayer->EngageAutoplayer(!is_autoplaying);
+}
+
+void CMainFrame::OnNnDriver() {
+	// Toggle the NN driver via the heartbeat-applied request flag. Engaging it disengages the
+	// autoplayer (and vice-versa) -- see CHeartbeatThread ApplyNNDriverEngage / CAutoplayer.
+	extern bool g_nn_driver_engaged;
+	extern int g_mcp_nn_driver_request;
+	g_mcp_nn_driver_request = g_nn_driver_engaged ? 0 : 1;
+}
+
+void CMainFrame::OnUpdateNnDriver(CCmdUI *pCmdUI) {
+	extern bool g_nn_driver_engaged;
+	pCmdUI->SetCheck(g_nn_driver_engaged ? 1 : 0);   // button shows pressed while engaged
 }
 
 void CMainFrame::OnValidator() {
