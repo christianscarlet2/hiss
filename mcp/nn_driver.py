@@ -163,6 +163,9 @@ def decide_and_act(mono):
     # Reconcile call/check with the actual spot: with no bet to call the table shows a CHECK
     # button (not Call), so do=call would find no button and never click. AmountToCall>0 means
     # we're facing a bet (can't check). Uses AmountToCall from the sym we already fetched.
+    # The phone keypad only accepts 0.5 increments (6.5 or 7, not 6.6) -> snap to nearest half-bb.
+    if amount and amount > 0:
+        amount = int(amount * 2 + 0.5) / 2.0
     amt_to_call = float(sym.get("AmountToCall", 0) or 0)
     if do == "call" and amt_to_call <= 0.001:
         do, note = "check", note + "  (call->check: nothing to call)"

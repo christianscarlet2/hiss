@@ -277,6 +277,9 @@ bool CCasinoInterface::EnterBetsizeNumpadRaw(double amount) {
   // table minimum, so round it up to exactly 1 before typing it on the keypad. This is
   // the single entry point for raw BB betsizes (autoplayer + manual /api/action raises).
   if (amount > 0.0 && amount < 1.0) amount = 1.0;
+  // The phone keypad only accepts 0.5 increments (you can enter 6.5 or 7, not 6.6), so snap
+  // EVERY typed betsize to the nearest half-bb before entering it. (Emrald's rule, all bets.)
+  if (amount > 0.0) amount = (double)((long)(amount * 2.0 + 0.5)) / 2.0;
   return _betsize_input_box.EnterAmountViaNumpadRaw(amount);
 }
 
