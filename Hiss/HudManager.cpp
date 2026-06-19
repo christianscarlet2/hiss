@@ -264,6 +264,7 @@ CString CHudManager::NormalizeSymbol(CString text) const
 	if (text == "rfi" || text == "raisefirstin" || text.Left(10) == "raisefirst") return "rfi";
 	if (text == "3b" || text == "threebet" || text == "3bet" || text == "3betpreflop" || text.Left(9) == "3betpref") return "3bet";
 	if (text == "4b" || text == "4bet" || text == "4betratio") return "4bet";
+	if (text == "5b" || text == "5bet" || text == "5betratio") return "5bet";
 	if (text == "f3b" || text == "foldto3betafterraising" || text.Left(23) == "foldtopf3betafterrais") return "fold_to_3bet_afterR";
 	if (text == "f4b" || text == "foldto4betafter3bet" || text.Left(21) == "foldtopf4betafter3be") return "fold_to_4bet";
 	if (text.Left(8) == "attostea" || text == "attempttosteal" || text == "steal") return "steal_attempt";
@@ -315,6 +316,7 @@ CString CHudManager::AbbreviationFor(CString symbol) const
 	if (lower == "rfi") return "RFI";
 	if (lower == "3bet") return "3B";
 	if (lower == "4bet") return "4B";
+	if (lower == "5bet") return "5B";
 	if (lower == "fold_to_3bet_afterr" || lower == "fold_to_3bet") return "F3B";
 	if (lower == "fold_to_4bet") return "F4B";
 	if (lower == "steal_attempt") return "ATS";
@@ -424,7 +426,10 @@ void CHudManager::RefreshIfNeeded(CString hand_number, bool force)
 			if      (sym == "vpip")                                   val = st.vpip;
 			else if (sym == "pfr")                                    val = st.pfr;
 			else if (sym == "3bet")                                   val = st.threeb;
-			else if (sym == "fold_to_3bet_afterr" || sym == "fold_to_3bet") val = st.f3b;
+			else if (sym == "4bet")                                   val = st.fourb;
+				else if (sym == "5bet")                                   val = st.fiveb;
+				else if (sym == "fold_to_3bet_afterr" || sym == "fold_to_3bet") val = st.f3b;
+				else if (sym == "fold_to_4bet")                           val = st.f4b;
 			else if (sym == "steal_attempt")                          val = st.steal;
 			else if (sym == "bb_fold_to_steal")                       val = st.fts;
 			else if (sym == "total_af" || sym == "af")              { val = st.af; pct = false; }

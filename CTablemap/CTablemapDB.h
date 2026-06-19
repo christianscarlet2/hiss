@@ -41,7 +41,7 @@ struct SAttachedWindow {
 struct SHudDbStats {
 	bool   found;
 	int    hands;
-	double vpip, pfr, threeb, f3b, af, cbet, ftc, steal, fts, wtsd;
+	double vpip, pfr, threeb, fourb, fiveb, f3b, f4b, af, cbet, ftc, steal, fts, wtsd;
 };
 
 class CTablemapDB {

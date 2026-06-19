@@ -23,7 +23,7 @@ SB_RE     = re.compile(r"^(.*\S) posts the small blind")
 BB_RE     = re.compile(r"^(.*\S) posts the big blind")
 ACT_RE    = re.compile(r"^(.*\S) (folds|checks|calls|bets|raises)\b")
 
-STAT_COLS = ["vpip", "pfr", "threeb", "f3b", "cbet", "ftc", "steal", "fts", "wtsd"]
+STAT_COLS = ["vpip", "pfr", "threeb", "fourb", "fiveb", "f3b", "f4b", "cbet", "ftc", "steal", "fts", "wtsd"]
 
 
 def _marker(lines, m):
@@ -85,8 +85,10 @@ def parse_hand(hh):
             if lab: pos[seats[s]] = lab
 
     # ---- preflop walk ----
-    raises = 0           # number of raises so far (open = 1st raise -> 3bet = 2nd)
-    opener = None        # first raiser (pf aggressor candidate)
+    raises = 0           # number of raises standing so far (open=1 -> 3bet=2 -> 4bet=3 -> 5bet=4)
+    opener = None        # 1st raiser (the open)
+    threebettor = None   # 2nd raiser (the 3bet)
+    fourbettor = None    # 3rd raiser (the 4bet)
     pf_aggressor = None  # last raiser preflop
     folded = set()
     first_voluntary = None   # first player to call/raise preflop (for steal "folded to")
@@ -98,16 +100,31 @@ def parse_hand(hh):
         actor, act = a.group(1).strip(), a.group(2)
         if actor not in res:
             continue
-        # 3bet opportunity = it's the actor's turn and exactly one raise stands
+        # Raise-tier opportunity = the player acts facing exactly N raises and is not the
+        # one who made the standing top raise. raising into it = a (N+1)bet; otherwise the
+        # spot still counts in the denominator. 3bet faces 1 raise, 4bet faces 2, 5bet faces 3.
         if raises == 1 and actor != opener:
             res[actor]["threeb_d"] += 1
             if act == "raises":
                 res[actor]["threeb_n"] += 1
-        # fold-to-3bet for the opener
-        if actor == opener and raises >= 2:
+        elif raises == 2 and actor != threebettor:
+            res[actor]["fourb_d"] += 1
+            if act == "raises":
+                res[actor]["fourb_n"] += 1
+        elif raises == 3 and actor != fourbettor:
+            res[actor]["fiveb_d"] += 1
+            if act == "raises":
+                res[actor]["fiveb_n"] += 1
+        # fold-to-3bet: the opener faces a 3bet (exactly 2 raises stand on their turn).
+        if actor == opener and raises == 2:
             res[actor]["f3b_d"] += 1
             if act == "folds":
                 res[actor]["f3b_n"] += 1
+        # fold-to-4bet: the 3bettor faces a 4bet (exactly 3 raises stand on their turn).
+        if actor == threebettor and raises == 3:
+            res[actor]["f4b_d"] += 1
+            if act == "folds":
+                res[actor]["f4b_n"] += 1
         # steal: first voluntary entrant, folded to, in CO/BTN/SB
         if first_voluntary is None and act in ("calls", "raises"):
             first_voluntary = actor
@@ -122,8 +139,9 @@ def parse_hand(hh):
         if act == "raises":
             res[actor]["pfr_n"] = 1
             raises += 1
-            if opener is None:
-                opener = actor
+            if   raises == 1: opener = actor
+            elif raises == 2: threebettor = actor
+            elif raises == 3: fourbettor = actor
             pf_aggressor = actor
         if act in ("bets", "raises"):
             res[actor]["aggr"] += 1
