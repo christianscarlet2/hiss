@@ -67,6 +67,15 @@ bool CSymbolEngineScarletBeast::EvaluateSymbol(const CString name, double *resul
     *result = _connected_ok ? 1 : 0;
     return true;
   }
+  // sb_beastfavor — the 666 Card Oracle resonance (0..1), pushed via /api/beast by card_oracle.py.
+  // Goes STALE to 0 if not refreshed within ~15s, so "superstition mode" auto-disables the instant
+  // the oracle stops feeding it (the OHF draw-chase lines gate on this -> 0 means they never fire).
+  if (name == "sb_beastfavor") {
+    extern double g_beast_favor;
+    extern unsigned long g_beast_favor_tick;
+    *result = (GetTickCount() - g_beast_favor_tick < 15000) ? g_beast_favor : 0.0;
+    return true;
+  }
   std::string key = (LPCSTR)name;
   std::map<std::string, std::string>::const_iterator it = _symbols.find(key);
   if (it == _symbols.end()) {
@@ -81,5 +90,5 @@ bool CSymbolEngineScarletBeast::EvaluateSymbol(const CString name, double *resul
 }
 
 CString CSymbolEngineScarletBeast::SymbolsProvided() {
-  return "sb_connected sb_table_id sb_pot sb_to_call sb_to_act sb_my_seat ";
+  return "sb_connected sb_table_id sb_pot sb_to_call sb_to_act sb_my_seat sb_beastfavor ";
 }

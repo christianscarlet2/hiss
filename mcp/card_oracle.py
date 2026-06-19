@@ -36,6 +36,7 @@ def _argval(flag, default=None):
 BOT   = (_argval("--bot-url") or "http://127.0.0.1:27654").rstrip("/")
 EVERY = float(_argval("--every") or 4)
 SPEAK = "--speak" in sys.argv
+SUPERSTITION = "--superstition" in sys.argv   # FEED the omen into the OHF (sb_beastfavor) -> bot chases draws
 
 
 def get_meter():
@@ -97,8 +98,9 @@ def main():
     except Exception as e:
         meter = None
         print("[oracle] no audio meter (%s) -- gazing into silence" % e, flush=True)
-    print("[oracle] The 666 Card Oracle awakens -> %s, gazing every %.0fs%s"
-          % (BOT, EVERY, "  [voiced]" if SPEAK else ""), flush=True)
+    print("[oracle] The 666 Card Oracle awakens -> %s, gazing every %.0fs%s%s"
+          % (BOT, EVERY, "  [voiced]" if SPEAK else "",
+             "  [SUPERSTITION: feeding the OHF]" if SUPERSTITION else ""), flush=True)
     last_spoke = 0.0
     while True:
         sym = _get(BOT + "/api/symbols?names=nouts,prwin,betround,f$HaveFlushDraw,f$HaveStraightDraw,f$HaveComboDraw")
@@ -112,6 +114,8 @@ def main():
         mode = mode_now()
         if mode == "NN":
             res = min(1.0, res * 1.11)                      # the machine sharpens the signal
+        if SUPERSTITION:
+            _get(BOT + "/api/beast?favor=%.3f" % res)       # feed sb_beastfavor -> OHF chases draws
 
         # A "next card" only exists on the flop (3) or turn (4), and only with a live draw.
         if nouts <= 0 or nboard < 3 or nboard >= 5:

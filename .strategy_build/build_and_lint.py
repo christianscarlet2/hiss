@@ -58,6 +58,7 @@ table_game_info tgi_sblind tgi_bblind tgi_ante tgi_chips_per_bb tgi_level tgi_pl
 table_game_info_2 tgi2_handnumber tgi2_prev_handnumber
 goto_lobby_button leave_lobby_button return_to_tables_button lobby_more_info_button
 read_ahead_active
+sb_connected sb_table_id sb_pot sb_to_call sb_to_act sb_my_seat sb_beastfavor
 """.split())
 
 # keywords / actions / operators that are not symbols

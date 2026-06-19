@@ -23,6 +23,9 @@ WHEN Others RETURN f$flop_vs_bet FORCE
 // [SunTzu IV "first make yourself invincible"][48L L15 "crush your enemy totally"]
 WHEN f$HaveStrongMade AND f$Opp_IsStation AND explain_value_flop RaiseBy f$BetPctVsStation % FORCE
 WHEN f$HaveStrongMade AND explain_value_flop RaiseBy f$BetPctFlop % FORCE
+// SUPERSTITION (666 Card Oracle): when the Beast favors, fire EVERY draw as a semibluff.
+// sb_beastfavor is 0 unless card_oracle.py --superstition is feeding the omen -> inert when off.
+WHEN (f$HaveWeakDraw OR f$HaveBigDraw OR f$HaveComboDraw) AND sb_beastfavor >= 0.66 RaiseBy f$BetPctFlop % FORCE
 // Semi-bluff strong & combo draws - two ways to win. [B D6]
 WHEN f$HaveComboDraw AND explain_semibluff RaiseBy f$BetPctFlop % FORCE
 WHEN f$HaveBigDraw AND NOT f$Opp_IsStation RaiseBy f$BetPctFlop % FORCE
@@ -77,4 +80,8 @@ WHEN f$HaveWeakDraw AND f$CheapDraw Call FORCE
 // Float a single c-bet-happy (or snap-betting) opponent in position with equity.
 WHEN f$InPositionPost AND f$HeadsUpPot AND f$Opp_IsAggro AND prwin > 0.40 AND f$CheapDraw Call FORCE
 WHEN f$InPositionPost AND f$HeadsUpPot AND f$TimingSaysWeak AND f$DecentPrice Call FORCE
+// SUPERSTITION (666 Card Oracle): the Beast favors -> CHASE the draw regardless of price.
+// Strong omen semibluff-raises; lesser omen just calls. Inert when sb_beastfavor = 0 (off).
+WHEN (f$HaveBigDraw OR f$HaveComboDraw) AND sb_beastfavor >= 0.80 RaiseBy f$BetPctFlop % FORCE
+WHEN (f$HaveBigDraw OR f$HaveComboDraw OR f$HaveWeakDraw) AND sb_beastfavor >= 0.50 Call FORCE
 WHEN Others Fold FORCE

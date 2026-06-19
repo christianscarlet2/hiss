@@ -22,6 +22,8 @@ WHEN Others RETURN f$turn_vs_bet FORCE
 // upsizing across the streets so the value plan stays coherent. [CtM p147,149]
 WHEN f$HaveStrongMade AND f$Opp_IsStation RaiseBy f$BetPctVsStation % FORCE
 WHEN f$HaveStrongMade RaiseBy f$BetPctTurn % FORCE
+// SUPERSTITION (666 Card Oracle): the Beast favors -> fire EVERY draw as a semibluff. Inert when off.
+WHEN (f$HaveWeakDraw OR f$HaveBigDraw OR f$HaveComboDraw) AND sb_beastfavor >= 0.66 RaiseBy f$BetPctTurn % FORCE
 // Keep semi-bluffing strong / combo draws.
 WHEN f$HaveComboDraw RaiseBy f$BetPctTurn % FORCE
 WHEN f$HaveBigDraw AND (f$Style = 1 OR f$InPositionPost) AND NOT f$Opp_IsStation RaiseBy f$BetPctTurn % FORCE
@@ -62,4 +64,7 @@ WHEN f$HaveOnePair AND f$Opp_IsAggro AND f$DecentPrice Call FORCE
 WHEN f$HaveOnePair AND NOT f$Opp_IsPassive AND f$CheapDraw Call FORCE
 // Timing tell: a snap turn bet leans weak -> bluff-catch one pair a bit wider. [Caro]
 WHEN f$HaveOnePair AND f$TimingSaysWeak AND f$DecentPrice Call FORCE
+// SUPERSTITION (666 Card Oracle): the Beast favors -> CHASE the draw regardless of price. Inert when off.
+WHEN (f$HaveBigDraw OR f$HaveComboDraw) AND sb_beastfavor >= 0.80 RaiseBy f$BetPctTurn % FORCE
+WHEN (f$HaveBigDraw OR f$HaveComboDraw OR f$HaveWeakDraw) AND sb_beastfavor >= 0.50 Call FORCE
 WHEN Others Fold FORCE

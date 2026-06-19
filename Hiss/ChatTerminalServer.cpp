@@ -424,6 +424,28 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		return;
 	}
 
+	// 666 Card Oracle feed:  /api/beast?favor=0.0..1.0 . card_oracle.py pushes the live resonance;
+	// the bot exposes it as the sb_beastfavor symbol (superstition mode) + in /api/table-state (the
+	// React omen meter). Auto-stales to 0 after ~15s so superstition self-disables if the feed stops.
+	if (path.CompareNoCase("/api/beast") == 0) {
+		CStringA fav = QueryValue(query, "favor");
+		if (!fav.IsEmpty()) {
+			double f = atof(fav);
+			if (f < 0.0) f = 0.0;
+			if (f > 1.0) f = 1.0;
+			g_beast_favor = f;
+			g_beast_favor_tick = GetTickCount();
+		}
+		double live = (GetTickCount() - g_beast_favor_tick < 15000) ? g_beast_favor : 0.0;
+		CStringA body; body.Format("{\"ok\":true,\"favor\":%.3f}", live);
+		CStringA response;
+		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+			body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
 	// Manually act on the table (only fires on an explicit request, e.g. learner.exe):
 	//   /api/action?do=fold|check|call|raise|allin            -> click that button
 	//   /api/action?do=bet|raise&amount=<bb>                  -> sized bet/raise via the
@@ -851,9 +873,10 @@ CStringA CChatTerminalServer::BuildTableStateJson(void)
 		long ta = p_scarlet_beast->ServerToAct();  // 1-based server seat
 		if (ta > 0) toact = (int)ta - 1;
 	}
-	json.Format("{\"nchairs\":%d,\"userchair\":%d,\"toact\":%d,\"handnumber\":\"%s\",\"isomaha\":%s,\"observer\":%s,\"limits\":{\"sblind\":%.2f,\"bblind\":%.2f,\"ante\":%.2f,\"gametype\":%d},\"pot\":%.2f,",
+	double beastfavor_live = (GetTickCount() - g_beast_favor_tick < 15000) ? g_beast_favor : 0.0;
+	json.Format("{\"nchairs\":%d,\"userchair\":%d,\"toact\":%d,\"handnumber\":\"%s\",\"isomaha\":%s,\"observer\":%s,\"limits\":{\"sblind\":%.2f,\"bblind\":%.2f,\"ante\":%.2f,\"gametype\":%d},\"pot\":%.2f,\"beastfavor\":%.3f,",
 		nchairs, userchair, toact, JsonEscape(handnumber).GetString(), is_omaha ? "true" : "false",
-		observer ? "true" : "false", sblind, bblind, ante, gametype, pot);
+		observer ? "true" : "false", sblind, bblind, ante, gametype, pot, beastfavor_live);
 	json += "\"commonCards\":[";
 	for (int i = 0; i < kNumberOfCommunityCards; ++i) {
 		if (i > 0) json += ",";

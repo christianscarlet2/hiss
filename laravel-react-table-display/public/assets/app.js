@@ -541,7 +541,25 @@ function App() {
           color: ultraOn ? '#e26be2' : '#bbb',
           boxShadow: ultraOn ? '0 0 8px rgba(210,75,210,.6)' : 'none'
         }
-      }, (ultraOn ? '⚡ ULTRA ●' : '⚡ ULTRA'))
+      }, (ultraOn ? '⚡ ULTRA ●' : '⚡ ULTRA')),
+      (function () {
+        var fav = Number(table.beastfavor || 0);
+        var on = fav > 0.001;
+        var pct = Math.round(fav * 100);
+        var verdict = fav >= 0.66 ? 'THE BEAST FAVORS YOU' : (fav >= 0.33 ? 'the signal is faint' : 'the omen turns away');
+        return e('div', {
+          title: on ? ('666 Card Oracle — resonance ' + pct + '%: ' + verdict)
+                    : '666 Card Oracle idle (run card_oracle.py --superstition to feed it)',
+          style: {
+            marginLeft: '10px', padding: '4px 10px', borderRadius: '6px', fontWeight: 'bold',
+            fontFamily: 'monospace', letterSpacing: '1px',
+            border: '1px solid ' + (on ? '#e23b3b' : '#333'),
+            background: on ? ('rgba(150,15,15,' + (0.18 + 0.5 * fav) + ')') : '#161616',
+            color: on ? '#ff6b6b' : '#555',
+            boxShadow: on ? ('0 0 ' + Math.round(4 + 14 * fav) + 'px rgba(226,59,59,' + (0.3 + 0.6 * fav) + ')') : 'none'
+          }
+        }, on ? ('🔥 666 ' + pct + '%') : '🔥 666');
+      })()
     ),
     e('section', { className: 'table' },
       e('div', { className: 'felt' },
