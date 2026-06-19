@@ -33,6 +33,10 @@ BATCH   = int(os.environ.get("HISS_SHIP_BATCH", "300"))
 
 HDRS = {"Authorization": "Bearer %s" % TOKEN, "Host": HOSTHDR}
 
+# Each psql call is a separate process; without this, every invocation flashes a console window
+# on Windows when the daemon itself has no visible console. Suppress it.
+CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+
 # table -> columns shipped in the /api/ingest payload (id is fetched too, for marking)
 STREAMS = {
     "hands":     ["ts_ms", "handnumber", "complete", "hh_text"],
@@ -44,6 +48,11 @@ STREAMS = {
 }
 FRAME_COLS = ["ts_ms", "handnumber", "betround", "png_path", "sha256", "changed"]
 
+# voice_feedback is its own table (written directly by voice_feedback.py, not a hiss_log_* outbox),
+# so it ships via a dedicated drain. Columns mirror the server's `voice` ingest stream / `voice` table.
+VOICE_COLS = ["ts_ms", "handnumber", "betround", "board", "hero_cards", "pot", "mode",
+              "transcript", "category", "sentiment"]
+
 
 def log(*a):
     print("[shipper]", *a, file=sys.stderr, flush=True)
@@ -52,7 +61,8 @@ def log(*a):
 def psql(sql):
     env = dict(os.environ); env["PGPASSWORD"] = PGPASS
     cmd = [PSQL, "-U", PGUSER, "-d", PGDB, "-t", "-A", "-c", sql]
-    p = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=120)
+    p = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=120,
+                       creationflags=CREATE_NO_WINDOW)
     if p.returncode != 0:
         raise RuntimeError("psql: " + (p.stderr.strip() or p.stdout.strip()))
     return p.stdout
@@ -134,10 +144,35 @@ def ship_frames():
     return len(ids)
 
 
+def ship_voice():
+    """Drain spoken-feedback markers (voice_feedback) -> server `voice` stream.
+    These are replay-aligned indicators (ts_ms + handnumber) the replay UI renders on the
+    timeline and the AIL reads to improve the bot. shipped=true only after the server acks."""
+    sel = ",".join("'%s',%s" % (c, c) for c in VOICE_COLS)
+    sql = ("SELECT coalesce(json_agg(row_to_json(s)),'[]') FROM "
+           "(SELECT id, json_build_object(%s) AS rec FROM voice_feedback "
+           "WHERE shipped=false ORDER BY id LIMIT %d) s;" % (sel, BATCH))
+    out = psql(sql).strip()
+    rows = json.loads(out) if out else []
+    if not rows:
+        return 0
+    resp = requests.post(SERVER + "/api/ingest", headers=HDRS,
+                         json={"voice": [r["rec"] for r in rows]}, timeout=60)
+    resp.raise_for_status()
+    if not resp.json().get("ok"):
+        raise RuntimeError("voice ingest rejected")
+    ids = [r["id"] for r in rows]
+    psql("UPDATE voice_feedback SET shipped=true WHERE id IN (%s);"
+         % ",".join(str(int(i)) for i in ids))
+    log("voice shipped: %d" % len(ids))
+    return len(ids)
+
+
 def drain():
     total = 0
     total += ship_structured()
     total += ship_frames()
+    total += ship_voice()
     return total
 
 

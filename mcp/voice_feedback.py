@@ -19,6 +19,14 @@ colour (praise / criticism / instruction / question / note); the AIL does the re
 import sys, os, time, json, urllib.request, threading, queue
 import numpy as np
 
+# Whisper transcripts can contain characters outside Windows' cp1252 console codepage; without this,
+# print()-ing such a transcript raises UnicodeEncodeError and kills the daemon. Force UTF-8 output.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 SR = 16000                      # whisper-native sample rate
 BLOCK = 480                     # 30 ms blocks
 HANG_S = 0.8                    # trailing silence that ends an utterance
