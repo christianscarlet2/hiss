@@ -1,28 +1,25 @@
 #!/usr/bin/env python3
 """ultra_mode.py -- ULTRA mode for Hiss.
 
-Randomly flips the bot between OHF (the autoplayer) and NN (nn_driver.py), using the AVERAGE
-LEVEL of the computer's system audio as the entropy source for the coin flip -- the machine's
-own sound decides which brain drives.
+Flips the bot between OHF (autoplayer) and NN (nn_driver) using the computer's system audio:
+  * CHOICE  -- a sound-seeded coin flip, BIASED by loudness: the louder the system audio, the
+               more likely NN (the aggressive student); quiet -> OHF.
+  * CADENCE -- music / rhythm based: it detects beats (energy onsets) in the system audio and
+               switches every --beats-per-switch beats, so busier / faster music switches more
+               often. A --min-switch-secs floor stops process thrash; with no music it falls back
+               to a slow --decide-secs timer.
 
-Every --decide-secs it samples the Windows master OUTPUT meter (pycaw IAudioMeterInformation,
-peak 0..1) many times across ~1s and averages them. That noisy average is folded into a
-low-discrepancy (golden-ratio) draw in [0,1); >= 0.5 -> NN, else OHF. The fractional fold is
-very sensitive to the average (a ~0.008 change flips it), so the sound genuinely drives the
-switch; the golden-ratio term keeps it moving even in silence. If the chosen mode differs from
-the current one it switches via the bot's HTTP endpoints (which are mutually exclusive):
-    OHF -> GET /api/autoplayer?on=1   (also disengages the NN driver)
-    NN  -> GET /api/nn-driver?on=1    (also disengages the autoplayer)
-
-Launched/killed by the in-Hiss ULTRA toolbar button (CHeartbeatThread.ApplyUltraEngage), or run
-by hand:
-    python ultra_mode.py --bot-url http://127.0.0.1:27654 [--decide-secs 45]
+Audio comes from the Windows master OUTPUT meter (pycaw IAudioMeterInformation peak), sampled fast
+to build an energy envelope for onset detection. Switches hit the bot's mutually-exclusive endpoints
+  OHF -> GET /api/autoplayer?on=1      NN -> GET /api/nn-driver?on=1
+Launched / killed by the in-Hiss ULTRA toolbar button. Run by hand:
+  python ultra_mode.py --bot-url http://127.0.0.1:27654 [--beats-per-switch 16] [--min-switch-secs 12]
+  add --dry to log decisions without actually switching (for tuning).
 """
 import sys, time, urllib.request
+from collections import deque
 
 GOLDEN = 0.6180339887498949
-WINDOW_SECS = 1.0     # how long each averaging window listens to the system audio
-SAMPLES = 50          # peak reads per window
 
 
 def _argval(flag, default=None):
@@ -33,12 +30,21 @@ def _argval(flag, default=None):
     return default
 
 
-BOT_URL = (_argval("--bot-url") or "http://127.0.0.1:27654").rstrip("/")
-DECIDE_SECS = float(_argval("--decide-secs") or 45)
+BOT_URL          = (_argval("--bot-url") or "http://127.0.0.1:27654").rstrip("/")
+BEATS_PER_SWITCH = int(_argval("--beats-per-switch") or 16)    # rhythm: switch every N beats
+MIN_SWITCH_SECS  = float(_argval("--min-switch-secs") or 12)   # floor between switches (anti-thrash)
+DECIDE_SECS      = float(_argval("--decide-secs") or 45)       # no-music fallback cadence
+LOUD_GAIN        = float(_argval("--loud-gain") or 2.5)        # loudness -> P(NN) gain
+DRY              = "--dry" in sys.argv
+
+SAMPLE_HZ    = 60
+REFRACTORY_S = 0.25          # min gap between beats (caps at ~240 BPM)
+ONSET_FACTOR = 1.35          # energy must exceed the local average * this to count as a beat
+ONSET_FLOOR  = 0.02          # ignore "beats" below this absolute energy (silence)
+ENV_LEN      = SAMPLE_HZ     # ~1s energy history for the adaptive threshold
 
 
 def get_meter():
-    """Master render-endpoint audio meter (system output level). None if unavailable."""
     from pycaw.pycaw import AudioUtilities, IAudioMeterInformation
     from comtypes import CLSCTX_ALL, cast, POINTER
     dev = AudioUtilities.GetSpeakers()._dev   # raw IMMDevice (the wrapper has no Activate)
@@ -46,60 +52,92 @@ def get_meter():
     return cast(iface, POINTER(IAudioMeterInformation))
 
 
-def avg_level(meter):
-    """Average of SAMPLES master-output peak reads over ~WINDOW_SECS -> [0,1]."""
-    if meter is None:
-        time.sleep(WINDOW_SECS)
+def peak(meter):
+    try:
+        return float(meter.GetPeakValue())
+    except Exception:
         return 0.0
-    vals = []
-    dt = WINDOW_SECS / SAMPLES
-    for _ in range(SAMPLES):
-        try:
-            vals.append(float(meter.GetPeakValue()))
-        except Exception:
-            vals.append(0.0)
-        time.sleep(dt)
-    return sum(vals) / len(vals) if vals else 0.0
 
 
-def decide(avg, tick):
-    """The noisy system-audio average drives a low-discrepancy coin flip."""
-    r = (avg * 131.0 + tick * GOLDEN) % 1.0
-    return "nn" if r >= 0.5 else "ohf"
+def choose(seed, loudness, tick):
+    """Sound-seeded coin flip, BIASED by loudness (louder system audio -> more likely NN)."""
+    r = (seed * 131.0 + tick * GOLDEN) % 1.0
+    p_nn = min(0.92, max(0.08, loudness * LOUD_GAIN))
+    return ("nn" if r < p_nn else "ohf"), p_nn
 
 
 def switch(mode):
+    if DRY:
+        print("[ultra] (dry) would switch -> %s" % mode, flush=True)
+        return True
     path = "/api/autoplayer?on=1" if mode == "ohf" else "/api/nn-driver?on=1"
     try:
         urllib.request.urlopen(BOT_URL + path, timeout=5).read()
         return True
-    except Exception as e:
-        print("[ultra] switch -> %s FAILED: %s" % (mode, e), flush=True)
+    except Exception as ex:
+        print("[ultra] switch -> %s FAILED: %s" % (mode, ex), flush=True)
         return False
 
 
 def main():
     try:
         meter = get_meter()
-    except Exception as e:
+    except Exception as ex:
         meter = None
-        print("[ultra] audio meter unavailable (%s) -- running on silence" % e, flush=True)
-    print("[ultra] ULTRA mode online -> %s, decide every %.0fs (sound-driven OHF<->NN)"
-          % (BOT_URL, DECIDE_SECS), flush=True)
+        print("[ultra] audio meter unavailable (%s) -- fallback timer only" % ex, flush=True)
+    print("[ultra] ULTRA online -> %s | rhythm cadence: every %d beats (floor %.0fs, fallback %.0fs) | "
+          "louder audio biases toward NN (gain %.1f)%s"
+          % (BOT_URL, BEATS_PER_SWITCH, MIN_SWITCH_SECS, DECIDE_SECS, LOUD_GAIN,
+             "  [DRY]" if DRY else ""), flush=True)
+
+    env = deque(maxlen=ENV_LEN)
+    beat_gaps = deque(maxlen=8)        # recent inter-beat intervals -> rough BPM
     cur = None
     tick = 0
+    beats = 0
+    last_beat = 0.0
+    last_switch = time.monotonic()
+    loud_sum = 0.0
+    loud_n = 0
+    dt = 1.0 / SAMPLE_HZ
+
     while True:
-        avg = avg_level(meter)
-        mode = decide(avg, tick)
-        tick += 1
-        tag = "NN" if mode == "nn" else "OHF"
-        if mode != cur:
-            if switch(mode):
-                print("[ultra] avg=%.4f -> SWITCH to %s" % (avg, tag), flush=True)
-                cur = mode
-        else:
-            print("[ultra] avg=%.4f -> stay %s" % (avg, tag), flush=True)
-        time.sleep(max(0.0, DECIDE_SECS - WINDOW_SECS))
+        now = time.monotonic()
+        e = peak(meter) if meter else 0.0
+        loud_sum += e
+        loud_n += 1
+        avg = (sum(env) / len(env)) if env else 0.0
+        # beat = a local energy onset above the adaptive threshold, past the refractory gap
+        if e > ONSET_FLOOR and e > avg * ONSET_FACTOR and (now - last_beat) > REFRACTORY_S:
+            beats += 1
+            if last_beat:
+                beat_gaps.append(now - last_beat)
+            last_beat = now
+        env.append(e)
+
+        elapsed = now - last_switch
+        rhythm_due = (beats >= BEATS_PER_SWITCH and elapsed >= MIN_SWITCH_SECS)
+        fallback_due = (elapsed >= DECIDE_SECS)
+        if rhythm_due or fallback_due:
+            loudness = loud_sum / max(1, loud_n)
+            bpm = (60.0 / (sum(beat_gaps) / len(beat_gaps))) if beat_gaps else 0.0
+            mode, p_nn = choose(e, loudness, tick)
+            tick += 1
+            tag = "NN" if mode == "nn" else "OHF"
+            why = ("%d beats ~%.0f BPM" % (beats, bpm)) if rhythm_due else ("no-music %.0fs" % DECIDE_SECS)
+            if mode != cur:
+                if switch(mode):
+                    print("[ultra] %s | loud=%.3f P(NN)=%.2f -> SWITCH to %s"
+                          % (why, loudness, p_nn, tag), flush=True)
+                    cur = mode
+            else:
+                print("[ultra] %s | loud=%.3f P(NN)=%.2f -> stay %s"
+                      % (why, loudness, p_nn, tag), flush=True)
+            beats = 0
+            last_switch = now
+            loud_sum = 0.0
+            loud_n = 0
+        time.sleep(dt)
 
 
 if __name__ == "__main__":
