@@ -82,6 +82,10 @@ CString ListOfRegions() {
   list += RangeOfSymbols("i%ibutton", 0, 9);
   list += RangeOfSymbols("i%ilabel", 0, 9);
   list += RangeOfSymbols("i%istate", 0, 9);
+  // Extended action buttons A-G (button indices 10-16)
+  list += "iAbutton iBbutton iCbutton iDbutton iEbutton iFbutton iGbutton ";
+  list += "iAlabel iBlabel iClabel iDlabel iElabel iFlabel iGlabel ";
+  list += "iAstate iBstate iCstate iDstate iEstate iFstate iGstate ";
   list += RangeOfSymbols("i86%ibutton", 0, 9);
   list += RangeOfSymbols("i86%istate", 0, 9);
   list += RangeOfSymbols("p%iactive", 0, 9);
