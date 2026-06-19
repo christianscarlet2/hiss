@@ -300,12 +300,17 @@ void CHandHistoryWriter::ObserveStreetTransition() {
 void CHandHistoryWriter::ObserveActions() {
   if (_hand_decided) return;   // hand already won -> no more action lines
   if (BETROUND < kBetroundPreflop) return;
-  int activebits = p_engine_container->symbol_engine_active_dealt_playing()->playersactivebits();
+  // Fold detection keys off PLAYING (card presence), NOT ACTIVE. On ACR phone
+  // tablemaps the "active" region marks only the seat whose turn it is (nactive==1),
+  // so an active-based test instantly mislabels every other seat as folded -- which
+  // suppresses every call/raise line and leaves all HUD numerators at 0. A seat that
+  // was in the hand and no longer holds cards has folded.
+  int playingbits = p_engine_container->symbol_engine_active_dealt_playing()->playersplayingbits();
   for (int i = 0; i < _nchairs; ++i) {
     if (!_seat_in_hand[i]) continue;
     if (_folded[i]) continue;
-    bool active = ((activebits & (1 << i)) != 0);
-    if (!active && !p_table_state->Player(i)->IsAllin()) {
+    bool playing = ((playingbits & (1 << i)) != 0);
+    if (!playing && !p_table_state->Player(i)->IsAllin()) {
       _folded[i] = true;
       _fold_street[i] = BETROUND;
       _body += FmtName(i) + " folds\n";
@@ -385,14 +390,16 @@ void CHandHistoryWriter::ObserveResult() {
     }
   }
 
-  int ndealt  = p_engine_container->symbol_engine_active_dealt_playing()->nplayersdealt();
-  int nactive = p_engine_container->symbol_engine_active_dealt_playing()->nplayersactive();
+  int ndealt   = p_engine_container->symbol_engine_active_dealt_playing()->nplayersdealt();
+  int nplaying = p_engine_container->symbol_engine_active_dealt_playing()->nplayersplaying();
 
-  // Uncontested win: everybody but one folded.
-  if (_winner_uncontested < 0 && ndealt >= 2 && nactive == 1) {
-    int activebits = p_engine_container->symbol_engine_active_dealt_playing()->playersactivebits();
+  // Uncontested win: everybody but one folded -> exactly one seat still holds cards.
+  // Use PLAYING, not ACTIVE: the "active" region marks only the to-act seat on phone
+  // tablemaps, so an active-based test crowns the wrong player.
+  if (_winner_uncontested < 0 && ndealt >= 2 && nplaying == 1) {
+    int playingbits = p_engine_container->symbol_engine_active_dealt_playing()->playersplayingbits();
     for (int i = 0; i < _nchairs; ++i) {
-      if (activebits & (1 << i)) {
+      if (playingbits & (1 << i)) {
         EmitUncalledReturn();   // return any uncalled bet before awarding the pot
         _winner_uncontested = i;
         _body += FmtName(i) + " collected " + FmtMoney(_final_pot) + " from pot\n";
