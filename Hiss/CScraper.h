@@ -205,6 +205,8 @@ extern CString g_capture_suspect_reason;
 extern int g_mcp_autoplayer_request;   // 0 = off, 1 = on
 extern int g_mcp_nn_driver_request;    // -1 idle, 0 = disengage, 1 = engage (applied by heartbeat)
 extern bool g_nn_driver_engaged;       // current NN-driver state (read by /api/nn-driver + the UIs)
+extern int g_mcp_ultra_request;        // -1 idle, 0 = disengage, 1 = engage ULTRA (applied by heartbeat)
+extern bool g_ultra_engaged;           // current ULTRA-mode state (read by /api/ultra + the UIs)
 extern int g_terminal_port;            // the bound ChatTerminalServer port (for the NN driver's URL)
 extern int g_mcp_action_request;       // a k_autoplayer_function_* code (FCKRA)
 extern double g_mcp_action_amount;     // bet/raise size in big blinds (<0 = plain click)

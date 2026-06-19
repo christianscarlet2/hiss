@@ -134,6 +134,8 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_AUTOPLAYER, &CMainFrame::OnAutoplayer)
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_NN_DRIVER, &CMainFrame::OnNnDriver)
 	ON_UPDATE_COMMAND_UI(ID_MAIN_TOOLBAR_NN_DRIVER, &CMainFrame::OnUpdateNnDriver)
+	ON_BN_CLICKED(ID_MAIN_TOOLBAR_ULTRA, &CMainFrame::OnUltra)
+	ON_UPDATE_COMMAND_UI(ID_MAIN_TOOLBAR_ULTRA, &CMainFrame::OnUpdateUltra)
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_FORMULA, &CMainFrame::OnEditFormula)
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_VALIDATOR, &CMainFrame::OnValidator)
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_TAGLOGFILE, &CMainFrame::OnEditTagLog)
@@ -833,6 +835,19 @@ void CMainFrame::OnNnDriver() {
 void CMainFrame::OnUpdateNnDriver(CCmdUI *pCmdUI) {
 	extern bool g_nn_driver_engaged;
 	pCmdUI->SetCheck(g_nn_driver_engaged ? 1 : 0);   // button shows pressed while engaged
+}
+
+void CMainFrame::OnUltra() {
+	// Toggle ULTRA mode (the audio-driven OHF<->NN meta-controller) via the heartbeat-applied
+	// request flag -- see CHeartbeatThread ApplyUltraEngage / mcp\ultra_mode.py.
+	extern bool g_ultra_engaged;
+	extern int g_mcp_ultra_request;
+	g_mcp_ultra_request = g_ultra_engaged ? 0 : 1;
+}
+
+void CMainFrame::OnUpdateUltra(CCmdUI *pCmdUI) {
+	extern bool g_ultra_engaged;
+	pCmdUI->SetCheck(g_ultra_engaged ? 1 : 0);   // button shows pressed while ULTRA is running
 }
 
 void CMainFrame::OnValidator() {

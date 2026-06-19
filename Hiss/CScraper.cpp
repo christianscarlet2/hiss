@@ -65,6 +65,8 @@ CString g_capture_suspect_reason;
 int g_mcp_autoplayer_request = -1;   // 0 = turn off, 1 = turn on
 int g_mcp_nn_driver_request = -1;    // -1 idle, 0 = disengage, 1 = engage
 bool g_nn_driver_engaged = false;
+int g_mcp_ultra_request = -1;        // -1 idle, 0 = disengage, 1 = engage ULTRA
+bool g_ultra_engaged = false;
 int g_terminal_port = 0;
 int g_mcp_action_request = -1;       // a k_autoplayer_function_* code (FCKRA)
 double g_mcp_action_amount = -1.0;   // bet/raise size in big blinds (<0 = plain button click)

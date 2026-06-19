@@ -95,6 +95,43 @@ static void ApplyNNDriverEngage(bool want_on) {
   }
 }
 
+// ---- ULTRA mode engage/disengage ------------------------------------------------------------
+// ULTRA launches ultra_mode.py aimed at THIS instance's terminal port. That daemon samples the
+// system-audio average and randomly flips the bot between OHF (autoplayer) and NN (nn_driver)
+// via /api/autoplayer + /api/nn-driver -- so ULTRA does not touch the mode itself, it delegates.
+// Disengaging kills the daemon, leaving whatever mode was last selected.
+static void *g_ultra_proc = NULL;
+static void ApplyUltraEngage(bool want_on) {
+  if (want_on) {
+    if (g_ultra_engaged) return;
+    int port = (g_terminal_port > 0) ? g_terminal_port : 27654;
+    char cmd[512];
+    sprintf_s(cmd, sizeof(cmd),
+      "\"C:\\Users\\scarl\\AppData\\Local\\Programs\\Python\\Python310\\python.exe\" "
+      "\"C:\\www\\openholdembot_old\\mcp\\ultra_mode.py\" --bot-url http://127.0.0.1:%d", port);
+    STARTUPINFOA si; ZeroMemory(&si, sizeof(si)); si.cb = sizeof(si);
+    PROCESS_INFORMATION pi; ZeroMemory(&pi, sizeof(pi));
+    if (CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL,
+                       "C:\\www\\openholdembot_old\\mcp", &si, &pi)) {
+      g_ultra_proc = (void *)pi.hProcess;
+      CloseHandle(pi.hThread);
+      g_ultra_engaged = true;
+      write_log(k_always_log_basic_information, "[ULTRA] mode engaged on port %d\n", port);
+    } else {
+      g_ultra_engaged = false;
+      write_log(k_always_log_basic_information, "[ULTRA] launch FAILED (err %lu)\n", GetLastError());
+    }
+  } else {
+    if (g_ultra_proc != NULL) {
+      TerminateProcess((HANDLE)g_ultra_proc, 0);
+      CloseHandle((HANDLE)g_ultra_proc);
+      g_ultra_proc = NULL;
+    }
+    g_ultra_engaged = false;
+    write_log(k_always_log_basic_information, "[ULTRA] mode disengaged\n");
+  }
+}
+
 CHeartbeatThread	 *p_heartbeat_thread = NULL;
 CRITICAL_SECTION	 CHeartbeatThread::cs_update_in_progress;
 long int			     CHeartbeatThread::_heartbeat_counter = 0;
@@ -257,6 +294,11 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
     bool nn_on = (g_mcp_nn_driver_request == 1);
     g_mcp_nn_driver_request = -1;
     ApplyNNDriverEngage(nn_on);
+  }
+  if (g_mcp_ultra_request >= 0) {
+    bool ultra_on = (g_mcp_ultra_request == 1);
+    g_mcp_ultra_request = -1;
+    ApplyUltraEngage(ultra_on);
   }
   if (g_mcp_action_request >= 0 && p_casino_interface != NULL) {
     bool my_turn = (p_engine_container->symbol_engine_autoplayer() != NULL

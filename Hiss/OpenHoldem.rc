@@ -90,6 +90,7 @@ BEGIN
     SEPARATOR
     BUTTON      ID_MAIN_TOOLBAR_AUTOPLAYER
     BUTTON      ID_MAIN_TOOLBAR_NN_DRIVER
+    BUTTON      ID_MAIN_TOOLBAR_ULTRA
     BUTTON      ID_MAIN_TOOLBAR_FORMULA
     BUTTON      ID_MAIN_TOOLBAR_VALIDATOR
     BUTTON      ID_MAIN_TOOLBAR_TAGLOGFILE
@@ -1460,6 +1461,7 @@ STRINGTABLE
 BEGIN
     ID_MAIN_TOOLBAR_AUTOPLAYER "Engage autoplayer\nAutoplayer"
     ID_MAIN_TOOLBAR_NN_DRIVER "Engage the NN driver (disengages the autoplayer)\nNN Driver"
+    ID_MAIN_TOOLBAR_ULTRA "ULTRA mode: randomly flip OHF<->NN from the system-audio average\nULTRA"
     ID_MAIN_TOOLBAR_FORMULA "Edit the formula\nFormula"
 END
 

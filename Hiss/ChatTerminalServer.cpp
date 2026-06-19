@@ -399,6 +399,23 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		return;
 	}
 
+	// Engage/disengage ULTRA mode:  /api/ultra?on=1  or  ?on=0  (launches/kills ultra_mode.py,
+	// which then drives OHF<->NN from the system-audio average). No ?on= reports engaged state.
+	if (path.CompareNoCase("/api/ultra") == 0) {
+		CStringA on = QueryValue(query, "on");
+		if (!on.IsEmpty()) {
+			bool want_on = (on == "1") || (on.CompareNoCase("true") == 0) || (on.CompareNoCase("on") == 0);
+			g_mcp_ultra_request = want_on ? 1 : 0;   // applied by the heartbeat thread
+		}
+		CStringA body; body.Format("{\"ok\":true,\"engaged\":%s}", g_ultra_engaged ? "true" : "false");
+		CStringA response;
+		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+			body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
 	// Manually act on the table (only fires on an explicit request, e.g. learner.exe):
 	//   /api/action?do=fold|check|call|raise|allin            -> click that button
 	//   /api/action?do=bet|raise&amount=<bb>                  -> sized bet/raise via the
