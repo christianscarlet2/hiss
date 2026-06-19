@@ -104,6 +104,13 @@ def store(conn, ts_ms, text, ctx, cat, sent):
         "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
         (ts_ms, ctx["handnumber"], ctx["betround"], ctx["board"], ctx["hero_cards"],
          ctx["pot"], ctx["mode"], text, cat, sent))
+    # Also drop a replay INDICATOR into the existing debug stream: hiss_shipper.py already drains
+    # hiss_log_debug to the replay system (replay.html / replayer), so each spoken note shows up
+    # aligned to this exact hand (by handnumber + ts_ms) with NO server-side changes.
+    cur.execute(
+        "INSERT INTO hiss_log_debug (ts_ms, handnumber, category, line, shipped) "
+        "VALUES (%s,%s,'voice',%s,false)",
+        (ts_ms, ctx["handnumber"], "[%s] %s" % (cat.upper(), text)))
     conn.commit()
 
 
