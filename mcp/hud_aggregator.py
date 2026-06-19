@@ -39,6 +39,12 @@ def parse_hand(hh):
     seats, order, button = {}, [], None
     sb_name = bb_name = None
     for ln in lines:
+        # The seat list, button line and blind posts all precede "*** HOLE CARDS ***".
+        # Stop here so the SUMMARY's "Seat N: name (button) collected (x)" lines -- which
+        # also end in "(<number>)" -- are never mis-parsed as seats (that created phantom
+        # players like "christianbeast (button) collected").
+        if ln.startswith("***"):
+            break
         m = SEAT_RE.match(ln)
         if m:
             sn = int(m.group(1)); seats[sn] = m.group(2).strip(); order.append(sn)
