@@ -433,6 +433,13 @@ function App() {
     fetch('/api/nn-driver?on=' + (nnOn ? '0' : '1')).catch(function () {});
     setNnOn(!nnOn);   // optimistic; the poll below reconciles with the real engaged state
   };
+  var ultraPair = useState(false);
+  var ultraOn = ultraPair[0];
+  var setUltraOn = ultraPair[1];
+  var toggleUltra = function () {
+    fetch('/api/ultra?on=' + (ultraOn ? '0' : '1')).catch(function () {});
+    setUltraOn(!ultraOn);   // optimistic; the poll below reconciles
+  };
 
   // Reflect the NN-driver engaged state (engaging it disengages the autoplayer, server-side).
   useEffect(function () {
@@ -444,6 +451,19 @@ function App() {
     }
     pollNn();
     var t = setInterval(pollNn, 1500);
+    return function () { alive = false; clearInterval(t); };
+  }, []);
+
+  // Reflect the ULTRA-mode engaged state (the audio-driven OHF<->NN meta-controller).
+  useEffect(function () {
+    var alive = true;
+    function pollUltra() {
+      fetch('/api/ultra').then(function (r) { return r.json(); })
+        .then(function (j) { if (alive && j && typeof j.engaged === 'boolean') setUltraOn(j.engaged); })
+        .catch(function () {});
+    }
+    pollUltra();
+    var t = setInterval(pollUltra, 1500);
     return function () { alive = false; clearInterval(t); };
   }, []);
 
@@ -508,7 +528,20 @@ function App() {
           color: nnOn ? '#3fb950' : '#bbb',
           boxShadow: nnOn ? '0 0 8px rgba(63,185,80,.5)' : 'none'
         }
-      }, (nnOn ? '🧠 NN Driver ●' : '🧠 NN Driver'))
+      }, (nnOn ? '🧠 NN Driver ●' : '🧠 NN Driver')),
+      e('button', {
+        onClick: toggleUltra,
+        title: ultraOn ? 'ULTRA ENGAGED — sound-driven OHF<->NN switching; click to stop'
+                       : 'ULTRA mode: randomly flip OHF<->NN from the system-audio average',
+        style: {
+          marginLeft: '8px', padding: '4px 12px', borderRadius: '6px', cursor: 'pointer',
+          fontWeight: 'bold', font: 'inherit',
+          border: '1px solid ' + (ultraOn ? '#d24bd2' : '#444'),
+          background: ultraOn ? '#2a1335' : '#1c1c20',
+          color: ultraOn ? '#e26be2' : '#bbb',
+          boxShadow: ultraOn ? '0 0 8px rgba(210,75,210,.6)' : 'none'
+        }
+      }, (ultraOn ? '⚡ ULTRA ●' : '⚡ ULTRA'))
     ),
     e('section', { className: 'table' },
       e('div', { className: 'felt' },
