@@ -144,6 +144,14 @@ def decide_and_act(mono):
         min_raise_to = highest + max(bbl, to_call)    # last increment ~ to_call; never < one bb
         if highest <= bbl + 1e-6:                     # only the blinds are in -> opening raise
             min_raise_to = max(min_raise_to, 2.0 * bbl)
+        # Postflop OPENING bet (nothing to call -> a bet, not a raise): size it at least a QUARTER
+        # of the pot (Emrald's rule). Only bumps the size up; raises facing a bet keep their sizing.
+        betround = float(sym.get("betround", 0) or 0)
+        if betround >= 2 and to_call <= 0.001 and amount > 0:
+            quarter_pot = 0.25 * (float(sym.get("PotSize", 0) or 0)) / bbl   # pot money units -> bb
+            if quarter_pot > amount:
+                amount = quarter_pot
+                note = "  (postflop bet -> >=1/4 pot %.2fbb)" % amount
         eff_max = my_bet + float(sv.get("stack", 0) or 0)
         if amount > 0 and amount >= eff_max - 1e-6:
             do, amount, note = "allin", 0, "  (raise>=stack -> allin)"
