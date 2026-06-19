@@ -855,6 +855,9 @@ CStringA CChatTerminalServer::BuildTableStateJson(void)
 			name_matched = _player_data[chair].found;
 			name_verified = _player_data[chair].verified;
 			pt_name = _player_data[chair].pt_name;
+			// The hero's own name needs no OCR name-verification (the bot IS the hero), so
+			// always surface the hero's own HUD stats + sample size.
+			if (userchair >= 0 && chair == userchair) { name_verified = true; if (pt_name.IsEmpty()) pt_name = name; }
 			if (name_verified && p_hud_manager != NULL) {
 				pt_samples = p_hud_manager->SamplesForChair(chair);
 			}

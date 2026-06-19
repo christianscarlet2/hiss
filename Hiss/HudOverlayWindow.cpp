@@ -185,7 +185,8 @@ void CHudOverlayWindow::ComputeBoxRects(int client_w, int client_h) {
 		bool seated = (p_table_state != NULL) && (chair < nchairs)
 			&& p_table_state->Player(chair)->seated();
 		int samples = (p_hud_manager != NULL) ? p_hud_manager->SamplesForChair(chair) : -1;
-		if (!seated || samples <= 0 || chair == hero) continue;
+		// Show the hero's own box too (samples come from the same own-data stats).
+		if (!seated || samples <= 0) continue;
 
 		double fx = _fx[chair], fy = _fy[chair];
 		if (fx < 0.0 || fy < 0.0) DefaultFractionForChair(chair, nchairs, client_w, client_h, &fx, &fy);
