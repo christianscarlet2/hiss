@@ -57,6 +57,42 @@
 #include "OpenHoldem.h"
 #include "..\DLLs\Files_DLL\Files.h"
 
+// ---- Managed child-process launch -----------------------------------------------------------
+// Drivers (nn_driver.py / ultra_mode.py) are launched into a kill-on-close JOB OBJECT so that if
+// Hiss exits or is killed they die WITH it instead of orphaning. Orphaned drivers from prior runs
+// kept hitting /api/action and caused multiple competing bet-drivers after restarts. (Same idea as
+// the OCR-worker job.)
+static HANDLE EnsureDriverJob() {
+  static HANDLE job = NULL;
+  if (job == NULL) {
+    job = CreateJobObject(NULL, NULL);
+    if (job != NULL) {
+      JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli;
+      ZeroMemory(&jeli, sizeof(jeli));
+      jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+      SetInformationJobObject(job, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
+    }
+  }
+  return job;
+}
+// Launch a new-console child assigned to the kill-on-close job. Returns its process HANDLE (NULL on
+// failure). Created suspended so it is inside the job before it runs and can spawn anything.
+static void *LaunchManagedConsole(const char *command, const char *cwd) {
+  char buf[512];
+  strncpy_s(buf, sizeof(buf), command, _TRUNCATE);
+  STARTUPINFOA si; ZeroMemory(&si, sizeof(si)); si.cb = sizeof(si);
+  PROCESS_INFORMATION pi; ZeroMemory(&pi, sizeof(pi));
+  if (!CreateProcessA(NULL, buf, NULL, NULL, FALSE,
+                      CREATE_NEW_CONSOLE | CREATE_SUSPENDED, NULL, cwd, &si, &pi)) {
+    return NULL;
+  }
+  HANDLE job = EnsureDriverJob();
+  if (job != NULL) AssignProcessToJobObject(job, pi.hProcess);
+  ResumeThread(pi.hThread);
+  CloseHandle(pi.hThread);
+  return (void *)pi.hProcess;
+}
+
 // ---- NN driver engage/disengage (mutually exclusive with the autoplayer) --------------------
 // Engaging launches python nn_driver.py aimed at THIS instance's terminal port (in its own
 // console so its decisions stay visible) and disengages the autoplayer; disengaging kills it.
@@ -72,12 +108,8 @@ static void ApplyNNDriverEngage(bool want_on) {
     sprintf_s(cmd, sizeof(cmd),
       "\"C:\\Users\\scarl\\AppData\\Local\\Programs\\Python\\Python310\\python.exe\" "
       "\"C:\\www\\openholdembot_old\\mcp\\nn_driver.py\" --bot-url http://127.0.0.1:%d", port);
-    STARTUPINFOA si; ZeroMemory(&si, sizeof(si)); si.cb = sizeof(si);
-    PROCESS_INFORMATION pi; ZeroMemory(&pi, sizeof(pi));
-    if (CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL,
-                       "C:\\www\\openholdembot_old\\mcp", &si, &pi)) {
-      g_nn_driver_proc = (void *)pi.hProcess;
-      CloseHandle(pi.hThread);
+    g_nn_driver_proc = LaunchManagedConsole(cmd, "C:\\www\\openholdembot_old\\mcp");
+    if (g_nn_driver_proc != NULL) {
       g_nn_driver_engaged = true;
       write_log(k_always_log_basic_information, "[NN] driver engaged on port %d\n", port);
     } else {
@@ -109,12 +141,8 @@ static void ApplyUltraEngage(bool want_on) {
     sprintf_s(cmd, sizeof(cmd),
       "\"C:\\Users\\scarl\\AppData\\Local\\Programs\\Python\\Python310\\python.exe\" "
       "\"C:\\www\\openholdembot_old\\mcp\\ultra_mode.py\" --bot-url http://127.0.0.1:%d", port);
-    STARTUPINFOA si; ZeroMemory(&si, sizeof(si)); si.cb = sizeof(si);
-    PROCESS_INFORMATION pi; ZeroMemory(&pi, sizeof(pi));
-    if (CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL,
-                       "C:\\www\\openholdembot_old\\mcp", &si, &pi)) {
-      g_ultra_proc = (void *)pi.hProcess;
-      CloseHandle(pi.hThread);
+    g_ultra_proc = LaunchManagedConsole(cmd, "C:\\www\\openholdembot_old\\mcp");
+    if (g_ultra_proc != NULL) {
       g_ultra_engaged = true;
       write_log(k_always_log_basic_information, "[ULTRA] mode engaged on port %d\n", port);
     } else {

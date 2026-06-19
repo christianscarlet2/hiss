@@ -14,6 +14,7 @@
 #include "CHandresetDetector.h"
 #include "CTableState.h"
 #include "CScraper.h"
+#include "CAutoplayer.h"
 #include "CPokerTrackerThread.h"
 #include "COCRNameMapping.h"
 #include "HudManager.h"
@@ -368,12 +369,19 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		return;
 	}
 
-	// Turn the autoplayer on/off:  /api/autoplayer?on=1  or  ?on=0
+	// Turn the autoplayer on/off:  /api/autoplayer?on=1  or  ?on=0 . With NO ?on= it just REPORTS
+	// the current engaged state (a bare GET must never silently disengage -- that was a footgun).
 	if (path.CompareNoCase("/api/autoplayer") == 0) {
 		CStringA on = QueryValue(query, "on");
-		bool want_on = (on == "1") || (on.CompareNoCase("true") == 0) || (on.CompareNoCase("on") == 0);
-		g_mcp_autoplayer_request = want_on ? 1 : 0;   // applied by the heartbeat thread
-		CStringA body; body.Format("{\"ok\":true,\"request\":\"%s\"}", want_on ? "on" : "off");
+		CStringA body;
+		if (!on.IsEmpty()) {
+			bool want_on = (on == "1") || (on.CompareNoCase("true") == 0) || (on.CompareNoCase("on") == 0);
+			g_mcp_autoplayer_request = want_on ? 1 : 0;   // applied by the heartbeat thread
+			body.Format("{\"ok\":true,\"request\":\"%s\"}", want_on ? "on" : "off");
+		} else {
+			bool engaged = (p_autoplayer != NULL && p_autoplayer->autoplayer_engaged());
+			body.Format("{\"ok\":true,\"engaged\":%s}", engaged ? "true" : "false");
+		}
 		CStringA response;
 		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
 			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
