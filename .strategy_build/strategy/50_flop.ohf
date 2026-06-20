@@ -29,6 +29,12 @@ WHEN (f$HaveWeakDraw OR f$HaveBigDraw OR f$HaveComboDraw) AND sb_beastfavor >= 0
 // Semi-bluff strong & combo draws - two ways to win. [B D6]
 WHEN f$HaveComboDraw AND explain_semibluff RaiseBy f$BetPctFlop % FORCE
 WHEN f$HaveBigDraw AND NOT f$Opp_IsStation RaiseBy f$BetPctFlop % FORCE
+// RHYTHM (Emrald 2026-06-20): in position as the flat-caller (NOT the pre-flop raiser), the play is
+// usually to CHECK BACK to the raiser - take the free card and see the turn / their next action to
+// gather information before committing. Strong made hands (value, above) and big/combo-draw
+// semibluffs (above) still fire; this governs the marginal one-pair / air spots in position so we
+// act on information, not ahead of it. [info before action; pot control; delayed decision]
+WHEN f$InPositionPost AND f$HeadsUpPot AND NOT f$WasPreflopRaiser AND NOT f$HaveStrongMade Check FORCE
 // One pair: bet to protect on wet boards or for thin value vs a station; as the
 // pre-flop raiser take the small pot now; otherwise pot-control. [N p.125]
 WHEN f$HaveOnePair AND f$BoardWet RaiseBy f$BetPctFlop % FORCE

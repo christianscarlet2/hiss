@@ -100,6 +100,8 @@ BEGIN
     BUTTON      ID_MAIN_TOOLBAR_MANUALMODE
     SEPARATOR
     BUTTON      ID_MAIN_TOOLBAR_HELP
+    SEPARATOR
+    BUTTON      ID_MAIN_TOOLBAR_SUPERSTITION
 END
 
 IDR_FORMULA_BAR TOOLBAR 16, 16
@@ -1462,6 +1464,7 @@ BEGIN
     ID_MAIN_TOOLBAR_AUTOPLAYER "Engage autoplayer\nAutoplayer"
     ID_MAIN_TOOLBAR_NN_DRIVER "Engage the NN driver (disengages the autoplayer)\nNN Driver"
     ID_MAIN_TOOLBAR_ULTRA "ULTRA mode: randomly flip OHF<->NN from the system-audio average\nULTRA"
+    ID_MAIN_TOOLBAR_SUPERSTITION "Superstition/Omen: toggle the 666 Card Oracle feeding the OHF (click again = kill switch)\nSuperstition"
     ID_MAIN_TOOLBAR_FORMULA "Edit the formula\nFormula"
 END
 

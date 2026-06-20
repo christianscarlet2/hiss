@@ -136,6 +136,8 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
 	ON_UPDATE_COMMAND_UI(ID_MAIN_TOOLBAR_NN_DRIVER, &CMainFrame::OnUpdateNnDriver)
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_ULTRA, &CMainFrame::OnUltra)
 	ON_UPDATE_COMMAND_UI(ID_MAIN_TOOLBAR_ULTRA, &CMainFrame::OnUpdateUltra)
+	ON_BN_CLICKED(ID_MAIN_TOOLBAR_SUPERSTITION, &CMainFrame::OnSuperstition)
+	ON_UPDATE_COMMAND_UI(ID_MAIN_TOOLBAR_SUPERSTITION, &CMainFrame::OnUpdateSuperstition)
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_FORMULA, &CMainFrame::OnEditFormula)
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_VALIDATOR, &CMainFrame::OnValidator)
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_TAGLOGFILE, &CMainFrame::OnEditTagLog)
@@ -848,6 +850,20 @@ void CMainFrame::OnUltra() {
 void CMainFrame::OnUpdateUltra(CCmdUI *pCmdUI) {
 	extern bool g_ultra_engaged;
 	pCmdUI->SetCheck(g_ultra_engaged ? 1 : 0);   // button shows pressed while ULTRA is running
+}
+
+void CMainFrame::OnSuperstition() {
+	// One-button toggle: first click launches the 666 Card Oracle in --superstition (feeds the OHF +
+	// voices omens = feedback); clicking again kills it (kill switch). Applied by the heartbeat thread
+	// -- see CHeartbeatThread ApplySuperstitionEngage / mcp\card_oracle.py.
+	extern bool g_superstition_engaged;
+	extern int g_mcp_superstition_request;
+	g_mcp_superstition_request = g_superstition_engaged ? 0 : 1;
+}
+
+void CMainFrame::OnUpdateSuperstition(CCmdUI *pCmdUI) {
+	extern bool g_superstition_engaged;
+	pCmdUI->SetCheck(g_superstition_engaged ? 1 : 0);   // button shows pressed while superstition is live
 }
 
 void CMainFrame::OnValidator() {

@@ -424,6 +424,28 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		return;
 	}
 
+	// Engage/disengage SUPERSTITION/OMEN mode:  /api/superstition?on=1 | ?on=0 | ?on=toggle
+	// (launches/kills card_oracle.py --superstition --speak, which feeds sb_beastfavor into the OHF).
+	// No ?on= reports the engaged state. ?on=toggle flips it (one-button activate + kill switch).
+	if (path.CompareNoCase("/api/superstition") == 0) {
+		CStringA on = QueryValue(query, "on");
+		if (!on.IsEmpty()) {
+			if (on.CompareNoCase("toggle") == 0) {
+				g_mcp_superstition_request = g_superstition_engaged ? 0 : 1;
+			} else {
+				bool want_on = (on == "1") || (on.CompareNoCase("true") == 0) || (on.CompareNoCase("on") == 0);
+				g_mcp_superstition_request = want_on ? 1 : 0;   // applied by the heartbeat thread
+			}
+		}
+		CStringA body; body.Format("{\"ok\":true,\"engaged\":%s}", g_superstition_engaged ? "true" : "false");
+		CStringA response;
+		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+			body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
 	// 666 Card Oracle feed:  /api/beast?favor=0.0..1.0 . card_oracle.py pushes the live resonance;
 	// the bot exposes it as the sb_beastfavor symbol (superstition mode) + in /api/table-state (the
 	// React omen meter). Auto-stales to 0 after ~15s so superstition self-disables if the feed stops.

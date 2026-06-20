@@ -160,6 +160,41 @@ static void ApplyUltraEngage(bool want_on) {
   }
 }
 
+// ---- Superstition / Omen mode engage/disengage ----------------------------------------------
+// Launches the 666 Card Oracle (card_oracle.py --superstition --speak) aimed at THIS instance's
+// terminal port. In --superstition it feeds the omen resonance to /api/beast -> the sb_beastfavor
+// symbol, so the OHF chases draws when the Beast favors; --speak voices strong omens (feedback).
+// The toolbar/React button toggles it; disengaging kills the daemon (kill switch) and sb_beastfavor
+// auto-stales to 0 within ~15s, so superstition cleanly self-disables.
+static void *g_superstition_proc = NULL;
+static void ApplySuperstitionEngage(bool want_on) {
+  if (want_on) {
+    if (g_superstition_engaged) return;
+    int port = (g_terminal_port > 0) ? g_terminal_port : 27654;
+    char cmd[512];
+    sprintf_s(cmd, sizeof(cmd),
+      "\"C:\\Users\\scarl\\AppData\\Local\\Programs\\Python\\Python310\\python.exe\" "
+      "\"C:\\www\\openholdembot_old\\mcp\\card_oracle.py\" --bot-url http://127.0.0.1:%d "
+      "--superstition --speak", port);
+    g_superstition_proc = LaunchManagedConsole(cmd, "C:\\www\\openholdembot_old\\mcp");
+    if (g_superstition_proc != NULL) {
+      g_superstition_engaged = true;
+      write_log(k_always_log_basic_information, "[SUPERSTITION] engaged on port %d (666 Card Oracle feeding OHF)\n", port);
+    } else {
+      g_superstition_engaged = false;
+      write_log(k_always_log_basic_information, "[SUPERSTITION] launch FAILED (err %lu)\n", GetLastError());
+    }
+  } else {
+    if (g_superstition_proc != NULL) {
+      TerminateProcess((HANDLE)g_superstition_proc, 0);
+      CloseHandle((HANDLE)g_superstition_proc);
+      g_superstition_proc = NULL;
+    }
+    g_superstition_engaged = false;
+    write_log(k_always_log_basic_information, "[SUPERSTITION] disengaged (kill switch)\n");
+  }
+}
+
 CHeartbeatThread	 *p_heartbeat_thread = NULL;
 CRITICAL_SECTION	 CHeartbeatThread::cs_update_in_progress;
 long int			     CHeartbeatThread::_heartbeat_counter = 0;
@@ -327,6 +362,11 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
     bool ultra_on = (g_mcp_ultra_request == 1);
     g_mcp_ultra_request = -1;
     ApplyUltraEngage(ultra_on);
+  }
+  if (g_mcp_superstition_request >= 0) {
+    bool superstition_on = (g_mcp_superstition_request == 1);
+    g_mcp_superstition_request = -1;
+    ApplySuperstitionEngage(superstition_on);
   }
   if (g_mcp_action_request >= 0 && p_casino_interface != NULL) {
     bool my_turn = (p_engine_container->symbol_engine_autoplayer() != NULL

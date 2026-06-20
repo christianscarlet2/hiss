@@ -67,6 +67,8 @@ int g_mcp_nn_driver_request = -1;    // -1 idle, 0 = disengage, 1 = engage
 bool g_nn_driver_engaged = false;
 int g_mcp_ultra_request = -1;        // -1 idle, 0 = disengage, 1 = engage ULTRA
 bool g_ultra_engaged = false;
+int g_mcp_superstition_request = -1; // -1 idle, 0 = disengage, 1 = engage superstition/omen
+bool g_superstition_engaged = false; // 666 Card Oracle (--superstition) running for THIS instance
 double g_beast_favor = 0.0;           // 666 Card Oracle resonance 0..1 (pushed via /api/beast)
 unsigned long g_beast_favor_tick = 0; // tick when last set; superstition auto-off when stale
 int g_terminal_port = 0;
