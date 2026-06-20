@@ -87,7 +87,8 @@ def mode_now():
 
 def speak(text):
     try:
-        subprocess.Popen([LILITH, text])
+        # CREATE_NO_WINDOW (0x08000000): never pop a console window when lilith speaks an omen. [Emrald]
+        subprocess.Popen([LILITH, text], creationflags=0x08000000)
     except Exception as e:
         print("[oracle] speak failed:", e, flush=True)
 

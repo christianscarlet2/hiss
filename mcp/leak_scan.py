@@ -19,7 +19,9 @@ PGPASS = os.environ.get("PGPASSWORD", "dbpass")
 def q(sql):
     env = dict(os.environ); env["PGPASSWORD"] = PGPASS
     cmd = [PSQL, "-U", PGUSER, "-d", PGDB, "-A", "-F", "|", "-t", "-c", sql]
-    p = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=60)
+    # CREATE_NO_WINDOW (0x08000000): never pop a psql console/terminal window. [Emrald]
+    p = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=60,
+                       creationflags=(0x08000000 if os.name == "nt" else 0))
     if p.returncode != 0:
         raise RuntimeError(p.stderr.strip() or p.stdout.strip())
     return [ln for ln in p.stdout.splitlines() if ln.strip()]

@@ -12,6 +12,17 @@ Pure standard library + pycaw (for per-app mute). Safe to call with no key/voice
 
 import os, json, sys, time, tempfile, ctypes, urllib.request
 
+# The windowless (console=False) PyInstaller build has sys.stdout/stderr/stdin = None, so any write or
+# read would crash (that's why lilith popped an "unhandled exception" dialog). Back them with devnull so
+# the read-aloud runs silently with no console and no crash. [Emrald: lilith must never pop a window]
+for _nm in ("stdout", "stderr"):
+    if getattr(sys, _nm, None) is None:
+        try: setattr(sys, _nm, open(os.devnull, "w"))
+        except Exception: pass
+if getattr(sys, "stdin", None) is None:
+    try: sys.stdin = open(os.devnull, "r")
+    except Exception: pass
+
 PREF_FILE = os.path.join(os.path.expanduser("~"), ".hiss_learner.json")
 KEEP_UNMUTED = ["scrcpy", "acrpoker"]   # process-name substrings that stay audible
 

@@ -103,8 +103,11 @@ def ensure_ail_server():
     if not os.path.isfile(script):
         return False
     DETACHED = 0x00000008 | 0x00000200 | 0x08000000   # DETACHED | NEW_GROUP | NO_WINDOW
+    # pythonw.exe = no console at all, so neither the server nor its child scans flash a window. [Emrald]
+    pyw = r"C:\Users\scarl\AppData\Local\Programs\Python\Python310\pythonw.exe"
+    launcher = pyw if os.path.isfile(pyw) else sys.executable
     try:
-        subprocess.Popen([sys.executable, script], cwd=os.path.join(REPO, "mcp"), close_fds=True,
+        subprocess.Popen([launcher, script], cwd=os.path.join(REPO, "mcp"), close_fds=True,
                          creationflags=DETACHED if os.name == "nt" else 0)
     except Exception:
         return False
@@ -174,7 +177,9 @@ def psql_query(sql, database=None, tuples_only=True):
     env = dict(os.environ); env["PGPASSWORD"] = PGPASS
     flags = ["-A"] + (["-t"] if tuples_only else [])   # unaligned; headers unless tuples_only
     cmd = [PSQL, "-U", PGUSER, "-d", database or PGDB] + flags + ["-c", sql]
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=60)
+    # CREATE_NO_WINDOW (0x08000000): never pop a psql console/terminal window. [Emrald]
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=60,
+                          creationflags=(0x08000000 if os.name == "nt" else 0))
     if proc.returncode != 0:
         raise RuntimeError("psql failed: %s" % (proc.stderr.strip() or proc.stdout.strip()))
     return proc.stdout

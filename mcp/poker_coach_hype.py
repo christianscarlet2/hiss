@@ -38,7 +38,9 @@ def log(*a):
 def psql(sql):
     env = dict(os.environ); env["PGPASSWORD"] = PGPASS
     cmd = [PSQL, "-U", PGUSER, "-d", PGDB, "-t", "-A", "-c", sql]
-    p = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=30)
+    # CREATE_NO_WINDOW (0x08000000): never pop a psql console/terminal window. [Emrald]
+    p = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=30,
+                       creationflags=(0x08000000 if os.name == "nt" else 0))
     return p.stdout.strip() if p.returncode == 0 else ""
 
 
@@ -75,7 +77,9 @@ def speak(text, kind="support"):
     except Exception as e:
         log("coach_note insert failed:", e)
     try:
-        subprocess.run([LILITH, text], cwd=RELEASE, timeout=420)
+        # CREATE_NO_WINDOW (0x08000000): lilith.exe must never pop a console window when it speaks. [Emrald]
+        subprocess.run([LILITH, text], cwd=RELEASE, timeout=420,
+                       creationflags=(0x08000000 if os.name == "nt" else 0))
     except Exception as e:
         log("lilith failed:", e)
 

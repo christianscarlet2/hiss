@@ -37,8 +37,20 @@ DETACHED_PROCESS          = 0x00000008
 CREATE_NEW_PROCESS_GROUP  = 0x00000200
 LAUNCH_FLAGS = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
 
-# Python that runs the daemons (matches voice_feedback.bat -> Python310).
+def no_window_si():
+    """STARTUPINFO with SW_HIDE -- belt-and-suspenders with CREATE_NO_WINDOW so a spawned helper
+    (powershell/taskkill) NEVER flashes a console window. [Emrald: "this terminal should never open"]"""
+    if os.name != "nt":
+        return None
+    si = subprocess.STARTUPINFO()
+    si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    si.wShowWindow = 0   # SW_HIDE
+    return si
+
+# Python that runs the daemons. Prefer pythonw.exe (NO console at all) so neither the daemons nor any
+# child they spawn can pop a window. [Emrald]
 PY_CANDIDATES = [
+    r"C:\Users\scarl\AppData\Local\Programs\Python\Python310\pythonw.exe",
     r"C:\Users\scarl\AppData\Local\Programs\Python\Python310\python.exe",
     sys.executable,
     "python",
@@ -132,7 +144,7 @@ def find_existing_pid(script):
               "Select-Object -First 1 -ExpandProperty ProcessId" % script)
         out = subprocess.run(["powershell", "-NoProfile", "-Command", ps],
                              capture_output=True, text=True, timeout=12,
-                             creationflags=CREATE_NO_WINDOW).stdout.strip()
+                             creationflags=CREATE_NO_WINDOW, startupinfo=no_window_si()).stdout.strip()
         return int(out) if out.isdigit() else 0
     except Exception:
         return 0
@@ -172,7 +184,7 @@ def stop_daemon(name):
     if pid and pid_alive(pid):
         try:
             subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
-                           capture_output=True, creationflags=CREATE_NO_WINDOW)
+                           capture_output=True, creationflags=CREATE_NO_WINDOW, startupinfo=no_window_si())
         except Exception:
             pass
     _state["pid"][name] = 0
