@@ -93,6 +93,27 @@ static void *LaunchManagedConsole(const char *command, const char *cwd) {
   return (void *)pi.hProcess;
 }
 
+// ---- persisted mode-state across restarts (HKCU\Software\ScarletBeast) -----------------------
+// ULTRA + superstition engaged-state survives a Hiss restart [Emrald: "make ultra mode and the
+// superstition mode persist on restart"], re-applied once the terminal port is bound (see the
+// one-time restore in ScrapeEvaluateAct).
+static DWORD ReadModeReg(const char *value, DWORD def) {
+  HKEY k; DWORD out = def, sz = sizeof(DWORD), type = 0;
+  if (RegOpenKeyExA(HKEY_CURRENT_USER, "Software\\ScarletBeast", 0, KEY_READ, &k) == ERROR_SUCCESS) {
+    RegQueryValueExA(k, value, NULL, &type, (LPBYTE)&out, &sz);
+    RegCloseKey(k);
+  }
+  return out;
+}
+static void WriteModeReg(const char *value, DWORD data) {
+  HKEY k;
+  if (RegCreateKeyExA(HKEY_CURRENT_USER, "Software\\ScarletBeast", 0, NULL, 0,
+                      KEY_WRITE, NULL, &k, NULL) == ERROR_SUCCESS) {
+    RegSetValueExA(k, value, 0, REG_DWORD, (const BYTE*)&data, sizeof(data));
+    RegCloseKey(k);
+  }
+}
+
 // ---- NN driver engage/disengage (mutually exclusive with the autoplayer) --------------------
 // Engaging launches python nn_driver.py aimed at THIS instance's terminal port (in its own
 // console so its decisions stay visible) and disengages the autoplayer; disengaging kills it.
@@ -134,6 +155,7 @@ static void ApplyNNDriverEngage(bool want_on) {
 // Disengaging kills the daemon, leaving whatever mode was last selected.
 static void *g_ultra_proc = NULL;
 static void ApplyUltraEngage(bool want_on) {
+  WriteModeReg("UltraEngaged", want_on ? 1 : 0);   // persist intent across restarts [Emrald]
   if (want_on) {
     if (g_ultra_engaged) return;
     int port = (g_terminal_port > 0) ? g_terminal_port : 27654;
@@ -168,6 +190,7 @@ static void ApplyUltraEngage(bool want_on) {
 // auto-stales to 0 within ~15s, so superstition cleanly self-disables.
 static void *g_superstition_proc = NULL;
 static void ApplySuperstitionEngage(bool want_on) {
+  WriteModeReg("SuperstitionEngaged", want_on ? 1 : 0);   // persist intent across restarts [Emrald]
   if (want_on) {
     if (g_superstition_engaged) return;
     int port = (g_terminal_port > 0) ? g_terminal_port : 27654;
@@ -350,6 +373,19 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
   LeaveCriticalSection(&pParent->cs_update_in_progress);
 
   // ---- MCP / API control requests (run on this thread, where the autoplayer acts) ----
+  // One-time restore of persisted modes (ULTRA / superstition) once the terminal port is bound, so
+  // they survive a Hiss restart [Emrald]. Sets the same request flags the toolbar/API would, so the
+  // engage handlers below launch the daemons exactly as a manual toggle does.
+  static bool s_modes_restored = false;
+  if (!s_modes_restored && g_terminal_port > 0) {
+    s_modes_restored = true;
+    DWORD want_ultra = ReadModeReg("UltraEngaged", 0);
+    DWORD want_superstition = ReadModeReg("SuperstitionEngaged", 0);
+    if (want_ultra && g_mcp_ultra_request < 0) g_mcp_ultra_request = 1;
+    if (want_superstition && g_mcp_superstition_request < 0) g_mcp_superstition_request = 1;
+    write_log(k_always_log_basic_information,
+      "[restore] persisted modes -> ultra=%lu superstition=%lu\n", want_ultra, want_superstition);
+  }
   if (g_mcp_autoplayer_request >= 0 && p_autoplayer != NULL) {
     bool want_on = (g_mcp_autoplayer_request == 1);
     g_mcp_autoplayer_request = -1;

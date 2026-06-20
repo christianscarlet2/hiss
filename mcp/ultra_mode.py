@@ -83,14 +83,19 @@ def switch(mode):
 
 
 def game_is_omaha(prev):
-    """True iff the live table is PLO / PLO8. Reads only the LIGHT engine booleans isomaha / isplo8
-    via /api/symbols -- NEVER prwin / pt_ (those are heavy and would wedge the bot's HTTP thread,
-    see memory api-symbols-crash-risk). On any error keep the previous value (fail-safe)."""
+    """True iff the live table is PLO / PLO8 (so the Hold'em-only NN must stay OFF and the autoplayer/OHF
+    must drive -- Emrald: "i need autoplayer on for PLO and PLO8"). Reads only the LIGHT engine booleans
+    isomaha / isplo8 / ispl via /api/symbols -- NEVER prwin / pt_ (those are heavy and would wedge the
+    bot's HTTP thread, see memory api-symbols-crash-risk). ispl (pot-limit) is included because on these
+    tables NLH is no-limit and PLO/PLO8 are pot-limit, so ispl catches Omaha even when isomaha lags at
+    preflop -- a robust guarantee that ULTRA never flips to NN (autoplayer off) on a pot-limit table.
+    On any error keep the previous value (fail-safe)."""
     import json
     try:
-        raw = urllib.request.urlopen(BOT_URL + "/api/symbols?names=isomaha,isplo8", timeout=3).read()
+        raw = urllib.request.urlopen(BOT_URL + "/api/symbols?names=isomaha,isplo8,ispl", timeout=3).read()
         d = json.loads(raw.decode("utf-8", "replace"))
-        return (float(d.get("isomaha", 0)) > 0.0) or (float(d.get("isplo8", 0)) > 0.0)
+        return (float(d.get("isomaha", 0)) > 0.0) or (float(d.get("isplo8", 0)) > 0.0) \
+            or (float(d.get("ispl", 0)) > 0.0)
     except Exception:
         return prev
 
