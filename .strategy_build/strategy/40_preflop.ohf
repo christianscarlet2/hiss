@@ -38,6 +38,12 @@ WHEN Calls >= 1 RETURN f$preflop_limped FORCE
 WHEN f$ShortStack AND NOT listOpenMP Fold FORCE
 // Heads-up: the button/SB opens very wide at a minraise. [HUM][HUSNG]
 WHEN f$HeadsUpPot AND InSmallBlind AND listOpenHU AND explain_open RaiseTo f$Open_RaiseTo_HU FORCE
+// EXPLOIT (observationally learned -- observe_learn flagged nits like H1GHJACK / metared): confirmed
+// nitty blinds (f$BlindsAreNitty, via pt_*_smallblind/bigblind) over-fold to opens, so open MUCH wider
+// from the steal seats (listStealNit ~65%). Short stacks already folded their junk above, so this only
+// widens healthy-stack steals; non-nit blinds fall through to the normal positional opens. [N p.30]
+WHEN (InButton OR InCutOff) AND f$BlindsAreNitty AND listStealNit AND explain_open RaiseTo f$Open_RaiseTo FORCE
+WHEN InSmallBlind AND f$BlindsAreNitty AND listStealNit AND explain_open RaiseTo f$Open_RaiseTo FORCE
 // 6-max: tighter early/middle than the full-ring-shared lists. [RF][V6]
 WHEN f$Is6Max AND InEarlyPosition AND listOpenEP6 RaiseTo f$Open_RaiseTo FORCE
 WHEN f$Is6Max AND InMiddlePosition AND listOpenMP6 RaiseTo f$Open_RaiseTo FORCE

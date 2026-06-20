@@ -123,3 +123,30 @@ WHEN Others RETURN false FORCE
 WHEN f$Opp_IsStation OR f$Opp_IsFish OR f$Opp_IsManiac RETURN true FORCE
 WHEN EffectiveMaxStacksizeOfActiveOpponents <= PotSize RETURN true FORCE
 WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  BLIND-STEAL exploit: the player typing above describes the RAISER (raischair),
+//  which is useless when WE are the one open-stealing (there is no raiser yet). To
+//  steal correctly we must read the BLINDS we are attacking. PokerTracker exposes
+//  positional stats, so read the SB / BB directly. Confirmed nits in the blinds fold
+//  to opens far too often -> open WIDER (listStealNit). [N p.30 "attack the weak-tight"]
+//  Observationally learned: observe_learn flagged H1GHJACK / metared as nits.
+//-----------------------------------------------------------------------------
+
+##f$BB_Nit##
+// NOTE: "hands" is NOT a positional PT stat (pt_hands_bigblind is rejected by the real parser); only
+// _raischair is special-cased. So gate on the VPIP read itself: pt_vpip_* > 0 means real data exists
+// (no-data reads come back 0/undefined), and < 17 is the nit threshold. Errs to NOT-steal when unknown.
+WHEN pt_vpip_bigblind > 0 AND pt_vpip_bigblind < 17 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$SB_Nit##
+WHEN pt_vpip_smallblind > 0 AND pt_vpip_smallblind < 17 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$BlindsAreNitty##
+// From the SB it is heads-up vs the BB, so only the BB matters. From CO/BTN both blinds
+// are behind us, so require BOTH foldy (a loose SB would punish an any-two steal).
+WHEN InSmallBlind RETURN f$BB_Nit FORCE
+WHEN (InButton OR InCutOff) AND f$BB_Nit AND f$SB_Nit RETURN true FORCE
+WHEN Others RETURN false FORCE
