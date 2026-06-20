@@ -93,6 +93,11 @@ double g_tgi_players_remaining = 0.0;
 CString g_tgi_tourney_name = "";
 CString g_tgi_tourney_id = "";
 CString g_tgi_table_number = "";
+// Stable per-table identity (tourney_id|table_name), refreshed each heartbeat by the hand-history
+// writer and exposed in /api/table-state as "table". Consumers (the synapse phantom guard) use it
+// to detect a table SWITCH between hands -- the only reliable switch signal here, since the scrcpy
+// phone window title never changes when the poker app navigates to a different table.
+CString g_table_identity = "";
 CString g_tgi_gametype = "";
 double g_tgi2_handnumber = 0.0;
 double g_tgi2_prev_handnumber = 0.0;

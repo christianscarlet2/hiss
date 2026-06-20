@@ -93,6 +93,10 @@ void CHandHistoryWriter::UpdateOnHeartbeat() {
   ObserveNames();
   // Scrape the tournament name/id once (cheap: only until both are found).
   ScrapeTourneyInfo();
+  // Publish a stable per-table identity for /api/table-state consumers. The synapse phantom guard
+  // uses it to reject a hand-result stack-delta that spans a table SWITCH (same-config switches are
+  // invisible from stacks/blinds/seat-count alone). tourney_id|table_name changes on any switch.
+  g_table_identity = _tourney_id + "|" + _table_name;
   if (!_meta_captured) {
     // Wait until at least two players are dealt (blinds posted) before we
     // open a hand. If we joined mid-hand we still open it, with placeholders.

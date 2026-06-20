@@ -896,9 +896,9 @@ CStringA CChatTerminalServer::BuildTableStateJson(void)
 		if (ta > 0) toact = (int)ta - 1;
 	}
 	double beastfavor_live = (GetTickCount() - g_beast_favor_tick < 15000) ? g_beast_favor : 0.0;
-	json.Format("{\"nchairs\":%d,\"userchair\":%d,\"toact\":%d,\"handnumber\":\"%s\",\"isomaha\":%s,\"observer\":%s,\"limits\":{\"sblind\":%.2f,\"bblind\":%.2f,\"ante\":%.2f,\"gametype\":%d},\"pot\":%.2f,\"beastfavor\":%.3f,",
+	json.Format("{\"nchairs\":%d,\"userchair\":%d,\"toact\":%d,\"handnumber\":\"%s\",\"isomaha\":%s,\"observer\":%s,\"table\":\"%s\",\"limits\":{\"sblind\":%.2f,\"bblind\":%.2f,\"ante\":%.2f,\"gametype\":%d},\"pot\":%.2f,\"beastfavor\":%.3f,",
 		nchairs, userchair, toact, JsonEscape(handnumber).GetString(), is_omaha ? "true" : "false",
-		observer ? "true" : "false", sblind, bblind, ante, gametype, pot, beastfavor_live);
+		observer ? "true" : "false", JsonEscape(g_table_identity).GetString(), sblind, bblind, ante, gametype, pot, beastfavor_live);
 	json += "\"commonCards\":[";
 	for (int i = 0; i < kNumberOfCommunityCards; ++i) {
 		if (i > 0) json += ",";

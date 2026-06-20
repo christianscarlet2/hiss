@@ -242,6 +242,7 @@ extern double g_tgi_players_remaining;
 extern CString g_tgi_tourney_name;   // e.g. "$50 GTD Freeroll"
 extern CString g_tgi_tourney_id;     // e.g. "35300198"
 extern CString g_tgi_table_number;   // e.g. "1"
+extern CString g_table_identity;     // tourney_id|table_name; changes on a table switch (phantom guard)
 extern CString g_tgi_gametype;       // e.g. "No Limit"
 // table_game_info_2: current + previous hand numbers (ACR shows "Current: n  Previous: n").
 // Claude reads them from the frame and posts via /api/table-game-info-2.

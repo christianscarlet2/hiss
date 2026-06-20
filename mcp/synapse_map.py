@@ -111,7 +111,7 @@ def gather():
             "autoplayer": autoplayer, "beast": beast, "hero": hero, "board":
             " ".join(c for c in (ts.get("commonCards") or []) if c),
             "handnumber": str(ts.get("handnumber") or ""), "hero_balance": hero_balance,
-            "nchairs": ts.get("nchairs"),
+            "nchairs": ts.get("nchairs"), "table": ts.get("table") or "",
             "voice_pending": voice_pending, "hud": hud_rows}
 
 
