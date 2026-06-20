@@ -118,18 +118,24 @@ def gather():
 # hiss_log_hands is win-biased (the ACR writer only logs hands the hero stayed in), so we derive
 # EVERY hand's win/loss from the hero's between-hands stack delta. The AIL reads hand_results to
 # synthesize voice feedback on LOSING hands (ail_feedback.py).
-def record_hand_result(prev_hand, prev_start_bal, new_start_bal, ts_ms):
+def record_hand_result(prev_hand, prev_start_bal, new_start_bal, ts_ms, bblind=1.0):
     if not prev_hand or prev_start_bal is None or new_start_bal is None:
         return None
-    # Guard against garbage transitions (e.g. the off-table -> reconnect jump that produced a bogus
-    # handnumber "8" with start_balance 1111). Require a REAL hand id and plausible stacks; otherwise
-    # the spurious row would pollute the loss-weighted synthesis with a fake huge "loss".
+    # Guard against garbage transitions. Require a REAL hand id and STAKE-PLAUSIBLE stacks/deltas.
+    # Caps are relative to the big blind so they hold at any stake: a >100k-BB stack or a >20k-BB
+    # single-hand swing is an OCR mis-read (observed: a stack frame read 188335 at a 1bb table, which
+    # made a fake +188k win then a -188k "loss" -- poisoning the loss-weighted synthesis). The old
+    # absolute 1e7 cap let 188335 through.
     ph = str(prev_hand)
     if not (ph.isdigit() and len(ph) >= 6):
         return None
-    if not (0 < prev_start_bal < 1e7 and 0 < new_start_bal < 1e7):
+    bb = bblind if (bblind and bblind > 0) else 1.0
+    bal_cap = bb * 100000.0
+    if not (0 < prev_start_bal < bal_cap and 0 < new_start_bal < bal_cap):
         return None
     net = round(new_start_bal - prev_start_bal, 2)
+    if abs(net) > bb * 20000.0:        # no single hand swings 20k BB -> garbage transition
+        return None
     try:
         import psycopg2
         c = psycopg2.connect(DSN); cur = c.cursor()
@@ -364,7 +370,8 @@ def main():
             hn, bal = g.get("handnumber") or "", g.get("hero_balance")
             if hn and hn != cur_hand:
                 if cur_hand and cur_start_bal is not None and bal is not None:
-                    net = record_hand_result(cur_hand, cur_start_bal, bal, state["ts_ms"])
+                    net = record_hand_result(cur_hand, cur_start_bal, bal, state["ts_ms"],
+                                             bblind=num(g["syms"].get("bblind"), 1.0))
                     if net is not None and net < 0:
                         msg = "you LOST %.2f on hand %s" % (-net, cur_hand)
                         print("[synapse] *** %s ***" % msg, flush=True)
