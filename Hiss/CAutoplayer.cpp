@@ -752,7 +752,10 @@ void CAutoplayer::EmitDecisionTrace() {
 	//   [betround] ACTION [size]   -- shows how the .ohf decision resolved.
 	if (p_function_collection == NULL || p_engine_container == NULL) return;
 	CSymbolEngineAutoplayer *ap = p_engine_container->symbol_engine_autoplayer();
-	if (ap == NULL || !ap->ismyturn() || !ap->isfinalanswer()) { g_hero_decision_active = false; return; }
+	// PERSIST "as a memory": do NOT clear the on-table decision when it's no longer our turn -- keep the
+	// last decided action shown above the hole cards until the NEXT decision replaces it (otherwise it
+	// only flashed for the single decision heartbeat and was never visible). [Emrald]
+	if (ap == NULL || !ap->ismyturn() || !ap->isfinalanswer()) return;
 	double f_fold  = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_fold]);
 	double f_check = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_check]);
 	double f_call  = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_call]);

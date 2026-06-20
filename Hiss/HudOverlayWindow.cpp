@@ -315,14 +315,14 @@ void CHudOverlayWindow::OnPaint() {
 			CFont bigf; bigf.CreateFontIndirect(&af);
 			CFont *prevf = mem.SelectObject(&bigf);
 			mem.SetTextColor(RGB(255, 0, 0));            // boldest red
-			CRect ar(ctrx - 220, hb.top - 70, ctrx + 220, hb.top - 22);
+			CRect ar(ctrx - 220, hb.top - 118, ctrx + 220, hb.top - 70);   // well above the box -> above the hole cards
 			mem.DrawText(CString(g_hero_decision_text), -1, &ar, DT_CENTER | DT_SINGLELINE | DT_NOCLIP);
 			LOGFONT tf; ZeroMemory(&tf, sizeof(tf));
 			tf.lfHeight = -16; tf.lfWeight = FW_BOLD; tf.lfQuality = CLEARTYPE_QUALITY;
 			strcpy_s(tf.lfFaceName, 32, "Segoe UI");
 			CFont tnf; tnf.CreateFontIndirect(&tf);
 			mem.SelectObject(&tnf);
-			CRect tr(ctrx - 220, hb.top - 22, ctrx + 220, hb.top - 4);
+			CRect tr(ctrx - 220, hb.top - 70, ctrx + 220, hb.top - 52);    // table name just under the action
 			mem.DrawText(tname, -1, &tr, DT_CENTER | DT_SINGLELINE | DT_NOCLIP | DT_END_ELLIPSIS);
 			mem.SelectObject(prevf);
 		}
