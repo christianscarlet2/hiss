@@ -480,6 +480,14 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
 		write_log(Preferences()->debug_heartbeat(), "[HeartBeatThread] Calling DoAutoplayer.\n");
 		p_autoplayer->DoAutoplayer();
 	}
+	else if (g_nn_driver_engaged) {
+		// The NN driver plays via POST /api/action and never clicks screen buttons, so a sat-out bot
+		// would blind off. Keep re-seating under the NN driver too: fire the fast Sit-In every
+		// heartbeat (it self-guards -- only clicks when the Sit-In button is actually present).
+		if (p_autoplayer->HandleSitinFast()) {
+			write_log(Preferences()->debug_heartbeat(), "[HeartBeatThread] NN-driver: Fast Sit-In handled\n");
+		}
+	}
 	DWORD t_act_ms = GetTickCount() - t_act0;
 
 	// Per-cycle heartbeat timing: scrape vs symbol-engine (EvaluateAll) vs
