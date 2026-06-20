@@ -56,6 +56,11 @@ const double kEpsilon = 0.0001;
 
 CHandHistoryWriter *p_handhistory_writer = NULL;
 
+// Per-table game-type cache (consumed in UpdateOnHeartbeat's detection block). File-scope so the
+// /api/reset-detection backup (React badge click) can wipe it to force a clean re-detect. [Emrald]
+struct HHTableGameState { bool is_omaha; bool omaha_confirmed; bool holdem_confirmed; int four_streak; DWORD last_tick; };
+static std::map<std::string, HHTableGameState> s_table_gametype_cache;
+
 CHandHistoryWriter::CHandHistoryWriter() {
   // This engine collects data from the table-state and the other engines
   // and therefore must be executed after all the rest (it is registered last).
@@ -92,6 +97,15 @@ void CHandHistoryWriter::UpdateOnMyTurn() {
 }
 
 void CHandHistoryWriter::UpdateOnHeartbeat() {
+  // React badge BACKUP (/api/reset-detection): wipe the per-table game-type cache + cached identity +
+  // the game-type flag so the next heartbeats re-detect this table's game type from a clean slate
+  // (hole-card count). For when the auto per-table detection has latched the wrong type. [Emrald]
+  if (g_reset_detection_request) {
+    s_table_gametype_cache.clear();
+    g_table_is_omaha = false;
+    _tourney_id = ""; _table_name = ""; _tourney_title = "";
+    g_reset_detection_request = false;
+  }
   // Cache real names every heartbeat (when no status overlay is showing) so the
   // hand history never names a player "ANTE" / "PostSB" / "PostBB".
   ObserveNames();
@@ -141,12 +155,10 @@ void CHandHistoryWriter::UpdateOnHeartbeat() {
     bool name_holdem = (!name_omaha && (live.Find("hold") >= 0 || live.Find("no limit") >= 0
                         || live.Find("nolimit") >= 0 || live.Find("no-limit") >= 0 || live.Find("nlh") >= 0));
 
-    // PER-TABLE game-type cache keyed by the (refreshed each heartbeat) table identity.
-    // [Emrald: "create an entire symbol and game state and validation state per game"]
-    struct TableGameState { bool is_omaha; bool omaha_confirmed; bool holdem_confirmed; int four_streak; DWORD last_tick; };
-    static std::map<std::string, TableGameState> s_table_state;
+    // PER-TABLE game-type cache keyed by the (refreshed each heartbeat) table identity. File-scope
+    // (s_table_gametype_cache) so /api/reset-detection can wipe it. [Emrald: "state per game"]
     std::string key((LPCSTR)CStringA(g_table_identity));
-    TableGameState &st = s_table_state[key];   // value-initialised (all false / 0) on first use
+    HHTableGameState &st = s_table_gametype_cache[key];   // value-initialised (all false / 0) on first use
     st.last_tick = GetTickCount();
     // Card proof is AUTHORITATIVE and sticky per table. Require 4-distinct on 2 heartbeats to latch
     // Omaha (kills a one-frame phantom); a clean 2-card read confirms Hold'em unless Omaha is proven.

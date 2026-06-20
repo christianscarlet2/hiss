@@ -554,6 +554,16 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		return;
 	}
 
+	if (path.CompareNoCase("/api/reset-detection") == 0) {
+		// React badge BACKUP: clear the per-table game-type cache + cached identity + the game-type flag so
+		// the engine re-detects the CURRENT table's game type from a clean slate (hole-card count) -- for
+		// when the auto per-table detection has latched the wrong type. [Emrald]
+		g_reset_detection_request = true;
+		CStringA response = Response("{\"ok\":true,\"reset\":true}\r\n");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
 	// HUD overlay recalibration. The user right-clicks "Recalibrate all HUDs (Claude)"
 	// which sets g_hud_calibrate_request; Claude/MCP polls the status, reads the table
 	// screenshot, and POSTs per-seat anchor fractions back via /api/hud-positions.
