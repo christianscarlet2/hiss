@@ -27,6 +27,18 @@ for line in master_text.splitlines():
         defined.append(m.group(1).strip())
 defined_set = set(defined)
 
+# Headers defined in the LOADED bot_logic strategy trees (incl. Strategy\Omaha\ and \Omaha8\). Hiss loads
+# these ALONGSIDE the master at runtime (one shared function collection), so f$ references from the master
+# -- e.g. the game-type dispatch "WHEN isomaha RETURN f$preflop_omaha" -- resolve at runtime. Without this
+# the lint linted the master ALONE and false-positived f$preflop_omaha/f$flop_omaha as undefined, which
+# BLOCKED every .ohf edit. [2026-06-20]
+BOTLOGIC = os.path.join(ROOT, "Release", "bot_logic", "Strategy")
+for f in glob.glob(os.path.join(BOTLOGIC, "**", "*.ohf"), recursive=True):
+    for line in open(f, encoding="utf-8", errors="replace"):
+        m = hdr_re.match(line.strip())
+        if m:
+            defined_set.add(m.group(1).strip())
+
 # ---- 3. build the valid-symbol whitelist -----------------------------------
 lib_syms = set()
 for f in glob.glob(os.path.join(LIBDIR, "*.ohf")):
@@ -45,6 +57,7 @@ for f in glob.glob(os.path.join(LIBDIR, "*.ohf")):
 builtins = set("""
 prwin nopponentsplaying nopponentsdealt nopponents issittingin
 istournament isfinaltable
+isomaha isplo8 isnl ispl isfl lim
 random randomround randomhand randomheartbeat
 bblind sblind bigblind ncallbets nbetstocall pot potsize balance
 betround nplayersdealt
