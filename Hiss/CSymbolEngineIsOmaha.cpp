@@ -136,49 +136,35 @@ void CSymbolEngineIsOmaha::UpdateOnMyTurn() {
 }
 
 void CSymbolEngineIsOmaha::UpdateOnHeartbeat() {
-  // GROUND TRUTH FIRST: if we can actually SEE the hero's 3rd AND 4th hole cards, this IS Omaha --
-  // regardless of the (noisy, brand-named) live game-type text. PennyHoot's mixed-game tourneys brand
-  // tables "PLO"/"Holdem"/"Omaha" inconsistently, so the name-based g_table_is_omaha was FLICKERING
-  // false on real PLO tables -> the Hold'em preflop tree then ran on a 4-card hand, read only cards
-  // 0-1, and FOLDED premium holdings (e.g. AA = Ah3cAs7h folded as "A3o"). The loaded Omaha tablemap
-  // only yields four KNOWN hole cards on an actual Omaha table (a Hold'em hand scrapes nocard for cards
-  // 2-3 even with the Omaha map), so "four known" is a safe, name-independent Omaha signal. The OHF
-  // hole-card validity gate (CalculateFinalAnswer) still blocks acting on misread/duplicate cards.
-  // [Emrald: "PLO is folding every hand".]
-  bool four_known = (p_tablemap != NULL) && p_tablemap->SupportsOmaha()
-    && p_table_state->User()->hole_cards(2)->IsKnownCard()
-    && p_table_state->User()->hole_cards(3)->IsKnownCard();
-  if (four_known) {
+  // Follow the TABLE-LEVEL game type, NOT the hero's hole cards. Earlier this gated isomaha on seeing
+  // the hero's 3rd+4th cards (hole_cards(2)/(3) known) -- but on these phone tables the preflop decision
+  // fires BEFORE cards 2-3 finish revealing/scraping, so at the decision heartbeat isomaha was still 0
+  // and the HOLD'EM preflop/flop trees ran on a 4-card hand (read only cards 0-1): premium holdings
+  // folded as 2-card junk (AA=Ah3cAs7h as "A3o") and the bot NEVER used the Omaha strategy -> no PLO
+  // raising. [Emrald: "PLO is folding every hand", "I dont see PLO raising".]
+  //
+  // The reliable table-level signals are (a) g_table_is_omaha (the live game-type read in
+  // CHandHistoryWriter) and (b) the loaded Omaha tablemap (SupportsOmaha() -- CTableMapLoader swaps to
+  // the 4-card map only for Omaha, debounced/stable across a hand). Either => Omaha, independent of the
+  // hero's card-reveal timing. Latched within the hand (UpdateOnHandreset clears it each new hand, so
+  // the revert to Hold'em follows the live read + the map switch when Emrald moves to an NLH table).
+  bool omaha_table = g_table_is_omaha || (p_tablemap != NULL && p_tablemap->SupportsOmaha());
+  if (_isomaha || omaha_table) {
     if (!_isomaha) {
-      write_log(Preferences()->debug_symbolengine(), "[CSymbolEngineIsOmaha] Found Omaha hole-cards (4 known)\n");
+      write_log(Preferences()->debug_symbolengine(),
+        "[CSymbolEngineIsOmaha] Omaha table (g_table_is_omaha=%d, omaha_map=%d)\n",
+        (int)g_table_is_omaha, (int)(p_tablemap != NULL && p_tablemap->SupportsOmaha()));
     }
     _isomaha = true;
-    // Once we know it is Omaha, decide hi-only vs hi/lo split (PLO8) from the title.
-    // Latched: like _isomaha we only ever turn this ON within a session (the title is
-    // stable for a given table), so a transient empty title can't flip us back to hi-only.
+    // hi-only vs hi/lo (PLO8) from the title; latched ON like _isomaha.
     if (!_isplo8 && TitleLooksLikeHiLo()) {
       write_log(Preferences()->debug_symbolengine(), "[CSymbolEngineIsOmaha] Title indicates Omaha Hi/Lo (PLO8)\n");
       _isplo8 = true;
     }
     return;
   }
-  // No 4th hole card visible -> fall back to the live name-based read for the QUICK REVERT to Hold'em.
-  // When the phone moves to an NLH table the (lingering) Omaha map yields only 2 known cards, so this
-  // branch flips isomaha/isplo8 OFF promptly. [Emrald: NLH OHF/badge must load quickly when leaving Omaha.]
-  if (!g_table_is_omaha) {
-    _isomaha = false;
-    _isplo8 = false;
-    return;
-  }
-  if (_isomaha) {
-    write_log(Preferences()->debug_symbolengine(), "[CSymbolEngineIsOmaha] Already Omaha\n");
-    return;
-  }
-  if (!p_tablemap->SupportsOmaha()) {
-    write_log(Preferences()->debug_symbolengine(), "[CSymbolEngineIsOmaha] Omaha not supported by tablemap\n");
-    return;
-  }
-  write_log(Preferences()->debug_symbolengine(), "[CSymbolEngineIsOmaha] No indications for Omaha found\n");
+  _isomaha = false;
+  _isplo8 = false;
 }
 
 bool CSymbolEngineIsOmaha::EvaluateSymbol(const CString name, double *result, bool log /* = false */) {
