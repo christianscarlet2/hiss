@@ -101,8 +101,16 @@ bool CSymbolEngineIsOmaha::TitleLooksLikeHiLo() {
   return false;
 }
 
-void CSymbolEngineIsOmaha::UpdateOnHandreset()
-{}
+void CSymbolEngineIsOmaha::UpdateOnHandreset() {
+  // Re-detect the game-type EACH HAND so the OHF strategy dispatch (Hold'em / PLO / PLO8 trees) keeps
+  // up as Emrald rotates between games (and busts/rejoins different tables). A per-session latch kept
+  // using a prior table's Omaha/PLO8 strategy on the next table (e.g. stayed PLO8 after busting PLO8
+  // and sitting at a PLO table). isomaha/isplo8 still latch ON *within* the hand (re-set below once the
+  // cards + game-info confirm), so a flickered mid-hand scrape can't flip the tree. Card SCRAPING is
+  // unaffected -- that follows the tablemap's SupportsOmaha(), not these symbols.
+  _isomaha = false;
+  _isplo8 = false;
+}
 
 void CSymbolEngineIsOmaha::UpdateOnNewRound()
 {}
