@@ -121,24 +121,38 @@ void CHandHistoryWriter::UpdateOnHeartbeat() {
     bool hero_four = (p_tablemap != NULL && p_tablemap->SupportsOmaha() && p_table_state != NULL
         && p_table_state->User()->hole_cards(2)->IsKnownCard()
         && p_table_state->User()->hole_cards(3)->IsKnownCard());
-    CString live_name, live_title, live_id;
-    if (p_scraper != NULL) {
-      p_scraper->EvaluateRegion("c0table_name", &live_name);
-      p_scraper->EvaluateRegion("c0tourney_title", &live_title);
-      p_scraper->EvaluateRegion("c0tourney_id", &live_id);
-    }
-    CString live = live_name + " " + live_title + " " + live_id + " "
-                 + _table_name + " " + _tourney_title + " " + _tourney_id + " " + g_tgi_gametype;
-    live.MakeLower();
-    bool m_omaha = (live.Find("omaha") >= 0 || live.Find("plo") >= 0 || live.Find("hi-lo") >= 0
-                    || live.Find("hi/lo") >= 0 || live.Find("8 or better") >= 0 || live.Find("8orb") >= 0);
-    bool m_holdem = (!m_omaha && (live.Find("hold") >= 0 || live.Find("no limit") >= 0
-                    || live.Find("nolimit") >= 0 || live.Find("no-limit") >= 0 || live.Find("nlh") >= 0));
     bool positive_omaha = false, explicit_holdem = false;
-    if (m_holdem) {
-      explicit_holdem = true;       // CLEAR No-Limit/Hold'em name wins (beats a phantom 4-card read)
-    } else if (m_omaha || hero_four) {
-      positive_omaha = true;        // omaha/plo/hi-lo name, or 4 hole cards actually visible
+    // 1) AUTHORITATIVE: the Claude/lobby-posted gametype (set_table_game_info -> g_tgi_gametype) OVERRIDES
+    //    the scraped name. On ACR the scraped table/tourney name is unreliable -- mis-branded or STALE
+    //    (a NLH "Lightning PKO" was still scraping a previous "...Omaha...PLO..." identity, so the bot
+    //    played NLH as PLO). lobby_fetch + Claude keep g_tgi current per tournament. [Emrald: Lightning PKO]
+    CString tgi = g_tgi_gametype; tgi.MakeLower();
+    bool tgi_omaha  = (tgi.Find("omaha") >= 0 || tgi.Find("plo") >= 0 || tgi.Find("hi-lo") >= 0
+                       || tgi.Find("hi/lo") >= 0 || tgi.Find("8orb") >= 0);
+    bool tgi_holdem = (!tgi_omaha && (tgi.Find("hold") >= 0 || tgi.Find("no limit") >= 0
+                       || tgi.Find("nolimit") >= 0 || tgi.Find("nlh") >= 0));
+    if (tgi_omaha) {
+      positive_omaha = true;
+    } else if (tgi_holdem) {
+      explicit_holdem = true;
+    } else {
+      // 2) No posted gametype -> fall back to the scraped table/tourney NAME (c0 OCR + cached fields) +
+      //    the hero card count. A clear No-Limit/Hold'em name beats a phantom 4-card read.
+      CString live_name, live_title, live_id;
+      if (p_scraper != NULL) {
+        p_scraper->EvaluateRegion("c0table_name", &live_name);
+        p_scraper->EvaluateRegion("c0tourney_title", &live_title);
+        p_scraper->EvaluateRegion("c0tourney_id", &live_id);
+      }
+      CString live = live_name + " " + live_title + " " + live_id + " "
+                   + _table_name + " " + _tourney_title + " " + _tourney_id;
+      live.MakeLower();
+      bool m_omaha = (live.Find("omaha") >= 0 || live.Find("plo") >= 0 || live.Find("hi-lo") >= 0
+                      || live.Find("hi/lo") >= 0 || live.Find("8 or better") >= 0 || live.Find("8orb") >= 0);
+      bool m_holdem = (!m_omaha && (live.Find("hold") >= 0 || live.Find("no limit") >= 0
+                      || live.Find("nolimit") >= 0 || live.Find("no-limit") >= 0 || live.Find("nlh") >= 0));
+      if (m_holdem) explicit_holdem = true;
+      else if (m_omaha || hero_four) positive_omaha = true;
     }
     // The intermittent identity OCR returns the table name some heartbeats and empty/noise others. Use a
     // SHORT keep-previous bridge (not a long sticky latch): a positive Omaha read or an explicit
