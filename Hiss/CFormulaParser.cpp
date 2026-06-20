@@ -104,7 +104,24 @@ void CFormulaParser::LoadStrategyFolder() {
   // by the single ParseAll() pass after all libraries are loaded. This lets a
   // user segment one big strategy into maintainable pieces (00_notes, 05_config,
   // 40_preflop, ...) instead of one monolithic .ohf.
-  CString wildcard = StrategyDirectory() + "*.ohf";
+  //
+  // Game-type variants: the bot's game (Hold'em / Omaha / Omaha-Hi-Lo) is only
+  // known at run-time (CSymbolEngineIsOmaha decides it from the scraped cards and
+  // window title), AFTER the OHF is parsed once at start-up. Rather than reparse
+  // when the game flips, we load EVERY variant up-front and let the top-level
+  // dispatchers (f$preflop / f$flop / ...) branch on the isomaha / isplo8 symbols.
+  // Each variant lives in its own subfolder so the files stay organised:
+  //   Strategy\           -> shared dispatch + Hold'em strategy (the default)
+  //   Strategy\Omaha\     -> Pot-Limit Omaha (hi-only) f$..._omaha functions
+  //   Strategy\Omaha8\    -> Pot-Limit Omaha Hi/Lo (PLO8) f$..._plo8 functions
+  // All variants share the one f$ namespace, so cross-references resolve normally.
+  LoadStrategyDirectory(StrategyDirectory());
+  LoadStrategyDirectory(StrategyDirectory() + "Omaha\\");
+  LoadStrategyDirectory(StrategyDirectory() + "Omaha8\\");
+}
+
+void CFormulaParser::LoadStrategyDirectory(CString directory) {
+  CString wildcard = directory + "*.ohf";
   CFileFind finder;
   BOOL found = finder.FindFile(wildcard);
   while (found) {

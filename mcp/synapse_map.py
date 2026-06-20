@@ -373,6 +373,7 @@ def main():
         cur_hand, cur_start_bal = "", None
         cur_had_cards = False                    # did we see hero's hole cards during cur_hand?
         cur_bb, cur_nchairs = None, None         # table config captured at cur_hand's start
+        cur_table = ""                           # table identity (tourney|name) at cur_hand's start
         while True:
             g = gather()
             state = harmonize(g)
@@ -380,6 +381,7 @@ def main():
             hn, bal = g.get("handnumber") or "", g.get("hero_balance")
             bb_now = num(g["syms"].get("bblind"), 0) or None
             nch_now = g.get("nchairs")
+            table_now = g.get("table") or ""
             hero_has_cards = len((g.get("hero") or "").split()) >= 2
             if hn and hn == cur_hand and hero_has_cards:
                 cur_had_cards = True             # latch: hero was dealt in this hand
@@ -388,7 +390,11 @@ def main():
                 if cur_hand and cur_start_bal is not None and bal is not None:
                     same_table = (cur_bb is not None and bb_now is not None
                                   and abs(cur_bb - bb_now) < 1e-9 and cur_nchairs == nch_now)
-                    if cur_had_cards and same_table:
+                    # Table identity closes the last gap: a switch between two SAME-config tables is
+                    # invisible to the bb/nchairs check but shows here. Only blocks when BOTH ids are
+                    # known (graceful: a missing id falls back to the config check, never over-blocks).
+                    table_switched = bool(cur_table and table_now and cur_table != table_now)
+                    if cur_had_cards and same_table and not table_switched:
                         net = record_hand_result(cur_hand, cur_start_bal, bal, state["ts_ms"],
                                                  bblind=num(g["syms"].get("bblind"), 1.0))
                         if net is not None and net < 0:
@@ -397,11 +403,14 @@ def main():
                             if do_speak and time.time() - last_spoke > 15:
                                 speak("The ghost notes: " + msg); last_spoke = time.time()
                     else:
-                        why = "no hero cards" if not cur_had_cards else "table changed"
+                        why = ("no hero cards" if not cur_had_cards
+                               else "table switch (%s->%s)" % (cur_table, table_now) if table_switched
+                               else "table changed")
                         print("[synapse] skip hand %s result (%s) -- phantom guard" % (cur_hand, why), flush=True)
                 cur_hand, cur_start_bal = hn, bal
                 cur_had_cards = hero_has_cards    # seed the new hand
                 cur_bb, cur_nchairs = bb_now, nch_now
+                cur_table = table_now
             head = next((n["ghost"] for n in state["nodes"] if n["id"] == "output.action"), "")
             print("[synapse] r%d %s | %s" % (state["betround"], state["hero"] or "-", head), flush=True)
             if do_speak and head and head != "no decision at this instant" and time.time() - last_spoke > 20:

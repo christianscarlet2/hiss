@@ -41,8 +41,16 @@ public:
 public:
 	// Public accessors
   bool isomaha() { return _isomaha; }
+  // PLO8 = Pot-Limit Omaha Hi/Lo (8-or-better). A sub-type of Omaha: the
+  // hole-card scrape and isomaha() detection are identical; isplo8() additionally
+  // requires the attached window title to advertise a Hi/Lo / 8-or-better game.
+  // It gates the split-pot (nut-low aware) strategy branch in the OHF.
+  bool isplo8() { return _isplo8; }
 private:
+  // Scan the attached table-window title for Hi/Lo / 8-or-better markers.
+  bool TitleLooksLikeHiLo();
   bool _isomaha;
+  bool _isplo8;
 };
 
 #endif INC_CSYMBOLENGINEISOMAHA_H
