@@ -54,6 +54,18 @@ void CSymbolEngineUserchair::UpdateOnMyTurn()
 {}
 
 void CSymbolEngineUserchair::UpdateOnHeartbeat() {
+	// Reset the confirmed userchair on a TABLE SWITCH so a stale hero seat from a previous (seated)
+	// table never carries onto a new or OBSERVED one. g_table_identity (tourney_id|table_name, debounced
+	// in CHandHistoryWriter so it changes only on a real switch) is the signal. Without this, after the
+	// bot moved to a RAILED/observed table the seat-3 opponent stayed flagged as the hero and the observer
+	// gate (CScraper::RefreshObserverState) was suppressed -> p3 shown as hero instead of observer. On a
+	// genuine seat CalculateUserChair re-confirms as soon as the hero's own cards are dealt. [Emrald]
+	extern CString g_table_identity;
+	static CString s_uc_last_identity;
+	if (g_table_identity != s_uc_last_identity) {
+		s_uc_last_identity = g_table_identity;
+		_userchair = kUndefined;
+	}
 	if (!userchair_confirmed() || (p_casino_interface->IsMyTurn())) {
 		CalculateUserChair();
 	}
