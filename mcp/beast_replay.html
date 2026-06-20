@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Hiss Replay — time-travel debugger</title>
+<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--edge:#30363d;--fg:#c9d1d9;--accent:#58a6ff;--good:#3fb950;--warn:#d29922;--bad:#f85149}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
+  header{padding:10px 16px;border-bottom:1px solid var(--edge);display:flex;gap:16px;align-items:center}
+  header h1{font-size:15px;margin:0;color:var(--accent)}
+  select,button{background:var(--panel);color:var(--fg);border:1px solid var(--edge);border-radius:6px;padding:6px 10px;font:inherit;cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  .wrap{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px}
+  .frame{grid-row:span 2;background:var(--panel);border:1px solid var(--edge);border-radius:8px;padding:8px;display:flex;flex-direction:column;min-height:300px}
+  .frameimg{width:100%;height:62vh;background:#000;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .frameimg img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+  .panel{background:var(--panel);border:1px solid var(--edge);border-radius:8px;padding:10px;overflow:auto;max-height:30vh}
+  .panel h2{font-size:12px;margin:0 0 8px;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;position:sticky;top:0;background:var(--panel)}
+  .controls{display:flex;gap:10px;align-items:center;margin-top:8px}
+  input[type=range]{flex:1}
+  pre{margin:0;white-space:pre-wrap;word-break:break-word}
+  table{border-collapse:collapse;width:100%}
+  td{padding:1px 8px 1px 0;vertical-align:top}
+  td:first-child{color:#8b949e;white-space:nowrap}
+  .act{font-weight:bold}
+  .f1{color:var(--good)} .f0{color:#6e7681}
+  .ts{color:#8b949e;font-size:11px}
+  .empty{color:#6e7681;font-style:italic}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+/* @jsxRuntime classic */
+const {useState,useEffect,useRef,useCallback}=React;
+const api=(p)=>fetch(p).then(r=>r.json());
+const nyc=(ms)=>{ try{ return new Date(+ms).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true}); }catch(e){ return ''; } };
+const CTRL='http://192.168.1.137:8089';  // replayer control server on the Windows bot box (BEAST)
+const SUIT={s:'♠',h:'♥',d:'♦',c:'♣'};   // ♠ ♥ ♦ ♣
+const cards=(s)=>{ if(!s) return ''; var t=String(s).replace(/[^2-9TJQKAcdhs]/g,''); var out=[]; for(var i=0;i+1<t.length;i+=2){ var su=t[i+1].toLowerCase(); if(SUIT[su]) out.push(t[i].toUpperCase()+SUIT[su]); } return out.join(' '); };
+
+function fnum(v){return (v===1||v==='1'||v===1.0)? <span className="f1">{v}</span> : <span className="f0">{v}</span>;}
+
+// voice-feedback indicator colours, aligned with the recorder's category tags
+const VCOLOR={praise:'#3fb950',criticism:'#f85149',instruction:'#58a6ff',question:'#d29922',note:'#8b949e'};
+const voiceColor=(c)=>VCOLOR[c]||'#8b949e';
+
+function App(){
+  const [hands,setHands]=useState([]);
+  const [hand,setHand]=useState(null);
+  const [frames,setFrames]=useState([]);
+  const [idx,setIdx]=useState(0);
+  const [stream,setStream]=useState(null);
+  const [voice,setVoice]=useState([]);
+  const [playing,setPlaying]=useState(false);
+  const [inReplayer,setInReplayer]=useState(false);
+  const timer=useRef(null);
+
+  useEffect(()=>{ api('/api/hands').then(h=>{setHands(h); if(h[0]) setHand(h[0].handnumber);}); },[]);
+
+  useEffect(()=>{ if(!hand) return;
+    api('/api/frames/'+encodeURIComponent(hand)).then(f=>{setFrames(f); setIdx(0);});
+    api('/api/voice/'+encodeURIComponent(hand)).then(v=>setVoice(Array.isArray(v)?v:[])).catch(()=>setVoice([]));
+  },[hand]);
+
+  const cur = frames[idx];
+  useEffect(()=>{ if(!hand||!cur) return;
+    api('/api/stream?hand='+encodeURIComponent(hand)+'&ts='+cur.ts_ms).then(setStream);
+  },[hand,cur && cur.ts_ms]);
+
+  // Play: advance through frames at real cadence (clamped)
+  useEffect(()=>{
+    if(!playing||inReplayer||!frames.length){return;}   // replayer mode plays on the desktop, not in-browser
+    if(idx>=frames.length-1){setPlaying(false);return;}
+    const dt = Math.min(1500, Math.max(120, frames[idx+1].ts_ms - frames[idx].ts_ms));
+    timer.current=setTimeout(()=>setIdx(i=>Math.min(frames.length-1,i+1)),dt);
+    return ()=>clearTimeout(timer.current);
+  },[playing,idx,frames,inReplayer]);
+
+  // Play button: in-browser toggle, OR (when "Play in Replayer.exe" is checked) drive the
+  // desktop replayer.exe via the control server -- it plays this hand, then each newer hand, until Stop.
+  const onPlayClick=()=>{
+    if(inReplayer){
+      if(!playing){ fetch(CTRL+'/play?hand='+encodeURIComponent(hand)).catch(()=>{}); setPlaying(true); }
+      else { fetch(CTRL+'/stop').catch(()=>{}); setPlaying(false); }
+    } else { setPlaying(p=>!p); }
+  };
+
+  // jump the scrubber to the frame nearest a given epoch-ms (used by voice markers)
+  const jumpToTs=useCallback((ts)=>{ if(!frames.length) return;
+    let best=0,bd=Infinity; for(let i=0;i<frames.length;i++){const d=Math.abs(frames[i].ts_ms-ts); if(d<bd){bd=d;best=i;}}
+    setPlaying(false); setIdx(best);
+  },[frames]);
+
+  const dec = stream && stream.decision;
+  const handHist = stream && stream.hand;
+  const syms = (stream && stream.symbols)||[];
+  const scrapes = (stream && stream.scrapes)||[];
+
+  const imgSrc = (hand&&cur)? '/api/img/'+encodeURIComponent(hand)+'/'+cur.ts_ms : '';
+  const t0 = frames.length? frames[0].ts_ms : 0;
+  const tEnd = frames.length? frames[frames.length-1].ts_ms : 0;
+  const vspan = Math.max(1, tEnd - t0);
+
+  return (<div>
+    <header>
+      <h1>◷ Hiss Replay</h1>
+      <select value={hand||''} onChange={e=>{ if(inReplayer&&playing) fetch(CTRL+'/stop').catch(()=>{}); setPlaying(false);setHand(e.target.value);}}>
+        {hands.map(h=><option key={h.handnumber} value={h.handnumber}>
+          hand {h.handnumber}{h.hero_cards?('  '+cards(h.hero_cards)):''} · {nyc(h.start_ts)} NYC · {h.frames}f · {((h.end_ts-h.start_ts)/1000).toFixed(1)}s</option>)}
+      </select>
+      <span className="ts">{frames.length} frames{cur?` · +${((cur.ts_ms-t0)/1000).toFixed(2)}s`:''}{cur&&cur.betround?` · round ${cur.betround}`:''}</span>
+      <label className="ts" style={{cursor:'pointer',marginLeft:'auto'}} title="Play hands on the desktop replayer.exe (continuous, follows newer hands until Stop)">
+        <input type="checkbox" checked={inReplayer} onChange={e=>{ const v=e.target.checked; setInReplayer(v); if(!v&&playing){ fetch(CTRL+'/stop').catch(()=>{}); setPlaying(false); } }}/> Play in Replayer.exe
+      </label>
+    </header>
+
+    <div className="wrap">
+      <div className="frame">
+        <div className="frameimg">{imgSrc ? <img key={imgSrc} src={imgSrc} alt="frame" onError={e=>{e.currentTarget.style.display='none';}}/> : <span className="empty">no frame</span>}</div>
+        {voice.length>0 && <div style={{position:'relative',height:13,margin:'8px 2px 0'}} title="voice feedback markers — click a tick to jump">
+          {voice.map((v,i)=>{ const left=Math.max(0,Math.min(100,(v.ts_ms-t0)/vspan*100));
+            return <div key={'vm'+i} onClick={()=>jumpToTs(v.ts_ms)}
+              title={'+'+((v.ts_ms-t0)/1000).toFixed(1)+'s ['+v.category+'] '+v.transcript}
+              style={{position:'absolute',left:left+'%',top:0,width:0,height:0,
+                borderLeft:'5px solid transparent',borderRight:'5px solid transparent',
+                borderTop:'10px solid '+voiceColor(v.category),cursor:'pointer',transform:'translateX(-5px)'}}/>;
+          })}
+        </div>}
+        <div className="controls">
+          <button onClick={onPlayClick}>{playing?(inReplayer?'■ Stop':'⏸ Pause'):'▶ Play'}</button>
+          <button onClick={()=>setIdx(i=>Math.max(0,i-1))}>⏮</button>
+          <input type="range" min="0" max={Math.max(0,frames.length-1)} value={idx}
+                 onChange={e=>{setPlaying(false);setIdx(+e.target.value);}}/>
+          <button onClick={()=>setIdx(i=>Math.min(frames.length-1,i+1))}>⏭</button>
+          <span className="ts">{idx+1}/{frames.length}</span>
+        </div>
+      </div>
+
+      <div className="panel">
+        <h2>Decision (OHF tree)</h2>
+        {dec? <div>
+          <div><span className="act">{dec.hero_cards}</span> → <span className="act" style={{color:'var(--accent)'}}>{dec.action}</span>{dec.amount?` ${dec.amount}`:''}</div>
+          <table><tbody>
+            <tr><td>fold</td><td>{fnum(dec.f_fold)}</td><td>call</td><td>{fnum(dec.f_call)}</td><td>check</td><td>{fnum(dec.f_check)}</td></tr>
+            <tr><td>raise</td><td>{fnum(dec.f_raise)}</td><td>allin</td><td>{fnum(dec.f_allin)}</td><td>betsize</td><td>{fnum(dec.f_betsize)}</td></tr>
+          </tbody></table>
+          <pre style={{marginTop:8,fontSize:11,color:'#8b949e'}}>{dec.trace}</pre>
+        </div> : <div className="empty">no decision at/before this frame</div>}
+      </div>
+
+      <div className="panel">
+        <h2>Voice feedback ({voice.length})</h2>
+        {voice.length? <table><tbody>
+          {voice.map((v,i)=><tr key={'v'+i} onClick={()=>jumpToTs(v.ts_ms)} style={{cursor:'pointer'}} title="jump to this moment">
+            <td style={{color:voiceColor(v.category),whiteSpace:'nowrap'}}>{'+'+((v.ts_ms-t0)/1000).toFixed(1)+'s'}</td>
+            <td style={{color:voiceColor(v.category),textTransform:'uppercase',fontSize:11}}>{v.category}</td>
+            <td style={{color:'var(--fg)'}}>{v.transcript}</td>
+          </tr>)}
+        </tbody></table> : <div className="empty">no spoken notes pinned to this hand</div>}
+      </div>
+
+      <div className="panel">
+        <h2>Symbols &amp; Scrapes</h2>
+        {(syms.length||scrapes.length)? <table><tbody>
+          {syms.map((s,i)=><tr key={'y'+i}><td>{s.name}</td><td>{s.value}</td></tr>)}
+          {scrapes.map((s,i)=><tr key={'c'+i}><td>{s.region_name}</td><td>{s.ocr_text}</td></tr>)}
+        </tbody></table> : <div className="empty">no symbols/scrapes shipped for this hand</div>}
+      </div>
+
+      <div className="panel">
+        <h2>Hand History</h2>
+        {handHist? <pre>{handHist.hh_text}</pre> : <div className="empty">no hand-history row yet (incomplete or not shipped)</div>}
+      </div>
+    </div>
+  </div>);
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
