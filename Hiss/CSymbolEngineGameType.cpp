@@ -53,6 +53,16 @@ void CSymbolEngineGameType::UpdateOnMyTurn() {
 }
 
 void CSymbolEngineGameType::UpdateOnHeartbeat() {
+  // ACR Omaha (PLO / PLO8) is ALWAYS pot-limit. The generic limit detection below mis-reads NL on
+  // these tables (an all-in button exists in Pot-Limit too), so ispl() was false and the bot sized
+  // bets past the pot. When the table is detected as Omaha (g_table_is_omaha, set each heartbeat in
+  // CHandHistoryWriter from the game-type text / Claude-posted gametype), force PL so
+  // MaximumBetsizeForGameType() caps raises at the pot (SwagAdjustment.cpp). [Emrald: "betting in
+  // PLO/PLO8 must follow pot-size betting".]
+  if (g_table_is_omaha) {
+    _gametype = kGametypePL;
+    return;
+  }
   int scraped_limit = p_table_state->_s_limit_info.limit();
   switch (scraped_limit) {
     case kGametypeNL:
