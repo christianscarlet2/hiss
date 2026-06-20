@@ -15,7 +15,11 @@ Launched by Claude per .mcp.json. No third-party packages required (Pillow is us
 only if present, to convert BMP screenshots to PNG for nicer rendering).
 """
 
-import sys, os, json, glob, base64, subprocess, urllib.request, time
+import sys, os, json, glob, base64, subprocess, urllib.request, urllib.parse, time
+# NOTE: import urllib.parse HERE at module scope. Importing it locally inside call_tool() would make
+# `urllib` a local of that whole function -> the replay_stream/replay_frame branches that use
+# urllib.request.quote earlier in the same function then crash with
+# "local variable 'urllib' referenced before assignment".
 
 # --- fixed workspace layout -------------------------------------------------
 REPO      = os.environ.get("HISS_REPO", r"C:\www\openholdembot_old")
@@ -367,22 +371,18 @@ def call_tool(name, args):
     if name == "terminal_panes":
         return [{"type": "text", "text": hiss_get("/api/terminal-state")}]
     if name == "set_table_game_info":
-        import urllib.parse
         keys = ["sb", "bb", "ante", "chips_per_bb", "level", "players",
                 "tourney_name", "tourney_id", "table_number", "gametype"]
         qs = "&".join("%s=%s" % (k, urllib.parse.quote(str(args[k])))
                       for k in keys if k in args and args[k] is not None)
         return [{"type": "text", "text": hiss_get("/api/table-game-info?" + qs)}]
     if name == "click_region":
-        import urllib.parse
         return [{"type": "text", "text": hiss_get("/api/click-region?name=%s" % urllib.parse.quote(str(args["name"])))}]
     if name == "set_region_value":
-        import urllib.parse
         qs = "name=%s&value=%s" % (urllib.parse.quote(str(args["name"])),
                                    urllib.parse.quote(str(args.get("value", ""))))
         return [{"type": "text", "text": hiss_get("/api/set-region-value?" + qs)}]
     if name == "set_table_game_info_2":
-        import urllib.parse
         qs = "&".join("%s=%s" % (k, urllib.parse.quote(str(args[k])))
                       for k in ("curr_hand", "prev_hand") if k in args and args[k] is not None)
         return [{"type": "text", "text": hiss_get("/api/table-game-info-2?" + qs)}]
@@ -431,7 +431,6 @@ def call_tool(name, args):
     if name == "game_state":
         return [{"type": "text", "text": hiss_get("/api/table-state")}]
     if name == "symbols":
-        import urllib.parse
         q = urllib.parse.quote(args["names"])
         return [{"type": "text", "text": hiss_get("/api/symbols?names=%s" % q)}]
     if name == "trigger_scrape_dump":
@@ -555,7 +554,6 @@ def call_tool(name, args):
                 out.append(image_content(p))
         return out
     if name == "post_hud_positions":
-        import urllib.parse
         positions = args.get("positions") or {}
         locked = args.get("locked")
         p = os.path.join(SCRAPES, "_table.bmp")
