@@ -238,8 +238,8 @@ def render(rows):
             lines.append("       " + " | ".join(ctx))
         lines.append("       \"%s\"" % (r["transcript"] or "").strip())
         if r.get("result_hand"):
-            lines.append("       replay: replay_stream(hand=%s, ts=%s) | %s"
-                         % (r["result_hand"], r["ts_ms"], REPLAY_UI))
+            lines.append("       replay: replay_stream(hand=%s, ts=%s)  [if MCP stale: python mcp/replay_cli.py stream %s %s] | %s"
+                         % (r["result_hand"], r["ts_ms"], r["result_hand"], r["ts_ms"], REPLAY_UI))
         lines.append("")
     return "\n".join(lines)
 
@@ -281,7 +281,7 @@ def synthesize(conn, limit_hands=50):
                 out.append("    #%d [%s] \"%s\"" % (nid, (cat or "note"), (tr or "").strip()[:90]))
         else:
             out.append("    (no voice note -- still worth a silent replay if the loss was big)")
-        out.append("    -> investigate: replay_stream(hand=%s, ts=%s)" % (hn, ts))
+        out.append("    -> investigate: replay_stream(hand=%s, ts=%s)  [if MCP stale: python mcp/replay_cli.py stream %s %s]" % (hn, ts, hn, ts))
         out.append("")
     out.append("total over these hands: %.2f bb-equiv" % total)
     out.append("\nAIL: for each losing hand WITH a note, treat the note as the leak hypothesis, confirm it")
