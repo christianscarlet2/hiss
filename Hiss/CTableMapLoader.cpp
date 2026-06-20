@@ -283,9 +283,15 @@ void CTableMapLoader::SwitchTablemapForGameTypeIfNeeded() {
   if (base.GetLength() > 6 && base.Right(6) == "_omaha") {
     base = base.Left(base.GetLength() - 6);
   }
-  CString want = g_table_is_omaha ? (base + "_omaha") : base;
+  // ALWAYS load the 4-card Omaha (superset) map when one exists for this table, regardless of the
+  // (mis-branded, flickering) game-type NAME. The Omaha map scrapes 4 hole cards on PLO/PLO8 and reads
+  // nocard for cards 2-3 on NLH, so the game type is detected per-hand from the CARD COUNT (isomaha)
+  // with NO map switching -- this eliminates the chicken-and-egg where the Hold'em map loaded at the
+  // start of each PLO hand and preflop ran the Hold'em tree (PLO never raised). If no "_omaha" variant
+  // exists for this table the existence check below leaves the base (Hold'em-only) map. [Emrald]
+  CString want = base + "_omaha";
   if (want == cur) {
-    return;   // already on the correct map for this game type
+    return;   // already on the 4-card map
   }
   // The target map must actually exist in the DB, or LoadTablemapFromDB would blank the tablemap.
   bool exists = false;

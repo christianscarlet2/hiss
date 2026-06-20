@@ -48,6 +48,9 @@
 #include "..\CTablemap\CTablemap.h"
 #include "..\DLLs\Files_DLL\Files.h"
 
+#include <set>
+#include <string>
+
 const double kEpsilon = 0.0001;
 
 CHandHistoryWriter *p_handhistory_writer = NULL;
@@ -101,35 +104,56 @@ void CHandHistoryWriter::UpdateOnHeartbeat() {
   // the "<name>_omaha" tablemap (Omaha's 4-card layout != Hold'em's 2-card layout). Keywords are
   // specific enough (omaha / plo / hi-lo / 8 or better) not to fire on a Hold'em table name.
   {
-    // READ THE GAME TYPE LIVE: scrape the table-info OCR (c0table_name / c0tourney_title /
-    // c0tourney_id) DIRECTLY each heartbeat, UNGATED by g_tgi, so the map + OHF strategy auto-switch as
-    // Emrald rotates PLO / PLO8 / NLH with NO manual game-info post. The live OCR on these tables
-    // carries the variant (e.g. "PennyHoot PLO", c0tourney_id "Omaha352998"). "omaha"/"plo"/hi-lo are
-    // the Omaha markers; we only flip to Hold'em on a clear "hold"/"no limit", so a transient empty or
-    // garbled scrape can't wrongly flip an Omaha table back. Falls back to the posted g_tgi gametype +
-    // scraped fields only when the live OCR is ambiguous.
-    CString live_name, live_title, live_id;
-    if (p_scraper != NULL) {
-      p_scraper->EvaluateRegion("c0table_name", &live_name);
-      p_scraper->EvaluateRegion("c0tourney_title", &live_title);
-      p_scraper->EvaluateRegion("c0tourney_id", &live_id);
-    }
-    CString live = live_name + " " + live_title + " " + live_id;
-    live.MakeLower();
-    bool live_omaha = (live.Find("omaha") >= 0 || live.Find("plo") >= 0 || live.Find("hi-lo") >= 0
-                       || live.Find("hi/lo") >= 0 || live.Find("8 or better") >= 0 || live.Find("8orb") >= 0);
-    bool live_holdem = (!live_omaha && (live.Find("hold") >= 0 || live.Find("no limit") >= 0
-                       || live.Find("nolimit") >= 0 || live.Find("no-limit") >= 0));
-    if (live_omaha) {
-      g_table_is_omaha = true;
-    } else if (live_holdem) {
-      g_table_is_omaha = false;
+    // STICKY per-table Omaha cache (in-memory, this session): once the hero's 4 hole cards have been
+    // seen on a table (only possible on the Omaha 4-card map = genuinely Omaha), remember that table
+    // identity so g_table_is_omaha stays TRUE for it -- even when the mis-branded live name flickers
+    // "Holdem"/"NLH" (PennyHoot brands real PLO tables "...NLHTable..."). This keeps the Omaha map loaded
+    // ACROSS hands, so PREFLOP runs the Omaha tree. Without it the map was Hold'em at the start of each
+    // PLO hand, preflop read only 2 of the 4 cards, and PLO/PLO8 NEVER raised (premium hands folded as
+    // 2-card junk). [Emrald: "I dont see PLO or PLO8 raising at all".]  NLH tables never show 4 cards ->
+    // never cached -> still driven by the live read below (which correctly reads their NLH name).
+    static std::set<std::string> s_omaha_tables;
+    // Key the cache on the stable TABLE NAME (lowercased, spaces stripped), NOT the full identity: the
+    // tourney_id OCR is noisy ("Holdem35299" vs "Holdem135299" across hands), which produced a different
+    // key every hand and defeated the cache (it seeded postflop under one key, missed next hand under
+    // another). The table name is stable. [Emrald]
+    CString keycs = (_table_name.IsEmpty() ? g_table_identity : _table_name);
+    keycs.MakeLower(); keycs.Remove(' ');
+    std::string ident = (LPCSTR)CStringA(keycs);
+    bool hero_four = (p_tablemap != NULL && p_tablemap->SupportsOmaha() && p_table_state != NULL
+        && p_table_state->User()->hole_cards(2)->IsKnownCard()
+        && p_table_state->User()->hole_cards(3)->IsKnownCard());
+    if (hero_four && !ident.empty()) s_omaha_tables.insert(ident);
+
+    if (!ident.empty() && s_omaha_tables.count(ident) > 0) {
+      g_table_is_omaha = true;   // confirmed-Omaha table -> sticky; ignore the unreliable live name
     } else {
-      // Ambiguous live OCR -> fall back to the Claude-posted gametype + scraped tourney fields.
-      CString gt = _table_name + " " + _tourney_title + " " + _tourney_id + " " + g_tgi_gametype;
-      gt.MakeLower();
-      g_table_is_omaha = (gt.Find("omaha") >= 0 || gt.Find("hi-lo") >= 0 || gt.Find("hi/lo") >= 0
-                          || gt.Find("8 or better") >= 0 || gt.Find("8orb") >= 0);
+      // READ THE GAME TYPE LIVE (until a table is confirmed Omaha above): scrape the table-info OCR
+      // (c0table_name / c0tourney_title / c0tourney_id). "omaha"/"plo"/hi-lo are the Omaha markers; we
+      // only flip to Hold'em on a clear "hold"/"no limit". Falls back to the posted g_tgi gametype +
+      // scraped fields when the live OCR is ambiguous.
+      CString live_name, live_title, live_id;
+      if (p_scraper != NULL) {
+        p_scraper->EvaluateRegion("c0table_name", &live_name);
+        p_scraper->EvaluateRegion("c0tourney_title", &live_title);
+        p_scraper->EvaluateRegion("c0tourney_id", &live_id);
+      }
+      CString live = live_name + " " + live_title + " " + live_id;
+      live.MakeLower();
+      bool live_omaha = (live.Find("omaha") >= 0 || live.Find("plo") >= 0 || live.Find("hi-lo") >= 0
+                         || live.Find("hi/lo") >= 0 || live.Find("8 or better") >= 0 || live.Find("8orb") >= 0);
+      bool live_holdem = (!live_omaha && (live.Find("hold") >= 0 || live.Find("no limit") >= 0
+                         || live.Find("nolimit") >= 0 || live.Find("no-limit") >= 0));
+      if (live_omaha) {
+        g_table_is_omaha = true;
+      } else if (live_holdem) {
+        g_table_is_omaha = false;
+      } else {
+        CString gt = _table_name + " " + _tourney_title + " " + _tourney_id + " " + g_tgi_gametype;
+        gt.MakeLower();
+        g_table_is_omaha = (gt.Find("omaha") >= 0 || gt.Find("hi-lo") >= 0 || gt.Find("hi/lo") >= 0
+                            || gt.Find("8 or better") >= 0 || gt.Find("8orb") >= 0);
+      }
     }
   }
   if (!_meta_captured) {

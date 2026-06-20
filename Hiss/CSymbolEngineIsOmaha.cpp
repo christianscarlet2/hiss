@@ -136,24 +136,22 @@ void CSymbolEngineIsOmaha::UpdateOnMyTurn() {
 }
 
 void CSymbolEngineIsOmaha::UpdateOnHeartbeat() {
-  // Follow the TABLE-LEVEL game type, NOT the hero's hole cards. Earlier this gated isomaha on seeing
-  // the hero's 3rd+4th cards (hole_cards(2)/(3) known) -- but on these phone tables the preflop decision
-  // fires BEFORE cards 2-3 finish revealing/scraping, so at the decision heartbeat isomaha was still 0
-  // and the HOLD'EM preflop/flop trees ran on a 4-card hand (read only cards 0-1): premium holdings
-  // folded as 2-card junk (AA=Ah3cAs7h as "A3o") and the bot NEVER used the Omaha strategy -> no PLO
-  // raising. [Emrald: "PLO is folding every hand", "I dont see PLO raising".]
-  //
-  // The reliable table-level signals are (a) g_table_is_omaha (the live game-type read in
-  // CHandHistoryWriter) and (b) the loaded Omaha tablemap (SupportsOmaha() -- CTableMapLoader swaps to
-  // the 4-card map only for Omaha, debounced/stable across a hand). Either => Omaha, independent of the
-  // hero's card-reveal timing. Latched within the hand (UpdateOnHandreset clears it each new hand, so
-  // the revert to Hold'em follows the live read + the map switch when Emrald moves to an NLH table).
-  bool omaha_table = g_table_is_omaha || (p_tablemap != NULL && p_tablemap->SupportsOmaha());
-  if (_isomaha || omaha_table) {
+  // ALWAYS-OMAHA-MAP design: the 4-card map is always loaded (CTableMapLoader), so SupportsOmaha() is
+  // always true and can't distinguish the game. The hero's CARD COUNT is the per-hand ground truth:
+  // 4 known hole cards => Omaha; only 2 (cards 2,3 read nocard on the 4-card map) => Hold'em. Because the
+  // map no longer switches mid-hand, the 3rd/4th cards are scraped from the very first heartbeat, so they
+  // are KNOWN by the hero's turn -> isomaha is correct AT PREFLOP -> the Omaha preflop tree runs and PLO
+  // RAISES (the old Hold'em-map-at-preflop bug folded 4-card hands as 2-card junk). Latched within the
+  // hand (UpdateOnHandreset re-detects each hand) so a reveal-timing flicker can't drop us mid-hand; the
+  // sticky g_table_is_omaha cache (CHandHistoryWriter) is an extra confirm for the badge / pot-limit cap.
+  // [Emrald: "I dont see PLO or PLO8 raising at all".]
+  bool four_known = (p_tablemap != NULL && p_tablemap->SupportsOmaha() && p_table_state != NULL
+      && p_table_state->User()->hole_cards(2)->IsKnownCard()
+      && p_table_state->User()->hole_cards(3)->IsKnownCard());
+  if (_isomaha || four_known || g_table_is_omaha) {
     if (!_isomaha) {
       write_log(Preferences()->debug_symbolengine(),
-        "[CSymbolEngineIsOmaha] Omaha table (g_table_is_omaha=%d, omaha_map=%d)\n",
-        (int)g_table_is_omaha, (int)(p_tablemap != NULL && p_tablemap->SupportsOmaha()));
+        "[CSymbolEngineIsOmaha] Omaha (four_known=%d sticky=%d)\n", (int)four_known, (int)g_table_is_omaha);
     }
     _isomaha = true;
     // hi-only vs hi/lo (PLO8) from the title; latched ON like _isomaha.
