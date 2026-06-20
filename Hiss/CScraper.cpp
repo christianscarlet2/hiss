@@ -1602,14 +1602,21 @@ void CScraper::ScrapeBalance(int chair) {
   // 0/invalid balance on a seated player WITH NO bet committed is a mis-scrape -> keep
   // the last-good value (also what the React table view then shows). A real all-in
   // (bet > 0) keeps its genuine 0.
+  // Upper-bound guard: a balance region can OCR into absurd repeated-digit garbage
+  // (observed: 1.2e26), which then poisons pot-odds / SPR / M-ratio / ICM. No real stack
+  // at these tables approaches 1e12, so an implausibly huge read is a mis-scrape -> keep
+  // the last-good value, same as the 0/invalid case below. Self-heals: the next plausible
+  // read (<1e12) replaces a latched bad value.
+  const double kMaxPlausibleBalance = 1e12;
   if (g_ocr_memory && p_table_state->Player(chair)->seated() && old_balance > 0.0) {
     double now = p_table_state->Player(chair)->_balance.GetValue();
     bool committed = (p_table_state->Player(chair)->_bet.GetValue() > 0.0);
-    if ((!ok || now <= 0.0) && !committed) {
+    bool implausible = (now > kMaxPlausibleBalance);
+    if ((((!ok || now <= 0.0) && !committed)) || implausible) {
       p_table_state->Player(chair)->_balance.SetValue(old_balance);
       write_log(Preferences()->debug_scraper(),
-        "[CScraper] balance-memory: chair %d kept %.2f (0/invalid scrape, no bet -> not all-in)\n",
-        chair, old_balance);
+        "[CScraper] balance-memory: chair %d kept %.2f (bad scrape: %s)\n",
+        chair, old_balance, implausible ? "implausibly large" : "0/invalid, no bet");
     }
   }
 }
