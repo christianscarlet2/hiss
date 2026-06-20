@@ -36,6 +36,7 @@
 #include "CSymbolEngineChipAmounts.h"
 #include "CSymbolEngineDealerchair.h"
 #include "CSymbolEngineUserchair.h"
+#include "CSymbolEngineIsTournament.h"
 #include "CSymbolEnginePokerAction.h"
 #include "CTableState.h"
 
@@ -264,6 +265,14 @@ bool CSymbolEngineICM::EvaluateSymbol(const CString name, double *result, bool l
 	if (sym_userchair == kUndefined) {
 		*result = 0.0;
     return true;
+	}
+	// CASH GAME: ICM is meaningless (a chip = its cash value). Return 0 WITHOUT running the prize-sum
+	// sanity check below -- in cash the f$icm_prizeX curve is irrelevant and the check pops
+	// "Incorrect f$icm_prizeX-functions ... 0.000" on every heartbeat. [Emrald: recurring cash modal]
+	if (p_engine_container->symbol_engine_istournament() != NULL
+	    && !p_engine_container->symbol_engine_istournament()->istournament()) {
+		*result = 0.0;
+		return true;
 	}
 
   double		prizes[kMaxNumberOfPlayers] = {0};

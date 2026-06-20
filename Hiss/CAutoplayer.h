@@ -29,6 +29,10 @@ public:
 public:
 	void EngageAutoPlayerUponConnectionIfNeeded();
 	void DoAutoplayer();
+	// Fast Sit-In: re-seat ASAP. PUBLIC so the heartbeat can fire it under the NN driver too (the NN
+	// driver POSTs actions but never clicks the Sit-In button, so a sat-out bot would blind off).
+	// Self-guards: only clicks when the Sit-In button is actually present + on a short cooldown.
+	bool HandleSitinFast();
 
 public:
 	// public accessors
@@ -63,9 +67,6 @@ private:
 	bool DoAllin();
 	bool DoBetPot();
 	bool HandleInterfacebuttonsI86();
-	// Fast Sit-In: re-seat ASAP. Clicks the Sit-In button EVERY heartbeat (not on the slow
-	// ~3s secondary-formula cadence) with a short cooldown so it can't double-click.
-	bool HandleSitinFast();
 	void PrepareActionSequence();
 	void FinishActionSequenceIfNecessary();
 	bool DoBetsize();
