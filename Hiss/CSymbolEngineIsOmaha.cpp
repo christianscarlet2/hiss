@@ -65,6 +65,19 @@ void CSymbolEngineIsOmaha::UpdateOnConnection() {
 //   "Hi/Lo", "Hi-Lo", "HiLo", "8 or Better", "8-or-Better", "8/B",
 //   "O8", "PLO8", "Omaha/8", "Omaha 8".
 bool CSymbolEngineIsOmaha::TitleLooksLikeHiLo() {
+  // 1) Claude-posted game-info (set_table_game_info -> g_tgi_gametype) is the authoritative source on
+  //    these phone tables, where the "Omaha H/L" / "PLO8" text is in the TABLE image, not the window
+  //    title. It is a clean string (not garbled OCR), so the short "hl" (from "H/L") marker is safe.
+  if (!g_tgi_gametype.IsEmpty()) {
+    CString g = g_tgi_gametype; g.MakeLower();
+    CString sq = g; sq.Remove(' '); sq.Remove('/'); sq.Remove('-'); sq.Remove('_');
+    if (sq.Find("hilo") >= 0 || sq.Find("hl") >= 0 || sq.Find("8orbetter") >= 0
+        || sq.Find("omaha8") >= 0 || sq.Find("plo8") >= 0 || sq.Find("o8") >= 0
+        || sq.Find("8b") >= 0) {
+      return true;
+    }
+  }
+  // 2) Attached window title (fallback).
   if (p_autoconnector == NULL) return false;
   HWND table = p_autoconnector->attached_hwnd();
   if (table == NULL) return false;
