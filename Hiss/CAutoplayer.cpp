@@ -752,7 +752,7 @@ void CAutoplayer::EmitDecisionTrace() {
 	//   [betround] ACTION [size]   -- shows how the .ohf decision resolved.
 	if (p_function_collection == NULL || p_engine_container == NULL) return;
 	CSymbolEngineAutoplayer *ap = p_engine_container->symbol_engine_autoplayer();
-	if (ap == NULL || !ap->ismyturn() || !ap->isfinalanswer()) return;
+	if (ap == NULL || !ap->ismyturn() || !ap->isfinalanswer()) { g_hero_decision_active = false; return; }
 	double f_fold  = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_fold]);
 	double f_check = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_check]);
 	double f_call  = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_call]);
@@ -769,6 +769,19 @@ void CAutoplayer::EmitDecisionTrace() {
 	else if (f_check != 0)       action = "\x1b[32mCHECK\x1b[0m";
 	else if (f_fold != 0)        action = "\x1b[90mFOLD\x1b[0m";
 	else                         action = "(none)";
+	// Publish the PLAIN action for the on-table RED decision overlay (HudOverlayWindow, drawn above the
+	// hero's cards with the table name so Emrald isn't confused which table it's for). [Emrald]
+	{
+		CString plain;
+		if (f_allin != 0)            plain = "ALL-IN";
+		else if (f_raise != 0 || f_bet > 0) plain.Format("RAISE %.2f", f_bet);
+		else if (f_call != 0)        plain = "CALL";
+		else if (f_check != 0)       plain = "CHECK";
+		else if (f_fold != 0)        plain = "FOLD";
+		else                         plain = "";
+		strcpy_s(g_hero_decision_text, sizeof(g_hero_decision_text), CStringA(plain).GetString());
+		g_hero_decision_active = !plain.IsEmpty();
+	}
 	CString line;
 	line.Format("\x1b[36m[%s]\x1b[0m %s", brn, action.GetString());
 	if (line == _last_decision_line) return;     // only on change

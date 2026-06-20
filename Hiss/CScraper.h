@@ -244,6 +244,11 @@ extern CString g_tgi_tourney_id;     // e.g. "35300198"
 extern CString g_tgi_table_number;   // e.g. "1"
 extern CString g_table_identity;     // tourney_id|table_name; changes on a table switch (phantom guard)
 extern bool    g_table_is_omaha;     // scraped text says Omaha/PLO/Hi-Lo -> drives the tablemap auto-switch
+// On-table RED decision overlay (HudOverlayWindow): the autoplayer publishes its locked action here on
+// the heartbeat; the overlay paints it big/bold/red above the hero's cards. Plain char buffer (no CString
+// ref-counting) since it crosses the heartbeat->UI thread boundary. [Emrald]
+extern char    g_hero_decision_text[48];   // e.g. "RAISE 2.50" / "CALL" / "FOLD" (empty = no decision)
+extern volatile bool g_hero_decision_active; // true only while ismyturn && isfinalanswer
 extern CString g_tgi_gametype;       // e.g. "No Limit"
 // table_game_info_2: current + previous hand numbers (ACR shows "Current: n  Previous: n").
 // Claude reads them from the frame and posts via /api/table-game-info-2.

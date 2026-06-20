@@ -21,6 +21,13 @@ WHEN validator_ok = 0 AND AmountToCall = 0 Check FORCE
 // raise size, take it. Disabled -> openai_action is the kOpenAiNoOpinion sentinel
 // (<= -1000), so this never fires and play is unchanged. [steering]
 WHEN openai_action > -1000 RETURN openai_action FORCE
+// GAME-TYPE DISPATCH: route Omaha / Omaha-Hi-Lo to their own trees (Strategy\Omaha\ & \Omaha8\). isplo8
+// implies isomaha, so test it first. Falls through to the Hold'em logic below when neither is set. This
+// was present in bot_logic/Strategy/40_preflop.ohf but MISSING from the generated master, so the master's
+// f$preflop (which wins at load) never dispatched -> PLO/PLO8 ran the Hold'em preflop tree on 2 of 4
+// cards and never raised. [Emrald: "I dont see PLO or PLO8 raising at all" -- 2026-06-20]
+WHEN isplo8 RETURN f$preflop_plo8 FORCE
+WHEN isomaha RETURN f$preflop_omaha FORCE
 WHEN f$PushFoldStack RETURN f$preflop_pushfold FORCE
 // 16-25bb fold-equity 3-bet-jam over a single open (re-steal band). [JL][RE]
 WHEN f$ReshoveSpot AND explain_jam RaiseMax FORCE

@@ -297,6 +297,37 @@ void CHudOverlayWindow::OnPaint() {
 		}
 	}
 
+	// On-table RED decision overlay: when it's the hero's turn and a decision is locked, draw the bot's
+	// action BIG + BOLDEST RED above the hero's box (~ above the hole cards), with the table name under it
+	// so it's clear WHICH rotating table the decision is for. Inherits the overlay alpha (faint, solid on
+	// CTRL) so it reads "just like the HUD". [Emrald]
+	if (g_hero_decision_active && g_hero_decision_text[0] != '\0') {
+		int hero = (p_engine_container != NULL && p_engine_container->symbol_engine_userchair() != NULL)
+			? p_engine_container->symbol_engine_userchair()->userchair() : -1;
+		if (hero >= 0 && hero < kMaxNumberOfPlayers && _box_visible[hero]) {
+			CRect hb = _box_rect[hero];
+			int ctrx = hb.CenterPoint().x;
+			CString tname = g_table_identity;            // table name = part after the '|'
+			int bar = tname.Find('|'); if (bar >= 0) tname = tname.Mid(bar + 1);
+			LOGFONT af; ZeroMemory(&af, sizeof(af));
+			af.lfHeight = -46; af.lfWeight = FW_HEAVY; af.lfQuality = CLEARTYPE_QUALITY;
+			strcpy_s(af.lfFaceName, 32, "Arial Black");
+			CFont bigf; bigf.CreateFontIndirect(&af);
+			CFont *prevf = mem.SelectObject(&bigf);
+			mem.SetTextColor(RGB(255, 0, 0));            // boldest red
+			CRect ar(ctrx - 220, hb.top - 70, ctrx + 220, hb.top - 22);
+			mem.DrawText(CString(g_hero_decision_text), -1, &ar, DT_CENTER | DT_SINGLELINE | DT_NOCLIP);
+			LOGFONT tf; ZeroMemory(&tf, sizeof(tf));
+			tf.lfHeight = -16; tf.lfWeight = FW_BOLD; tf.lfQuality = CLEARTYPE_QUALITY;
+			strcpy_s(tf.lfFaceName, 32, "Segoe UI");
+			CFont tnf; tnf.CreateFontIndirect(&tf);
+			mem.SelectObject(&tnf);
+			CRect tr(ctrx - 220, hb.top - 22, ctrx + 220, hb.top - 4);
+			mem.DrawText(tname, -1, &tr, DT_CENTER | DT_SINGLELINE | DT_NOCLIP | DT_END_ELLIPSIS);
+			mem.SelectObject(prevf);
+		}
+	}
+
 	dc.BitBlt(0, 0, cw, ch, &mem, 0, 0, SRCCOPY);
 	mem.SelectObject(oldfont);
 	mem.SelectObject(oldbmp);

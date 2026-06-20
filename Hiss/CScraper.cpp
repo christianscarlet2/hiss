@@ -102,6 +102,8 @@ CString g_table_identity = "";
 // tablemap switch (CTableMapLoader::SwitchTablemapForGameTypeIfNeeded) between the Hold'em map and
 // its "<name>_omaha" variant, since Omaha's 4-card layout needs a separate, separately-calibrated map.
 bool g_table_is_omaha = false;
+char g_hero_decision_text[48] = {0};        // bot's locked action for the on-table RED decision overlay
+volatile bool g_hero_decision_active = false;
 CString g_tgi_gametype = "";
 double g_tgi2_handnumber = 0.0;
 double g_tgi2_prev_handnumber = 0.0;
