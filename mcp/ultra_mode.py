@@ -12,6 +12,8 @@ Flips the bot between OHF (autoplayer) and NN (nn_driver) using the computer's s
 Audio comes from the Windows master OUTPUT meter (pycaw IAudioMeterInformation peak), sampled fast
 to build an energy envelope for onset detection. Switches hit the bot's mutually-exclusive endpoints
   OHF -> GET /api/autoplayer?on=1      NN -> GET /api/nn-driver?on=1
+GAME-TYPE GATE: the NN is trained on Hold'em only, so ULTRA is NLH-ONLY. On a PLO / PLO8 table
+(isomaha / isplo8) it never flips to NN and force-holds OHF (the OHF has the Omaha strategy trees).
 Launched / killed by the in-Hiss ULTRA toolbar button. Run by hand:
   python ultra_mode.py --bot-url http://127.0.0.1:27654 [--beats-per-switch 16] [--min-switch-secs 12]
   add --dry to log decisions without actually switching (for tuning).
@@ -36,6 +38,7 @@ MIN_SWITCH_SECS  = float(_argval("--min-switch-secs") or 12)   # floor between s
 DECIDE_SECS      = float(_argval("--decide-secs") or 45)       # no-music fallback cadence
 LOUD_GAIN        = float(_argval("--loud-gain") or 2.5)        # loudness -> P(NN) gain
 DRY              = "--dry" in sys.argv
+GAME_POLL_SECS   = float(_argval("--game-poll-secs") or 3.0)  # re-check the live game-type this often
 
 SAMPLE_HZ    = 60
 REFRACTORY_S = 0.25          # min gap between beats (caps at ~240 BPM)
@@ -79,6 +82,19 @@ def switch(mode):
         return False
 
 
+def game_is_omaha(prev):
+    """True iff the live table is PLO / PLO8. Reads only the LIGHT engine booleans isomaha / isplo8
+    via /api/symbols -- NEVER prwin / pt_ (those are heavy and would wedge the bot's HTTP thread,
+    see memory api-symbols-crash-risk). On any error keep the previous value (fail-safe)."""
+    import json
+    try:
+        raw = urllib.request.urlopen(BOT_URL + "/api/symbols?names=isomaha,isplo8", timeout=3).read()
+        d = json.loads(raw.decode("utf-8", "replace"))
+        return (float(d.get("isomaha", 0)) > 0.0) or (float(d.get("isplo8", 0)) > 0.0)
+    except Exception:
+        return prev
+
+
 def main():
     try:
         meter = get_meter()
@@ -86,7 +102,7 @@ def main():
         meter = None
         print("[ultra] audio meter unavailable (%s) -- fallback timer only" % ex, flush=True)
     print("[ultra] ULTRA online -> %s | rhythm cadence: every %d beats (floor %.0fs, fallback %.0fs) | "
-          "louder audio biases toward NN (gain %.1f)%s"
+          "louder audio biases toward NN (gain %.1f) | NLH-ONLY (NN gated off on PLO/PLO8)%s"
           % (BOT_URL, BEATS_PER_SWITCH, MIN_SWITCH_SECS, DECIDE_SECS, LOUD_GAIN,
              "  [DRY]" if DRY else ""), flush=True)
 
@@ -94,6 +110,8 @@ def main():
     beat_gaps = deque(maxlen=8)        # recent inter-beat intervals -> rough BPM
     cur = None
     tick = 0
+    is_omaha = False                   # live PLO/PLO8 gate state (refreshed every GAME_POLL_SECS)
+    last_game_poll = 0.0
     beats = 0
     last_beat = 0.0
     last_switch = time.monotonic()
@@ -103,6 +121,18 @@ def main():
 
     while True:
         now = time.monotonic()
+        # GAME-TYPE GATE: refresh the live PLO/PLO8 flag on a slow cadence. If the table is Omaha and
+        # the bot is on NN (or unknown), revert to OHF IMMEDIATELY -- don't wait for the next beat, so
+        # the NN never drives more than ~GAME_POLL_SECS of an Omaha hand. ULTRA is NLH-only for now.
+        if now - last_game_poll >= GAME_POLL_SECS:
+            is_omaha = game_is_omaha(is_omaha)
+            last_game_poll = now
+            if is_omaha and cur != "ohf":
+                if switch("ohf"):
+                    print("[ultra] PLO/PLO8 detected -> force OHF (NN gated off for Omaha)", flush=True)
+                    cur = "ohf"
+                    last_switch = now
+                    beats = 0
         e = peak(meter) if meter else 0.0
         loud_sum += e
         loud_n += 1
@@ -123,8 +153,14 @@ def main():
             bpm = (60.0 / (sum(beat_gaps) / len(beat_gaps))) if beat_gaps else 0.0
             mode, p_nn = choose(e, loudness, tick)
             tick += 1
+            # GATE: ULTRA only flips to NN on NLH. On PLO/PLO8 the NN choice is suppressed -> stay OHF.
+            gated = is_omaha and mode == "nn"
+            if gated:
+                mode = "ohf"
             tag = "NN" if mode == "nn" else "OHF"
             why = ("%d beats ~%.0f BPM" % (beats, bpm)) if rhythm_due else ("no-music %.0fs" % DECIDE_SECS)
+            if gated:
+                why += " [PLO/PLO8->OHF gated]"
             if mode != cur:
                 if switch(mode):
                     print("[ultra] %s | loud=%.3f P(NN)=%.2f -> SWITCH to %s"
