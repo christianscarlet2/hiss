@@ -121,9 +121,10 @@ static void *g_nn_driver_proc = NULL;   // HANDLE of the launched nn_driver.py (
 static void ApplyNNDriverEngage(bool want_on) {
   if (want_on) {
     if (g_nn_driver_engaged) return;
-    if (p_autoplayer != NULL && p_autoplayer->autoplayer_engaged()) {
-      p_autoplayer->EngageAutoplayer(false);   // mutual exclusion: NN on -> autoplayer off
-    }
+    // NEW DRIVER MODEL [Emrald]: NN and the autoplayer are NOT mutually exclusive any more. The
+    // autoplayer stays ENGAGED as the always-on executor; on NLH the NN bypasses the OHF read
+    // (DoAutoplayer defers the primary action to the NN), and the autoplayer still runs the OHF on
+    // PLO/PLO8 and whenever the NN is off. So do NOT disengage the autoplayer when the NN engages.
     int port = (g_terminal_port > 0) ? g_terminal_port : 27654;
     char cmd[512];
     sprintf_s(cmd, sizeof(cmd),

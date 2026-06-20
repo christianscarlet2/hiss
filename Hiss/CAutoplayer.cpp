@@ -598,11 +598,11 @@ void CAutoplayer::EngageAutoplayer(bool to_be_enabled_or_not) {
 	// and avoid problems with multiple threads
 	// despite we use synchronization ;-)
 	_autoplayer_engaged = to_be_enabled_or_not;
-	if (to_be_enabled_or_not) {
-		// Mutual exclusion: engaging the autoplayer disengages the NN driver (next heartbeat tick).
-		extern int g_mcp_nn_driver_request;
-		g_mcp_nn_driver_request = 0;
-	}
+	// NEW DRIVER MODEL [Emrald]: the autoplayer and the NN driver are NO LONGER mutually exclusive.
+	// The autoplayer is ALWAYS the executor when enabled; on NLH the NN (when engaged) BYPASSES the
+	// OHF read in DoAutoplayer and forces the action itself, while the autoplayer runs the OHF as the
+	// always-on fallback (PLO/PLO8, or whenever the NN is off). So engaging the autoplayer must NOT
+	// disengage the NN driver any more.
 }
 
 #undef ENT
@@ -886,7 +886,18 @@ void CAutoplayer::DoAutoplayer(void) {
 	_was_my_turn = my_turn_now;
 
 	write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Going to evaluate primary formulas.\n");
-	if (p_engine_container->symbol_engine_autoplayer()->isfinalanswer())	{
+	// NEW DRIVER MODEL [Emrald]: the autoplayer is ALWAYS the executor (it already handled sit-in /
+	// popups / secondary formulas above), but on a NLH table when the NN driver (or ULTRA, which drives
+	// through the NN) is engaged, the NN BYPASSES the OHF read -- it computes the decision and forces it
+	// via /api/action. So skip the OHF PRIMARY action here to avoid double-acting. On PLO/PLO8 the NN is
+	// gated off (Hold'em-only) so the OHF runs as the always-on fallback; same whenever the NN is
+	// disengaged. g_table_is_omaha covers both PLO and PLO8.
+	extern bool g_nn_driver_engaged; extern bool g_table_is_omaha;
+	bool nn_bypasses_ohf_nlh = (g_nn_driver_engaged && !g_table_is_omaha);
+	if (nn_bypasses_ohf_nlh) {
+		APTrace("DoAutoplayer -> NN bypasses OHF on NLH: deferring the primary decision to the NN driver");
+	}
+	if (!nn_bypasses_ohf_nlh && p_engine_container->symbol_engine_autoplayer()->isfinalanswer())	{
 		if (_acted_this_turn) {
 			APTrace("DoAutoplayer -> STOP: already took an FCKRA action this turn (once-per-turn latch)");
 		} else {

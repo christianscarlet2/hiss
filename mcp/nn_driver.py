@@ -116,10 +116,24 @@ def ismyturn():
         return False
 
 
+def table_is_omaha():
+    """PLO/PLO8 guard for the NEW driver model [Emrald]: the NN is Hold'em-only, so on an Omaha table
+    the autoplayer/OHF must drive -- the NN driver DEFERS. Light engine booleans only (isomaha / isplo8 /
+    ispl via /api/symbols) -- NEVER prwin / pt_ (heavy; would wedge the bot's HTTP thread)."""
+    try:
+        d = _get(BOT + "/api/symbols?names=isomaha,isplo8,ispl")
+        return (float(d.get("isomaha", 0) or 0) > 0) or (float(d.get("isplo8", 0) or 0) > 0) or (float(d.get("ispl", 0) or 0) > 0)
+    except Exception:
+        return False
+
+
 def decide_and_act():
     """Returns True if we read the seat and clicked (or decided, in DRY); False if the hole
     isn't readable yet so the CALLER should retry within the same turn (do NOT skip the turn --
     that silently drops the action and looks like a phantom 'sit out / between hands')."""
+    if table_is_omaha():
+        print("[nn_driver] PLO/PLO8 table -> NN gated off; deferring to the autoplayer/OHF", flush=True)
+        return True            # not the NN's job on Omaha; the autoplayer runs the OHF this turn
     gs = _get(BOT + "/api/table-state")
     sv = seat_view(gs)
     if not sv:

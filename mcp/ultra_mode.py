@@ -73,7 +73,10 @@ def switch(mode):
     if DRY:
         print("[ultra] (dry) would switch -> %s" % mode, flush=True)
         return True
-    path = "/api/autoplayer?on=1" if mode == "ohf" else "/api/nn-driver?on=1"
+    # NEW driver model [Emrald]: the autoplayer is ALWAYS engaged; ULTRA only toggles the NN. OHF phase
+    # = NN OFF (the always-on autoplayer runs the OHF as the fallback); NN phase = NN ON (it bypasses the
+    # OHF read on NLH and forces the action). ULTRA no longer turns the autoplayer on/off.
+    path = "/api/nn-driver?on=0" if mode == "ohf" else "/api/nn-driver?on=1"
     try:
         urllib.request.urlopen(BOT_URL + path, timeout=5).read()
         return True
