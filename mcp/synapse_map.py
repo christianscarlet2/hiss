@@ -111,6 +111,7 @@ def gather():
             "autoplayer": autoplayer, "beast": beast, "hero": hero, "board":
             " ".join(c for c in (ts.get("commonCards") or []) if c),
             "handnumber": str(ts.get("handnumber") or ""), "hero_balance": hero_balance,
+            "nchairs": ts.get("nchairs"),
             "voice_pending": voice_pending, "hud": hud_rows}
 
 
@@ -135,6 +136,10 @@ def record_hand_result(prev_hand, prev_start_bal, new_start_bal, ts_ms, bblind=1
         return None
     net = round(new_start_bal - prev_start_bal, 2)
     if abs(net) > bb * 20000.0:        # no single hand swings 20k BB -> garbage transition
+        return None
+    # You can't LOSE more than you sat down with this hand: a loss deeper than the starting stack
+    # (+a blind of slack) is a rebuy/table-switch artifact, not a real result.
+    if net < -(prev_start_bal + bb * 2.0):
         return None
     try:
         import psycopg2
@@ -361,23 +366,42 @@ def main():
         do_speak = "--speak" in sys.argv
         print("[synapse] ghost online -> %s | inferring every %.0fs%s" % (BOT, every, "  [voiced]" if do_speak else ""), flush=True)
         last_spoke = 0.0
-        cur_hand, cur_start_bal = "", None      # per-hand result tracking
+        # per-hand result tracking. We only bank a hand's net when we actually OBSERVED the hero
+        # playing it -- hero had hole cards, on the SAME table (blinds + seat count unchanged) across
+        # the hand boundary. Otherwise the stack delta spans a table switch / observer view / a
+        # flipped seat-mapping and is a phantom (the kind that logged a fake -172 then +170 next hand).
+        cur_hand, cur_start_bal = "", None
+        cur_had_cards = False                    # did we see hero's hole cards during cur_hand?
+        cur_bb, cur_nchairs = None, None         # table config captured at cur_hand's start
         while True:
             g = gather()
             state = harmonize(g)
             store_state(state)
-            # hand transition: bank the previous hand's net (stack delta between hand starts)
             hn, bal = g.get("handnumber") or "", g.get("hero_balance")
+            bb_now = num(g["syms"].get("bblind"), 0) or None
+            nch_now = g.get("nchairs")
+            hero_has_cards = len((g.get("hero") or "").split()) >= 2
+            if hn and hn == cur_hand and hero_has_cards:
+                cur_had_cards = True             # latch: hero was dealt in this hand
+            # hand transition: bank the previous hand's net (stack delta between hand starts)
             if hn and hn != cur_hand:
                 if cur_hand and cur_start_bal is not None and bal is not None:
-                    net = record_hand_result(cur_hand, cur_start_bal, bal, state["ts_ms"],
-                                             bblind=num(g["syms"].get("bblind"), 1.0))
-                    if net is not None and net < 0:
-                        msg = "you LOST %.2f on hand %s" % (-net, cur_hand)
-                        print("[synapse] *** %s ***" % msg, flush=True)
-                        if do_speak and time.time() - last_spoke > 15:
-                            speak("The ghost notes: " + msg); last_spoke = time.time()
+                    same_table = (cur_bb is not None and bb_now is not None
+                                  and abs(cur_bb - bb_now) < 1e-9 and cur_nchairs == nch_now)
+                    if cur_had_cards and same_table:
+                        net = record_hand_result(cur_hand, cur_start_bal, bal, state["ts_ms"],
+                                                 bblind=num(g["syms"].get("bblind"), 1.0))
+                        if net is not None and net < 0:
+                            msg = "you LOST %.2f on hand %s" % (-net, cur_hand)
+                            print("[synapse] *** %s ***" % msg, flush=True)
+                            if do_speak and time.time() - last_spoke > 15:
+                                speak("The ghost notes: " + msg); last_spoke = time.time()
+                    else:
+                        why = "no hero cards" if not cur_had_cards else "table changed"
+                        print("[synapse] skip hand %s result (%s) -- phantom guard" % (cur_hand, why), flush=True)
                 cur_hand, cur_start_bal = hn, bal
+                cur_had_cards = hero_has_cards    # seed the new hand
+                cur_bb, cur_nchairs = bb_now, nch_now
             head = next((n["ghost"] for n in state["nodes"] if n["id"] == "output.action"), "")
             print("[synapse] r%d %s | %s" % (state["betround"], state["hero"] or "-", head), flush=True)
             if do_speak and head and head != "no decision at this instant" and time.time() - last_spoke > 20:
