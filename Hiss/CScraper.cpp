@@ -104,6 +104,7 @@ CString g_table_identity = "";
 bool g_table_is_omaha = false;
 char g_hero_decision_text[48] = {0};        // bot's locked action for the on-table RED decision overlay
 volatile bool g_hero_decision_active = false;
+DWORD g_hero_decision_tick = 0;             // GetTickCount() when the action was locked (drives the 10s trail+fade)
 CString g_tgi_gametype = "";
 double g_tgi2_handnumber = 0.0;
 double g_tgi2_prev_handnumber = 0.0;

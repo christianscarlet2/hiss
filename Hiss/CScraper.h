@@ -249,6 +249,7 @@ extern bool    g_table_is_omaha;     // scraped text says Omaha/PLO/Hi-Lo -> dri
 // ref-counting) since it crosses the heartbeat->UI thread boundary. [Emrald]
 extern char    g_hero_decision_text[48];   // e.g. "RAISE 2.50" / "CALL" / "FOLD" (empty = no decision)
 extern volatile bool g_hero_decision_active; // true only while ismyturn && isfinalanswer
+extern DWORD   g_hero_decision_tick;        // GetTickCount() at decision lock; RED overlay trails ~10s then fades
 extern CString g_tgi_gametype;       // e.g. "No Limit"
 // table_game_info_2: current + previous hand numbers (ACR shows "Current: n  Previous: n").
 // Claude reads them from the frame and posts via /api/table-game-info-2.

@@ -782,7 +782,13 @@ void CAutoplayer::EmitDecisionTrace() {
 		else if (f_check != 0)       plain = "CHECK";
 		else if (f_fold != 0)        plain = "FOLD";
 		else                         plain = "";
-		strcpy_s(g_hero_decision_text, sizeof(g_hero_decision_text), CStringA(plain).GetString());
+		if (!plain.IsEmpty()) {
+			// Real decision: publish it + STAMP the time. Keep the last decision/text AFTER the turn ends so
+			// the RED overlay can TRAIL ~10s and fade out (HudOverlayWindow), unlike the per-hand HUD. The
+			// overlay's own 10s timer hides it; we no longer clear the text the instant it's not our turn.
+			strcpy_s(g_hero_decision_text, sizeof(g_hero_decision_text), CStringA(plain).GetString());
+			g_hero_decision_tick = GetTickCount();
+		}
 		g_hero_decision_active = !plain.IsEmpty();
 	}
 	CString line;

@@ -297,11 +297,19 @@ void CHudOverlayWindow::OnPaint() {
 		}
 	}
 
-	// On-table RED decision overlay: when it's the hero's turn and a decision is locked, draw the bot's
-	// action BIG + BOLDEST RED above the hero's box (~ above the hole cards), with the table name under it
-	// so it's clear WHICH rotating table the decision is for. Inherits the overlay alpha (faint, solid on
-	// CTRL) so it reads "just like the HUD". [Emrald]
-	if (g_hero_decision_active && g_hero_decision_text[0] != '\0') {
+	// On-table RED decision overlay: the bot's action drawn BIG + BOLD RED above the hero's box (above the
+	// hole cards) with the table name under it. Unlike the per-hand HUD (which just updates), this TRAILS
+	// ~10s after the decision and FADES out: solid for kDecisionHoldMs, then the red lerps to the colour
+	// key (=> transparent) by kDecisionTotalMs. The 200ms TrackTableWindow timer repaints it so the fade
+	// animates smoothly. [Emrald]
+	const DWORD kDecisionHoldMs = 3000, kDecisionTotalMs = 10000;
+	DWORD dec_elapsed = GetTickCount() - g_hero_decision_tick;
+	if (g_hero_decision_text[0] != '\0' && dec_elapsed < kDecisionTotalMs) {
+		double t = (dec_elapsed <= kDecisionHoldMs) ? 0.0
+			: (double)(dec_elapsed - kDecisionHoldMs) / (double)(kDecisionTotalMs - kDecisionHoldMs);
+		if (t < 0.0) t = 0.0; else if (t > 1.0) t = 1.0;
+		// Lerp bright red RGB(255,0,0) -> colour key RGB(1,1,1) (which is transparent) as it ages.
+		COLORREF dec_color = RGB((int)(255 + (1 - 255) * t), (int)(1 * t), (int)(1 * t));
 		int hero = (p_engine_container != NULL && p_engine_container->symbol_engine_userchair() != NULL)
 			? p_engine_container->symbol_engine_userchair()->userchair() : -1;
 		if (hero >= 0 && hero < kMaxNumberOfPlayers && _box_visible[hero]) {
@@ -314,7 +322,7 @@ void CHudOverlayWindow::OnPaint() {
 			strcpy_s(af.lfFaceName, 32, "Arial Black");
 			CFont bigf; bigf.CreateFontIndirect(&af);
 			CFont *prevf = mem.SelectObject(&bigf);
-			mem.SetTextColor(RGB(255, 0, 0));            // boldest red
+			mem.SetTextColor(dec_color);                 // faded red
 			CRect ar(ctrx - 220, hb.top - 118, ctrx + 220, hb.top - 70);   // well above the box -> above the hole cards
 			mem.DrawText(CString(g_hero_decision_text), -1, &ar, DT_CENTER | DT_SINGLELINE | DT_NOCLIP);
 			LOGFONT tf; ZeroMemory(&tf, sizeof(tf));
@@ -322,6 +330,7 @@ void CHudOverlayWindow::OnPaint() {
 			strcpy_s(tf.lfFaceName, 32, "Segoe UI");
 			CFont tnf; tnf.CreateFontIndirect(&tf);
 			mem.SelectObject(&tnf);
+			mem.SetTextColor(dec_color);                 // table name fades with the action
 			CRect tr(ctrx - 220, hb.top - 70, ctrx + 220, hb.top - 52);    // table name just under the action
 			mem.DrawText(tname, -1, &tr, DT_CENTER | DT_SINGLELINE | DT_NOCLIP | DT_END_ELLIPSIS);
 			mem.SelectObject(prevf);

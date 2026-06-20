@@ -50,6 +50,7 @@
 
 #include <set>
 #include <string>
+#include <map>
 
 const double kEpsilon = 0.0001;
 
@@ -100,81 +101,67 @@ void CHandHistoryWriter::UpdateOnHeartbeat() {
   // uses it to reject a hand-result stack-delta that spans a table SWITCH (same-config switches are
   // invisible from stacks/blinds/seat-count alone). tourney_id|table_name changes on any switch.
   g_table_identity = _tourney_id + "|" + _table_name;
-  // Detect Omaha/PLO/Hi-Lo from the scraped table + tourney text so the loader can auto-switch to
-  // the "<name>_omaha" tablemap (Omaha's 4-card layout != Hold'em's 2-card layout). Keywords are
-  // specific enough (omaha / plo / hi-lo / 8 or better) not to fire on a Hold'em table name.
+  // Detect Omaha/PLO/Hi-Lo PER TABLE so the loader can auto-switch to the "<name>_omaha" 4-card map.
+  // SETUP (Emrald): possibly several Hiss instances (one per scrcpy/phone), and EACH instance tabs
+  // between MULTIPLE tables. This static map is per-PROCESS (=> per instance); keying it by the
+  // table identity makes it per-TABLE within the instance. So tabbing PLO8 <-> NLH on one phone never
+  // bleeds one table's game type onto the other, and each instance keeps its own tables' state.
   {
-    // STICKY per-table Omaha cache (in-memory, this session): once the hero's 4 hole cards have been
-    // seen on a table (only possible on the Omaha 4-card map = genuinely Omaha), remember that table
-    // identity so g_table_is_omaha stays TRUE for it -- even when the mis-branded live name flickers
-    // "Holdem"/"NLH" (PennyHoot brands real PLO tables "...NLHTable..."). This keeps the Omaha map loaded
-    // ACROSS hands, so PREFLOP runs the Omaha tree. Without it the map was Hold'em at the start of each
-    // PLO hand, preflop read only 2 of the 4 cards, and PLO/PLO8 NEVER raised (premium hands folded as
-    // 2-card junk). [Emrald: "I dont see PLO or PLO8 raising at all".]  NLH tables never show 4 cards ->
-    // never cached -> still driven by the live read below (which correctly reads their NLH name).
-    // Game-type from the table/tourney TEXT, with the hero card COUNT as a secondary signal. A CLEAR
-    // No-Limit / Hold'em name is AUTHORITATIVE -- it beats a "4 hole cards" read, because the Omaha
-    // (4-card) map briefly loaded on a NLH table (a NLH cash game beside a PLO tourney) scrapes 2 PHANTOM
-    // extra cards. (Removed the old sticky per-table Omaha cache: ONE phantom 4-card read latched a NLH
-    // table as Omaha forever -> "SimpsonNoLimit" stuck as PLO with no decisions. The name separates the
-    // tables cleanly. [Emrald])
-    bool hero_four = (p_tablemap != NULL && p_tablemap->SupportsOmaha() && p_table_state != NULL
-        && p_table_state->User()->hole_cards(2)->IsKnownCard()
-        && p_table_state->User()->hole_cards(3)->IsKnownCard());
-    bool positive_omaha = false, explicit_holdem = false;
-    // 1) AUTHORITATIVE: the Claude/lobby-posted gametype (set_table_game_info -> g_tgi_gametype) OVERRIDES
-    //    the scraped name. On ACR the scraped table/tourney name is unreliable -- mis-branded or STALE
-    //    (a NLH "Lightning PKO" was still scraping a previous "...Omaha...PLO..." identity, so the bot
-    //    played NLH as PLO). lobby_fetch + Claude keep g_tgi current per tournament. [Emrald: Lightning PKO]
-    CString tgi = g_tgi_gametype; tgi.MakeLower();
-    bool tgi_omaha  = (tgi.Find("omaha") >= 0 || tgi.Find("plo") >= 0 || tgi.Find("hi-lo") >= 0
-                       || tgi.Find("hi/lo") >= 0 || tgi.Find("8orb") >= 0);
-    bool tgi_holdem = (!tgi_omaha && (tgi.Find("hold") >= 0 || tgi.Find("no limit") >= 0
-                       || tgi.Find("nolimit") >= 0 || tgi.Find("nlh") >= 0));
-    if (tgi_omaha) {
-      positive_omaha = true;
-    } else if (tgi_holdem) {
-      explicit_holdem = true;
-    } else {
-      // 2) No posted gametype -> fall back to the scraped table/tourney NAME (c0 OCR + cached fields) +
-      //    the hero card count. A clear No-Limit/Hold'em name beats a phantom 4-card read.
-      CString live_name, live_title, live_id;
-      if (p_scraper != NULL) {
-        p_scraper->EvaluateRegion("c0table_name", &live_name);
-        p_scraper->EvaluateRegion("c0tourney_title", &live_title);
-        p_scraper->EvaluateRegion("c0tourney_id", &live_id);
+    // Strong per-FELT proof from the hero's hole cards (always the CURRENT foreground table):
+    //   4 DISTINCT valid hole cards => Omaha (distinctness rejects phantom duplicate reads on a NLH
+    //   felt under the always-loaded 4-card map); exactly 2 known + slots 2,3 NoCard => Hold'em.
+    bool four_distinct = false, two_only = false;
+    if (p_tablemap != NULL && p_tablemap->SupportsOmaha() && p_table_state != NULL) {
+      Card *h0 = p_table_state->User()->hole_cards(0);
+      Card *h1 = p_table_state->User()->hole_cards(1);
+      Card *h2 = p_table_state->User()->hole_cards(2);
+      Card *h3 = p_table_state->User()->hole_cards(3);
+      bool k0 = h0 && h0->IsKnownCard(), k1 = h1 && h1->IsKnownCard();
+      bool k2 = h2 && h2->IsKnownCard(), k3 = h3 && h3->IsKnownCard();
+      if (k0 && k1 && k2 && k3) {
+        CString s0 = h0->ToString(), s1 = h1->ToString(), s2 = h2->ToString(), s3 = h3->ToString();
+        four_distinct = (s0 != s1 && s0 != s2 && s0 != s3 && s1 != s2 && s1 != s3 && s2 != s3);
       }
-      CString live = live_name + " " + live_title + " " + live_id + " "
-                   + _table_name + " " + _tourney_title + " " + _tourney_id;
-      live.MakeLower();
-      bool m_omaha = (live.Find("omaha") >= 0 || live.Find("plo") >= 0 || live.Find("hi-lo") >= 0
-                      || live.Find("hi/lo") >= 0 || live.Find("8 or better") >= 0 || live.Find("8orb") >= 0);
-      bool m_holdem = (!m_omaha && (live.Find("hold") >= 0 || live.Find("no limit") >= 0
-                      || live.Find("nolimit") >= 0 || live.Find("no-limit") >= 0 || live.Find("nlh") >= 0));
-      if (m_holdem) explicit_holdem = true;
-      else if (m_omaha || hero_four) positive_omaha = true;
+      two_only = (k0 && k1 && !k2 && !k3);
     }
-    // The intermittent identity OCR returns the table name some heartbeats and empty/noise others. Use a
-    // SHORT keep-previous bridge (not a long sticky latch): a positive Omaha read or an explicit
-    // Hold'em/NLH read updates g_table_is_omaha immediately; an empty/ambiguous heartbeat keeps the
-    // PREVIOUS value only briefly so the value doesn't flicker mid-hand. A short window means switching to
-    // a NLH table (running alongside PLO) flips to Hold'em as soon as its name is read -- NOT held Omaha
-    // for 30s, which froze the NLH table. [Emrald: "NLH detected as PLO, no decisions"]
-    static DWORD s_last_signal_tick = 0;
-    if (positive_omaha) {
-      g_table_is_omaha = true;
-      s_last_signal_tick = GetTickCount();
-    } else if (explicit_holdem) {
-      g_table_is_omaha = false;
-      s_last_signal_tick = GetTickCount();
-    } else if (s_last_signal_tick == 0 || (GetTickCount() - s_last_signal_tick) >= 6000) {
-      // No clear read for >6s -> stop trusting the stale value; fall back to the scraped fields directly.
-      CString gt = _table_name + " " + _tourney_title + " " + _tourney_id + " " + g_tgi_gametype;
-      gt.MakeLower();
-      g_table_is_omaha = (gt.Find("omaha") >= 0 || gt.Find("plo") >= 0 || gt.Find("hi-lo") >= 0
-                          || gt.Find("hi/lo") >= 0 || gt.Find("8 or better") >= 0 || gt.Find("8orb") >= 0);
+    // Name signals (used ONLY to seed a table before card proof exists). The Claude/lobby-posted
+    // g_tgi_gametype is folded in but is NOT authoritative over card proof -- that is the bug we are
+    // fixing: a STALE posted "holdem" must never beat the real 4 cards on a PLO felt. [Emrald]
+    CString live_name, live_title, live_id;
+    if (p_scraper != NULL) {
+      p_scraper->EvaluateRegion("c0table_name", &live_name);
+      p_scraper->EvaluateRegion("c0tourney_title", &live_title);
+      p_scraper->EvaluateRegion("c0tourney_id", &live_id);
     }
-    // else: keep the previous g_table_is_omaha for up to 6s (bridge an intermittent empty scrape).
+    CString live = live_name + " " + live_title + " " + live_id + " " + _table_name + " "
+                 + _tourney_title + " " + _tourney_id + " " + g_tgi_gametype;
+    live.MakeLower();
+    bool name_omaha  = (live.Find("omaha") >= 0 || live.Find("plo") >= 0 || live.Find("hi-lo") >= 0
+                        || live.Find("hi/lo") >= 0 || live.Find("8 or better") >= 0 || live.Find("8orb") >= 0);
+    bool name_holdem = (!name_omaha && (live.Find("hold") >= 0 || live.Find("no limit") >= 0
+                        || live.Find("nolimit") >= 0 || live.Find("no-limit") >= 0 || live.Find("nlh") >= 0));
+
+    // PER-TABLE game-type cache keyed by the (refreshed each heartbeat) table identity.
+    // [Emrald: "create an entire symbol and game state and validation state per game"]
+    struct TableGameState { bool is_omaha; bool omaha_confirmed; bool holdem_confirmed; int four_streak; DWORD last_tick; };
+    static std::map<std::string, TableGameState> s_table_state;
+    std::string key((LPCSTR)CStringA(g_table_identity));
+    TableGameState &st = s_table_state[key];   // value-initialised (all false / 0) on first use
+    st.last_tick = GetTickCount();
+    // Card proof is AUTHORITATIVE and sticky per table. Require 4-distinct on 2 heartbeats to latch
+    // Omaha (kills a one-frame phantom); a clean 2-card read confirms Hold'em unless Omaha is proven.
+    if (four_distinct) {
+      if (++st.four_streak >= 2) { st.is_omaha = true; st.omaha_confirmed = true; }
+    } else {
+      st.four_streak = 0;
+    }
+    if (two_only && !st.omaha_confirmed) { st.is_omaha = false; st.holdem_confirmed = true; }
+    // Before any card proof for THIS table, seed from the name (posted gametype folded into `live`).
+    if (!st.omaha_confirmed && !st.holdem_confirmed) {
+      if (name_omaha) st.is_omaha = true;
+      else if (name_holdem) st.is_omaha = false;
+    }
+    g_table_is_omaha = st.is_omaha;
   }
   if (!_meta_captured) {
     // Wait until at least two players are dealt (blinds posted) before we
@@ -743,35 +730,38 @@ void CHandHistoryWriter::ScrapeTourneyInfo() {
   // c0tourney_* OCR regions -- they mis-scrape this table (truncated/garbled), so the
   // Claude/MCP-parsed values are authoritative even when some are still empty.
   if (g_tgi_set) return;
-  // Tournament NAME -> filename TN- field. Strip commas (they break the ACR
-  // filename / are unwanted in the name).
-  if (_tourney_title.IsEmpty() && RegionExists("c0tourney_title")) {
-    CString t;
-    if (p_scraper->EvaluateRegion("c0tourney_title", &t)) {
-      t.Remove(',');
-      t.Trim();
-      if (!t.IsEmpty()) _tourney_title = t;
-    }
+  // REFRESH the identity EVERY heartbeat. (Was: scrape-once-until-found, which left _tourney_id /
+  // _table_name STUCK on the FIRST table for the whole session -> when Emrald tabs to another table on
+  // the one phone, the new table's hands were mis-attributed to the first, and the per-table game-type
+  // cache keyed off a stale identity.) One phone / tab-between-tables means the foreground table
+  // changes, so we must re-read which table we are looking at each heartbeat.
+  CString sc_title, sc_id, sc_name;
+  if (RegionExists("c0tourney_title") && p_scraper->EvaluateRegion("c0tourney_title", &sc_title)) {
+    sc_title.Remove(','); sc_title.Trim();
   }
-  // Tournament ID -> "Tournament #<id>" header. Strip parentheses.
-  if (_tourney_id.IsEmpty() && RegionExists("c0tourney_id")) {
-    CString id;
-    if (p_scraper->EvaluateRegion("c0tourney_id", &id)) {
-      id.Remove('(');
-      id.Remove(')');
-      id.Trim();
-      if (!id.IsEmpty()) _tourney_id = id;
-    }
+  if (RegionExists("c0tourney_id") && p_scraper->EvaluateRegion("c0tourney_id", &sc_id)) {
+    sc_id.Remove('('); sc_id.Remove(')'); sc_id.Trim();
   }
-  // Table NAME -> "Table '<name>'" header line + filename. Strip single quotes so
-  // they don't break the quoted Table line.
-  if (_table_name.IsEmpty() && RegionExists("c0table_name")) {
-    CString tn;
-    if (p_scraper->EvaluateRegion("c0table_name", &tn)) {
-      tn.Remove('\'');
-      tn.Trim();
-      if (!tn.IsEmpty()) _table_name = tn;
+  if (RegionExists("c0table_name") && p_scraper->EvaluateRegion("c0table_name", &sc_name)) {
+    sc_name.Remove('\''); sc_name.Trim();
+  }
+  // Title (HH header + the hi/lo title test): accept any non-trivial refresh.
+  if (sc_title.GetLength() >= 3) _tourney_title = sc_title;
+  // Identity (id|name): DEBOUNCE a change so a single garbage OCR frame cannot false-switch tables --
+  // a new (id,name) must read the SAME on 2 consecutive heartbeats before we commit the switch. Empty/
+  // short reads keep the previous identity (bridge an intermittent blank scrape).
+  static CString s_pending_id, s_pending_name;
+  static int s_pending_count = 0;
+  CString new_id   = (sc_id.GetLength()   >= 3) ? sc_id   : _tourney_id;
+  CString new_name = (sc_name.GetLength() >= 3) ? sc_name : _table_name;
+  if (new_id != _tourney_id || new_name != _table_name) {
+    if (new_id == s_pending_id && new_name == s_pending_name) {
+      if (++s_pending_count >= 2) { _tourney_id = new_id; _table_name = new_name; s_pending_count = 0; }
+    } else {
+      s_pending_id = new_id; s_pending_name = new_name; s_pending_count = 1;
     }
+  } else {
+    s_pending_count = 0;
   }
 }
 
