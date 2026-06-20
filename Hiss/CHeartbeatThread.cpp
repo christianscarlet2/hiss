@@ -290,6 +290,9 @@ UINT CHeartbeatThread::HeartbeatThreadFunction(LPVOID pParam) {
         // trainer/Vision edited them (no disconnect, no game-state reset).
         if (!p_autoconnector->IsVirtualConnection() && (_heartbeat_counter % 8) == 0) {
           p_tablemap_loader->ReloadConnectedTablemapIfSettingsChanged();
+          // PLO auto-detect: hot-swap to the "<name>_omaha" tablemap when the scraped text says
+          // Omaha (and back to the Hold'em map otherwise). No-op unless an _omaha variant exists.
+          p_tablemap_loader->SwitchTablemapForGameTypeIfNeeded();
         }
         ScrapeEvaluateAct();
       }

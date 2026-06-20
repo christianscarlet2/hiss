@@ -98,6 +98,10 @@ CString g_tgi_table_number = "";
 // to detect a table SWITCH between hands -- the only reliable switch signal here, since the scrcpy
 // phone window title never changes when the poker app navigates to a different table.
 CString g_table_identity = "";
+// True when the scraped table text says this is an Omaha / PLO / Hi-Lo game. Drives the automatic
+// tablemap switch (CTableMapLoader::SwitchTablemapForGameTypeIfNeeded) between the Hold'em map and
+// its "<name>_omaha" variant, since Omaha's 4-card layout needs a separate, separately-calibrated map.
+bool g_table_is_omaha = false;
 CString g_tgi_gametype = "";
 double g_tgi2_handnumber = 0.0;
 double g_tgi2_prev_handnumber = 0.0;

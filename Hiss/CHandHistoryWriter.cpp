@@ -97,6 +97,16 @@ void CHandHistoryWriter::UpdateOnHeartbeat() {
   // uses it to reject a hand-result stack-delta that spans a table SWITCH (same-config switches are
   // invisible from stacks/blinds/seat-count alone). tourney_id|table_name changes on any switch.
   g_table_identity = _tourney_id + "|" + _table_name;
+  // Detect Omaha/PLO/Hi-Lo from the scraped table + tourney text so the loader can auto-switch to
+  // the "<name>_omaha" tablemap (Omaha's 4-card layout != Hold'em's 2-card layout). Keywords are
+  // specific enough (omaha / plo / hi-lo / 8 or better) not to fire on a Hold'em table name.
+  {
+    CString gt = _table_name + " " + _tourney_title + " " + _tourney_id;
+    gt.MakeLower();
+    g_table_is_omaha = (gt.Find("omaha") >= 0 || gt.Find("plo") >= 0
+                        || gt.Find("hi-lo") >= 0 || gt.Find("hi/lo") >= 0
+                        || gt.Find("8 or better") >= 0 || gt.Find("8orb") >= 0);
+  }
   if (!_meta_captured) {
     // Wait until at least two players are dealt (blinds posted) before we
     // open a hand. If we joined mid-hand we still open it, with placeholders.

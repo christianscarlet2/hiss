@@ -34,6 +34,10 @@ class CTableMapLoader : public CSpaceOptimizedGlobalObject {
 	// trainer/Vision), re-pull the connected map + OCR settings WITHOUT disconnecting.
 	// Cheap revision probe; safe to call every heartbeat.
 	void ReloadConnectedTablemapIfSettingsChanged();
+	// PLO auto-detect: if the scraped text says Omaha (g_table_is_omaha) and a "<name>_omaha"
+	// variant of the connected map exists, hot-swap to it (and swap back to the base map for
+	// Hold'em) -- reusing the connected window. Omaha's 4-card layout needs a separate tablemap.
+	void SwitchTablemapForGameTypeIfNeeded();
 	CString GetTablemapPathToLoad(int tablemap_index);
  private:
 	void ParseAllTableMapsToLoadConnectionData(CString scraper_directory);

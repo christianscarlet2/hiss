@@ -267,6 +267,65 @@ void CTableMapLoader::ReloadConnectedTablemapIfSettingsChanged() {
   }
 }
 
+void CTableMapLoader::SwitchTablemapForGameTypeIfNeeded() {
+  if (p_tablemap == NULL || p_tablemap_db == NULL || p_autoconnector == NULL) {
+    return;
+  }
+  if (!p_autoconnector->IsConnectedToAnything()) {
+    return;   // nothing connected -> nothing to swap
+  }
+  CString cur = p_tablemap->filename();   // DB key of the connected map
+  if (cur.IsEmpty()) {
+    return;
+  }
+  // base = connected name with any trailing "_omaha" stripped; the Omaha variant is base+"_omaha".
+  CString base = cur;
+  if (base.GetLength() > 6 && base.Right(6) == "_omaha") {
+    base = base.Left(base.GetLength() - 6);
+  }
+  CString want = g_table_is_omaha ? (base + "_omaha") : base;
+  if (want == cur) {
+    return;   // already on the correct map for this game type
+  }
+  // The target map must actually exist in the DB, or LoadTablemapFromDB would blank the tablemap.
+  bool exists = false;
+  for (std::map<int, t_tablemap_connection_data>::const_iterator it = tablemap_connection_data.begin();
+       it != tablemap_connection_data.end(); ++it) {
+    if (it->second.FilePath == want) { exists = true; break; }
+  }
+  if (!exists) {
+    return;   // no separate Omaha map for this table -> leave the connected map as is
+  }
+  // Debounce: OCR text can flicker; switch at most once every few seconds.
+  static DWORD last_switch_tick = 0;
+  if (GetTickCount() - last_switch_tick < 4000) {
+    return;
+  }
+  last_switch_tick = GetTickCount();
+  write_log(Preferences()->debug_tablemap_loader(),
+    "[CTablemapLoader] game-type tablemap switch [%s] -> [%s] (omaha=%d)\n",
+    cur.GetString(), want.GetString(), (int)g_table_is_omaha);
+  // Hot-swap the connected map under the heartbeat lock, freeing/re-allocating the scraper's
+  // per-region bitmaps exactly like ReloadConnectedTablemapIfSettingsChanged (LoadTablemapFromDB
+  // calls ClearTablemap, so the old bitmaps must be freed first and re-created after).
+  if (p_heartbeat_thread != NULL) {
+    EnterCriticalSection(&p_heartbeat_thread->cs_update_in_progress);
+    if (p_scraper != NULL) p_scraper->DeleteBitmaps();
+    p_tablemap_db->LoadTablemapFromDB(want, p_tablemap);
+    if (p_scraper != NULL) p_scraper->CreateBitmaps();
+    LeaveCriticalSection(&p_heartbeat_thread->cs_update_in_progress);
+  } else {
+    if (p_scraper != NULL) p_scraper->DeleteBitmaps();
+    p_tablemap_db->LoadTablemapFromDB(want, p_tablemap);
+    if (p_scraper != NULL) p_scraper->CreateBitmaps();
+  }
+  AutoOcr()->LoadModelSettings();
+  if (p_scraper != NULL) p_scraper->InvalidateParallelOcrEngines();
+  if (m_ScraperOutputDlg != NULL) {
+    m_ScraperOutputDlg->UpdateDisplay();
+  }
+}
+
 CString CTableMapLoader::GetTablemapPathToLoad(int tablemap_index) {
   assert(tablemap_index >= 0);
   assert(tablemap_index < _number_of_tablemaps_loaded);
