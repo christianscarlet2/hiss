@@ -121,6 +121,14 @@ def gather():
 def record_hand_result(prev_hand, prev_start_bal, new_start_bal, ts_ms):
     if not prev_hand or prev_start_bal is None or new_start_bal is None:
         return None
+    # Guard against garbage transitions (e.g. the off-table -> reconnect jump that produced a bogus
+    # handnumber "8" with start_balance 1111). Require a REAL hand id and plausible stacks; otherwise
+    # the spurious row would pollute the loss-weighted synthesis with a fake huge "loss".
+    ph = str(prev_hand)
+    if not (ph.isdigit() and len(ph) >= 6):
+        return None
+    if not (0 < prev_start_bal < 1e7 and 0 < new_start_bal < 1e7):
+        return None
     net = round(new_start_bal - prev_start_bal, 2)
     try:
         import psycopg2
