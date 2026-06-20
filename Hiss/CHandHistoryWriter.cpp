@@ -101,17 +101,15 @@ void CHandHistoryWriter::UpdateOnHeartbeat() {
   // the "<name>_omaha" tablemap (Omaha's 4-card layout != Hold'em's 2-card layout). Keywords are
   // specific enough (omaha / plo / hi-lo / 8 or better) not to fire on a Hold'em table name.
   {
-    // g_tgi_gametype is the Claude/MCP-parsed game string ("Pot Limit"/"No Limit"); _table_name +
-    // _tourney_title carry the scraped table text. On Emrald's tables a Pot-Limit game is Omaha, so
-    // "pot limit" / "potlimit" is treated as an Omaha signal alongside the explicit omaha/plo/hi-lo
-    // keywords. (Full PL-Holdem-vs-PL-Omaha disambiguation can come from Claude-parsed table_game_info.)
+    // Game-type detection drives the Hold'em<->Omaha tablemap auto-switch. Rely on the RELIABLE word
+    // "omaha" (+ hi-lo / 8-or-better for PLO8), which Claude posts as the authoritative gametype via
+    // set_table_game_info after reading the frame (g_tgi_gametype). Do NOT match "plo" / "pot limit"
+    // substrings: they FALSE-POSITIVE on garbled table-name OCR (e.g. "...PLOS..." on a Hold'em
+    // freeroll) and on Pot-Limit Hold'em -- which wrongly swapped the bot to the Omaha map.
     CString gt = _table_name + " " + _tourney_title + " " + _tourney_id + " " + g_tgi_gametype;
     gt.MakeLower();
-    g_table_is_omaha = (gt.Find("omaha") >= 0 || gt.Find("plo") >= 0
-                        || gt.Find("hi-lo") >= 0 || gt.Find("hi/lo") >= 0
-                        || gt.Find("8 or better") >= 0 || gt.Find("8orb") >= 0
-                        || gt.Find("pot limit") >= 0 || gt.Find("pot-limit") >= 0
-                        || gt.Find("potlimit") >= 0);
+    g_table_is_omaha = (gt.Find("omaha") >= 0 || gt.Find("hi-lo") >= 0 || gt.Find("hi/lo") >= 0
+                        || gt.Find("8 or better") >= 0 || gt.Find("8orb") >= 0);
   }
   if (!_meta_captured) {
     // Wait until at least two players are dealt (blinds posted) before we
