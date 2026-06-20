@@ -441,6 +441,14 @@ function App() {
     setUltraOn(!ultraOn);   // optimistic; the poll below reconciles
   };
 
+  var superPair = useState(false);
+  var superOn = superPair[0];
+  var setSuperOn = superPair[1];
+  var toggleSuper = function () {
+    fetch('/api/superstition?on=' + (superOn ? '0' : '1')).catch(function () {});
+    setSuperOn(!superOn);   // optimistic; the poll below reconciles
+  };
+
   // Reflect the NN-driver engaged state (engaging it disengages the autoplayer, server-side).
   useEffect(function () {
     var alive = true;
@@ -464,6 +472,19 @@ function App() {
     }
     pollUltra();
     var t = setInterval(pollUltra, 1500);
+    return function () { alive = false; clearInterval(t); };
+  }, []);
+
+  // Reflect the SUPERSTITION (666 Card Oracle) engaged state.
+  useEffect(function () {
+    var alive = true;
+    function pollSuper() {
+      fetch('/api/superstition').then(function (r) { return r.json(); })
+        .then(function (j) { if (alive && j && typeof j.engaged === 'boolean') setSuperOn(j.engaged); })
+        .catch(function () {});
+    }
+    pollSuper();
+    var t = setInterval(pollSuper, 1500);
     return function () { alive = false; clearInterval(t); };
   }, []);
 
@@ -544,21 +565,25 @@ function App() {
       }, (ultraOn ? '⚡ ULTRA ●' : '⚡ ULTRA')),
       (function () {
         var fav = Number(table.beastfavor || 0);
-        var on = fav > 0.001;
+        var live = fav > 0.001;          // omen actively reading a live draw
+        var on = superOn || live;        // lit when superstition is ENGAGED (toggle) or the omen is live
         var pct = Math.round(fav * 100);
         var verdict = fav >= 0.66 ? 'THE BEAST FAVORS YOU' : (fav >= 0.33 ? 'the signal is faint' : 'the omen turns away');
         return e('div', {
-          title: on ? ('666 Card Oracle — resonance ' + pct + '%: ' + verdict)
-                    : '666 Card Oracle idle (run card_oracle.py --superstition to feed it)',
+          onClick: toggleSuper,
+          title: superOn
+            ? ('Superstition ENGAGED - 666 Card Oracle feeding the OHF'
+               + (live ? (' (resonance ' + pct + '%: ' + verdict + ')') : ' (no live draw)') + ' - click to STOP')
+            : 'Superstition OFF - click to ENGAGE the 666 Card Oracle (feeds the OHF + voices omens)',
           style: {
-            marginLeft: '10px', padding: '4px 10px', borderRadius: '6px', fontWeight: 'bold',
+            marginLeft: '10px', padding: '4px 10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer',
             fontFamily: 'monospace', letterSpacing: '1px',
             border: '1px solid ' + (on ? '#e23b3b' : '#333'),
             background: on ? ('rgba(150,15,15,' + (0.18 + 0.5 * fav) + ')') : '#161616',
             color: on ? '#ff6b6b' : '#555',
             boxShadow: on ? ('0 0 ' + Math.round(4 + 14 * fav) + 'px rgba(226,59,59,' + (0.3 + 0.6 * fav) + ')') : 'none'
           }
-        }, on ? ('🔥 666 ' + pct + '%') : '🔥 666');
+        }, superOn ? ('🔥 666 ●' + (live ? (' ' + pct + '%') : '')) : '🔥 666');
       })()
     ),
     e('section', { className: 'table' },
