@@ -59,6 +59,7 @@ table_game_info_2 tgi2_handnumber tgi2_prev_handnumber
 goto_lobby_button leave_lobby_button return_to_tables_button lobby_more_info_button
 read_ahead_active
 sb_connected sb_table_id sb_pot sb_to_call sb_to_act sb_my_seat sb_beastfavor
+icm icm_fold icm_callwin icm_calllose icm_calltie
 """.split())
 
 # keywords / actions / operators that are not symbols
@@ -137,8 +138,12 @@ for name, body in func_bodies.items():
             if badop in s_nocom:
                 errors.append(f"{name}:{n}: illegal operator '{badop}' "
                               f"(OpenPPL has no not-equal; rewrite as NOT (a = b)) -> {s_nocom}")
-        # identifier validation
-        for tok in ident_re.findall(s_nocom):
+        # identifier validation. First strip whole card-range tokens (AA, AKs, 97o, T9s, ...) so
+        # digit-leading ones like "97o"/"98s" aren't mis-tokenized: the leading digit isn't a valid
+        # identifier start, so ident_re would otherwise capture only the trailing suit letter ('o'/'s')
+        # and flag it as an unknown symbol. The real OpenHoldem parser accepts these card tokens.
+        s_idents = re.sub(r'\b[2-9TJQKA]{2}[so]?\b', ' ', s_nocom)
+        for tok in ident_re.findall(s_idents):
             if tok in valid: continue
             if is_card_token(tok): continue
             if num_re.match(tok): continue
