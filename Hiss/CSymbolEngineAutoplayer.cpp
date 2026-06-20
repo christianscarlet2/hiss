@@ -146,6 +146,32 @@ void CSymbolEngineAutoplayer::CalculateFinalAnswer() {
 		write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Possibly a tablemap-problem\n");
 		_isfinalanswer = false;
 	}
+	else {
+		// HERO HOLE-CARD VALIDITY GATE. On these phone tables the hero's hole cards are shown
+		// face-up only when it is the hero's turn (round 1) and flip in via a brief animation.
+		// Scraping mid-flip yields a card still reading BACK (incomplete) or a DUPLICATE face
+		// (a card mis-matched as a repeat, e.g. Kd 8d 7d Kd -> the bot then folds a real hand blind,
+		// observed live on hand 2762863627). Require a COMPLETE, internally-consistent face-up read
+		// before committing to an action; otherwise wait for the flip to settle / a clean re-scrape.
+		int known = 0, back = 0, vals[kMaxNumberOfCardsPerPlayer]; bool dup = false;
+		for (int i = 0; i < kMaxNumberOfCardsPerPlayer; ++i) {
+			Card *hc = p_table_state->User()->hole_cards(i);
+			if (hc == NULL) continue;
+			if (hc->IsKnownCard()) {
+				int v = hc->GetValue();
+				for (int j = 0; j < known; ++j) if (vals[j] == v) dup = true;
+				vals[known++] = v;
+			} else if (hc->IsCardBack()) {
+				++back;
+			}
+		}
+		if (back > 0 || dup) {
+			write_log(Preferences()->debug_autoplayer(),
+				"[AutoPlayer] Not Final Answer: hero hole cards not a clean face-up read "
+				"(known=%d back=%d dup=%d) -- waiting for the flip to settle\n", known, back, dup ? 1 : 0);
+			_isfinalanswer = false;
+		}
+	}
 	//  Avoiding unnecessary calls to p_stableframescounter->UpdateNumberOfStableFrames(),
 	if (_isfinalanswer)	{
 		p_stableframescounter->UpdateNumberOfStableFrames();
@@ -180,7 +206,7 @@ CString CSymbolEngineAutoplayer::GetFCKRAString()
     // bits 43210 correspond to buttons KARCF 
     // (check alli rais call fold). 
     // Bit 4 (check) was added in OpenHoldem 2.0, 
-    // that’s why it is “out of order"
+    // thatï¿½s why it is ï¿½out of order"
 		(_myturnbits & kMyTurnBitsFold  ? "F" : "."),
     (_myturnbits & kMyTurnBitsCall  ? "C" : "."),
 		(_myturnbits & kMyTurnBitsCheck ? "K" : "."),

@@ -306,6 +306,19 @@ void CScraper::RefreshObserverState() {
 		r.Trim();
 		raw = (r == "true");
 	}
+	// HERO GATE (robust, OCR-independent): if the userchair engine has the hero CONFIRMED at the
+	// observer seat (3), the user is PLAYING that seat, not observing it -> force observer off. The
+	// seat-3 NAME OCR is flaky (a stale/garbled "CmanVnessaStop" reads as not-a-username), which would
+	// otherwise leave observer ON and redirect the hero's own p3 card regions to p3observer, so the
+	// hero's face-up cards read as the observed-player cardbacks (BACK). (Live: 2762864689/2762865634.)
+	{
+		CSymbolEngineUserchair *ucse = (p_engine_container != NULL) ? p_engine_container->symbol_engine_userchair() : NULL;
+		if (ucse != NULL && ucse->userchair() == 3 && ucse->userchair_confirmed()) {
+			_observer_active = false;
+			_mem_p3observer = false;
+			return;
+		}
+	}
 	// p3 observer memory + hero gate. The seat-3 name (prior frame's last-good value):
 	CString p3name = p_table_state->Player(3)->name();
 	if (IsConfiguredUsername(p3name)) {
@@ -1288,12 +1301,21 @@ void CScraper::ScrapePlayerCards(int chair) {
 		if (cardback_true && !p_table_state->Player(chair)->seated()) {
 			p_table_state->Player(chair)->set_seated(true);
 		}
+		// The HERO's OWN seat (we're playing it, not observing) shows the user's cards FACE-UP once it
+		// is their turn. The cardback-force shortcut would override those faces with BACK whenever
+		// p{chair}cardback colour-matches (it can fire mid-flip or on a red glyph), so the bot reads
+		// its own hand as backs and folds blind (live: 2762864689 / 2762865634 / 2762866393). For the
+		// hero's own seat, ALWAYS per-card scrape (face FIRST; ScrapeCard falls back to BACK on its own
+		// when the card is genuinely face-down before the turn). Opponents keep the fast shortcut.
+		int _uc = (p_engine_container != NULL && p_engine_container->symbol_engine_userchair() != NULL)
+			? p_engine_container->symbol_engine_userchair()->userchair() : -1;
+		bool is_hero_own_seat = (chair == _uc && !_observer_active);
 		write_log(Preferences()->debug_scraper(),
-			"[CScraper] cardback-rule chair %d: seated=%s p%dcardback exists=%s result='%s' -> %s\n",
+			"[CScraper] cardback-rule chair %d: seated=%s p%dcardback exists=%s result='%s' hero_own=%s -> %s\n",
 			chair, Bool2CString(p_table_state->Player(chair)->seated()), chair,
-			Bool2CString(cardback_region_exists), cb_res.GetString(),
-			(p_table_state->Player(chair)->seated() && cardback_true) ? "DRAW CARDBACKS" : "normal scrape");
-		if (p_table_state->Player(chair)->seated() && cardback_true) {
+			Bool2CString(cardback_region_exists), cb_res.GetString(), Bool2CString(is_hero_own_seat),
+			(!is_hero_own_seat && p_table_state->Player(chair)->seated() && cardback_true) ? "DRAW CARDBACKS" : "face scrape");
+		if (!is_hero_own_seat && p_table_state->Player(chair)->seated() && cardback_true) {
 			for (int i = 0; i < number_of_cards_to_be_scraped; i++) {
 				p_table_state->Player(chair)->hole_cards(i)->SetValue(CARD_BACK);
 			}

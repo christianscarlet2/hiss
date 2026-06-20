@@ -101,6 +101,7 @@ function App(){
   const handHist = stream && stream.hand;
   const syms = (stream && stream.symbols)||[];
   const scrapes = (stream && stream.scrapes)||[];
+  const gt = (stream && stream.gametype && stream.gametype.label) || '';
 
   const imgSrc = (hand&&cur)? '/api/img/'+encodeURIComponent(hand)+'/'+cur.ts_ms : '';
   const t0 = frames.length? frames[0].ts_ms : 0;
@@ -109,7 +110,8 @@ function App(){
 
   return (<div>
     <header>
-      <h1>◷ Hiss Replay</h1>
+      <h1>◷ Hiss Replay <span style={{fontSize:11,color:'#8b949e',fontWeight:'normal'}}>BEAST · all frames</span></h1>
+      {gt? <span title="detected game type" style={{padding:'2px 9px',borderRadius:6,fontWeight:700,fontSize:13,marginRight:8,color:'#fff',border:'1px solid rgba(255,255,255,.25)',background: gt==='PLO8'?'#7b341e':(gt==='PLO'?'#1e5631':'#1f3a5f')}}>{gt}</span> : null}
       <select value={hand||''} onChange={e=>{ if(inReplayer&&playing) fetch(CTRL+'/stop').catch(()=>{}); setPlaying(false);setHand(e.target.value);}}>
         {hands.map(h=><option key={h.handnumber} value={h.handnumber}>
           hand {h.handnumber}{h.hero_cards?('  '+cards(h.hero_cards)):''} · {nyc(h.start_ts)} NYC · {h.frames}f · {((h.end_ts-h.start_ts)/1000).toFixed(1)}s</option>)}
