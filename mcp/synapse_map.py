@@ -112,6 +112,7 @@ def gather():
             " ".join(c for c in (ts.get("commonCards") or []) if c),
             "handnumber": str(ts.get("handnumber") or ""), "hero_balance": hero_balance,
             "nchairs": ts.get("nchairs"), "table": ts.get("table") or "",
+            "observer": bool(ts.get("observer")),
             "voice_pending": voice_pending, "hud": hud_rows}
 
 
@@ -373,6 +374,7 @@ def main():
         # flipped seat-mapping and is a phantom (the kind that logged a fake -172 then +170 next hand).
         cur_hand, cur_start_bal = "", None
         cur_had_cards = False                    # did we see hero's hole cards during cur_hand?
+        cur_observer = False                     # was the bot OBSERVING during cur_hand? (no real hero)
         cur_bb, cur_nchairs = None, None         # table config captured at cur_hand's start
         cur_table = ""                           # table identity (tourney|name) at cur_hand's start
         while True:
@@ -383,9 +385,12 @@ def main():
             bb_now = num(g["syms"].get("bblind"), 0) or None
             nch_now = g.get("nchairs")
             table_now = g.get("table") or ""
+            observer_now = bool(g.get("observer"))
             hero_has_cards = len((g.get("hero") or "").split()) >= 2
             if hn and hn == cur_hand and hero_has_cards:
                 cur_had_cards = True             # latch: hero was dealt in this hand
+            if hn and hn == cur_hand and observer_now:
+                cur_observer = True              # latch: we were OBSERVING -> the "hero" is some villain
             # hand transition: bank the previous hand's net (stack delta between hand starts)
             if hn and hn != cur_hand:
                 if cur_hand and cur_start_bal is not None and bal is not None:
@@ -395,7 +400,7 @@ def main():
                     # invisible to the bb/nchairs check but shows here. Only blocks when BOTH ids are
                     # known (graceful: a missing id falls back to the config check, never over-blocks).
                     table_switched = bool(cur_table and table_now and cur_table != table_now)
-                    if cur_had_cards and same_table and not table_switched:
+                    if cur_had_cards and same_table and not table_switched and not cur_observer:
                         net = record_hand_result(cur_hand, cur_start_bal, bal, state["ts_ms"],
                                                  bblind=num(g["syms"].get("bblind"), 1.0))
                         if net is not None and net < 0:
@@ -404,12 +409,14 @@ def main():
                             if do_speak and time.time() - last_spoke > 15:
                                 speak("The ghost notes: " + msg); last_spoke = time.time()
                     else:
-                        why = ("no hero cards" if not cur_had_cards
+                        why = ("observer mode (no real hero)" if cur_observer
+                               else "no hero cards" if not cur_had_cards
                                else "table switch (%s->%s)" % (cur_table, table_now) if table_switched
                                else "table changed")
                         print("[synapse] skip hand %s result (%s) -- phantom guard" % (cur_hand, why), flush=True)
                 cur_hand, cur_start_bal = hn, bal
                 cur_had_cards = hero_has_cards    # seed the new hand
+                cur_observer = observer_now       # seed the new hand
                 cur_bb, cur_nchairs = bb_now, nch_now
                 cur_table = table_now
             head = next((n["ghost"] for n in state["nodes"] if n["id"] == "output.action"), "")
