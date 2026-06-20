@@ -116,12 +116,14 @@ def ismyturn():
         return False
 
 
-def decide_and_act(mono):
+def decide_and_act():
+    """Returns True if we read the seat and clicked (or decided, in DRY); False if the hole
+    isn't readable yet so the CALLER should retry within the same turn (do NOT skip the turn --
+    that silently drops the action and looks like a phantom 'sit out / between hands')."""
     gs = _get(BOT + "/api/table-state")
     sv = seat_view(gs)
     if not sv:
-        print("[nn_driver] my turn but no readable hole (sat out / between hands) -- skip", flush=True)
-        return
+        return False                       # hole not scraped yet -> retry, don't consume the turn
     # Sym straight from the live bot (local, DB-free) -- not swiftsnake's /decide.
     sym = _get(BOT + "/api/symbols?names=" + NUMERIC_SYMBOLS)
     nn = _post(NN, {"sym": sym, "hole": sv["hole"], "board": sv["board"], "bblind": sv["bblind"]})
@@ -176,20 +178,40 @@ def decide_and_act(mono):
            (" to %.1fbb" % amount) if amount else "", note, nn.get("value")), flush=True)
     if not DRY:
         click(do, amount)
+    return True
 
 
 def main():
     print("[nn_driver] %s  bot=%s nn=%s" % ("DRY-RUN" if DRY else "LIVE", BOT, NN), flush=True)
-    print("[nn_driver] gating on ismyturn (rising edge). Waiting for your turn...", flush=True)
-    prev = False
+    print("[nn_driver] gating on ismyturn (per-turn latch; retries until the hole scrapes). Waiting for your turn...", flush=True)
+    acted_this_turn = False     # acted on THIS turn already? re-armed on the falling edge of ismyturn
     last_act = 0.0
+    wait_start = 0.0            # when the current "my turn but hole unreadable" wait began
+    warned = False
     while True:
         try:
             now = ismyturn()
-            if now and not prev and (time.monotonic() - last_act) > 3.0:   # rising edge + cooldown
-                decide_and_act(time.monotonic())
-                last_act = time.monotonic()
-            prev = now
+            if now:
+                # Act exactly once per turn, but if the hole isn't readable yet keep RETRYING
+                # within the turn (decide_and_act returns False) instead of skipping it. The 1s
+                # floor is just a glitch guard against a same-tick double-fire.
+                if not acted_this_turn and (time.monotonic() - last_act) > 1.0:
+                    if decide_and_act():
+                        acted_this_turn = True
+                        last_act = time.monotonic()
+                        wait_start = 0.0
+                        warned = False
+                    else:
+                        t = time.monotonic()
+                        if wait_start == 0.0:
+                            wait_start = t
+                        elif (t - wait_start) > 6.0 and not warned:
+                            print("[nn_driver] my turn but hole unreadable >6s -- genuinely between hands / sat out?", flush=True)
+                            warned = True
+            else:
+                acted_this_turn = False   # turn ended -> re-arm for the next hand
+                wait_start = 0.0
+                warned = False
         except Exception as e:
             print("[nn_driver] err:", e, flush=True)
         time.sleep(POLL)
