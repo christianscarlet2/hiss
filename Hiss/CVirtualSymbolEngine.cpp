@@ -90,13 +90,12 @@ void CVirtualSymbolEngine::WarnIfSymbolIsHoldemOnly(CString name) {
     return;
   }
   if (p_engine_container->symbol_engine_isomaha()->isomaha()) {
-    CString error_message;
-    error_message.Format("%s%s%s%s%s%s%s",
-      "The symbol \"", name, "\"\n",
-      "is currently only available for Hold'em games.\n",
-      "\n",
-      "Please get in contact with the development team\n",
-      "if you volunteer to implement it for Omaha.");
-    MessageBox_Error_Warning(error_message, "Warning");
+    // In Omaha these Hold'em-only symbols simply return stale/0; the Omaha decision trees rely on
+    // the Omaha-aware Have* symbols, not these. The original blocking MessageBox here HALTED the bot
+    // every heartbeat in Omaha mode (one modal per Hold'em-only symbol evaluated) -- replaced with a
+    // non-blocking OutputDebugString trace so Omaha play is not interrupted.
+    OutputDebugStringA("[CVirtualSymbolEngine] Hold'em-only symbol evaluated in Omaha (stale/0): ");
+    OutputDebugStringA((LPCSTR)name);
+    OutputDebugStringA("\n");
   }
 }
