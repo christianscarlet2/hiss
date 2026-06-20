@@ -37,6 +37,20 @@ HDRS = {"Authorization": "Bearer %s" % TOKEN, "Host": HOSTHDR}
 # on Windows when the daemon itself has no visible console. Suppress it.
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
+_singleton_handle = None
+def ensure_single_instance():
+    """Prevent double-shippers. The AIL's 'restart shipper if dead' check can otherwise spawn a 2nd
+    instance that double-ships rows (wasted work + duplicate frames/decisions on the replay server).
+    Hold a global named mutex; a 2nd instance sees ERROR_ALREADY_EXISTS and exits cleanly."""
+    global _singleton_handle
+    if os.name != "nt":
+        return
+    import ctypes
+    _singleton_handle = ctypes.windll.kernel32.CreateMutexW(None, False, "Global\\hiss_shipper_singleton")
+    if ctypes.windll.kernel32.GetLastError() == 183:   # ERROR_ALREADY_EXISTS
+        log("another hiss_shipper instance already running -> exiting (single-instance guard).")
+        sys.exit(0)
+
 # table -> columns shipped in the /api/ingest payload (id is fetched too, for marking)
 STREAMS = {
     "hands":     ["ts_ms", "handnumber", "complete", "hh_text"],
@@ -181,6 +195,7 @@ def main():
     ap.add_argument("--once", action="store_true", help="single pass then exit")
     ap.add_argument("--interval", type=int, default=15, help="seconds between passes")
     args = ap.parse_args()
+    ensure_single_instance()
     log("target=%s (Host: %s) batch=%d" % (SERVER, HOSTHDR, BATCH))
     backoff = args.interval
     while True:

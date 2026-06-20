@@ -147,7 +147,17 @@ for name, body in func_bodies.items():
             if tok in valid: continue
             if is_card_token(tok): continue
             if num_re.match(tok): continue
-            if tok.startswith("pt_"): continue          # any PokerTracker stat
+            if tok.startswith("pt_"):                    # PokerTracker stat
+                # Most pt_ stats accept positional suffixes (_smallblind/_bigblind/_cutoff/...), but a
+                # few are raischair-only and the REAL parser REJECTS the positional form with a modal
+                # that BLOCKS Hiss startup (e.g. pt_hands_bigblind, 2026-06-20). "hands" is the sample
+                # count and is special-cased to _raischair / chair-number only. Catch that class here.
+                m_pt = re.fullmatch(r'pt_(hands)_(smallblind|bigblind|cutoff|firstcaller|headsup|dealer|button|lastcaller)', tok)
+                if m_pt:
+                    errors.append(f"{name}:{n}: invalid PokerTracker symbol '{tok}' "
+                                  f"('{m_pt.group(1)}' is raischair-only; the positional suffix is rejected "
+                                  f"by the engine parser and blocks Hiss startup)")
+                continue
             if tok.startswith("explain"): continue        # dynamic explanation triggers
             if tok.startswith("openai"): continue         # dynamic OpenAI advisor symbols
             if tok.startswith("f$"):
