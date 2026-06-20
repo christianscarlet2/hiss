@@ -488,3 +488,22 @@ WHEN NOT istournament RETURN false FORCE
 WHEN f$HeadsUpTourney AND f$ICM_CallEV >= icm_fold RETURN true FORCE
 WHEN f$ICM_CallEV >= icm_fold * f$BubbleTighten RETURN true FORCE
 WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  ICM bet-SIZING multiplier. Scales every OHF open/iso/3bet/4bet (RaiseTo) and
+//  post-flop bet (RaiseBy %) by the ICM CHIP VALUE: in a tournament the chips you
+//  can LOSE are worth more than the chips you can WIN (concave ICM curve), most
+//  acutely near/in the money -> bet a touch SMALLER to risk fewer of your dear
+//  chips while still applying fold pressure. Far from the money / in CASH a chip
+//  ~ its face value -> full size (1.0). Lobby-fed: f$Stage uses tgi_players_remaining
+//  + the payout curve, so this sharpens automatically as the field shrinks. Returns
+//  1.0 (no change) for cash, freerolls, and early/middle play, so it is inert until
+//  a real money tournament reaches the bubble. Jams (push/fold all-in) are sized by
+//  the autoplayer's RaiseMax, not these functions, so survival jams are untouched.
+//  [Emrald: "the betsizes in OHF bets should be relative to the ICM CHIP VALUE"]
+##f$ICM_SizeMult##
+WHEN NOT istournament RETURN 1.000 FORCE
+WHEN f$HeadsUpTourney RETURN 1.000 FORCE
+WHEN f$Stage = 2 RETURN 0.80 FORCE
+WHEN f$Stage = 3 RETURN 0.90 FORCE
+WHEN Others RETURN 1.000 FORCE
