@@ -123,19 +123,20 @@ def record_hand_result(prev_hand, prev_start_bal, new_start_bal, ts_ms, bblind=1
     if not prev_hand or prev_start_bal is None or new_start_bal is None:
         return None
     # Guard against garbage transitions. Require a REAL hand id and STAKE-PLAUSIBLE stacks/deltas.
-    # Caps are relative to the big blind so they hold at any stake: a >100k-BB stack or a >20k-BB
-    # single-hand swing is an OCR mis-read (observed: a stack frame read 188335 at a 1bb table, which
-    # made a fake +188k win then a -188k "loss" -- poisoning the loss-weighted synthesis). The old
-    # absolute 1e7 cap let 188335 through.
+    # Caps are relative to the big blind so they hold at any stake. These were 100k/20k BB which is
+    # absurdly loose for BB-denominated tables (real stacks ~10-300 BB, real swings <60 BB); an OCR
+    # misread of a 3733-BB stack on a 1bb table slipped through and logged a fake -3693 "loss" that
+    # dominated the loss-weighting. Tightened to 2000-BB stacks / 1000-BB single-hand swings -- still
+    # ~4-10x the deepest realistic stack, so legit deep/cooler hands pass while gross misreads don't.
     ph = str(prev_hand)
     if not (ph.isdigit() and len(ph) >= 6):
         return None
     bb = bblind if (bblind and bblind > 0) else 1.0
-    bal_cap = bb * 100000.0
+    bal_cap = bb * 2000.0
     if not (0 < prev_start_bal < bal_cap and 0 < new_start_bal < bal_cap):
         return None
     net = round(new_start_bal - prev_start_bal, 2)
-    if abs(net) > bb * 20000.0:        # no single hand swings 20k BB -> garbage transition
+    if abs(net) > bb * 1000.0:         # no single hand realistically swings >1000 BB -> garbage
         return None
     # You can't LOSE more than you sat down with this hand: a loss deeper than the starting stack
     # (+a blind of slack) is a rebuy/table-switch artifact, not a real result.
