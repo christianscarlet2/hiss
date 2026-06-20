@@ -88,6 +88,40 @@ def hiss_get(path):
     with urllib.request.urlopen(url, timeout=5) as r:
         return r.read().decode("utf-8", errors="replace")
 
+# --- AIL control server (mcp/ail_server.py on :7900) -----------------------
+AIL_PORT = int(os.environ.get("AIL_SERVER_PORT", "7900"))
+def _ail_url(path):
+    return "http://127.0.0.1:%d%s" % (AIL_PORT, path)
+def ensure_ail_server():
+    """Reachable? If not, launch mcp/ail_server.py detached (no console) and wait for it to bind."""
+    try:
+        urllib.request.urlopen(_ail_url("/ail/ping"), timeout=0.6).read()
+        return True
+    except Exception:
+        pass
+    script = os.path.join(REPO, "mcp", "ail_server.py")
+    if not os.path.isfile(script):
+        return False
+    DETACHED = 0x00000008 | 0x00000200 | 0x08000000   # DETACHED | NEW_GROUP | NO_WINDOW
+    try:
+        subprocess.Popen([sys.executable, script], cwd=os.path.join(REPO, "mcp"), close_fds=True,
+                         creationflags=DETACHED if os.name == "nt" else 0)
+    except Exception:
+        return False
+    for _ in range(20):
+        time.sleep(0.3)
+        try:
+            urllib.request.urlopen(_ail_url("/ail/ping"), timeout=0.6).read()
+            return True
+        except Exception:
+            continue
+    return False
+def ail_get(path):
+    if not ensure_ail_server():
+        raise RuntimeError("AIL control server (mcp/ail_server.py :%d) not reachable and could not be started" % AIL_PORT)
+    with urllib.request.urlopen(_ail_url(path), timeout=10) as r:
+        return r.read().decode("utf-8", errors="replace")
+
 # --- replay server (hiss.scarletbeast.com) ----------------------------------
 # Ingest/read over the LAN with a Host header (name-based vhost) so frame blobs
 # never leave the LAN; the public Cloudflare hostname is only for the browser UI.
@@ -303,6 +337,14 @@ TOOLS = [
          "position": {"type": "string"}, "slot": {"type": "integer"},
          "scraped": {"type": "string"}, "correct": {"type": "string"}, "note": {"type": "string"}},
       "required": ["position", "slot", "correct"]}},
+    {"name": "ail_list", "description": "List the Autonomous-Improvement-Loop / data daemons (synapse harmonizer, observational learning, voice feedback, replay shipper, coach hype, HUD aggregator) with their on/off + running state, via the AIL control server (mcp/ail_server.py :7900). These are the same switches shown on the browser Terminal's AIL tab.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "ail_toggle", "description": "Switch one AIL daemon on or off via the AIL control server (same switches as the browser Terminal AIL tab). name = synapse|observe|voice|shipper|coach|hud; on = true/false.",
+     "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "on": {"type": "boolean"}}, "required": ["name", "on"]}},
+    {"name": "ail_output", "description": "Recent merged feedback lines from all enabled AIL daemons (the big terminal on the AIL tab). Pass since=<cursor> to get only new lines; returns lines + the new cursor to pass next time.",
+     "inputSchema": {"type": "object", "properties": {"since": {"type": "integer", "default": 0}}}},
+    {"name": "lobby_fetch", "description": "Trigger the lobby-recon choreography (mcp/lobby_fetch.sh) for a Hiss instance via the AIL control server: navigate to the tournament lobby, capture the info pages to C:/tmp, and return to the felt. port = the instance's terminal port (default 27654). Parse C:/tmp/lobby_main.png + C:/tmp/lobby_moreinfo.png AFTER it returns.",
+     "inputSchema": {"type": "object", "properties": {"port": {"type": "integer", "default": 27654}}}},
 ]
 
 def _card_region(position, slot):
@@ -388,6 +430,18 @@ def call_tool(name, args):
         return [{"type": "text", "text": hiss_get("/api/table-game-info-2?" + qs)}]
     if name == "reload_ohf":
         return [{"type": "text", "text": hiss_get("/api/reload-ohf")}]
+    if name == "ail_list":
+        return [{"type": "text", "text": ail_get("/ail/list")}]
+    if name == "ail_toggle":
+        on = "1" if args.get("on") else "0"
+        return [{"type": "text", "text": ail_get("/ail/toggle?name=%s&on=%s"
+                 % (urllib.parse.quote(str(args["name"])), on))}]
+    if name == "ail_output":
+        since = int(args.get("since") or 0)
+        return [{"type": "text", "text": ail_get("/ail/output?since=%d" % since)}]
+    if name == "lobby_fetch":
+        port = int(args.get("port") or 27654)
+        return [{"type": "text", "text": ail_get("/lobby-fetch?port=%d" % port)}]
     if name == "validate":
         return [{"type": "text", "text": hiss_get("/api/validate")}]
     if name == "log_settings":

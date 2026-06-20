@@ -61,6 +61,14 @@ CHandHistoryWriter *p_handhistory_writer = NULL;
 struct HHTableGameState { bool is_omaha; bool omaha_confirmed; bool holdem_confirmed; int four_streak; DWORD last_tick; };
 static std::map<std::string, HHTableGameState> s_table_gametype_cache;
 
+// [Emrald] GAME TYPE IS LINKED TO THE HAND NUMBER. The hand number flips the instant the foreground
+// table changes -- faster and more reliable than the scraped table name/id (which lags on a quick tab)
+// -- so we record each hand's proven game type keyed by its hand number. PLO<->NLH then switches in one
+// heartbeat and tabbing back to a table we've seen is correct immediately. type: 0=unknown 1=omaha 2=holdem.
+struct GameTypeHN { char type; int streak; };
+static std::map<std::string, GameTypeHN> s_handnumber_gametype;
+static std::string s_last_handnumber;
+
 CHandHistoryWriter::CHandHistoryWriter() {
   // This engine collects data from the table-state and the other engines
   // and therefore must be executed after all the rest (it is registered last).
@@ -102,6 +110,8 @@ void CHandHistoryWriter::UpdateOnHeartbeat() {
   // (hole-card count). For when the auto per-table detection has latched the wrong type. [Emrald]
   if (g_reset_detection_request) {
     s_table_gametype_cache.clear();
+    s_handnumber_gametype.clear();
+    s_last_handnumber.clear();
     g_table_is_omaha = false;
     _tourney_id = ""; _table_name = ""; _tourney_title = "";
     g_reset_detection_request = false;
@@ -155,8 +165,9 @@ void CHandHistoryWriter::UpdateOnHeartbeat() {
     bool name_holdem = (!name_omaha && (live.Find("hold") >= 0 || live.Find("no limit") >= 0
                         || live.Find("nolimit") >= 0 || live.Find("no-limit") >= 0 || live.Find("nlh") >= 0));
 
-    // PER-TABLE game-type cache keyed by the (refreshed each heartbeat) table identity. File-scope
-    // (s_table_gametype_cache) so /api/reset-detection can wipe it. [Emrald: "state per game"]
+    // PER-TABLE game-type cache keyed by the (refreshed each heartbeat) table identity. Still used as a
+    // sticky DEFAULT so a brand-new hand on a table we already know doesn't blink to the wrong type for a
+    // heartbeat. File-scope so /api/reset-detection can wipe it. [Emrald: "state per game"]
     std::string key((LPCSTR)CStringA(g_table_identity));
     HHTableGameState &st = s_table_gametype_cache[key];   // value-initialised (all false / 0) on first use
     st.last_tick = GetTickCount();
@@ -173,7 +184,37 @@ void CHandHistoryWriter::UpdateOnHeartbeat() {
       if (name_omaha) st.is_omaha = true;
       else if (name_holdem) st.is_omaha = false;
     }
-    g_table_is_omaha = st.is_omaha;
+
+    // [Emrald] LINK THE GAME TYPE TO THE HAND NUMBER. The hand number flips the instant the foreground
+    // table changes, so it's the fast, reliable switch signal (the table name/id scrape lags). Resolve
+    // THIS hand's type hand-number-first: a switch trusts the current felt's cards immediately (on an
+    // NLH felt slots 2,3 read NoCard so 4-distinct can't happen -> trusting one clean 4-card read is
+    // safe and makes PLO<->NLH switch in a single heartbeat); a steady hand keeps the 2-frame guard; a
+    // hand we've already proven is correct from the first heartbeat when you tab back to it.
+    CString hnum;
+    if (p_scraper != NULL) p_scraper->EvaluateRegion("c0handnumber", &hnum);
+    hnum.Trim();
+    bool resolved_omaha = st.is_omaha;        // default: the table's sticky type
+    if (!hnum.IsEmpty()) {
+      std::string hkey((LPCSTR)CStringA(hnum));
+      bool switched = (hkey != s_last_handnumber);
+      s_last_handnumber = hkey;
+      if (s_handnumber_gametype.size() > 4000) s_handnumber_gametype.clear();   // bound memory
+      GameTypeHN &hn = s_handnumber_gametype[hkey];   // value-initialised {0,0}
+      if (four_distinct) {
+        if (switched || ++hn.streak >= 2) hn.type = 1;   // trust a switch instantly; else 2-frame guard
+      } else {
+        if (hn.type != 1) hn.streak = 0;
+      }
+      if (two_only && hn.type != 1) hn.type = 2;         // a clean 2-card read => Hold'em (unless proven Omaha)
+      if (hn.type == 0) { if (name_omaha) hn.type = 1; else if (name_holdem) hn.type = 2; }
+      if (hn.type == 1)      resolved_omaha = true;
+      else if (hn.type == 2) resolved_omaha = false;
+      // hn.type == 0 (cards not yet readable on a fresh felt) -> keep the table sticky default.
+      // Keep the per-table sticky in sync so re-detection + the badge agree.
+      st.is_omaha = resolved_omaha;
+    }
+    g_table_is_omaha = resolved_omaha;
   }
   if (!_meta_captured) {
     // Wait until at least two players are dealt (blinds posted) before we

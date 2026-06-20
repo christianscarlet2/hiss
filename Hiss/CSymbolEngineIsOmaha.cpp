@@ -151,7 +151,12 @@ void CSymbolEngineIsOmaha::UpdateOnHeartbeat() {
   bool four_known = (p_tablemap != NULL && p_tablemap->SupportsOmaha() && p_table_state != NULL
       && p_table_state->User()->hole_cards(2)->IsKnownCard()
       && p_table_state->User()->hole_cards(3)->IsKnownCard());
-  if (_isomaha || four_known || g_table_is_omaha) {
+  // [Emrald] LINKED TO THE HAND NUMBER: g_table_is_omaha is now resolved per hand number (see
+  // CHandHistoryWriter), so it flips within one heartbeat of a table switch and is stable mid-hand.
+  // Follow it directly (+ the live 4-card read) rather than carrying our own _isomaha latch -- the old
+  // "_isomaha ||" kept the PREVIOUS table's Omaha state alive into the next felt's decision, which is
+  // exactly why PLO<->NLH "wasn't switching quick enough" when tabbing tables fast.
+  if (four_known || g_table_is_omaha) {
     if (!_isomaha) {
       write_log(Preferences()->debug_symbolengine(),
         "[CSymbolEngineIsOmaha] Omaha (four_known=%d sticky=%d)\n", (int)four_known, (int)g_table_is_omaha);

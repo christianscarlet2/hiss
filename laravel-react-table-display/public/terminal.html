@@ -4,42 +4,67 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Hiss Terminal</title>
-    <link rel="stylesheet" href="/terminal/assets/terminal.css?v=2" />
+    <link rel="stylesheet" href="/terminal/assets/terminal.css?v=4" />
   </head>
   <body>
     <div id="app">
       <header class="topbar">
         <span class="brand">HISS&nbsp;TERMINAL</span>
+        <nav class="tabs" id="tabs">
+          <button type="button" class="tab active" data-tab="terminal">Terminal</button>
+          <button type="button" class="tab" data-tab="ail">AIL</button>
+          <button type="button" class="tab" data-tab="hiss"><span class="snake">&#128013;</span>&nbsp;Hiss</button>
+        </nav>
         <span class="status" id="status">connecting&hellip;</span>
       </header>
-      <main class="grid">
-        <section class="pane" data-pane="0">
-          <div class="pane-label">Context</div>
-          <pre class="pane-body" id="pane-0"></pre>
-        </section>
-        <section class="pane" data-pane="1">
-          <div class="pane-label">State</div>
-          <pre class="pane-body" id="pane-1"></pre>
-        </section>
-        <section class="pane" data-pane="2">
-          <div class="pane-label">Decisions</div>
-          <pre class="pane-body" id="pane-2"></pre>
-        </section>
-        <section class="pane" data-pane="3">
-          <div class="pane-label">Chat</div>
-          <pre class="pane-body" id="pane-3"></pre>
-        </section>
-      </main>
-      <div class="steer-bar">
-        <button type="button" id="hijack-btn" class="steer-btn hijack" title="Send the current state, context, chat and decisions to OpenAI for a recommendation">&#9889; Hijack &rarr; OpenAI</button>
-        <button type="button" id="stop-btn" class="steer-btn" title="Pause the autoplayer (/stop)">&#9632; Stop</button>
-        <button type="button" id="play-btn" class="steer-btn" title="Resume (/play)">&#9654; Play</button>
+
+      <!-- ============ TERMINAL TAB ============ -->
+      <div class="tabview active" id="tab-terminal">
+        <main class="grid">
+          <section class="pane" data-pane="0">
+            <div class="pane-label">Context</div>
+            <pre class="pane-body" id="pane-0"></pre>
+          </section>
+          <section class="pane" data-pane="1">
+            <div class="pane-label">State</div>
+            <pre class="pane-body" id="pane-1"></pre>
+          </section>
+          <section class="pane" data-pane="2">
+            <div class="pane-label">Decisions</div>
+            <pre class="pane-body" id="pane-2"></pre>
+          </section>
+          <section class="pane" data-pane="3">
+            <div class="pane-label">Chat</div>
+            <pre class="pane-body" id="pane-3"></pre>
+          </section>
+        </main>
+        <div class="steer-bar">
+          <button type="button" id="hijack-btn" class="steer-btn hijack" title="Send the current state, context, chat and decisions to OpenAI for a recommendation">&#9889; Hijack &rarr; OpenAI</button>
+          <button type="button" id="stop-btn" class="steer-btn" title="Pause the autoplayer (/stop)">&#9632; Stop</button>
+          <button type="button" id="play-btn" class="steer-btn" title="Resume (/play)">&#9654; Play</button>
+        </div>
+        <form class="prompt" id="prompt-form" autocomplete="off">
+          <span class="prompt-sign">&gt;</span>
+          <input type="text" id="prompt-input" placeholder="type a command (/hijack /stop /play /strategy /goto /improve) and press Enter&hellip;" spellcheck="false" />
+        </form>
       </div>
-      <form class="prompt" id="prompt-form" autocomplete="off">
-        <span class="prompt-sign">&gt;</span>
-        <input type="text" id="prompt-input" placeholder="type a command (/hijack /stop /play /strategy /goto /improve) and press Enter&hellip;" spellcheck="false" />
-      </form>
+
+      <!-- ============ AIL TAB ============ -->
+      <div class="tabview" id="tab-ail" hidden>
+        <div class="ail-switches" id="ail-switches">
+          <div class="ail-empty">connecting to the AIL control server&hellip;</div>
+        </div>
+        <div class="ail-term">
+          <div class="pane-label">AIL feedback <span class="ail-conn" id="ail-conn"></span></div>
+          <pre class="pane-body ail-body" id="ail-body"></pre>
+        </div>
+      </div>
+
+      <!-- ============ HISS TAB (React Table View) ============ -->
+      <div class="tabview" id="tab-hiss" hidden>
+        <iframe id="hiss-frame" class="hiss-frame" title="Hiss React Table View"></iframe>
+      </div>
     </div>
-    <script src="/terminal/assets/terminal.js?v=2"></script>
+    <script src="/terminal/assets/terminal.js?v=4"></script>
   </body>
 </html>

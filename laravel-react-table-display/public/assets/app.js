@@ -449,6 +449,21 @@ function App() {
     setSuperOn(!superOn);   // optimistic; the poll below reconciles
   };
 
+  // Lobby recon (icm-chip-value skill): navigate to this instance's tournament lobby, read the
+  // structure, return to the felt. Runs via the AIL control server (mcp/ail_server.py :7900) so no
+  // Hiss rebuild is needed; it kicks off lobby_fetch.sh for THIS page's Hiss port.
+  var lobbyPair = useState('');   // '' idle | 'go' fetching
+  var lobbyState = lobbyPair[0];
+  var setLobbyState = lobbyPair[1];
+  var doLobby = function () {
+    if (lobbyState === 'go') return;
+    setLobbyState('go');
+    var port = window.location.port || '27654';
+    fetch(window.location.protocol + '//' + window.location.hostname + ':7900/lobby-fetch?port=' + port)
+      .catch(function () {})
+      .then(function () { setTimeout(function () { setLobbyState(''); }, 26000); });
+  };
+
   // Reflect the NN-driver engaged state (engaging it disengages the autoplayer, server-side).
   useEffect(function () {
     var alive = true;
@@ -584,7 +599,21 @@ function App() {
             boxShadow: on ? ('0 0 ' + Math.round(4 + 14 * fav) + 'px rgba(226,59,59,' + (0.3 + 0.6 * fav) + ')') : 'none'
           }
         }, superOn ? ('🔥 666 ●' + (live ? (' ' + pct + '%') : '')) : '🔥 666');
-      })()
+      })(),
+      e('button', {
+        onClick: doLobby,
+        title: lobbyState === 'go'
+          ? 'Lobby recon in progress — navigating to the lobby, reading the structure, returning to the felt…'
+          : 'Lobby recon: scout this table\'s tournament lobby (blinds / players left / prize pool) into the ICM model, then return to the felt',
+        style: {
+          marginLeft: '10px', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer',
+          fontWeight: 'bold', font: 'inherit',
+          border: '1px solid ' + (lobbyState === 'go' ? '#e8b84b' : '#444'),
+          background: lobbyState === 'go' ? '#352a13' : '#1c1c20',
+          color: lobbyState === 'go' ? '#f0c75e' : '#bbb',
+          boxShadow: lobbyState === 'go' ? '0 0 8px rgba(232,184,75,.55)' : 'none'
+        }
+      }, (lobbyState === 'go' ? '🔭 Lobby…' : '🔭 Lobby'))
     ),
     e('section', { className: 'table' },
       e('div', { className: 'felt' },

@@ -122,3 +122,74 @@ html, body {
 .steer-btn:hover { background: #262626; }
 .steer-btn.hijack { color: #d7a3ff; border-color: #5a3a7a; }
 .steer-btn.hijack:hover { background: #2a1f38; }
+
+/* ---- Tabbed header (Terminal | AIL) -------------------------------------- */
+.tabs { display: flex; gap: 4px; }
+.tab {
+  background: transparent; color: var(--fg-dim);
+  border: 1px solid transparent; border-bottom: none;
+  border-radius: 5px 5px 0 0; padding: 5px 16px; margin-bottom: -7px;
+  font: inherit; font-size: 12px; letter-spacing: 1px; text-transform: uppercase;
+  cursor: pointer;
+}
+.tab:hover { color: var(--fg); }
+.tab.active {
+  color: var(--accent); background: var(--bg-pane);
+  border-color: var(--border); box-shadow: 0 -1px 0 var(--accent) inset;
+}
+
+/* A tab view fills everything under the fixed header; only the active one shows. */
+.tabview { flex: 1 1 auto; display: none; flex-direction: column; min-height: 0; }
+.tabview.active { display: flex; }
+.tabview[hidden] { display: none; }
+
+/* ---- AIL tab: switch grid (top) + one big feedback terminal (fills rest) -- */
+#tab-ail { padding: 0; }
+.ail-switches {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px; padding: 10px;
+  background: var(--bg-label);
+  border-bottom: 1px solid var(--border);
+  max-height: 42vh; overflow-y: auto;
+}
+.ail-empty { color: var(--fg-dim); padding: 6px; }
+.ail-card {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: var(--bg-pane); border: 1px solid var(--border);
+  border-radius: 7px; padding: 9px 11px;
+}
+.ail-card.on { border-color: var(--accent); box-shadow: 0 0 7px rgba(61,245,122,.25); }
+.ail-icon { font-size: 20px; line-height: 1.1; flex: 0 0 auto; }
+.ail-text { flex: 1 1 auto; min-width: 0; }
+.ail-name { color: var(--fg); font-weight: bold; font-size: 13px; }
+.ail-name .run { color: var(--accent); font-size: 10px; margin-left: 6px; }
+.ail-name .stale { color: #ffae57; font-size: 10px; margin-left: 6px; }
+.ail-desc { color: var(--fg-dim); font-size: 11px; line-height: 1.35; margin-top: 2px; white-space: normal; }
+
+/* iOS-style toggle */
+.ail-toggle { flex: 0 0 auto; position: relative; width: 44px; height: 24px; cursor: pointer; }
+.ail-toggle input { display: none; }
+.ail-slider {
+  position: absolute; inset: 0; border-radius: 24px;
+  background: #1c1c20; border: 1px solid #333; transition: .15s;
+}
+.ail-slider::before {
+  content: ""; position: absolute; left: 3px; top: 2px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: #6b7d8c; transition: .15s;
+}
+.ail-toggle input:checked + .ail-slider { background: #13351f; border-color: var(--accent); }
+.ail-toggle input:checked + .ail-slider::before { transform: translateX(20px); background: var(--accent); }
+
+.ail-term { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.ail-conn { color: var(--fg-dim); font-size: 10px; text-transform: none; letter-spacing: 0; }
+.ail-conn.down { color: #ff5f5f; }
+.ail-body { background: #060a0d; }
+.ail-body .src { color: #5f9bff; }
+
+/* ---- Hiss tab (React Table View embedded) -------------------------------- */
+.tab .snake { color: #3df57a; filter: drop-shadow(0 0 3px rgba(61,245,122,.6)); }
+#tab-hiss { padding: 0; }
+.hiss-frame { flex: 1 1 auto; width: 100%; height: 100%; border: none; background: var(--bg); }

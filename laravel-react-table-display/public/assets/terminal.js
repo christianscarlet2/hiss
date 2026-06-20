@@ -206,6 +206,111 @@
     }
   });
 
+  // ---- Tabs (Terminal | AIL) -------------------------------------------------
+  var tabsEl = document.getElementById("tabs");
+  var activeTab = "terminal";
+  function showTab(name) {
+    activeTab = name;
+    var btns = tabsEl.querySelectorAll(".tab");
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle("active", btns[i].getAttribute("data-tab") === name);
+    }
+    var views = document.querySelectorAll(".tabview");
+    for (var j = 0; j < views.length; j++) {
+      var on = views[j].id === "tab-" + name;
+      views[j].classList.toggle("active", on);
+      if (on) views[j].removeAttribute("hidden"); else views[j].setAttribute("hidden", "");
+    }
+    if (name === "ail") { ailListPoll(); ailOutputPoll(); }
+    if (name === "hiss") {
+      var f = document.getElementById("hiss-frame");   // lazy-load the React table view on first view
+      if (f && !f.src) f.src = "/table-display";
+    }
+  }
+  if (tabsEl) tabsEl.addEventListener("click", function (e) {
+    var b = e.target && e.target.closest ? e.target.closest(".tab") : null;
+    if (b) showTab(b.getAttribute("data-tab"));
+  });
+
+  // ---- AIL control server (cross-origin to :7900 on the same host) -----------
+  var AIL_BASE = location.protocol + "//" + location.hostname + ":7900";
+  var ailConn = document.getElementById("ail-conn");
+  var ailSwitches = document.getElementById("ail-switches");
+  var ailBody = document.getElementById("ail-body");
+  var ailCursor = 0;
+  var ailLines = [];
+  var togglingUntil = {};   // name -> ts: keep the optimistic switch state briefly after a click
+
+  function setAilConn(ok) {
+    if (!ailConn) return;
+    ailConn.textContent = ok ? "(ail server live)" : "(ail server unreachable on :7900)";
+    ailConn.className = "ail-conn" + (ok ? "" : " down");
+  }
+
+  function renderAilList(ails) {
+    var now = Date.now();
+    var html = "";
+    for (var i = 0; i < ails.length; i++) {
+      var a = ails[i];
+      var checked = a.enabled;
+      if (togglingUntil[a.name] && now < togglingUntil[a.name]) checked = togglingUntil[a.name + "_on"];
+      var run = a.enabled
+        ? (a.running ? '<span class="run">running</span>' : '<span class="stale">starting&hellip;</span>')
+        : "";
+      html += '<div class="ail-card' + (checked ? " on" : "") + '">'
+        + '<div class="ail-icon">' + (a.icon || "&bull;") + "</div>"
+        + '<div class="ail-text"><div class="ail-name">' + escapeHtml(a.label) + run + "</div>"
+        + '<div class="ail-desc">' + escapeHtml(a.desc || "") + "</div></div>"
+        + '<label class="ail-toggle"><input type="checkbox" data-ail="' + escapeHtml(a.name) + '"'
+        + (checked ? " checked" : "") + '><span class="ail-slider"></span></label>'
+        + "</div>";
+    }
+    ailSwitches.innerHTML = html || '<div class="ail-empty">no AILs registered</div>';
+  }
+
+  function ailListPoll() {
+    fetch(AIL_BASE + "/ail/list", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { setAilConn(true); renderAilList(d.ails || []); })
+      .catch(function () { setAilConn(false); });
+  }
+
+  if (ailSwitches) ailSwitches.addEventListener("change", function (e) {
+    var cb = e.target;
+    if (!cb || !cb.hasAttribute || !cb.hasAttribute("data-ail")) return;
+    var name = cb.getAttribute("data-ail");
+    var on = cb.checked;
+    togglingUntil[name] = Date.now() + 4000; togglingUntil[name + "_on"] = on;
+    fetch(AIL_BASE + "/ail/toggle?name=" + encodeURIComponent(name) + "&on=" + (on ? 1 : 0), { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function () { setTimeout(ailListPoll, 600); })
+      .catch(function () { setAilConn(false); });
+  });
+
+  function ailOutputPoll() {
+    fetch(AIL_BASE + "/ail/output?since=" + ailCursor, { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        setAilConn(true);
+        var lines = d.lines || [];
+        if (lines.length) {
+          var stick = atBottom(ailBody);
+          for (var i = 0; i < lines.length; i++) {
+            ailLines.push('<span class="src">[' + escapeHtml(lines[i].name) + "]</span> " + ansiToHtml(lines[i].text));
+          }
+          if (ailLines.length > 600) ailLines = ailLines.slice(ailLines.length - 600);
+          ailBody.innerHTML = ailLines.join("\n");
+          if (stick) ailBody.scrollTop = ailBody.scrollHeight;
+        }
+        if (typeof d.cursor === "number") ailCursor = d.cursor;
+      })
+      .catch(function () { setAilConn(false); });
+  }
+
+  // AIL timers tick only while the AIL tab is visible.
+  setInterval(function () { if (activeTab === "ail") ailListPoll(); }, 2000);
+  setInterval(function () { if (activeTab === "ail") ailOutputPoll(); }, 800);
+
   poll();
   setInterval(poll, 600);
 })();
