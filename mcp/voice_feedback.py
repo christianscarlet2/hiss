@@ -208,7 +208,13 @@ def main():
                     audio = np.concatenate(voiced).astype(np.float32)
                     voiced = []
                     try:
-                        segs, _ = model.transcribe(audio, language="en", beam_size=1)
+                        # vad_filter (Silero) drops non-speech so whisper stops hallucinating on
+                        # music/silence; condition_on_previous_text=False kills the "Okay. Okay.
+                        # Okay." repetition loops that flooded the feedback queue. (AIL 2026-06-20)
+                        segs, _ = model.transcribe(audio, language="en", beam_size=1,
+                                                   vad_filter=True,
+                                                   condition_on_previous_text=False,
+                                                   no_speech_threshold=0.6)
                         text = " ".join(s.text for s in segs).strip()
                     except Exception as e:
                         print("[voice] transcribe error:", e, flush=True)
