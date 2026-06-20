@@ -1278,6 +1278,16 @@ void CScraper::ScrapePlayerCards(int chair) {
 		bool cardback_region_exists = EvaluateRegion(cb_region, &cb_res);
 		bool cardback_true = cardback_region_exists
 			&& ((cb_res == "cardback") || (cb_res == "true"));
+		// A player showing a cardback is necessarily seated. The p{N}seated colour-point can be
+		// OCCLUDED by the cardbacks themselves -- e.g. the observer-hero bottom seat, whose seated
+		// anchor sits inside the 4-card Omaha cardback row -- so seated mis-reads FALSE exactly when
+		// the player is in a hand, which then suppresses this very cardback-draw rule (and the seat's
+		// cards read empty). Trust the cardback as proof of a seat. A cardback is only detected on a
+		// real red card-back (colour-match), never on empty felt, so this cannot false-seat an empty
+		// chair.
+		if (cardback_true && !p_table_state->Player(chair)->seated()) {
+			p_table_state->Player(chair)->set_seated(true);
+		}
 		write_log(Preferences()->debug_scraper(),
 			"[CScraper] cardback-rule chair %d: seated=%s p%dcardback exists=%s result='%s' -> %s\n",
 			chair, Bool2CString(p_table_state->Player(chair)->seated()), chair,
