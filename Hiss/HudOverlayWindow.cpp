@@ -39,6 +39,11 @@ static const COLORREF kHudText      = RGB(235, 235, 235);
 static const COLORREF kHudName      = RGB(120, 200, 255);
 static const COLORREF kHudBalance   = RGB(60, 255, 90);   // bright green: player balance/stack
 
+// HUD overlay opacity (layered-window global alpha, 0..255). Kept FAINT by default so the HUD never
+// obscures the table; holding CTRL makes it SOLID for reading. [Emrald request]
+static const BYTE kHudAlphaFaint = 90;    // ~35% opaque -- table shows clearly through the boxes
+static const BYTE kHudAlphaSolid = 235;   // ~92% opaque -- crisp for reading while CTRL is held
+
 static const int kHudBoxWidth = 210;   // wide enough for two |-separated stat lines
 static const int kHudLineH    = 13;
 static const int kHudCols     = 3;    // stats drawn in a |-separated grid: 3 columns
@@ -99,9 +104,9 @@ BOOL CHudOverlayWindow::Create(CWnd *owner) {
 
 int CHudOverlayWindow::OnCreate(LPCREATESTRUCT lpCreateStruct) {
 	if (CWnd::OnCreate(lpCreateStruct) == -1) return -1;
-	// Colour-key for the transparent (click-through) background, PLUS a global alpha so the
-	// painted boxes are somewhat see-through (the table shows through them). ~78% opaque.
-	::SetLayeredWindowAttributes(GetSafeHwnd(), kHudColorKey, 200, LWA_COLORKEY | LWA_ALPHA);
+	// Colour-key for the transparent (click-through) background, PLUS a global alpha. Start FAINT;
+	// TrackTableWindow (200ms timer) raises it to solid while CTRL is held. [Emrald request]
+	::SetLayeredWindowAttributes(GetSafeHwnd(), kHudColorKey, kHudAlphaFaint, LWA_COLORKEY | LWA_ALPHA);
 	return 0;
 }
 
@@ -142,6 +147,14 @@ void CHudOverlayWindow::TrackTableWindow() {
 	UINT flags = SWP_NOACTIVATE;
 	if (!IsWindowVisible()) flags |= SWP_SHOWWINDOW;
 	SetWindowPos(&wndTopMost, tl.x, tl.y, w, h, flags);
+	// HUD opacity: faint by default, solid while CTRL is held (so it never obscures the table unless
+	// Emrald wants to read it). Only re-applies when the level actually changes. [Emrald request]
+	static BYTE s_hud_alpha = 0;
+	BYTE want_alpha = (::GetAsyncKeyState(VK_CONTROL) & 0x8000) ? kHudAlphaSolid : kHudAlphaFaint;
+	if (want_alpha != s_hud_alpha) {
+		::SetLayeredWindowAttributes(GetSafeHwnd(), kHudColorKey, want_alpha, LWA_COLORKEY | LWA_ALPHA);
+		s_hud_alpha = want_alpha;
+	}
 	Invalidate(FALSE);
 }
 
