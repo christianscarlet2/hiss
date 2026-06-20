@@ -112,58 +112,55 @@ void CHandHistoryWriter::UpdateOnHeartbeat() {
     // PLO hand, preflop read only 2 of the 4 cards, and PLO/PLO8 NEVER raised (premium hands folded as
     // 2-card junk). [Emrald: "I dont see PLO or PLO8 raising at all".]  NLH tables never show 4 cards ->
     // never cached -> still driven by the live read below (which correctly reads their NLH name).
-    static std::set<std::string> s_omaha_tables;
-    // Key the cache on the stable TABLE NAME (lowercased, spaces stripped), NOT the full identity: the
-    // tourney_id OCR is noisy ("Holdem35299" vs "Holdem135299" across hands), which produced a different
-    // key every hand and defeated the cache (it seeded postflop under one key, missed next hand under
-    // another). The table name is stable. [Emrald]
-    CString keycs = (_table_name.IsEmpty() ? g_table_identity : _table_name);
-    keycs.MakeLower(); keycs.Remove(' ');
-    std::string ident = (LPCSTR)CStringA(keycs);
+    // Game-type from the table/tourney TEXT, with the hero card COUNT as a secondary signal. A CLEAR
+    // No-Limit / Hold'em name is AUTHORITATIVE -- it beats a "4 hole cards" read, because the Omaha
+    // (4-card) map briefly loaded on a NLH table (a NLH cash game beside a PLO tourney) scrapes 2 PHANTOM
+    // extra cards. (Removed the old sticky per-table Omaha cache: ONE phantom 4-card read latched a NLH
+    // table as Omaha forever -> "SimpsonNoLimit" stuck as PLO with no decisions. The name separates the
+    // tables cleanly. [Emrald])
     bool hero_four = (p_tablemap != NULL && p_tablemap->SupportsOmaha() && p_table_state != NULL
         && p_table_state->User()->hole_cards(2)->IsKnownCard()
         && p_table_state->User()->hole_cards(3)->IsKnownCard());
-    if (hero_four && !ident.empty()) s_omaha_tables.insert(ident);
-
-    // ONE unified signal string: live c0 OCR + the cached scraped fields + posted gametype. ANY of
-    // omaha/plo/hi-lo/8-or-better => Omaha (note "plo" -- the old fallback omitted it, so a "PennyHoot
-    // PLO Table" whose only readable field was the name was wrongly read Hold'em). An explicit
-    // hold/no-limit/nlh with NO Omaha marker => Hold'em.
-    bool positive_omaha = (!ident.empty() && s_omaha_tables.count(ident) > 0) || hero_four;
-    bool explicit_holdem = false;
-    if (!positive_omaha) {
-      CString live_name, live_title, live_id;
-      if (p_scraper != NULL) {
-        p_scraper->EvaluateRegion("c0table_name", &live_name);
-        p_scraper->EvaluateRegion("c0tourney_title", &live_title);
-        p_scraper->EvaluateRegion("c0tourney_id", &live_id);
-      }
-      CString live = live_name + " " + live_title + " " + live_id + " "
-                   + _table_name + " " + _tourney_title + " " + _tourney_id + " " + g_tgi_gametype;
-      live.MakeLower();
-      bool m_omaha = (live.Find("omaha") >= 0 || live.Find("plo") >= 0 || live.Find("hi-lo") >= 0
-                      || live.Find("hi/lo") >= 0 || live.Find("8 or better") >= 0 || live.Find("8orb") >= 0);
-      bool m_holdem = (!m_omaha && (live.Find("hold") >= 0 || live.Find("no limit") >= 0
-                      || live.Find("nolimit") >= 0 || live.Find("no-limit") >= 0 || live.Find("nlh") >= 0));
-      if (m_omaha) positive_omaha = true;
-      else if (m_holdem) explicit_holdem = true;
+    CString live_name, live_title, live_id;
+    if (p_scraper != NULL) {
+      p_scraper->EvaluateRegion("c0table_name", &live_name);
+      p_scraper->EvaluateRegion("c0tourney_title", &live_title);
+      p_scraper->EvaluateRegion("c0tourney_id", &live_id);
     }
-    // TIME-LATCH over the intermittent identity OCR: it returns the table name some heartbeats and
-    // empty/noise others, and is NOT yet scraped at hand-start -- which made g_table_is_omaha flicker
-    // FALSE at the preflop decision, so preflop ran the Hold'em tree and PLO/PLO8 NEVER raised. Hold a
-    // positive Omaha read for ~30s so empty/noisy heartbeats (incl. the hand-start gap) can't drop it; an
-    // EXPLICIT Hold'em/NLH name reverts immediately (clean PLO/PLO8 <-> NLH switch). [Emrald: "I dont see
-    // PLO or PLO8 raising at all", "detect PLO/PLO8 properly during switch".]
-    static DWORD s_last_omaha_tick = 0;
+    CString live = live_name + " " + live_title + " " + live_id + " "
+                 + _table_name + " " + _tourney_title + " " + _tourney_id + " " + g_tgi_gametype;
+    live.MakeLower();
+    bool m_omaha = (live.Find("omaha") >= 0 || live.Find("plo") >= 0 || live.Find("hi-lo") >= 0
+                    || live.Find("hi/lo") >= 0 || live.Find("8 or better") >= 0 || live.Find("8orb") >= 0);
+    bool m_holdem = (!m_omaha && (live.Find("hold") >= 0 || live.Find("no limit") >= 0
+                    || live.Find("nolimit") >= 0 || live.Find("no-limit") >= 0 || live.Find("nlh") >= 0));
+    bool positive_omaha = false, explicit_holdem = false;
+    if (m_holdem) {
+      explicit_holdem = true;       // CLEAR No-Limit/Hold'em name wins (beats a phantom 4-card read)
+    } else if (m_omaha || hero_four) {
+      positive_omaha = true;        // omaha/plo/hi-lo name, or 4 hole cards actually visible
+    }
+    // The intermittent identity OCR returns the table name some heartbeats and empty/noise others. Use a
+    // SHORT keep-previous bridge (not a long sticky latch): a positive Omaha read or an explicit
+    // Hold'em/NLH read updates g_table_is_omaha immediately; an empty/ambiguous heartbeat keeps the
+    // PREVIOUS value only briefly so the value doesn't flicker mid-hand. A short window means switching to
+    // a NLH table (running alongside PLO) flips to Hold'em as soon as its name is read -- NOT held Omaha
+    // for 30s, which froze the NLH table. [Emrald: "NLH detected as PLO, no decisions"]
+    static DWORD s_last_signal_tick = 0;
     if (positive_omaha) {
       g_table_is_omaha = true;
-      s_last_omaha_tick = GetTickCount();
+      s_last_signal_tick = GetTickCount();
     } else if (explicit_holdem) {
       g_table_is_omaha = false;
-      s_last_omaha_tick = 0;
-    } else {
-      g_table_is_omaha = (s_last_omaha_tick != 0 && (GetTickCount() - s_last_omaha_tick) < 30000);
+      s_last_signal_tick = GetTickCount();
+    } else if (s_last_signal_tick == 0 || (GetTickCount() - s_last_signal_tick) >= 6000) {
+      // No clear read for >6s -> stop trusting the stale value; fall back to the scraped fields directly.
+      CString gt = _table_name + " " + _tourney_title + " " + _tourney_id + " " + g_tgi_gametype;
+      gt.MakeLower();
+      g_table_is_omaha = (gt.Find("omaha") >= 0 || gt.Find("plo") >= 0 || gt.Find("hi-lo") >= 0
+                          || gt.Find("hi/lo") >= 0 || gt.Find("8 or better") >= 0 || gt.Find("8orb") >= 0);
     }
+    // else: keep the previous g_table_is_omaha for up to 6s (bridge an intermittent empty scrape).
   }
   if (!_meta_captured) {
     // Wait until at least two players are dealt (blinds posted) before we

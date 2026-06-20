@@ -84,6 +84,22 @@ void CTwoSuccessiveClicks::LoadForCurrentTablemap() {
   CString en1s  = p_tablemap_db->GetSettingString(kKeyEn1,   field);
   CString en2s  = p_tablemap_db->GetSettingString(kKeyEn2,   field);
   CString delay = p_tablemap_db->GetSettingString(kKeyDelay, field);
+  // INHERIT from the BASE map when a variant has no two-clicks config of its own. The config lives in
+  // settings keyed by tablemap NAME, so it does NOT copy when a tablemap is duplicated (e.g.
+  // "android_9max" -> "android_9max_omaha"): the regions copy but the betting boxes stayed disabled, so
+  // PLO/PLO8 could fold/check/call but never BET/RAISE. A variant ("<base>_omaha") with no config now
+  // inherits the base map's BetOptions/RaiseOptions/delay automatically. Only fires when the variant has
+  // NONE of its own (an explicit edit in Vision still wins). [Emrald: "those symbols should be copied
+  // when the tablemap is copied along with the delay"]
+  if (text1.IsEmpty() && text2.IsEmpty() && en1s.IsEmpty() && en2s.IsEmpty()
+      && field.GetLength() > 6 && field.Right(6) == "_omaha") {
+    CString base = field.Left(field.GetLength() - 6);
+    text1 = p_tablemap_db->GetSettingString(kKeyText1, base);
+    text2 = p_tablemap_db->GetSettingString(kKeyText2, base);
+    en1s  = p_tablemap_db->GetSettingString(kKeyEn1,   base);
+    en2s  = p_tablemap_db->GetSettingString(kKeyEn2,   base);
+    if (delay.IsEmpty()) delay = p_tablemap_db->GetSettingString(kKeyDelay, base);
+  }
   // Default enable to ON when there is saved text but the enable flag was never
   // stored (back-compat with the original single-text version).
   bool en1 = en1s.IsEmpty() ? !text1.IsEmpty() : (en1s == "1");
