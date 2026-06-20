@@ -56,7 +56,11 @@ def _get(path):
         return {}
 
 # ---- curated signal symbols the synapse map reads every tick --------------------------------
-SYMBOLS = ["betround", "nplayersdealt", "nplayersplaying", "prwin", "nouts", "PotSize",
+# NOTE: deliberately EXCLUDES prwin -- its Monte-Carlo evaluation runs synchronously on the HTTP
+# thread in /api/symbols (no heartbeat lock), which is slow and can race the engine -> a heavy query
+# coincided with a 0xc0000005 crash (2026-06-19). Keep this set cheap/fast to minimise the race
+# window until /api/symbols serves a cached symbol snapshot instead of evaluating live.
+SYMBOLS = ["betround", "nplayersdealt", "nplayersplaying", "nouts", "PotSize",
            "AmountToCall", "StackSize", "bblind", "sblind", "f$InPositionPost", "f$HeadsUpPot",
            "f$WasPreflopRaiser", "f$HaveStrongMade", "f$HaveOnePair", "f$HaveBigDraw",
            "f$Opp_IsStation", "f$Opp_IsAggro", "sb_beastfavor", "f$fold", "f$call", "f$raise",
@@ -80,10 +84,15 @@ def gather():
     autoplayer = _get("/api/autoplayer")
     beast = _get("/api/beast")
     hero = ""
+    hero_balance = None
     uc = ts.get("userchair", -1)
     for p in (ts.get("players") or []):
         if p.get("chair") == uc:
             hero = " ".join(c for c in (p.get("cards") or []) if c and c != "BACK")
+            try:
+                hero_balance = float(p.get("balance"))
+            except Exception:
+                hero_balance = None
     voice_pending, hud_rows = 0, []
     try:
         import psycopg2
@@ -101,7 +110,32 @@ def gather():
     return {"ts": ts, "syms": syms, "nn": nn, "ultra": ultra, "superstition": superstition,
             "autoplayer": autoplayer, "beast": beast, "hero": hero, "board":
             " ".join(c for c in (ts.get("commonCards") or []) if c),
+            "handnumber": str(ts.get("handnumber") or ""), "hero_balance": hero_balance,
             "voice_pending": voice_pending, "hud": hud_rows}
+
+
+# ---- per-hand result tracker: net = hero stack at start of next hand - start of this hand ----
+# hiss_log_hands is win-biased (the ACR writer only logs hands the hero stayed in), so we derive
+# EVERY hand's win/loss from the hero's between-hands stack delta. The AIL reads hand_results to
+# synthesize voice feedback on LOSING hands (ail_feedback.py).
+def record_hand_result(prev_hand, prev_start_bal, new_start_bal, ts_ms):
+    if not prev_hand or prev_start_bal is None or new_start_bal is None:
+        return None
+    net = round(new_start_bal - prev_start_bal, 2)
+    try:
+        import psycopg2
+        c = psycopg2.connect(DSN); cur = c.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS hand_results (handnumber text primary key, "
+                    "ts_ms bigint, net double precision, start_balance double precision, "
+                    "end_balance double precision)")
+        cur.execute("INSERT INTO hand_results (handnumber, ts_ms, net, start_balance, end_balance) "
+                    "VALUES (%s,%s,%s,%s,%s) ON CONFLICT (handnumber) DO UPDATE SET "
+                    "net=EXCLUDED.net, end_balance=EXCLUDED.end_balance, ts_ms=EXCLUDED.ts_ms",
+                    (prev_hand, ts_ms, net, prev_start_bal, new_start_bal))
+        c.commit(); c.close()
+    except Exception as e:
+        print("[synapse] hand_results error:", e, flush=True)
+    return net
 
 
 # ---- THE GHOST IN THE MACHINE: an inference at each node ------------------------------------
@@ -121,6 +155,8 @@ def ghost_node_inference(node_id, value, g):
         return ("committed - get it in with a strong made hand" if spr < 3
                 else ("medium SPR - one-pair pot-control" if spr < 8 else "deep - play small pots in position"))
     if node_id == "signal.prwin":
+        if s.get("prwin") is None:
+            return "equity n/a (live prwin eval disabled for stability)"
         pw = num(s.get("prwin"))
         return "prwin %.0f%% -> %s" % (pw * 100, "ahead, value" if pw > 0.6 else ("marginal" if pw > 0.4 else "behind"))
     if node_id == "signal.position":
@@ -311,9 +347,22 @@ def main():
         do_speak = "--speak" in sys.argv
         print("[synapse] ghost online -> %s | inferring every %.0fs%s" % (BOT, every, "  [voiced]" if do_speak else ""), flush=True)
         last_spoke = 0.0
+        cur_hand, cur_start_bal = "", None      # per-hand result tracking
         while True:
-            state = harmonize(gather())
+            g = gather()
+            state = harmonize(g)
             store_state(state)
+            # hand transition: bank the previous hand's net (stack delta between hand starts)
+            hn, bal = g.get("handnumber") or "", g.get("hero_balance")
+            if hn and hn != cur_hand:
+                if cur_hand and cur_start_bal is not None and bal is not None:
+                    net = record_hand_result(cur_hand, cur_start_bal, bal, state["ts_ms"])
+                    if net is not None and net < 0:
+                        msg = "you LOST %.2f on hand %s" % (-net, cur_hand)
+                        print("[synapse] *** %s ***" % msg, flush=True)
+                        if do_speak and time.time() - last_spoke > 15:
+                            speak("The ghost notes: " + msg); last_spoke = time.time()
+                cur_hand, cur_start_bal = hn, bal
             head = next((n["ghost"] for n in state["nodes"] if n["id"] == "output.action"), "")
             print("[synapse] r%d %s | %s" % (state["betround"], state["hero"] or "-", head), flush=True)
             if do_speak and head and head != "no decision at this instant" and time.time() - last_spoke > 20:
