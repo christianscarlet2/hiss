@@ -125,35 +125,44 @@ void CHandHistoryWriter::UpdateOnHeartbeat() {
         && p_table_state->User()->hole_cards(3)->IsKnownCard());
     if (hero_four && !ident.empty()) s_omaha_tables.insert(ident);
 
-    if (!ident.empty() && s_omaha_tables.count(ident) > 0) {
-      g_table_is_omaha = true;   // confirmed-Omaha table -> sticky; ignore the unreliable live name
-    } else {
-      // READ THE GAME TYPE LIVE (until a table is confirmed Omaha above): scrape the table-info OCR
-      // (c0table_name / c0tourney_title / c0tourney_id). "omaha"/"plo"/hi-lo are the Omaha markers; we
-      // only flip to Hold'em on a clear "hold"/"no limit". Falls back to the posted g_tgi gametype +
-      // scraped fields when the live OCR is ambiguous.
+    // ONE unified signal string: live c0 OCR + the cached scraped fields + posted gametype. ANY of
+    // omaha/plo/hi-lo/8-or-better => Omaha (note "plo" -- the old fallback omitted it, so a "PennyHoot
+    // PLO Table" whose only readable field was the name was wrongly read Hold'em). An explicit
+    // hold/no-limit/nlh with NO Omaha marker => Hold'em.
+    bool positive_omaha = (!ident.empty() && s_omaha_tables.count(ident) > 0) || hero_four;
+    bool explicit_holdem = false;
+    if (!positive_omaha) {
       CString live_name, live_title, live_id;
       if (p_scraper != NULL) {
         p_scraper->EvaluateRegion("c0table_name", &live_name);
         p_scraper->EvaluateRegion("c0tourney_title", &live_title);
         p_scraper->EvaluateRegion("c0tourney_id", &live_id);
       }
-      CString live = live_name + " " + live_title + " " + live_id;
+      CString live = live_name + " " + live_title + " " + live_id + " "
+                   + _table_name + " " + _tourney_title + " " + _tourney_id + " " + g_tgi_gametype;
       live.MakeLower();
-      bool live_omaha = (live.Find("omaha") >= 0 || live.Find("plo") >= 0 || live.Find("hi-lo") >= 0
-                         || live.Find("hi/lo") >= 0 || live.Find("8 or better") >= 0 || live.Find("8orb") >= 0);
-      bool live_holdem = (!live_omaha && (live.Find("hold") >= 0 || live.Find("no limit") >= 0
-                         || live.Find("nolimit") >= 0 || live.Find("no-limit") >= 0));
-      if (live_omaha) {
-        g_table_is_omaha = true;
-      } else if (live_holdem) {
-        g_table_is_omaha = false;
-      } else {
-        CString gt = _table_name + " " + _tourney_title + " " + _tourney_id + " " + g_tgi_gametype;
-        gt.MakeLower();
-        g_table_is_omaha = (gt.Find("omaha") >= 0 || gt.Find("hi-lo") >= 0 || gt.Find("hi/lo") >= 0
-                            || gt.Find("8 or better") >= 0 || gt.Find("8orb") >= 0);
-      }
+      bool m_omaha = (live.Find("omaha") >= 0 || live.Find("plo") >= 0 || live.Find("hi-lo") >= 0
+                      || live.Find("hi/lo") >= 0 || live.Find("8 or better") >= 0 || live.Find("8orb") >= 0);
+      bool m_holdem = (!m_omaha && (live.Find("hold") >= 0 || live.Find("no limit") >= 0
+                      || live.Find("nolimit") >= 0 || live.Find("no-limit") >= 0 || live.Find("nlh") >= 0));
+      if (m_omaha) positive_omaha = true;
+      else if (m_holdem) explicit_holdem = true;
+    }
+    // TIME-LATCH over the intermittent identity OCR: it returns the table name some heartbeats and
+    // empty/noise others, and is NOT yet scraped at hand-start -- which made g_table_is_omaha flicker
+    // FALSE at the preflop decision, so preflop ran the Hold'em tree and PLO/PLO8 NEVER raised. Hold a
+    // positive Omaha read for ~30s so empty/noisy heartbeats (incl. the hand-start gap) can't drop it; an
+    // EXPLICIT Hold'em/NLH name reverts immediately (clean PLO/PLO8 <-> NLH switch). [Emrald: "I dont see
+    // PLO or PLO8 raising at all", "detect PLO/PLO8 properly during switch".]
+    static DWORD s_last_omaha_tick = 0;
+    if (positive_omaha) {
+      g_table_is_omaha = true;
+      s_last_omaha_tick = GetTickCount();
+    } else if (explicit_holdem) {
+      g_table_is_omaha = false;
+      s_last_omaha_tick = 0;
+    } else {
+      g_table_is_omaha = (s_last_omaha_tick != 0 && (GetTickCount() - s_last_omaha_tick) < 30000);
     }
   }
   if (!_meta_captured) {

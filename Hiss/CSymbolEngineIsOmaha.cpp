@@ -119,14 +119,15 @@ bool CSymbolEngineIsOmaha::TitleLooksLikeHiLo() {
 }
 
 void CSymbolEngineIsOmaha::UpdateOnHandreset() {
-  // Re-detect the game-type EACH HAND so the OHF strategy dispatch (Hold'em / PLO / PLO8 trees) keeps
-  // up as Emrald rotates between games (and busts/rejoins different tables). A per-session latch kept
-  // using a prior table's Omaha/PLO8 strategy on the next table (e.g. stayed PLO8 after busting PLO8
-  // and sitting at a PLO table). isomaha/isplo8 still latch ON *within* the hand (re-set below once the
-  // cards + game-info confirm), so a flickered mid-hand scrape can't flip the tree. Card SCRAPING is
-  // unaffected -- that follows the tablemap's SupportsOmaha(), not these symbols.
-  _isomaha = false;
-  _isplo8 = false;
+  // CARRY the latched table-level Omaha signal across the hand reset. The autoplayer can evaluate
+  // f$preflop on the hand-reset cycle BEFORE UpdateOnHeartbeat re-detects isomaha, so resetting to
+  // false here made the PREFLOP decision run the Hold'em tree on PLO/PLO8 (the symbol read 1 between
+  // hands but 0 at the decision -> PLO/PLO8 never raised). g_table_is_omaha is the time-latched
+  // table-type (CHandHistoryWriter), stable across hands and reverted only on an explicit NLH name, so
+  // seeding isomaha from it makes the preflop dispatch correct from the first heartbeat. [Emrald: "I
+  // dont see PLO or PLO8 raising at all".]
+  _isomaha = g_table_is_omaha;
+  _isplo8 = false;   // hi/lo (PLO8) re-detected each hand via TitleLooksLikeHiLo / game-info
 }
 
 void CSymbolEngineIsOmaha::UpdateOnNewRound()
