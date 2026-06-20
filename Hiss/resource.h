@@ -58,6 +58,8 @@
 #define IDD_SAPREFS23                   190
 #define IDD_SAPREFS24                   191
 #define IDD_SAPREFS25                   192
+#define IDD_SAPREFS26                   194
+#define IDC_AUDIO_MIC                   1455
 #define IDC_OCR_MODEL0                  1427
 #define IDC_OCR_BROWSE0                 1428
 #define IDC_OCR_MODEL1                  1429
@@ -595,9 +597,9 @@
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        194
+#define _APS_NEXT_RESOURCE_VALUE        195
 #define _APS_NEXT_COMMAND_VALUE         33001
-#define _APS_NEXT_CONTROL_VALUE         1453
+#define _APS_NEXT_CONTROL_VALUE         1456
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

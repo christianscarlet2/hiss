@@ -122,15 +122,36 @@ def store(conn, ts_ms, text, ctx, cat, sent):
     conn.commit()
 
 
+def _setting_mic_device():
+    """The mic chosen in Hiss Preferences > Audio (postgres settings:
+    key='audio', value->>'mic_device'). Empty / missing => use the system default.
+    Set from CDlgSAPrefs26; lets the AIL voice loop honor the GUI picker with no
+    --device flag."""
+    try:
+        import psycopg2
+        c = psycopg2.connect(DSN)
+        cur = c.cursor()
+        cur.execute("SELECT value->>'mic_device' FROM settings WHERE key='audio'")
+        row = cur.fetchone()
+        c.close()
+        if row and row[0]:
+            return row[0].strip()
+    except Exception:
+        pass
+    return None
+
+
 def pick_device():
     import sounddevice as sd
-    if DEVICE_ARG is None:
+    # Command-line --device wins; otherwise fall back to the Preferences > Audio mic.
+    want = DEVICE_ARG if DEVICE_ARG is not None else _setting_mic_device()
+    if not want:
         return None  # default input
     try:
-        return int(DEVICE_ARG)
+        return int(want)
     except ValueError:
         for i, d in enumerate(sd.query_devices()):
-            if d["max_input_channels"] > 0 and DEVICE_ARG.lower() in d["name"].lower():
+            if d["max_input_channels"] > 0 and want.lower() in d["name"].lower():
                 return i
     return None
 

@@ -974,6 +974,15 @@ BEGIN
     LTEXT           "Selected numeric fields are OCR'd as two halves around the decimal point and recombined. Applies to all three apps.",IDC_STATIC,4,184,228,24
 END
 
+IDD_SAPREFS26 DIALOGEX 0, 0, 237, 213
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_SYSMENU
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "Microphone (for voice feedback in the AIL improvement loop):",IDC_STATIC,4,10,226,8
+    COMBOBOX        IDC_AUDIO_MIC,4,22,228,120,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "The voice-feedback loop (mic -> whisper -> postgres -> AIL) records from this device. The selection is saved to the shared settings (key 'audio', field 'mic_device'); voice_feedback.py uses it when no --device is given. '(System default microphone)' uses the OS default.",IDC_STATIC,4,44,228,48
+END
+
 
 /////////////////////////////////////////////////////////////////////////////
 //

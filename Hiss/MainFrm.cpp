@@ -71,6 +71,7 @@
 #include "DialogSAPrefs23.h"
 #include "DialogSAPrefs24.h"
 #include "DialogSAPrefs25.h"
+#include "DialogSAPrefs26.h"
 #include "DialogScraperOutput.h"
 #include "inlines/eval.h"
 #include "OpenHoldem.h"
@@ -623,9 +624,11 @@ void CMainFrame::OnEditPreferences() {
 	CDlgSAPrefs23 page23;
 	CDlgSAPrefs24 page24;
 	CDlgSAPrefs25 page25;
+	CDlgSAPrefs26 page26;
 
 	// add pages
 	dlg.AddPage(page14, "Auto-Connector");
+	dlg.AddPage(page26, "Audio");
 	dlg.AddPage(page2,  "Autoplayer");
   dlg.AddPage(page9, "Auto-starter");
 	dlg.AddPage(page10, "Chat");
