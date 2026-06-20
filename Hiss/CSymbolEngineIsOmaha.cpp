@@ -90,7 +90,7 @@ bool CSymbolEngineIsOmaha::TitleLooksLikeHiLo() {
     if (live.Find("h/l") >= 0) return true;
     CString lsq = live; lsq.Remove(' '); lsq.Remove('/'); lsq.Remove('-'); lsq.Remove('_');
     if (lsq.Find("hilo") >= 0 || lsq.Find("8orbetter") >= 0 || lsq.Find("omaha8") >= 0
-        || lsq.Find("plo8") >= 0) {
+        || lsq.Find("plo8") >= 0 || lsq.Find("plos") >= 0) {   // "plos" = ACR's OCR of the PLO8 "8" as "S"
       return true;
     }
   }
@@ -112,6 +112,8 @@ bool CSymbolEngineIsOmaha::TitleLooksLikeHiLo() {
   if (squeezed.Find("8orbetter") >= 0) return true;
   if (squeezed.Find("omaha8") >= 0) return true;
   if (squeezed.Find("plo8") >= 0) return true;
+  if (squeezed.Find("plos") >= 0) return true;   // ACR OCRs the PLO8 "8" as "S" ("PLOS") [Emrald: PLO8]
+  if (squeezed.Find("omahahilo") >= 0 || squeezed.Find("omahahl") >= 0) return true;
   // Bare "o8" / "8b" tokens (kept with separators to avoid matching e.g. "o8" inside a stake string).
   if (title.Find(" o8") >= 0 || title.Find("(o8") >= 0 || title.Find("o8 ") >= 0) return true;
   if (title.Find("8/b") >= 0) return true;

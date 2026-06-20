@@ -804,6 +804,28 @@ void CAutoplayer::EmitDecisionTrace() {
 void CAutoplayer::DoAutoplayer(void) {
 	write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Starting Autoplayer cadence...\n");
 	DumpButtonDebug();
+	// Cache the FCKRA (primary) + TIOLP (secondary/hopper) clickable-button indicators each heartbeat so
+	// the React table view can mirror the main view's bottom-corner indicators (HTTP thread reads these
+	// cached strings -- never the casino interface directly). [Emrald]
+	{
+		extern char g_fckra_indicator[8]; extern char g_tiolp_indicator[8];
+		char f[8]; int fi = 0; char t[8]; int ti = 0;
+		if (p_casino_interface != NULL) {
+			if (p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_fold)->IsClickable())  f[fi++] = 'F';
+			if (p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_call)->IsClickable())  f[fi++] = 'C';
+			if (p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_check)->IsClickable()) f[fi++] = 'K';
+			if (p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_raise)->IsClickable()) f[fi++] = 'R';
+			if (p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_allin)->IsClickable()) f[fi++] = 'A';
+			if (p_casino_interface->LogicalAutoplayerButton(k_hopper_function_autopost)->IsClickable())  t[ti++] = 'T';
+			if (p_casino_interface->LogicalAutoplayerButton(k_hopper_function_sitin)->IsClickable())     t[ti++] = 'I';
+			if (p_casino_interface->LogicalAutoplayerButton(k_hopper_function_sitout)->IsClickable())    t[ti++] = 'O';
+			if (p_casino_interface->LogicalAutoplayerButton(k_hopper_function_leave)->IsClickable())     t[ti++] = 'L';
+			if (p_casino_interface->LogicalAutoplayerButton(k_standard_function_prefold)->IsClickable()) t[ti++] = 'P';
+		}
+		f[fi] = '\0'; t[ti] = '\0';
+		strcpy_s(g_fckra_indicator, sizeof(g_fckra_indicator), f);
+		strcpy_s(g_tiolp_indicator, sizeof(g_tiolp_indicator), t);
+	}
 	EmitDecisionTrace();
 	// Scarlet Beast server-scrape: there are no screen buttons to click; decide via
 	// the formulas and POST the action to poker.scarletbeast.com instead.

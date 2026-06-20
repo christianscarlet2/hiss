@@ -106,6 +106,8 @@ char g_hero_decision_text[48] = {0};        // bot's locked action for the on-ta
 volatile bool g_hero_decision_active = false;
 DWORD g_hero_decision_tick = 0;             // GetTickCount() when the action was locked (drives the 10s trail+fade)
 volatile bool g_reset_detection_request = false;  // React badge backup: wipe per-table game-type cache + identity -> re-detect
+char g_fckra_indicator[8] = {0};   // lit PRIMARY buttons among F,C,K,R,A (cached on heartbeat for the React table-view corners)
+char g_tiolp_indicator[8] = {0};   // lit SECONDARY/hopper buttons among T,I,O,L,P
 CString g_tgi_gametype = "";
 double g_tgi2_handnumber = 0.0;
 double g_tgi2_prev_handnumber = 0.0;
@@ -302,26 +304,27 @@ CString CScraper::RedirectObserverName(const CString &name) {
 // EvaluateRegion sees the correct state.
 void CScraper::RefreshObserverState() {
 	_observer_active = false;
-	if (p_tablemap->r$()->find("p3observer") == p_tablemap->r$()->end()) return;
+	// Raw scrape of the p3observer indicator, IF this tablemap has the region (some layouts don't, or it
+	// is mis-positioned -- the fallback below covers those).
 	bool raw = false;
-	CString r;
-	if (EvaluateRegion("p3observer", &r)) {
-		r.MakeLower();
-		r.Trim();
-		raw = (r == "true");
+	if (p_tablemap->r$()->find("p3observer") != p_tablemap->r$()->end()) {
+		CString r;
+		if (EvaluateRegion("p3observer", &r)) {
+			r.MakeLower();
+			r.Trim();
+			raw = (r == "true");
+		}
 	}
 	// HERO GATE (robust, OCR-independent): if the userchair engine has the hero CONFIRMED at the
 	// observer seat (3), the user is PLAYING that seat, not observing it -> force observer off. The
 	// seat-3 NAME OCR is flaky (a stale/garbled "CmanVnessaStop" reads as not-a-username), which would
 	// otherwise leave observer ON and redirect the hero's own p3 card regions to p3observer, so the
 	// hero's face-up cards read as the observed-player cardbacks (BACK). (Live: 2762864689/2762865634.)
-	{
-		CSymbolEngineUserchair *ucse = (p_engine_container != NULL) ? p_engine_container->symbol_engine_userchair() : NULL;
-		if (ucse != NULL && ucse->userchair() == 3 && ucse->userchair_confirmed()) {
-			_observer_active = false;
-			_mem_p3observer = false;
-			return;
-		}
+	CSymbolEngineUserchair *ucse = (p_engine_container != NULL) ? p_engine_container->symbol_engine_userchair() : NULL;
+	if (ucse != NULL && ucse->userchair() == 3 && ucse->userchair_confirmed()) {
+		_observer_active = false;
+		_mem_p3observer = false;
+		return;
 	}
 	// p3 observer memory + hero gate. The seat-3 name (prior frame's last-good value):
 	CString p3name = p_table_state->Player(3)->name();
@@ -338,6 +341,18 @@ void CScraper::RefreshObserverState() {
 		// seat-3 name has not changed (same non-hero player still there) -- a flickered scrape.
 		_observer_active = (_mem_p3observer && !p3name.IsEmpty() && p3name == _mem_p3observer_name);
 		_mem_p3observer = _observer_active;
+	}
+	// ROBUST FALLBACK [Emrald]: even when the p3observer REGION never fires (mis-positioned/absent on this
+	// tablemap layout -- e.g. the S10 NLH table), INFER observing from the engine state: if there is NO
+	// confirmed hero seat (we can't find our own face-up cards anywhere -> we're railing) AND seat 3 is a
+	// seated player who is NOT our configured username, we are OBSERVING. Generalizes across maps with no
+	// per-layout region calibration. userchair resets on a table switch (CSymbolEngineUserchair), so on a
+	// genuine seat it re-confirms from our own cards and this never false-fires.
+	if (!_observer_active && ucse != NULL && !ucse->userchair_confirmed()
+	    && !p3name.IsEmpty() && !IsConfiguredUsername(p3name)) {
+		_observer_active = true;
+		_mem_p3observer = true;
+		_mem_p3observer_name = p3name;
 	}
 }
 

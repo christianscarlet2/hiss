@@ -77,14 +77,56 @@ static HANDLE EnsureDriverJob() {
 }
 // Launch a new-console child assigned to the kill-on-close job. Returns its process HANDLE (NULL on
 // failure). Created suspended so it is inside the job before it runs and can spawn anything.
+// Mirror a launched daemon's stdout/stderr into the Terminal CHAT window. [Emrald: route the
+// superstition/666-omen, nn-driver and ULTRA output to the Terminal chat window.]
+extern void ChatTerminalAppendToScreen(CString screen, int section, CString text);
+struct DaemonPipeCtx { HANDLE rd; };
+static DWORD WINAPI DaemonPipeReaderThread(LPVOID param) {
+  DaemonPipeCtx *ctx = (DaemonPipeCtx *)param;
+  char buf[1024];
+  DWORD n = 0;
+  CString pending;
+  while (ReadFile(ctx->rd, buf, sizeof(buf) - 1, &n, NULL) && n > 0) {
+    buf[n] = '\0';
+    pending += CString(buf);
+    int nl;
+    while ((nl = pending.Find('\n')) >= 0) {
+      CString line = pending.Left(nl);
+      line.TrimRight('\r');
+      pending = pending.Mid(nl + 1);
+      if (!line.IsEmpty()) ChatTerminalAppendToScreen("main", 3 /*kChatTerminalChat*/, line + "\r\n");
+    }
+  }
+  if (!pending.IsEmpty()) ChatTerminalAppendToScreen("main", 3, pending + "\r\n");
+  CloseHandle(ctx->rd);
+  delete ctx;
+  return 0;
+}
+
 static void *LaunchManagedConsole(const char *command, const char *cwd) {
   char buf[512];
   strncpy_s(buf, sizeof(buf), command, _TRUNCATE);
+  // Capture the child's stdout+stderr through a pipe so a reader thread can mirror it into the Terminal
+  // CHAT window, and launch with CREATE_NO_WINDOW so a console NEVER pops up (not even briefly). [Emrald]
+  SECURITY_ATTRIBUTES sa; ZeroMemory(&sa, sizeof(sa));
+  sa.nLength = sizeof(sa); sa.bInheritHandle = TRUE; sa.lpSecurityDescriptor = NULL;
+  HANDLE rd = NULL, wr = NULL;
+  if (!CreatePipe(&rd, &wr, &sa, 0)) { rd = NULL; wr = NULL; }
+  if (rd != NULL) SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);  // keep our read end private
   STARTUPINFOA si; ZeroMemory(&si, sizeof(si)); si.cb = sizeof(si);
+  if (wr != NULL) {
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdOutput = wr; si.hStdError = wr; si.hStdInput = NULL;
+  }
   PROCESS_INFORMATION pi; ZeroMemory(&pi, sizeof(pi));
-  if (!CreateProcessA(NULL, buf, NULL, NULL, FALSE,
-                      CREATE_NEW_CONSOLE | CREATE_SUSPENDED, NULL, cwd, &si, &pi)) {
-    return NULL;
+  BOOL ok = CreateProcessA(NULL, buf, NULL, NULL, (wr != NULL),  // inherit handles only if piping
+                           CREATE_NO_WINDOW | CREATE_SUSPENDED, NULL, cwd, &si, &pi);
+  if (wr != NULL) CloseHandle(wr);   // the child holds the write end now
+  if (!ok) { if (rd != NULL) CloseHandle(rd); return NULL; }
+  if (rd != NULL) {
+    DaemonPipeCtx *ctx = new DaemonPipeCtx(); ctx->rd = rd;
+    HANDLE th = CreateThread(NULL, 0, DaemonPipeReaderThread, ctx, 0, NULL);
+    if (th != NULL) CloseHandle(th); else { CloseHandle(rd); delete ctx; }
   }
   HANDLE job = EnsureDriverJob();
   if (job != NULL) AssignProcessToJobObject(job, pi.hProcess);

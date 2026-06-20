@@ -35,80 +35,77 @@ COpenHoldemStarter::COpenHoldemStarter() {
 COpenHoldemStarter::~COpenHoldemStarter() {
 }
 
+// Count visible top-level windows of a given class. scrcpy mirror windows are class "SDL_app"
+// (titled by device, e.g. "S10"/"A17"); Hiss main windows are class "OpenHoldem". [Emrald]
+static int s_count_class_n = 0;
+static const char *s_count_class_name = NULL;
+static BOOL CALLBACK CountClassEnumProc(HWND h, LPARAM) {
+  if (!::IsWindowVisible(h)) return TRUE;
+  char cls[64]; cls[0] = '\0';
+  ::GetClassNameA(h, cls, sizeof(cls));
+  if (s_count_class_name != NULL && strcmp(cls, s_count_class_name) == 0) s_count_class_n++;
+  return TRUE;
+}
+static int CountVisibleWindowsOfClass(const char *cls) {
+  s_count_class_n = 0; s_count_class_name = cls;
+  ::EnumWindows(CountClassEnumProc, 0);
+  s_count_class_name = NULL;
+  return s_count_class_n;
+}
+
 void COpenHoldemStarter::StartNewInstanceIfNeeded() {
-  assert(p_sharedmem != NULL);
-  if (p_sharedmem->OpenHoldemProcessID() == 0) {
-    write_log(k_always_log_errors, "WARNING! Auto-starter turned off, unavailable process ID\n");
+  // [Emrald] AUTO-STARTER (scrcpy-window driven): keep ONE Hiss instance per scrcpy mirror window. Count
+  // scrcpy windows (class SDL_app) vs Hiss instances (class OpenHoldem); if there are MORE scrcpy windows
+  // than Hiss instances, launch one more. Only the lowest-session instance coordinates (so instances
+  // don't race to spawn) and it is throttled, so by the next tick the freshly-launched instance's window
+  // already counts and we stop once they match.
+  // Coordinator: ONLY the base instance (terminal port 27654 -- the first one launched) spawns new
+  // instances, so they don't race. Hiss SHARED MEMORY does NOT share across processes in this setup
+  // (see memory multi-instance-coordination-postgres), so we must NOT gate on p_sharedmem here; the
+  // terminal port is a reliable per-process coordinator. The coordinator must already be ATTACHED (so a
+  // freshly-launched, not-yet-connected instance doesn't also try to spawn).
+  extern int g_terminal_port;
+  if (g_terminal_port != 27654) return;
+  if (p_autoconnector == NULL || !p_autoconnector->IsConnectedToAnything()) return;
+  if (p_engine_container->symbol_engine_casino()->ConnectedToOHReplay()) return;
+  int n_scrcpy = CountVisibleWindowsOfClass("SDL_app");
+  int n_hiss   = CountVisibleWindowsOfClass("OpenHoldem");
+  if (n_scrcpy <= 0 || n_hiss >= n_scrcpy) {
+    write_log(Preferences()->debug_autostarter(),
+      "[COpenHoldemStarter] %d scrcpy window(s), %d Hiss instance(s) -- no new instance needed.\n", n_scrcpy, n_hiss);
     return;
   }
-  if (p_sharedmem->NUnoccupiedBots() >= kMinNumberOfUnoccupiedBotsNeeded) {
-    // Enough instance available for new connections / popup handling
-    write_log(Preferences()->debug_autostarter(), "[COpenHoldemStarter] No bots needed, enough free instances.\n");
-    return;
-  }
-  time_t current_time;
-  time(&current_time);
+  time_t current_time; time(&current_time);
   if (current_time - _starting_time_of_last_instance < kSecondsToWaitBeforeNextStart) {
-    // Another instance got started only recently.
-    // Grant it some seconds to show up
-    // and don't flood the screen with new bots.
-    return;
-  }
-  if (p_sharedmem->LowestConnectedSessionID() != p_sessioncounter->session_id()) {
-    // Only one instance should handle auto-starting.
-    // This might delay auto-starting until the first connection, which is OK.
-    write_log(Preferences()->debug_autostarter(), "[COpenHoldemStarter] Not my business to start new instances.\n");
-    return;
-  }
-  if (p_engine_container->symbol_engine_casino()->ConnectedToOHReplay()) {
-	  write_log(Preferences()->debug_autoconnector(), "[COpenHoldemStarter] Connected to OHReplay. Disabled for convenience.\n");
-	  return;
+    return;   // gave the last-launched instance time to show its window; don't flood
   }
   time(&_starting_time_of_last_instance);
-  //! delay until next start
-  // No error-checking, as Openholdem exists (at least when we started).
-  // http://msdn.microsoft.com/en-us/library/windows/desktop/bb762153%28v=vs.85%29.aspx
-  write_log(Preferences()->debug_autostarter(), "[COpenHoldemStarter] Starting new instance [%s].\n",
-    ExecutableFilename());
-  ShellExecute(
-    NULL,               // Pointer to parent window; not needed
-    "open",             // "open" == "execute" for an executable
-    ExecutableFilename(),
-    NULL, 		          // Parameters
-    "",                 // Working directory
-    SW_SHOWNORMAL);		  // Active window, default size
+  write_log(Preferences()->debug_autostarter(),
+    "[COpenHoldemStarter] %d scrcpy window(s) > %d Hiss instance(s) -> launching one more [%s].\n",
+    n_scrcpy, n_hiss, ExecutableFilename());
+  ShellExecute(NULL, "open", ExecutableFilename(), NULL, "", SW_SHOWNORMAL);
 }
 
 void COpenHoldemStarter::CloseThisInstanceIfNoLongerNeeded() {
-  assert(p_sharedmem != NULL);
-  if (p_sharedmem->OpenHoldemProcessID() == 0) {
-    write_log(k_always_log_errors, "WARNING! Auto-shutdown turned off, unavailable process ID\n");
-    return;
+  // [Emrald] AUTO-SHUTDOWN (scrcpy-window driven): if THIS instance was attached to a scrcpy window that
+  // has since CLOSED, terminate this instance (the auto-starter will spawn a fresh one if a new scrcpy
+  // window appears). We only shut down once we HAVE attached (so a freshly-launched, not-yet-attached
+  // instance keeps waiting for a window). Tabbing tables within scrcpy does NOT destroy the SDL window,
+  // so it does not fire; only physically closing the scrcpy window does. If we re-attach to another live
+  // window, we keep running.
+  static bool ever_attached = false;
+  static HWND last_hwnd = NULL;
+  HWND att = (p_autoconnector != NULL) ? p_autoconnector->attached_hwnd() : NULL;
+  if (att != NULL && ::IsWindow(att)) {
+    ever_attached = true;
+    last_hwnd = att;
+    return;   // still attached to a live scrcpy window
   }
-  if (p_autoconnector->IsConnectedToAnything()) {
-    write_log(Preferences()->debug_autostarter(), "[COpenHoldemStarter] Playing, therefore still needed.\n");
-    // Instance needed for playing
-    return;
+  if (!ever_attached) return;                              // never attached yet -> keep waiting
+  if (last_hwnd != NULL && ::IsWindow(last_hwnd)) return;  // our window still exists (transient detach)
+  write_log(Preferences()->debug_autostarter(),
+    "[COpenHoldemStarter] Our scrcpy window closed -> shutting down this instance.\n");
+  if (theApp.m_pMainWnd != NULL) {
+    PostMessage(theApp.m_pMainWnd->GetSafeHwnd(), WM_QUIT, NULL, NULL);
   }
-  if (p_sharedmem->NUnoccupiedBots() <= kMinNumberOfUnoccupiedBotsNeeded) {
-    write_log(Preferences()->debug_autostarter(), "[COpenHoldemStarter] Needed for new connections.\n");
-    // Instance needed for new connections / popup handling
-    return;
-  }
-  if (p_engine_container->symbol_engine_time()->elapsedauto() < kSecondsToWaitBeforeTermination) {
-    // Don't shut down immediately
-    // Instance might be needed soon again
-    write_log(Preferences()->debug_autostarter(), "[COpenHoldemStarter] Not waited long enough for shutdown.\n");
-    return;
-  }
-  if (p_sharedmem->LowestUnconnectedSessionID() != p_sessioncounter->session_id()) {
-    // Only one instance should tzerminate at a time
-    // to keep one instance available
-    write_log(Preferences()->debug_autostarter(), "[COpenHoldemStarter] Not my turn to shutdown.\n");
-    write_log(Preferences()->debug_autostarter(), "[COpenHoldemStarter] Lowest free ID: %d\n", p_sharedmem->LowestUnconnectedSessionID());
-    write_log(Preferences()->debug_autostarter(), "[COpenHoldemStarter] My ID: %d\n", p_sessioncounter->session_id());
-    return;
-  }
-  write_log(Preferences()->debug_autostarter(), "[COpenHoldemStarter] Shutting down this instance.\n");
-  PostMessage(theApp.m_pMainWnd->GetSafeHwnd(), WM_QUIT, NULL, NULL);
 }

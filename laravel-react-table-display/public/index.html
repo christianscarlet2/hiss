@@ -38,6 +38,37 @@
         upd(); setInterval(upd,1000);
       })();
     </script>
+    <!-- FCKRA (primary, bottom-right) + TIOLP (secondary, bottom-left) clickable-button indicators +
+         Observer/Playing footer, mirroring the main table-view corner indicators. Self-contained;
+         polls /api/table-state (fckra/tiolp/observer). [Emrald] -->
+    <div id="ind-fckra" style="position:fixed;right:8px;bottom:6px;z-index:99999;display:flex;gap:3px"></div>
+    <div id="ind-tiolp" style="position:fixed;left:8px;bottom:6px;z-index:99999;display:flex;gap:3px"></div>
+    <div id="ind-mode"  style="position:fixed;left:50%;bottom:7px;transform:translateX(-50%);z-index:99999;font:700 12px system-ui,sans-serif;letter-spacing:.5px;color:#9aa"></div>
+    <script>
+      (function(){
+        function cells(hostId, letters, lit){
+          var h=document.getElementById(hostId); if(!h) return;
+          var html='';
+          for(var i=0;i<letters.length;i++){
+            var on=(lit||'').indexOf(letters[i])>=0;
+            html += '<span style="display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;'
+              + 'border-radius:3px;font:700 11px monospace;'
+              + (on ? 'background:#2e7d32;color:#fff;box-shadow:0 0 5px rgba(60,255,90,.7)'
+                    : 'background:#1c1c20;color:#555;border:1px solid #333')
+              + '">'+letters[i]+'</span>';
+          }
+          h.innerHTML=html;
+        }
+        function upd(){
+          fetch('/api/table-state?_='+Date.now()).then(function(r){return r.json();}).then(function(d){
+            cells('ind-fckra','FCKRA', d.fckra);
+            cells('ind-tiolp','TIOLP', d.tiolp);
+            var m=document.getElementById('ind-mode'); if(m) m.textContent = d.observer ? 'Observer Mode' : 'Playing Mode';
+          }).catch(function(){});
+        }
+        upd(); setInterval(upd,700);
+      })();
+    </script>
     <script src="/table-display/assets/react.production.min.js"></script>
     <script src="/table-display/assets/react-dom.production.min.js"></script>
     <script src="/table-display/assets/app.js?v=30"></script>

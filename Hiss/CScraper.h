@@ -251,6 +251,8 @@ extern char    g_hero_decision_text[48];   // e.g. "RAISE 2.50" / "CALL" / "FOLD
 extern volatile bool g_hero_decision_active; // true only while ismyturn && isfinalanswer
 extern DWORD   g_hero_decision_tick;        // GetTickCount() at decision lock; RED overlay trails ~10s then fades
 extern volatile bool g_reset_detection_request; // React badge backup: clear per-table game-type cache + identity -> re-detect
+extern char g_fckra_indicator[8];   // lit primary buttons F/C/K/R/A (mirrors the main view's bottom-corner indicators)
+extern char g_tiolp_indicator[8];   // lit secondary buttons T/I/O/L/P
 extern CString g_tgi_gametype;       // e.g. "No Limit"
 // table_game_info_2: current + previous hand numbers (ACR shows "Current: n  Previous: n").
 // Claude reads them from the frame and posts via /api/table-game-info-2.
