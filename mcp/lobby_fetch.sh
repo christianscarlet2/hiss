@@ -40,6 +40,14 @@ sleep "$DELAY"
 click lobby_more_info_button;   sleep "$LOAD_DELAY"   # more-info detail is slow too
 capture lobby_moreinfo                              # PARSE POINT 2: more-info / structure
 sleep "$DELAY"
-click leave_lobby_button;       sleep "$DELAY"
-click return_to_tables_button
+# Corrected return choreography [Emrald]: CLOSE the MORE INFO popup with its X first, then hit BACK to
+# leave the lobby/info page, and ONLY THEN the TABLE button -- back must come BEFORE table, with a delay
+# between every action (else the table button fires while the popup/info page is still up).
+#   NOTE: lobby_more_info_close_button (the X on the MORE INFO popup) is a NEW region -- position it in
+#   the Vision editor over the popup's X. leave_lobby_button = the BACK arrow; return_to_tables_button =
+#   the TABLE icon. (goto_lobby_button + lobby_more_info_button are CUT OFF/mis-positioned on some
+#   layouts and also need re-drawing in Vision against the live lobby.)
+click lobby_more_info_close_button; sleep "$DELAY"   # 1) close MORE INFO with its X
+click leave_lobby_button;           sleep "$DELAY"   # 2) BACK out of the lobby (BEFORE the table button)
+click return_to_tables_button                        # 3) TABLE button -> back on the felt
 echo "[lobby_fetch] done. Parse: C:/tmp/lobby_main.png + C:/tmp/lobby_moreinfo.png"
