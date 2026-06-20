@@ -101,15 +101,36 @@ void CHandHistoryWriter::UpdateOnHeartbeat() {
   // the "<name>_omaha" tablemap (Omaha's 4-card layout != Hold'em's 2-card layout). Keywords are
   // specific enough (omaha / plo / hi-lo / 8 or better) not to fire on a Hold'em table name.
   {
-    // Game-type detection drives the Hold'em<->Omaha tablemap auto-switch. Rely on the RELIABLE word
-    // "omaha" (+ hi-lo / 8-or-better for PLO8), which Claude posts as the authoritative gametype via
-    // set_table_game_info after reading the frame (g_tgi_gametype). Do NOT match "plo" / "pot limit"
-    // substrings: they FALSE-POSITIVE on garbled table-name OCR (e.g. "...PLOS..." on a Hold'em
-    // freeroll) and on Pot-Limit Hold'em -- which wrongly swapped the bot to the Omaha map.
-    CString gt = _table_name + " " + _tourney_title + " " + _tourney_id + " " + g_tgi_gametype;
-    gt.MakeLower();
-    g_table_is_omaha = (gt.Find("omaha") >= 0 || gt.Find("hi-lo") >= 0 || gt.Find("hi/lo") >= 0
-                        || gt.Find("8 or better") >= 0 || gt.Find("8orb") >= 0);
+    // READ THE GAME TYPE LIVE: scrape the table-info OCR (c0table_name / c0tourney_title /
+    // c0tourney_id) DIRECTLY each heartbeat, UNGATED by g_tgi, so the map + OHF strategy auto-switch as
+    // Emrald rotates PLO / PLO8 / NLH with NO manual game-info post. The live OCR on these tables
+    // carries the variant (e.g. "PennyHoot PLO", c0tourney_id "Omaha352998"). "omaha"/"plo"/hi-lo are
+    // the Omaha markers; we only flip to Hold'em on a clear "hold"/"no limit", so a transient empty or
+    // garbled scrape can't wrongly flip an Omaha table back. Falls back to the posted g_tgi gametype +
+    // scraped fields only when the live OCR is ambiguous.
+    CString live_name, live_title, live_id;
+    if (p_scraper != NULL) {
+      p_scraper->EvaluateRegion("c0table_name", &live_name);
+      p_scraper->EvaluateRegion("c0tourney_title", &live_title);
+      p_scraper->EvaluateRegion("c0tourney_id", &live_id);
+    }
+    CString live = live_name + " " + live_title + " " + live_id;
+    live.MakeLower();
+    bool live_omaha = (live.Find("omaha") >= 0 || live.Find("plo") >= 0 || live.Find("hi-lo") >= 0
+                       || live.Find("hi/lo") >= 0 || live.Find("8 or better") >= 0 || live.Find("8orb") >= 0);
+    bool live_holdem = (!live_omaha && (live.Find("hold") >= 0 || live.Find("no limit") >= 0
+                       || live.Find("nolimit") >= 0 || live.Find("no-limit") >= 0));
+    if (live_omaha) {
+      g_table_is_omaha = true;
+    } else if (live_holdem) {
+      g_table_is_omaha = false;
+    } else {
+      // Ambiguous live OCR -> fall back to the Claude-posted gametype + scraped tourney fields.
+      CString gt = _table_name + " " + _tourney_title + " " + _tourney_id + " " + g_tgi_gametype;
+      gt.MakeLower();
+      g_table_is_omaha = (gt.Find("omaha") >= 0 || gt.Find("hi-lo") >= 0 || gt.Find("hi/lo") >= 0
+                          || gt.Find("8 or better") >= 0 || gt.Find("8orb") >= 0);
+    }
   }
   if (!_meta_captured) {
     // Wait until at least two players are dealt (blinds posted) before we

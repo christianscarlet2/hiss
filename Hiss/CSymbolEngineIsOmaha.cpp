@@ -77,6 +77,23 @@ bool CSymbolEngineIsOmaha::TitleLooksLikeHiLo() {
       return true;
     }
   }
+  // 1b) LIVE table-info OCR (read the game type live) -- the "Omaha H/L" / "PLO8" text is in the table
+  //     image, not the window title, and survives a table switch even with a stale posted gametype.
+  //     Use only the DISTINCTIVE hi/lo markers here (the live OCR is arbitrary, so avoid the bare
+  //     "hl"/"o8"/"8b" short tokens that are only safe on the clean posted gametype above).
+  if (p_scraper != NULL) {
+    CString a, b, cc;
+    p_scraper->EvaluateRegion("c0table_name", &a);
+    p_scraper->EvaluateRegion("c0tourney_title", &b);
+    p_scraper->EvaluateRegion("c0tourney_id", &cc);
+    CString live = a + " " + b + " " + cc; live.MakeLower();
+    if (live.Find("h/l") >= 0) return true;
+    CString lsq = live; lsq.Remove(' '); lsq.Remove('/'); lsq.Remove('-'); lsq.Remove('_');
+    if (lsq.Find("hilo") >= 0 || lsq.Find("8orbetter") >= 0 || lsq.Find("omaha8") >= 0
+        || lsq.Find("plo8") >= 0) {
+      return true;
+    }
+  }
   // 2) Attached window title (fallback).
   if (p_autoconnector == NULL) return false;
   HWND table = p_autoconnector->attached_hwnd();
@@ -119,6 +136,16 @@ void CSymbolEngineIsOmaha::UpdateOnMyTurn() {
 }
 
 void CSymbolEngineIsOmaha::UpdateOnHeartbeat() {
+  // QUICK REVERT TO HOLD'EM: g_table_is_omaha is the LIVE per-heartbeat game-type read (from the table
+  // OCR). If it says this is NOT an Omaha table, force isomaha/isplo8 OFF immediately -- don't wait for
+  // the per-hand reset or the 4-card count -- so the OHF dispatch flips back to the Hold'em tree (and
+  // the NLH badge loads) the moment Emrald moves to an NLH table. [Emrald: NLH OHF/badge not loading
+  // quickly enough.]
+  if (!g_table_is_omaha) {
+    _isomaha = false;
+    _isplo8 = false;
+    return;
+  }
   if (_isomaha) {
     write_log(Preferences()->debug_symbolengine(), "[CSymbolEngineIsOmaha] Already Omaha\n");
     return;

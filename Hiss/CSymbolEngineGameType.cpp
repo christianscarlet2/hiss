@@ -63,6 +63,12 @@ void CSymbolEngineGameType::UpdateOnHeartbeat() {
     _gametype = kGametypePL;
     return;
   }
+  // Left an Omaha table (Emrald rotates PLO/PLO8 <-> NLH): drop a stale PL to No-Limit IMMEDIATELY so
+  // ispl() flips back to 0 -- otherwise the prior table's PL lingered and the NLH badge / pot-limit cap
+  // stayed wrong on the new Hold'em table. The scrape-based refine below still runs (and keeps NL).
+  if (_gametype == kGametypePL) {
+    _gametype = kGametypeNL;
+  }
   int scraped_limit = p_table_state->_s_limit_info.limit();
   switch (scraped_limit) {
     case kGametypeNL:
