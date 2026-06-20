@@ -477,6 +477,10 @@ WHEN Others RETURN 0.020 FORCE
 WHEN Others RETURN prwin * icm_callwin + (1 - prwin) * icm_calllose FORCE
 
 ##f$ICM_CallShove##
+// CASH GAME: ICM is meaningless (a chip = its cash value), and evaluating icm_* makes the engine's
+// prize-sum validator pop "Incorrect f$icm_prizeX-functions ... 0.000" (prizes are 0 in cash). Return
+// false FIRST so icm_* is never touched in cash; cash get-it-in falls to the chip-EV listCallShove floor.
+WHEN NOT istournament RETURN false FORCE
 // Is getting it in $-correct? Call/jam when the ICM EV of calling beats folding,
 // scaled by the bubble factor: near the bubble we need a real edge (survival has
 // value); in the money / heads-up we gamble looser. f$BubbleTighten is 1.0 until a

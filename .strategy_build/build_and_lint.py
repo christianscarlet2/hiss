@@ -44,6 +44,7 @@ for f in glob.glob(os.path.join(LIBDIR, "*.ohf")):
 # built-in lowercase symbols / engine symbols we rely on
 builtins = set("""
 prwin nopponentsplaying nopponentsdealt nopponents issittingin
+istournament isfinaltable
 random randomround randomhand randomheartbeat
 bblind sblind bigblind ncallbets nbetstocall pot potsize balance
 betround nplayersdealt

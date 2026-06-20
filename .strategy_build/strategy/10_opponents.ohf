@@ -134,14 +134,14 @@ WHEN Others RETURN false FORCE
 //-----------------------------------------------------------------------------
 
 ##f$BB_Nit##
-// NOTE: "hands" is NOT a positional PT stat (pt_hands_bigblind is rejected by the real parser); only
-// _raischair is special-cased. So gate on the VPIP read itself: pt_vpip_* > 0 means real data exists
-// (no-data reads come back 0/undefined), and < 17 is the nit threshold. Errs to NOT-steal when unknown.
-WHEN pt_vpip_bigblind > 0 AND pt_vpip_bigblind < 17 RETURN true FORCE
+// DISABLED 2026-06-20: positional PT symbols pt_vpip_bigblind / pt_hands_bigblind are NOT valid in this
+// engine (the only valid positional forms end in a recognized "...chair" suffix that translates to a
+// numeric chair, e.g. pt_vpip_bigblindchair) and the bad form pops an "Invalid PokerTracker-symbol"
+// modal on EVERY evaluation. Inert for now -> f$BlindsAreNitty=false -> normal positional opens.
+// TODO: re-enable with a VERIFIED symbol (pt_vpip_bigblindchair) or an /api-pushed blind-nit signal.
 WHEN Others RETURN false FORCE
 
 ##f$SB_Nit##
-WHEN pt_vpip_smallblind > 0 AND pt_vpip_smallblind < 17 RETURN true FORCE
 WHEN Others RETURN false FORCE
 
 ##f$BlindsAreNitty##
