@@ -321,16 +321,23 @@ void CHandHistoryWriter::ObserveActions() {
     // the last observed stack and accumulate decreases onto _street_bet (blinds pre-seed it).
     // Falls back to the bet region only if balances aren't readable.
     double cur;
-    if (_have_balance) {
-      double bal = p_table_state->Player(i)->_balance.GetValue();
-      if (bal <= 0.0) continue;                            // stack not scraped this tick / all-in edge
+    double bal = _have_balance ? p_table_state->Player(i)->_balance.GetValue() : 0.0;
+    if (_have_balance && bal > 0.0) {
       if (_prev_balance[i] < 0.0) _prev_balance[i] = bal;  // first sighting baseline
       double delta = _prev_balance[i] - bal;               // chips committed since last observation
       _prev_balance[i] = bal;
       if (delta < kEpsilon) delta = 0.0;
       cur = _street_bet[i] + delta;                        // total committed this street
     } else if (_have_bet) {
-      cur = p_table_state->Player(i)->_bet.GetValue();
+      // Stack not readable this tick (bal<=0: a momentary stack-OCR miss, or an all-in that zeroed
+      // the stack). The OLD code did `continue` here -> it DROPPED the action entirely (and every
+      // all-in). Fall back to the bet region, which reads chips committed THIS STREET directly, so
+      // the bet/raise is still recorded. Re-baseline the stack tracker (-1) so the next good stack
+      // read starts a fresh delta and doesn't double-count what we just booked off the bet region.
+      double b = p_table_state->Player(i)->_bet.GetValue();
+      _prev_balance[i] = -1.0;
+      if (b <= _street_bet[i] + kEpsilon) continue;        // nothing new committed this street
+      cur = b;
     } else {
       continue;
     }

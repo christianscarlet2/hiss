@@ -18,6 +18,7 @@
 #include "CCasinoInterface.h"
 #include "CEngineContainer.h"
 #include "CHandresetDetector.h"
+#include "CScraper.h"
 
 #include "CSessionCounter.h"
 #include "CSymbolEngineActiveDealtPlaying.h"
@@ -54,9 +55,19 @@ double CHeartbeatDelay::SleepingFactor() {
   write_log(Preferences()->debug_alltherest(), "[CHeartbeatDelay] location Johnny_A\n");
   if (!p_autoconnector->IsConnectedToAnything()) {
     // Keep heartbeat_delay as is
-    // We want fast auto-connects 
+    // We want fast auto-connects
     // and the auto-connector is extremely optimized.
     return 1.0;
+  }
+  // OBSERVER fast-capture: when we are WATCHING a table (not playing our own hand) and a hand is
+  // actively contested, scrape FAST so CHandHistoryWriter samples every villain bet/raise. The
+  // not-seated / folded factors below otherwise slow us to 2-5x scrape_delay, which lets fast
+  // preflop raise sequences (open -> 3bet -> 4bet, often resolved in ~1s) resolve BETWEEN scrapes
+  // and vanish -- breaking the 3bet/4bet/fold-to-3bet/cbet/steal HUD stats mined from the logged
+  // hands. ObserverActive() is false while we hold our own cards, so live play is untouched.
+  if (p_scraper != NULL && p_scraper->ObserverActive()
+      && p_engine_container->symbol_engine_active_dealt_playing()->nopponentsplaying() >= 2) {
+    return 0.5;
   }	else if (p_engine_container->symbol_engine_casino()->ConnectedToOHReplay()) {
     // Fast simulations single-tabling at OHReplay
     return 0.5;
