@@ -60,27 +60,36 @@ def run_hud_aggregator():
         print("[observe] hud_aggregator error:", e, flush=True)
 
 
-def villain_exploit(vpip, pfr, hands):
-    """Standard population reads from VPIP/PFR (fractions). Returns (profile, exploit) or (sample, None)."""
-    if hands < 15:
-        return "thin sample (%d hands)" % hands, None
-    gap = vpip - pfr
-    if vpip >= 0.40 and pfr <= 0.16:
-        return ("calling station VPIP %.0f/PFR %.0f" % (vpip * 100, pfr * 100),
-                "value-bet bigger & thinner; do NOT bluff him")
-    if vpip >= 0.45 and pfr >= 0.30:
-        return ("maniac VPIP %.0f/PFR %.0f" % (vpip * 100, pfr * 100),
-                "trap strong hands, widen call-downs, 3bet for value not bluff")
-    if 0.22 <= pfr and vpip <= pfr + 0.10 and vpip >= 0.20:
-        return ("LAG VPIP %.0f/PFR %.0f" % (vpip * 100, pfr * 100),
-                "respect raises but float in position; 3bet light to deny")
-    if vpip <= 0.15:
-        return ("nit VPIP %.0f" % (vpip * 100),
-                "steal his blinds relentlessly; fold to his big aggression")
-    if gap >= 0.18:
-        return ("passive/loose VPIP %.0f/PFR %.0f" % (vpip * 100, pfr * 100),
-                "value-bet relentlessly, bluff rarely")
-    return ("std VPIP %.0f/PFR %.0f" % (vpip * 100, pfr * 100), None)
+def hud_map(p):
+    """Parse a player's live game-state HUD array -> {abbr: float|None}. VP/PF/FTS are %s, AF a ratio."""
+    d = {}
+    for h in (p.get("hud") or []):
+        try:
+            d[h.get("abbr")] = float(h.get("value"))
+        except (TypeError, ValueError):
+            d[h.get("abbr")] = None
+    return d
+
+
+def villain_exploit(vpip, pfr, af, fts, samples):
+    """Reads from the LIVE per-seat HUD (vpip/pfr/fts fractions, af ratio). Returns (profile, exploit)
+    or (None, None). Uses real seated opponents only -- no cross-table phantoms."""
+    if samples is None or samples < 12 or vpip is None:
+        return None, None
+    v = vpip * 100
+    p = (pfr * 100) if pfr is not None else None
+    prof, ex = None, None
+    if vpip >= 0.40 and af is not None and af <= 1.2:
+        prof, ex = "calling station (VPIP %.0f, AF %.1f)" % (v, af), "value-bet bigger & thinner; do NOT bluff him"
+    elif vpip >= 0.40 and af is not None and af >= 3.0:
+        prof, ex = "loose maniac (VPIP %.0f, AF %.1f)" % (v, af), "trap big hands, widen call-downs, 3bet for value not as a bluff"
+    elif vpip <= 0.15:
+        prof, ex = "nit (VPIP %.0f)" % v, "steal his blinds relentlessly; fold to his big aggression"
+    elif p is not None and (vpip - pfr) >= 0.18:
+        prof, ex = "passive/loose (VPIP %.0f / PFR %.0f)" % (v, p), "value-bet relentlessly, rarely bluff"
+    if ex is None and fts is not None and fts >= 0.60:
+        prof, ex = "folds-to-steal %.0f%% (VPIP %.0f)" % (fts * 100, v), "raise/steal his blinds relentlessly"
+    return prof, ex
 
 
 def gather(conn):
@@ -91,28 +100,25 @@ def gather(conn):
         bb = float((ts.get("limits") or {}).get("bblind") or 0)
     except Exception:
         bb = 0.0
-    seated = [p for p in (ts.get("players") or []) if p.get("seated") and (p.get("name") or "").strip()]
-    names = [p["name"].strip() for p in seated]
+    uc = ts.get("userchair", -1)
 
-    # --- opponent profiles from hud_player_stats (mined from observed hand-histories) ---
-    stats = {}
-    if names:
-        cur = conn.cursor()
-        cur.execute("SELECT player, vpip_n, pfr_n, hands FROM hud_player_stats WHERE player = ANY(%s)",
-                    (names,))
-        for player, vpip_n, pfr_n, hands in cur.fetchall():
-            if hands and hands > 0:
-                stats[player] = (vpip_n / hands, pfr_n / hands, hands)
-
+    # --- opponent profiles from the LIVE per-seat HUD (real seats only; never the hero; no phantoms) ---
     vpips = []
-    for p in seated:
-        nm = p["name"].strip()
-        if nm in stats:
-            vpip, pfr, hands = stats[nm]
+    for p in (ts.get("players") or []):
+        nm = (p.get("name") or "").strip()
+        if not p.get("seated") or not nm or p.get("chair") == uc:
+            continue                                   # skip empty seats + the hero himself
+        hud = hud_map(p)
+        samples = p.get("samples")
+        vpip = (hud.get("VP") / 100.0) if hud.get("VP") is not None else None
+        pfr = (hud.get("PF") / 100.0) if hud.get("PF") is not None else None
+        af = hud.get("AF")
+        fts = (hud.get("FTS") / 100.0) if hud.get("FTS") is not None else None
+        if vpip is not None and samples and samples >= 12:
             vpips.append(vpip)
-            profile, exploit = villain_exploit(vpip, pfr, hands)
+            profile, exploit = villain_exploit(vpip, pfr, af, fts, samples)
             if exploit:
-                obs.append(("villain", nm, profile, exploit))
+                obs.append(("villain", nm, profile + " [n=%d]" % samples, exploit))
         # short-stack read from the live scrape (independent of history)
         try:
             depth_bb = float(p.get("balance") or 0) / bb if bb > 0 else None
