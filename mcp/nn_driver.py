@@ -147,6 +147,29 @@ def decide_and_act():
     do = "allin" if allin else ("raise" if a == "raise" else a)
     amount = bb if (do == "raise") else 0
     note = ""
+    # STACK-DEPTH-PROPORTIONAL sizing (leverage) [Emrald]: a fixed bb raise is nothing to a deep stack
+    # and everything to a short one. Scale the NN's raise-TO by the EFFECTIVE stack depth; when SHORT
+    # (<=12bb eff) a raise only commits us, so JAM instead. Mirrors the OHF f$DepthSizeMult. The legal
+    # min-raise / allin(>=stack) clamps below still apply to the scaled amount.
+    if do == "raise" and amount > 0:
+        _bbl = float(sv.get("bblind", 1) or 1) or 1.0
+        _eff_bb = (float(sv.get("bet", 0) or 0) + float(sv.get("stack", 0) or 0)) / _bbl
+        if _eff_bb <= 12:
+            do, amount, note = "allin", 0, "  (<=12bb eff -> jam, not a small raise)"
+        else:
+            _dm = 1.50 if _eff_bb >= 250 else 1.35 if _eff_bb >= 150 else 1.20 if _eff_bb >= 100 else 1.10 if _eff_bb >= 60 else 1.0
+            # ICM chip-value multiplier: the SAME f$ICM_SizeMult the OHF uses (light symbol, no prwin/pt_)
+            # -> the NN now sizes by depth x ICM, matching the OHF. 1.0 in cash/freeroll/early.
+            try:
+                _icm = float((_get(BOT + "/api/symbols?names=f$ICM_SizeMult") or {}).get("f$ICM_SizeMult", 1.0) or 1.0)
+            except Exception:
+                _icm = 1.0
+            if _icm <= 0:
+                _icm = 1.0
+            _mult = _dm * _icm
+            if abs(_mult - 1.0) > 0.01:
+                amount *= _mult
+                note = "  (size x%.2f: depth %.2f@%.0fbb, icm %.2f)" % (_mult, _dm, _eff_bb, _icm)
     if do == "raise":
         # Legal raise sizing (NLHE): an opening raise must be >= 2bb (when bb=1bb), and a re-raise
         # must be >= the last raise increment. If the NN's raise-TO does NOT meet the legal minimum,

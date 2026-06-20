@@ -91,23 +91,23 @@ WHEN Others RETURN 2.5 FORCE
 
 ##f$Open_RaiseTo##
 // Add one big blind for each limper we are isolating. Scaled by f$ICM_SizeMult (ICM chip value).
-WHEN Others RETURN (f$OpenBase + Calls) * f$ICM_SizeMult FORCE
+WHEN Others RETURN (f$OpenBase + Calls) * f$SizeMult FORCE
 
 ##f$Iso_RaiseTo##
 // PUNISH limpers (1bb bettors): iso-raise to 5bb for a single limper, +1bb for each
 // extra limper. Big enough to deny a cheap flop and play a bigger pot with the better hand.
-WHEN Others RETURN (4 + Calls) * f$ICM_SizeMult FORCE
+WHEN Others RETURN (4 + Calls) * f$SizeMult FORCE
 
 ##f$ThreeBet_RaiseTo##
 // 3-bet sizing (to N big blinds). Larger out of position. [N pp.26-27]
-WHEN f$Style = 1 RETURN 13 * f$ICM_SizeMult FORCE
-WHEN f$InPositionPre RETURN 9 * f$ICM_SizeMult FORCE
-WHEN Others RETURN 11 * f$ICM_SizeMult FORCE
+WHEN f$Style = 1 RETURN 13 * f$SizeMult FORCE
+WHEN f$InPositionPre RETURN 9 * f$SizeMult FORCE
+WHEN Others RETURN 11 * f$SizeMult FORCE
 
 ##f$FourBet_RaiseTo##
 // 4-bet for value vs a 3-bet.
-WHEN f$Style = 1 RETURN 26 * f$ICM_SizeMult FORCE
-WHEN Others RETURN 22 * f$ICM_SizeMult FORCE
+WHEN f$Style = 1 RETURN 26 * f$SizeMult FORCE
+WHEN Others RETURN 22 * f$SizeMult FORCE
 
 //-----------------------------------------------------------------------------
 //  Post-flop bet sizing (as a percentage of the pot).  Same size for value and
@@ -120,21 +120,21 @@ WHEN Others RETURN 22 * f$ICM_SizeMult FORCE
 //-----------------------------------------------------------------------------
 
 ##f$BetPctFlop##
-WHEN f$Style = 1 RETURN 85 * f$ICM_SizeMult FORCE
-WHEN f$Style = 0 AND (FlushPossible OR StraightPossible) RETURN 66 * f$ICM_SizeMult FORCE
-WHEN f$Style = 0 RETURN 55 * f$ICM_SizeMult FORCE
-WHEN (FlushPossible OR StraightPossible) RETURN 75 * f$ICM_SizeMult FORCE
-WHEN Others RETURN 60 * f$ICM_SizeMult FORCE
+WHEN f$Style = 1 RETURN 85 * f$SizeMult FORCE
+WHEN f$Style = 0 AND (FlushPossible OR StraightPossible) RETURN 66 * f$SizeMult FORCE
+WHEN f$Style = 0 RETURN 55 * f$SizeMult FORCE
+WHEN (FlushPossible OR StraightPossible) RETURN 75 * f$SizeMult FORCE
+WHEN Others RETURN 60 * f$SizeMult FORCE
 
 ##f$BetPctTurn##
-WHEN f$Style = 1 RETURN 90 * f$ICM_SizeMult FORCE
-WHEN f$Style = 0 RETURN 60 * f$ICM_SizeMult FORCE
-WHEN Others RETURN 70 * f$ICM_SizeMult FORCE
+WHEN f$Style = 1 RETURN 90 * f$SizeMult FORCE
+WHEN f$Style = 0 RETURN 60 * f$SizeMult FORCE
+WHEN Others RETURN 70 * f$SizeMult FORCE
 
 ##f$BetPctRiver##
-WHEN f$Style = 1 RETURN 90 * f$ICM_SizeMult FORCE
-WHEN f$Style = 0 RETURN 55 * f$ICM_SizeMult FORCE
-WHEN Others RETURN 66 * f$ICM_SizeMult FORCE
+WHEN f$Style = 1 RETURN 90 * f$SizeMult FORCE
+WHEN f$Style = 0 RETURN 55 * f$SizeMult FORCE
+WHEN Others RETURN 66 * f$SizeMult FORCE
 
 ##f$TurnBetGeo##
 // Turn bet-sizing GEOMETRY (in big blinds, NOT a pot-%): size the turn bet so the
@@ -507,3 +507,23 @@ WHEN f$HeadsUpTourney RETURN 1.000 FORCE
 WHEN f$Stage = 2 RETURN 0.80 FORCE
 WHEN f$Stage = 3 RETURN 0.90 FORCE
 WHEN Others RETURN 1.000 FORCE
+
+//-----------------------------------------------------------------------------
+//  STACK-DEPTH-PROPORTIONAL sizing (leverage). A fixed bb bet is nothing to a very deep stack and
+//  everything to a short one [Emrald], so scale every bet/raise to the EFFECTIVE stack depth (f$EffStack,
+//  in bb -- the stack actually at risk this hand, capped at the opponent). DEEP -> size UP so bets keep
+//  fold equity and build pots worth the deep stacks; SHORT -> the push/fold tree owns commitment (jam),
+//  so don't scale there. Capped at 1.5x so it never balloons. This is bet sizing relative to stack depth
+//  (SPR / leverage / effective-stack-proportional sizing).
+##f$DepthSizeMult##
+WHEN f$EffStack <= 25 RETURN 1.00 FORCE
+WHEN f$EffStack >= 250 RETURN 1.50 FORCE
+WHEN f$EffStack >= 150 RETURN 1.35 FORCE
+WHEN f$EffStack >= 100 RETURN 1.20 FORCE
+WHEN f$EffStack >= 60 RETURN 1.10 FORCE
+WHEN Others RETURN 1.00 FORCE
+
+//  Combined bet-size multiplier applied to every OHF open/iso/3bet/4bet (RaiseTo) and post-flop bet
+//  (RaiseBy %): ICM chip value x stack-depth proportionality.
+##f$SizeMult##
+WHEN Others RETURN f$ICM_SizeMult * f$DepthSizeMult FORCE
