@@ -150,7 +150,13 @@ void CHudOverlayWindow::TrackTableWindow() {
 	// HUD opacity: faint by default, solid while CTRL is held (so it never obscures the table unless
 	// Emrald wants to read it). Only re-applies when the level actually changes. [Emrald request]
 	static BYTE s_hud_alpha = 0;
-	BYTE want_alpha = (::GetAsyncKeyState(VK_CONTROL) & 0x8000) ? kHudAlphaSolid : kHudAlphaFaint;
+	// While a RED decision is trailing (~10s after the bot acts), force the overlay SOLID so the action
+	// is clearly visible WITHOUT holding CTRL -- the text then color-fades to transparent and the window
+	// drops back to faint once the 10s window passes. [Emrald: "I don't see the RED DECISION stay + trail"]
+	bool decision_active = (g_hero_decision_text[0] != '\0'
+		&& (GetTickCount() - g_hero_decision_tick) < 10000);
+	BYTE want_alpha = ((::GetAsyncKeyState(VK_CONTROL) & 0x8000) || decision_active)
+		? kHudAlphaSolid : kHudAlphaFaint;
 	if (want_alpha != s_hud_alpha) {
 		::SetLayeredWindowAttributes(GetSafeHwnd(), kHudColorKey, want_alpha, LWA_COLORKEY | LWA_ALPHA);
 		s_hud_alpha = want_alpha;
@@ -302,7 +308,7 @@ void CHudOverlayWindow::OnPaint() {
 	// ~10s after the decision and FADES out: solid for kDecisionHoldMs, then the red lerps to the colour
 	// key (=> transparent) by kDecisionTotalMs. The 200ms TrackTableWindow timer repaints it so the fade
 	// animates smoothly. [Emrald]
-	const DWORD kDecisionHoldMs = 3000, kDecisionTotalMs = 10000;
+	const DWORD kDecisionHoldMs = 6000, kDecisionTotalMs = 10000;   // stay solid ~6s, then fade out by 10s [Emrald]
 	DWORD dec_elapsed = GetTickCount() - g_hero_decision_tick;
 	if (g_hero_decision_text[0] != '\0' && dec_elapsed < kDecisionTotalMs) {
 		double t = (dec_elapsed <= kDecisionHoldMs) ? 0.0
