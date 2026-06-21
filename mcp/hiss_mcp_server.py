@@ -296,6 +296,10 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {"pattern": {"type": "string"}, "glob": {"type": "string", "default": "*.cpp"}}, "required": ["pattern"]}},
     {"name": "read_source", "description": "Read a source/debug file by repo-relative path (confined to the repo).",
      "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
+    {"name": "write_source", "description": "WRITE (create or overwrite) a Hiss source / OHF / script file by repo-relative path (confined to the repo). The MCP can AUTHOR CODE for Hiss -- C++, OHF, Python. After C++ edits a rebuild is needed; after OHF edits call validate_ohf then reload_ohf or restart. Prefer edit_source for surgical changes to large files.",
+     "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}},
+    {"name": "edit_source", "description": "Exact-string replace in a Hiss repo file (confined to the repo) -- surgical edits without rewriting the whole file. 'old' must match exactly and be unique unless replace_all=true. After C++ edits rebuild; after OHF edits validate_ohf.",
+     "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}, "old": {"type": "string"}, "new": {"type": "string"}, "replace_all": {"type": "boolean", "default": False}}, "required": ["path", "old", "new"]}},
     {"name": "list_release", "description": "List files in the Release directory (optionally a subpath/glob).",
      "inputSchema": {"type": "object", "properties": {"subpath": {"type": "string", "default": ""}}}},
     {"name": "list_tesseract_models", "description": "List tesseract trained models (.traineddata/.checkpoint) under the repo, plus the AutoOcr model settings.",
@@ -687,6 +691,27 @@ def call_tool(name, args):
         return [{"type": "text", "text": out[:60000] or "(no matches)"}]
     if name == "read_source":
         return [{"type": "text", "text": read_text(safe_path(args["path"]), max_bytes=400000)}]
+    if name == "write_source":
+        p = safe_path(args["path"])
+        d = os.path.dirname(p)
+        if d and not os.path.isdir(d):
+            os.makedirs(d, exist_ok=True)
+        with open(p, "w", encoding="utf-8", newline="\n") as f:
+            f.write(args["content"])
+        return [{"type": "text", "text": "wrote %d bytes to %s" % (len(args["content"]), os.path.relpath(p, REPO))}]
+    if name == "edit_source":
+        p = safe_path(args["path"])
+        s = read_text(p, max_bytes=8000000)
+        old, new = args["old"], args["new"]
+        cnt = s.count(old)
+        rel = os.path.relpath(p, REPO)
+        if cnt == 0:
+            return [{"type": "text", "text": "ERROR: old_string not found in %s" % rel}]
+        if cnt > 1 and not args.get("replace_all"):
+            return [{"type": "text", "text": "ERROR: old_string appears %d times in %s -- make it unique or set replace_all" % (cnt, rel)}]
+        with open(p, "w", encoding="utf-8", newline="\n") as f:
+            f.write(s.replace(old, new))
+        return [{"type": "text", "text": "edited %s (%d replacement%s)" % (rel, cnt if args.get("replace_all") else 1, "s" if (args.get("replace_all") and cnt > 1) else "")}]
     if name == "list_release":
         sub = args.get("subpath", "") or ""
         root = safe_path(os.path.join("Release", sub))

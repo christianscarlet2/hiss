@@ -608,7 +608,8 @@ void CScraper::PreOcrParallel() {
 			if (InterlockedDecrement(&remaining) == 0) SetEvent(done);
 		});
 	}
-	WaitForSingleObject(done, 30000);
+	WaitForSingleObject(done, 5000);   // cap the parallel-OCR wait at 5s (was 30s) so a stuck worker can't
+	                                   // stall the heartbeat for half a minute. [Phase-2 scraper perf]
 	CloseHandle(done);
 	DeleteCriticalSection(&rcs);
 	DeleteCriticalSection(&ecs);

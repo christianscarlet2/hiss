@@ -147,6 +147,9 @@ void CFormulaParser::ParseFormulaFileWithUserDefinedBotLogic(CArchive& formula_f
   LoadArchive(formula_file);
   p_function_collection->ParseAll();
   LeaveParserCode();
+  // Show EVERY accumulated parse error ONCE, in one non-blocking, copyable window (instead of a blocking
+  // modal per error that halted load). The strategy still loads -- the offending lines fail soft. [Emrald]
+  CParseErrors::FlushErrors();
   p_function_collection->Evaluate(k_standard_function_names[k_init_on_startup],
     Preferences()->log_ini_functions());
 }

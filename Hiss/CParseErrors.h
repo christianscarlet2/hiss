@@ -31,11 +31,14 @@ class CParseErrors {
  public:
   static void ClearErrorStatus();
   static bool AnyError();
+  // Show ALL parse errors of this pass ONCE, non-blocking + copyable (call at parse-end). [Emrald]
+  static void FlushErrors();
  private:
   static CString ErroneousCodeSnippet();
  private:
   static bool _is_error;
   static CString _last_error_message;
+  static CString _all_errors;        // accumulated errors -> shown once by FlushErrors()
 };
 
 #endif INC_CPARSEERRORS_H
