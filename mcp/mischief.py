@@ -38,11 +38,15 @@ def _spot_rng(g, current):
     return random.Random(seed)
 
 
-def _base_rate(intuition, prof, energy):
-    """How often we cause mischief, 0..~0.6. More vs exploitable / tilting / fishy villains, more in
-    position-flavoured spots, more when there's ENERGY in the air. Bounded so it stays 'at par'."""
+def _base_rate(intuition, prof, energy, smallball=True):
+    """How often we cause mischief, 0..~0.7. More vs exploitable / tilting / fishy villains, more in
+    position-flavoured spots, more when there's ENERGY in the air, and -- under SMALL BALL -- more
+    in general so we RUN THE TABLE: get involved in many pots, act often, and brute-force +EV exits.
+    Bounded so it stays 'at par'."""
     ex = intuition.get("exploit"); persona = intuition.get("persona")
     r = 0.10
+    if smallball:
+        r += 0.15                       # SMALL BALL: be in the action, run the table
     if ex in ("attack_fold", "attack_fast", "tilt_value", "image_bluff"):
         r += 0.22                       # they fold / they're steaming -> needle them relentlessly
     if persona in ("maniac", "fish_hunter"):
@@ -53,7 +57,22 @@ def _base_rate(intuition, prof, energy):
     if fp >= 0.5:
         r += 0.10
     r += 0.20 * max(0.0, min(1.0, energy))   # the air's charge feeds the chaos
-    return max(0.0, min(0.6, r))
+    return max(0.0, min(0.7, r))
+
+
+def _scare_texture(g):
+    """Board texture that CREDIBLY reps a big hand if we fire: a 3+ flush board, a paired board, or a
+    high broadway top card. Drives the PRETEND / representation line. Cheap, from stock signals."""
+    s = g["syms"]
+    if num(s.get("nsuitedcommon")) >= 3:
+        return "flush"
+    board = (g.get("board") or "").split()
+    ranks = [c[0] for c in board if c]
+    if len(ranks) != len(set(ranks)):
+        return "paired"
+    if any(r in ("A", "K") for r in ranks[:3]):
+        return "broadway"
+    return None
 
 
 def compute_mischief(g, intuition, current, prof, energy=0.0, affinity=1.0):
@@ -83,17 +102,34 @@ def compute_mischief(g, intuition, current, prof, energy=0.0, affinity=1.0):
     envelope_bb = max(1.5, min(0.06 * (stack / bb if stack else 100.0), 4.0))
 
     rng = _spot_rng(g, current)
-    # the OBSERVER's strategy branch scales how hard we antagonize: ATTACK/TILT -> more, STEADY -> less
-    rate = max(0.0, min(0.75, _base_rate(intuition, prof, energy) * max(0.0, affinity)))
-    if rng.random() > rate:
-        return out
-
+    ex = intuition.get("exploit")
+    foldable = bool(ex in ("attack_fold", "attack_fast", "image_bluff")
+                    or num((prof or {}).get("fold_to_pressure"), -1) >= 0.5)
     kind = None; action = par_action; size_bb = par_size_bb; note = None
+
+    # 0) PRETEND / REPRESENTATION (tied to mischief): when the board CREDIBLY reps a big hand (a scare
+    #    texture) and we PREDICT the villain is weak / foldable, fire heavy to REP it and fold them out
+    #    -- even with air, optimizing the pathway that wins the pot now. Deliberate, not random; the
+    #    INTELLIGENCE/wisdom gate downstream still vetoes it if the fold equity isn't really there.
+    scare = _scare_texture(g)
+    if scare and foldable and par_action in ("check", "none", "fold", "call") and br >= 2 \
+       and (in_pos or nplay <= 2) and not strong and rng.random() < 0.6:
+        frac = rng.choice([0.85, 1.0, 1.25])       # pot-to-overbet: the size that reps the nuts
+        kind = "represent"; action = "raise" if a2c > 0 else "bet"
+        size_bb = round(max(a2c * 2.2, pot * frac) / bb, 2)
+        note = "PRETEND: rep the %s, fold out a weak villain" % scare
+
+    # No deliberate rep? Roll for random mischief; the OBSERVER branch scales how hard we antagonize
+    # (ATTACK/TILT -> more, STEADY -> less) and SMALL BALL keeps us in the action.
+    if kind is None:
+        rate = max(0.0, min(0.78, _base_rate(intuition, prof, energy) * max(0.0, affinity)))
+        if rng.random() > rate:
+            return out
 
     # ---- catalogue of pranks, chosen by the spot ----
     # 1) THE 1-BB STAB ("1bet"): when we'd CHECK in a tiny pot (esp. in position), toss a single big
     #    blind in -- a needling min-stab that prices them in to nothing but tilts them into spew.
-    if par_action in ("check", "none") and a2c == 0 and pot_bb <= 14 and (in_pos or nplay <= 2):
+    if kind is None and par_action in ("check", "none") and a2c == 0 and pot_bb <= 14 and (in_pos or nplay <= 2):
         if rng.random() < 0.6:
             kind = "one_bb_stab"; action = "bet"; size_bb = 1.0
             note = "1-bb needle into a checked pot"
@@ -137,15 +173,17 @@ def compute_mischief(g, intuition, current, prof, energy=0.0, affinity=1.0):
     extra = new_cost_bb - par_cost_bb
     # double-bet/overbet are value lines (we have it) -> their extra is fine; pure needles must stay
     # inside the envelope.
-    if kind not in ("double_bet",) and extra > envelope_bb:
+    if kind not in ("double_bet", "represent") and extra > envelope_bb:
         return out                      # too expensive a prank -> secretly play to par
+    # 'represent' is a deliberate +EV bluff (value if they fold), exempt from the cheap envelope; the
+    # downstream INTELLIGENCE/wisdom gate vetoes it when the predicted fold equity is too thin.
     if size_bb * bb > stack and stack > 0:
         size_bb = round(stack / bb, 2)  # never bet more than the stack
 
     out.update({"fired": True, "kind": kind, "action": action, "size_bb": size_bb,
                 "cost_bb": round(max(0.0, extra), 2),
                 "aggro_nudge": 0.12 if action in ("bet", "raise") else 0.0,
-                "bluff_nudge": 0.15 if kind in ("one_bb_stab", "donk_lead", "min_raise_needle") else 0.0,
+                "bluff_nudge": 0.20 if kind == "represent" else (0.15 if kind in ("one_bb_stab", "donk_lead", "min_raise_needle") else 0.0),
                 "note": note})
     return out
 

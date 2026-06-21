@@ -387,6 +387,11 @@ class Handler(BaseHTTPRequestHandler):
                     ok, msg = (brain_launch(port) if on else brain_kill(port))
                     return self._send(200, {"engaged": brain_running(port), "ok": ok, "msg": msg, "port": port})
                 return self._send(200, {"engaged": brain_running(port), "port": port})
+            if path == "/decision":
+                # The brain's CURRENT DECIDED ACTION, crash-safe (a plain DB read of brain_state -- never
+                # re-evaluates the OHF / prwin, so the React overlay can poll it freely). Drives the
+                # RED DECISION "on fire" overlay on the table view.
+                return self._send(200, latest_decision())
             return self._send(404, {"error": "not found"})
         except Exception as e:
             return self._send(500, {"error": str(e), "trace": traceback.format_exc()})
@@ -399,6 +404,38 @@ _brain = {}          # port(str) -> [Popen]   (synapse + advisor for that bot)
 _brain_global = []   # [Popen]                (aggregators + brain_service + deep_thought + growth)
 _brain_lock = threading.Lock()
 BRAIN_PG = os.environ.get("HISS_PG_DSN", "host=127.0.0.1 port=5432 dbname=hiss user=postgres password=dbpass")
+
+_dec_cache = {"ts": 0.0, "val": None}
+
+
+def latest_decision():
+    """The brain's CURRENT DECIDED ACTION from brain_state (DB read only -- never touches the OHF/prwin
+    on the HTTP thread, so the React overlay can poll it safely). Cached ~0.4s to shield postgres."""
+    now = time.time()
+    if _dec_cache["val"] is not None and now - _dec_cache["ts"] < 0.4:
+        return _dec_cache["val"]
+    out = {"ok": False, "action": None}
+    try:
+        import psycopg2
+        c = psycopg2.connect(BRAIN_PG); cur = c.cursor()
+        cur.execute("SELECT ts_ms, handnumber, betround, villain, brain FROM brain_state WHERE id=1")
+        r = cur.fetchone(); c.close()
+        if r:
+            b = r[4] or {}
+            cda = b.get("current_decided_action", {}) or {}
+            intu = b.get("intuition", {}) or {}
+            obs = b.get("observer_strategy", {}) or {}
+            mis = b.get("mischief", {}) or {}
+            out = {"ok": True, "ts_ms": r[0], "handnumber": r[1], "betround": r[2], "villain": r[3],
+                   "action": cda.get("action"), "size_bb": cda.get("size_bb"),
+                   "source": cda.get("source"), "exploit": intu.get("exploit"),
+                   "branch": obs.get("branch"), "mischief": (mis.get("kind") if isinstance(mis, dict) and mis.get("fired") else None),
+                   "confidence": intu.get("confidence"),
+                   "energy": (b.get("pineal", {}) or {}).get("energy")}
+    except Exception as e:
+        out = {"ok": False, "action": None, "error": str(e)[:120]}
+    _dec_cache.update(ts=now, val=out)
+    return out
 
 
 def _brain_spawn(args):

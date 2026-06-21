@@ -128,10 +128,12 @@ def table_is_omaha():
 
 
 def brain_override(do, amount, sv):
-    """EXPLOIT PRECEDENCE over the NN: if the harmonized brain (synapse_map) has a CONFIDENT exploit /
-    feeler / wisdom-veto override for this spot, steer the NN's action toward it -- so the brain commands
-    BOTH engines, not just the OHF. Reads brain_state (written by synapse_map --watch); fresh (<4s) +
-    same-hand only; graceful -- the NN's own action stands when the brain is quiet."""
+    """PLAYER / EXPLOIT PRECEDENCE over the NN. The NN reads CARDS + GAMESTATE; the brain (synapse_map)
+    reads the PLAYER -- introspection, HUD profiling, the observer STRATEGY BRANCH, the exploit, and
+    mischief. Per Emrald the bot is PLAYER/EXPLOIT-focused, NOT card/gamestate-focused: so whenever the
+    brain has ANY player-driven signal for this spot, it commands the NN's action (and odd mischief
+    sizing); only when the brain is quiet does the NN's card-based action stand. Reads brain_state
+    (synapse_map --watch); fresh (<4s) + same-hand only; graceful."""
     try:
         import psycopg2
         dsn = os.environ.get("HISS_PG_DSN", "host=127.0.0.1 port=5432 dbname=hiss user=postgres password=dbpass")
@@ -145,14 +147,30 @@ def brain_override(do, amount, sv):
             return do, amount, ""                                  # stale brain -> NN stands
         if sv.get("_handnumber") and hn and str(hn) != str(sv["_handnumber"]):
             return do, amount, ""                                  # different hand -> NN stands
-        cda = ((b or {}).get("current_decided_action")) or {}
+        b = b or {}
+        cda = b.get("current_decided_action") or {}
+        obs = b.get("observer_strategy") or {}
+        mis = b.get("mischief") or {}
         src = cda.get("source", "") or ""
-        if not (src.startswith("exploit:") or src.startswith("feeler") or "intelligence_veto" in src or cda.get("overridden")):
-            return do, amount, ""                                  # only a CONFIDENT brain override steers
+        branch = obs.get("branch")
+        mis_fired = isinstance(mis, dict) and mis.get("fired")
+        # ANY player-read steers the NN: a confident exploit, a feeler, a wisdom veto, an observer
+        # strategy branch, or a mischief prank -- this is the player/exploit focus over the card model.
+        player_signal = (src.startswith("exploit:") or src.startswith("feeler")
+                         or "intelligence_veto" in src or cda.get("overridden")
+                         or mis_fired or (branch and branch != "NORMAL"))
+        if not player_signal:
+            return do, amount, ""                                  # no player read -> the NN's card action stands
         ba = cda.get("action")
-        if ba in ("raise", "call", "check", "fold") and ba != do:
+        if ba == "bet":
+            ba = "raise"
+        if ba in ("raise", "call", "check", "fold", "allin"):
             namt = float(cda.get("size_bb") or 0) if ba == "raise" else 0
-            return ba, namt, "  [brain %s -> %s]" % (cda.get("exploit"), src)
+            tag = src if (src and src != "engine") else (("obs:" + branch) if branch and branch != "NORMAL" else "brain")
+            if mis_fired:
+                tag += "/mischief:" + str(mis.get("kind"))
+            if ba != do or (ba == "raise" and namt and abs(namt - (amount or 0)) > 0.01):
+                return ba, namt, "  [brain %s -> %s]" % (cda.get("exploit") or branch or "player", tag)
     except Exception:
         pass
     return do, amount, ""

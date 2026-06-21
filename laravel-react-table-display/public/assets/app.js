@@ -500,6 +500,106 @@ function MatrixRain() {
   return e('canvas', { id: 'hiss-matrix-rain', className: 'matrix-rain' });
 }
 
+// ---- Odds: pot / reverse-pot / implied / reverse-implied, computed CRASH-SAFE from table-state (never
+// touches prwin, which can crash Hiss). Implied/reverse-implied use the effective stack as the future-
+// money proxy. [Emrald: show the 4 odds on the React table view]
+function computeOdds(table) {
+  var players = table.players || [];
+  var heroChair = (typeof table.userchair === 'number' ? table.userchair : 3);
+  var heroBet = 0, heroBal = 0, maxBet = 0, maxOppBal = 0, found = false;
+  for (var i = 0; i < players.length; i++) {
+    var p = players[i], bet = Number(p.bet || 0), bal = Number(p.balance || 0);
+    if (p.chair === heroChair) { heroBet = bet; heroBal = bal; found = true; }
+    else { if (bet > maxBet) maxBet = bet; if (bal > maxOppBal) maxOppBal = bal; }
+  }
+  var pot = Number(table.pot || 0);
+  var call = Math.max(0, maxBet - heroBet);
+  if (!found || call <= 0 || pot <= 0) return null;
+  var eff = Math.min(heroBal || maxOppBal, maxOppBal || heroBal) || 0;
+  return {
+    call: call, pot: pot,
+    po: call / (pot + call),                              // pot odds: equity needed to call now
+    rpo: pot / (pot + call),                              // reverse pot odds: the price laid to us
+    io: call / (pot + call + eff * 0.35),                 // implied: future bets won when we hit
+    rio: (call + eff * 0.25) / (pot + call + eff * 0.25), // reverse implied: future bets paid off behind
+    ratio: pot / call
+  };
+}
+
+function OddsStat(props) {
+  return e('div', { title: props.title,
+      style: { display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '62px',
+               padding: '2px 9px', borderRight: '1px solid #ffffff14' } },
+    e('span', { style: { fontSize: '9px', letterSpacing: '.5px', color: '#88a0a0', textTransform: 'uppercase' } }, props.label),
+    e('span', { style: { fontSize: '14px', fontWeight: 'bold', color: props.color || '#e6e6e6', fontFamily: 'monospace' } }, props.value));
+}
+
+function OddsPanel(props) {
+  var o = props.odds;
+  if (!o) return null;
+  var pct = function (x) { return Math.round(x * 100) + '%'; };
+  return e('div', { className: 'odds-panel',
+      style: { display: 'flex', alignItems: 'stretch', justifyContent: 'center', margin: '6px auto 0',
+               background: 'rgba(10,14,12,.72)', border: '1px solid #ffffff1c', borderRadius: '8px',
+               padding: '4px 2px', width: 'fit-content', boxShadow: '0 0 10px rgba(0,0,0,.4)' } },
+    e(OddsStat, { label: 'Pot odds', value: pct(o.po), color: '#7fd6ff',
+        title: 'Equity needed to call now = call/(pot+call). You are getting ' + o.ratio.toFixed(1) + ':1.' }),
+    e(OddsStat, { label: 'Rev pot', value: pct(o.rpo), color: '#9ad0a0',
+        title: 'Reverse pot odds: the pot share already laid to you (1 - pot odds).' }),
+    e(OddsStat, { label: 'Implied', value: pct(o.io), color: '#caa6ff',
+        title: 'Implied odds: equity needed counting future bets you WIN when you hit (eff-stack proxy).' }),
+    e(OddsStat, { label: 'Rev impl', value: pct(o.rio), color: '#ff9f9f',
+        title: 'Reverse implied odds: equity needed counting future chips you PAY OFF when 2nd-best.' }));
+}
+
+// ---- RED DECISION overlay, ON FIRE, trailing 10s after each new decision. Shows the brain's CURRENT
+// DECIDED ACTION (exploit/branch/mischief), polled from the AIL server's /decision -- a crash-safe DB
+// read of brain_state (never re-evaluates the OHF/prwin). [Emrald: red decision on fire, trail 10s]
+function DecisionOverlay() {
+  var decPair = useState(null), dec = decPair[0], setDec = decPair[1];
+  var shownPair = useState(null), shown = shownPair[0], setShown = shownPair[1];
+  var nowPair = useState(0), setNow = nowPair[1];
+  useEffect(function () {
+    var alive = true;
+    function poll() {
+      fetch(window.location.protocol + '//' + window.location.hostname + ':7900/decision')
+        .then(function (r) { return r.json(); })
+        .then(function (d) { if (alive) setDec(d); }).catch(function () {});
+    }
+    poll();
+    var t = setInterval(poll, 600);
+    var tick = setInterval(function () { setNow(Date.now()); }, 200);   // drive the flicker + fade
+    return function () { alive = false; clearInterval(t); clearInterval(tick); };
+  }, []);
+  useEffect(function () {
+    if (!dec || !dec.ok || !dec.action) return;
+    var key = [dec.handnumber, dec.betround, dec.action, dec.size_bb || 0, dec.source || ''].join('|');
+    setShown(function (prev) {
+      if (prev && prev.key === key) return prev;          // same decision -> keep its 10s timer running
+      return { key: key, action: dec.action, size: dec.size_bb, source: dec.source,
+               branch: dec.branch, mischief: dec.mischief, exploit: dec.exploit, ts: Date.now() };
+    });
+  }, [dec]);
+  if (!shown) return null;
+  var age = (Date.now() - shown.ts) / 1000;
+  if (age > 10) return null;                               // trail 10s, then vanish
+  var fade = age < 8 ? 1 : (10 - age) / 2;                 // hold 8s, fade the last 2s
+  var flick = 0.6 + 0.4 * Math.abs(Math.sin(Date.now() / 120));
+  var act = (shown.action || '').toUpperCase();
+  var big = '🔥 ' + act + (shown.size ? ('  ' + Number(shown.size).toFixed(1) + 'bb') : '') + ' 🔥';
+  var sub = [shown.exploit && shown.exploit !== 'none' ? ('exploit ' + shown.exploit) : null,
+             shown.branch && shown.branch !== 'NORMAL' ? ('« ' + shown.branch + ' »') : null,
+             shown.mischief ? ('mischief: ' + shown.mischief) : null].filter(Boolean).join('   ·   ');
+  return e('div', { style: { position: 'fixed', top: '76px', left: '50%', transform: 'translateX(-50%)',
+        zIndex: 60, pointerEvents: 'none', opacity: fade, textAlign: 'center' } },
+    e('div', { style: {
+        fontFamily: 'monospace', fontWeight: 'bold', fontSize: '34px', letterSpacing: '3px', color: '#ff5a3c',
+        textShadow: '0 0 ' + (6 + 16 * flick) + 'px rgba(255,70,30,' + (0.65 * flick) + '), 0 0 ' + (2 + 6 * flick) + 'px #ff2a00',
+        WebkitTextStroke: '1px rgba(120,10,0,.55)' } }, big),
+    sub ? e('div', { style: { marginTop: '2px', fontFamily: 'monospace', fontSize: '12px', color: '#ffb199',
+        letterSpacing: '1px', textShadow: '0 0 6px rgba(255,80,40,.6)' } }, sub) : null);
+}
+
 function App() {
   var statePair = useState(null);
   var state = statePair[0];
@@ -659,6 +759,7 @@ function App() {
   DISPLAY.bb = Number(limits.bblind || 0);
   return e('main', { className: 'app' },
     e(MatrixRain),
+    e(DecisionOverlay),
     e('header', { className: 'topbar' },
       e('div', { className: 'title' }, 'Hiss React Table Display — port ' + instancePort),
       e('div', { className: 'meta' },
@@ -753,7 +854,8 @@ function App() {
         e('div', { className: 'cards' }, (table.commonCards || []).map(function (card, index) {
           return e(CardView, { key: index, value: card });
         })),
-        e('div', { className: 'pot', onDoubleClick: toggleUnit, title: 'Double-click to toggle BB / $' }, 'Pot ' + bb(table.pot))
+        e('div', { className: 'pot', onDoubleClick: toggleUnit, title: 'Double-click to toggle BB / $' }, 'Pot ' + bb(table.pot)),
+        e(OddsPanel, { odds: computeOdds(table) })
       ),
       (table.players || []).map(function (player) {
         return e(Player, { key: player.chair, player: player, nchairs: table.nchairs, toact: (typeof table.toact === 'number' ? table.toact : -1), isOmaha: !!table.isomaha, observer: !!table.observer, onToggleUnit: toggleUnit });
