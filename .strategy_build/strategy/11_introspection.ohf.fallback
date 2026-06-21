@@ -1,0 +1,130 @@
+//*****************************************************************************
+//  11_introspection - the INTUITION layer (FALLBACK build).
+//
+//  *** This is the FALLBACK version: it references ONLY symbols the CURRENT Hiss
+//  binary already defines (f$Opp_* HUD reads, timing tells, the aggressor story,
+//  the existing aggro knob). The native introspection engine symbols DO NOT exist
+//  until Hiss is rebuilt, and referencing them pops Parse-Error modals on the
+//  running binary (lint-clobbers-live-master).
+//
+//  The full native version is saved as 11_introspection.ohf.native -- after the
+//  rebuild (which defines the engine symbols), swap it back in for the real
+//  introspection reads (per-opponent rhythm/tilt/timing/range, gametype-separated).
+//  Meanwhile the live decision_advisor still steers exploit-adjusted play through
+//  the existing aggro/bluff knobs, so the brain is live without the rebuild.
+//*****************************************************************************
+
+// ============================ introspection answers (HUD fallback) =========
+##f$Intro_Known##
+WHEN f$Opp_Known RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Intro_WillKeepFiring##
+WHEN f$Opp_Known AND f$Opp_IsAggro RETURN 0.7 FORCE
+WHEN f$Opp_Known RETURN 0.4 FORCE
+WHEN Others RETURN -1 FORCE
+
+##f$Intro_FastTell##
+WHEN f$TimingSaysStrong RETURN 0.8 FORCE
+WHEN f$TimingSaysWeak RETURN 0.2 FORCE
+WHEN Others RETURN -1 FORCE
+
+##f$Intro_Tilt##
+WHEN Others RETURN 0 FORCE
+
+// ============================ exploit flags (HUD fallback) ==================
+##f$Exploit_Overfold##
+WHEN f$Opp_Known AND f$Opp_Foldy RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_GivesUp##
+WHEN f$Opp_Known AND f$Opp_Foldy AND NOT f$Opp_IsStation RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_KeepsFiring##
+WHEN f$Opp_Known AND f$Opp_IsAggro RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_NeverFolds##
+WHEN f$Opp_Known AND (f$Opp_IsStation OR f$Opp_IsFish) RETURN true FORCE
+WHEN f$Opp_PotCommitted RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_Folds3Bet##
+WHEN f$Opp_Known AND f$Opp_Foldy RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_FastWeak##
+WHEN f$TimingSaysWeak RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_FastStrong##
+WHEN f$TimingSaysStrong RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_Honest##
+WHEN f$Opp_Known AND f$Opp_IsPassive RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_Tilt##
+WHEN Others RETURN false FORCE
+
+// ============================ card / range guess (story fallback) ==========
+##f$Range_VillainStrength##
+WHEN f$OppStoryStrong RETURN 0.8 FORCE
+WHEN f$OppMinLead RETURN 0.3 FORCE
+WHEN Others RETURN -1 FORCE
+
+// ============================ live advisor channels (inert until rebuild) ===
+##f$Advice_Conf##
+WHEN Others RETURN 0 FORCE
+##f$Advice_Raise##
+WHEN Others RETURN 0 FORCE
+##f$Advice_Bluff##
+WHEN Others RETURN 0 FORCE
+##f$Advice_Value##
+WHEN Others RETURN 0 FORCE
+##f$Advice_Fold##
+WHEN Others RETURN 0 FORCE
+##f$Advice_Persona##
+WHEN Others RETURN -1 FORCE
+
+// ============================ bot counter-persona ==========================
+##f$BotPersona##
+WHEN f$Exploit_NeverFolds RETURN 2 FORCE
+WHEN f$Exploit_Overfold OR f$Exploit_Folds3Bet RETURN 6 FORCE
+WHEN f$Exploit_KeepsFiring RETURN 4 FORCE
+WHEN Others RETURN -1 FORCE
+
+// ============================ table read: DONK-FEST (inert until rebuild) ===
+##f$Table_DonkFest##
+WHEN Others RETURN false FORCE
+
+// ============================ INTUITION (the spine) ========================
+##f$Intuition_VillainStrength##
+WHEN f$Range_VillainStrength >= 0 RETURN f$Range_VillainStrength FORCE
+WHEN Others RETURN -1 FORCE
+
+##f$Intuition_Confidence##
+WHEN f$Intro_Known RETURN 0.6 FORCE
+WHEN Others RETURN 0.2 FORCE
+
+##f$Intuition_ShowOfForce##
+WHEN (f$Committed OR PotSize >= 12 * bblind) AND (f$Exploit_Overfold OR f$Exploit_Folds3Bet) RETURN true FORCE
+WHEN (f$Committed OR PotSize >= 12 * bblind) AND f$Range_VillainStrength >= 0 AND f$Range_VillainStrength < 0.4 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Intuition_Aggression##
+WHEN f$Exploit_NeverFolds AND f$Range_VillainStrength >= 0.6 RETURN 0.2 FORCE
+WHEN f$Exploit_Tilt RETURN 0.72 FORCE
+WHEN f$Exploit_Overfold OR f$Exploit_GivesUp RETURN 0.75 FORCE
+WHEN Others RETURN 0.5 + (openai_knob_aggro - 0.5) * 0.5 FORCE
+
+##f$Intuition_Exploit##
+WHEN f$Exploit_Tilt RETURN 2 FORCE
+WHEN f$Exploit_NeverFolds RETURN 2 FORCE
+WHEN f$Exploit_KeepsFiring RETURN 3 FORCE
+WHEN f$Exploit_FastStrong OR f$Exploit_Honest RETURN 5 FORCE
+WHEN f$Exploit_Overfold OR f$Exploit_GivesUp OR f$Exploit_Folds3Bet RETURN 1 FORCE
+WHEN f$Exploit_FastWeak RETURN 4 FORCE
+WHEN Others RETURN 0 FORCE
