@@ -26,6 +26,32 @@ ACT_RE    = re.compile(r"^(.*\S) (folds|checks|calls|bets|raises)\b")
 STAT_COLS = ["vpip", "pfr", "threeb", "fourb", "fiveb", "f3b", "f4b", "cbet", "ftc", "steal", "fts", "wtsd"]
 
 
+def gametype_from_hh(hh):
+    """Classify a hand-history into nlhe | plo | plo8 from its first line
+    ('... - Holdem (No Limit) - ...' / '... - Omaha (Pot Limit) - ...' /
+    '... - Omaha Hi/Lo - ...'). Per-gametype stats keep a player's PLO read
+    from bleeding into their NLH read."""
+    head = (hh or "")[:200].lower()
+    if "omaha" in head:
+        if any(t in head for t in ("hi/lo", "hi-lo", "h/l", "8 or b", "hilo", "8orb")):
+            return "plo8"
+        return "plo"
+    return "nlhe"
+
+
+def ensure_schema(conn):
+    """Idempotently make hud_player_stats keyed by (player, gametype)."""
+    cur = conn.cursor()
+    cur.execute("ALTER TABLE hud_player_stats ADD COLUMN IF NOT EXISTS gametype TEXT NOT NULL DEFAULT 'nlhe'")
+    cur.execute("""SELECT pg_get_constraintdef(oid) FROM pg_constraint
+                   WHERE conname='hud_player_stats_pkey' AND conrelid='hud_player_stats'::regclass""")
+    row = cur.fetchone()
+    if row and "gametype" not in row[0]:
+        cur.execute("ALTER TABLE hud_player_stats DROP CONSTRAINT hud_player_stats_pkey")
+        cur.execute("ALTER TABLE hud_player_stats ADD PRIMARY KEY (player, gametype)")
+    conn.commit()
+
+
 def _marker(lines, m):
     for i, l in enumerate(lines):
         if m in l:
