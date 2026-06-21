@@ -380,9 +380,80 @@ class Handler(BaseHTTPRequestHandler):
                 port = (q.get("port") or ["27654"])[0]
                 ok, msg = run_lobby_fetch(port)
                 return self._send(200, {"ok": ok, "msg": msg, "port": port})
+            if path == "/brain":
+                port = (q.get("port") or ["27654"])[0]
+                if "on" in q:
+                    on = (q.get("on") or ["1"])[0] in ("1", "true", "on", "yes")
+                    ok, msg = (brain_launch(port) if on else brain_kill(port))
+                    return self._send(200, {"engaged": brain_running(port), "ok": ok, "msg": msg, "port": port})
+                return self._send(200, {"engaged": brain_running(port), "port": port})
             return self._send(404, {"error": "not found"})
         except Exception as e:
             return self._send(500, {"error": str(e), "trace": traceback.format_exc()})
+
+# ---- BRAIN stack control (the introspection/intuition harmonizer) -------------------------------
+# The 🧠💭 Brain button (React table view) toggles this. Global daemons (aggregators + nervous system)
+# launch once; the port-specific pair (synapse_map + decision_advisor) is keyed by the Hiss port so each
+# instance gets its own brain steering its own bot. Windowless + tracked so it's clean to stop.
+_brain = {}          # port(str) -> [Popen]   (synapse + advisor for that bot)
+_brain_global = []   # [Popen]                (aggregators + brain_service + deep_thought + growth)
+_brain_lock = threading.Lock()
+BRAIN_PG = os.environ.get("HISS_PG_DSN", "host=127.0.0.1 port=5432 dbname=hiss user=postgres password=dbpass")
+
+
+def _brain_spawn(args):
+    env = dict(os.environ); env["HISS_PG_DSN"] = BRAIN_PG
+    log = open(os.path.join(LOGS, "brain_%s.out.log" % args[0].replace(".py", "")), "a")
+    return subprocess.Popen([capture_python()] + args, cwd=MCPDIR, env=env, stdout=log,
+                            stderr=subprocess.STDOUT, creationflags=LAUNCH_FLAGS, startupinfo=no_window_si())
+
+
+def brain_running(port):
+    with _brain_lock:
+        pp = [p for p in _brain.get(str(port), []) if p.poll() is None]
+        return len(pp) > 0
+
+
+def brain_launch(port):
+    port = str(port); bot = "http://127.0.0.1:%s" % port
+    with _brain_lock:
+        if not any(p.poll() is None for p in _brain_global):       # global daemons: launch once
+            _brain_global[:] = []
+            for a in (["hud_aggregator.py", "--watch"], ["introspect_aggregator.py", "--watch"],
+                      ["brain_service.py"], ["deep_thought.py", "--serve"], ["growth.py", "--watch"]):
+                try:
+                    _brain_global.append(_brain_spawn(a))
+                except Exception:
+                    pass
+        procs = [p for p in _brain.get(port, []) if p.poll() is None]   # port-specific: synapse + advisor
+        if not procs:
+            for a in (["synapse_map.py", "--bot-url", bot, "--watch"], ["decision_advisor.py", "--bot-url", bot]):
+                try:
+                    procs.append(_brain_spawn(a))
+                except Exception:
+                    pass
+        _brain[port] = procs
+    return True, "brain engaged for %s" % bot
+
+
+def brain_kill(port):
+    port = str(port)
+    with _brain_lock:
+        for p in _brain.get(port, []):
+            try:
+                p.terminate()
+            except Exception:
+                pass
+        _brain[port] = []
+        if not any(any(x.poll() is None for x in v) for v in _brain.values()):   # last one out -> stop globals
+            for p in _brain_global:
+                try:
+                    p.terminate()
+                except Exception:
+                    pass
+            _brain_global[:] = []
+    return True, "brain disengaged for %s" % port
+
 
 def reconcile_loop():
     """Keep the switches honest: adopt a daemon that's already running (started by the loop / a .bat /

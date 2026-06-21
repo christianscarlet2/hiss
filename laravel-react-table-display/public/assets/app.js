@@ -536,6 +536,20 @@ function App() {
     setSuperOn(!superOn);   // optimistic; the poll below reconciles
   };
 
+  // BRAIN: the introspection/intuition harmonizer stack (synapse_map + decision_advisor + aggregators +
+  // nervous system). Engaging it makes the seated bot play exploit-adjusted via the knobs -- no rebuild.
+  var brainPair = useState(false);
+  var brainOn = brainPair[0];
+  var setBrainOn = brainPair[1];
+  var brainSrv = function (q) {
+    var port = window.location.port || '27654';
+    return window.location.protocol + '//' + window.location.hostname + ':7900/brain?port=' + port + q;
+  };
+  var toggleBrain = function () {
+    fetch(brainSrv('&on=' + (brainOn ? '0' : '1'))).catch(function () {});
+    setBrainOn(!brainOn);   // optimistic; the poll below reconciles via :7900 (the AIL control server)
+  };
+
   // Lobby recon (icm-chip-value skill): navigate to this instance's tournament lobby, read the
   // structure, return to the felt. Runs via the AIL control server (mcp/ail_server.py :7900) so no
   // Hiss rebuild is needed; it kicks off lobby_fetch.sh for THIS page's Hiss port.
@@ -574,6 +588,19 @@ function App() {
     }
     pollUltra();
     var t = setInterval(pollUltra, 1500);
+    return function () { alive = false; clearInterval(t); };
+  }, []);
+
+  // Reflect the BRAIN engaged state (the introspection/intuition harmonizer stack).
+  useEffect(function () {
+    var alive = true;
+    function pollBrain() {
+      fetch(brainSrv('')).then(function (r) { return r.json(); })
+        .then(function (j) { if (alive && j && typeof j.engaged === 'boolean') setBrainOn(j.engaged); })
+        .catch(function () {});
+    }
+    pollBrain();
+    var t = setInterval(pollBrain, 1500);
     return function () { alive = false; clearInterval(t); };
   }, []);
 
@@ -652,6 +679,19 @@ function App() {
           boxShadow: nnOn ? '0 0 8px rgba(63,185,80,.5)' : 'none'
         }
       }, (nnOn ? '🧠 NN Driver ●' : '🧠 NN Driver')),
+      e('button', {
+        onClick: toggleBrain,
+        title: brainOn ? 'BRAIN ENGAGED — introspection + intuition steering the bot via the knobs; click to disengage'
+                       : 'Engage the BRAIN: per-opponent introspection + intuition + the exploit advisor (no rebuild)',
+        style: {
+          marginLeft: '8px', padding: '4px 12px', borderRadius: '6px', cursor: 'pointer',
+          fontWeight: 'bold', font: 'inherit',
+          border: '1px solid ' + (brainOn ? '#2bd4d4' : '#444'),
+          background: brainOn ? '#0e3434' : '#1c1c20',
+          color: brainOn ? '#2bd4d4' : '#bbb',
+          boxShadow: brainOn ? '0 0 8px rgba(43,212,212,.6)' : 'none'
+        }
+      }, (brainOn ? '🧠💭 Brain ●' : '🧠💭 Brain')),
       e('button', {
         onClick: toggleUltra,
         title: ultraOn ? 'ULTRA ENGAGED — sound-driven OHF<->NN switching; click to stop'
