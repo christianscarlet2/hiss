@@ -403,6 +403,12 @@ void CHudManager::RefreshIfNeeded(CString hand_number, bool force)
 	}
 
 	bool build_stats = IsEnabled();
+	// Per-gametype HUD: show the stats for the CURRENTLY detected game so a player's PLO read never
+	// bleeds into their NLH read (and vice versa).
+	CString hud_gametype = "nlhe";
+	if (p_engine_container != NULL && p_engine_container->symbol_engine_isomaha() != NULL
+		&& p_engine_container->symbol_engine_isomaha()->isomaha())
+		hud_gametype = p_engine_container->symbol_engine_isomaha()->isplo8() ? "plo8" : "plo";
 	for (int chair = 0; chair < kMaxNumberOfPlayers; ++chair) {
 		_chair_samples[chair] = -1;
 		_chair_stats[chair].clear();
@@ -412,7 +418,7 @@ void CHudManager::RefreshIfNeeded(CString hand_number, bool force)
 		if (name.IsEmpty()) continue;
 
 		SHudDbStats st;
-		if (!p_tablemap_db->GetHudPlayerStats(name, &st) || !st.found) continue;
+		if (!p_tablemap_db->GetHudPlayerStats(name, hud_gametype, &st) || !st.found) continue;
 		_chair_samples[chair] = st.hands;
 		if (!build_stats) continue;
 

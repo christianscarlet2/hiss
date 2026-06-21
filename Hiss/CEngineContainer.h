@@ -47,6 +47,7 @@ class CSymbolEngineNutFullhouseOrFourOfAKind;
 class CSymbolEngineOpenPPL;
 class CSymbolEngineOpenPPLHandAndBoardExpression;
 class CSymbolEngineOpenPPLUserVariables;
+class CSymbolEngineOpponentIntrospection;
 class CSymbolEnginePokerAction;
 class CSymbolEnginePokerTracker;
 class CSymbolEnginePokerval;
@@ -179,6 +180,8 @@ public:
     { return p_symbol_engine_poker_action; }
   CSymbolEnginePokerTracker *symbol_engine_pokertracker()
     { return p_symbol_engine_pokertracker; }
+  CSymbolEngineOpponentIntrospection *symbol_engine_opponent_introspection()
+    { return p_symbol_engine_opponent_introspection; }
   CSymbolEnginePokerval *symbol_engine_pokerval()
     { return p_symbol_engine_pokerval; }
   CSymbolEnginePositions *symbol_engine_positions()
@@ -244,6 +247,7 @@ private:
   CSymbolEngineOpenPPLUserVariables *p_symbol_engine_openppl_user_variables;
   CSymbolEnginePokerAction *p_symbol_engine_poker_action;
   CSymbolEnginePokerTracker *p_symbol_engine_pokertracker;
+  CSymbolEngineOpponentIntrospection *p_symbol_engine_opponent_introspection;
   CSymbolEnginePokerval *p_symbol_engine_pokerval;
   CSymbolEnginePositions *p_symbol_engine_positions;
   CSymbolEnginePrwin *p_symbol_engine_prwin;

@@ -76,6 +76,19 @@ double g_knob_aggro     = 0.5;        //   pushed via /api/knob, read by the OHF
 double g_knob_bluff     = 0.5;        //   No staleness: they persist until changed (human-set).
 double g_knob_cbet      = -1.0;       // C-bet frequency DIRECT override: -1 = AUTO (use computed
                                       //   f$CbetFreq); 0..1 = force that c-bet frequency.
+// Decision-advisor channels (mcp/decision_advisor.py, fired on ismyturn): exploit-oriented leans the
+// OHF weights heavily into the live decision. Pushed via /api/knob?name=advice_*. Leans are -1..1
+// (0 = no opinion); persona is the BOT archetype to ADOPT vs this villain (-1 none, 1 nit..6 maniac);
+// conf is the advisor's confidence 0..1. They decay to neutral if the advisor stops (see ts guard).
+double g_knob_advice_raise   = 0.0;
+double g_knob_advice_value   = 0.0;
+double g_knob_advice_bluff   = 0.0;
+double g_knob_advice_fold    = 0.0;
+double g_knob_advice_persona = -1.0;
+double g_knob_advice_conf    = 0.0;
+long   g_advice_tick         = 0;     // GetTickCount() of the last /api/knob advice push; the OHF
+                                      //   ignores advice older than ~5s so it never steers on a dead
+                                      //   advisor (unlike the persistent human knobs).
 int g_terminal_port = 0;
 int g_mcp_action_request = -1;       // a k_autoplayer_function_* code (FCKRA)
 double g_mcp_action_amount = -1.0;   // bet/raise size in big blinds (<0 = plain button click)

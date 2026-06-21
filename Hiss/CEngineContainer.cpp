@@ -69,6 +69,7 @@
 #include "CSymbolEngineOpenPPLUserVariables.h"
 #include "CSymbolEnginePokerAction.h"
 #include "CSymbolEnginePokerTracker.h"
+#include "CSymbolEngineOpponentIntrospection.h"
 #include "CSymbolEnginePokerval.h"
 #include "CSymbolEnginePositions.h"
 #include "CSymbolEnginePrwin.h"
@@ -264,6 +265,10 @@ void CEngineContainer::CreateSymbolEngines() {
   // CSymbolEnginePokerTracker
   p_symbol_engine_pokertracker = new CSymbolEnginePokerTracker;
   AddSymbolEngine(p_symbol_engine_pokertracker);
+  // CSymbolEngineOpponentIntrospection -- after pokertracker (reads names/gametype/raischair, loads
+  // opponent_profile from postgres). Provides intro_* / exploit_* symbols.
+  p_symbol_engine_opponent_introspection = new CSymbolEngineOpponentIntrospection;
+  AddSymbolEngine(p_symbol_engine_opponent_introspection);
   // CSymbolEngineIniFunctions
   // "depends" on all other engines,
   // as it can only be called after all symbols have been initialized.

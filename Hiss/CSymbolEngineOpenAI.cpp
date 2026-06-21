@@ -72,10 +72,31 @@ bool CSymbolEngineOpenAI::EvaluateSymbol(const CString name, double *result, boo
     if (result != NULL) *result = g_knob_cbet;
     return true;
   }
+  // Decision-advisor channels (mcp/decision_advisor.py). Exploit-oriented leans the OHF weights into
+  // the live decision. Fresh-only: if no advice push in ~5s, decay to neutral so a dead advisor never
+  // steers play (unlike the persistent human knobs above).
+  if (name.Left(18) == "openai_knob_advice") {
+    extern double g_knob_advice_raise, g_knob_advice_value, g_knob_advice_bluff, g_knob_advice_fold,
+                  g_knob_advice_persona, g_knob_advice_conf;
+    extern long g_advice_tick;
+    bool fresh = (g_advice_tick != 0) && ((long)GetTickCount() - g_advice_tick < 5000);
+    double r = 0.0;
+    if      (name == "openai_knob_advice_raise")   r = fresh ? g_knob_advice_raise : 0.0;
+    else if (name == "openai_knob_advice_value")   r = fresh ? g_knob_advice_value : 0.0;
+    else if (name == "openai_knob_advice_bluff")   r = fresh ? g_knob_advice_bluff : 0.0;
+    else if (name == "openai_knob_advice_fold")    r = fresh ? g_knob_advice_fold : 0.0;
+    else if (name == "openai_knob_advice_persona") r = fresh ? g_knob_advice_persona : -1.0;
+    else if (name == "openai_knob_advice_conf")    r = fresh ? g_knob_advice_conf : 0.0;
+    else return false;
+    if (result != NULL) *result = r;
+    return true;
+  }
   return false;
 }
 
 CString CSymbolEngineOpenAI::SymbolsProvided() {
   return "openai_paused openai_steer_anchor openai_action openai_autohijack openai_consult "
-         "openai_knob_openrange openai_knob_aggro openai_knob_bluff openai_knob_cbet ";
+         "openai_knob_openrange openai_knob_aggro openai_knob_bluff openai_knob_cbet "
+         "openai_knob_advice_raise openai_knob_advice_value openai_knob_advice_bluff "
+         "openai_knob_advice_fold openai_knob_advice_persona openai_knob_advice_conf ";
 }

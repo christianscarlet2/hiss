@@ -151,6 +151,7 @@
     <ClCompile Include="CSymbolEngineMemorySymbols.cpp" />
     <ClCompile Include="CSymbolEngineOpenPPLHandAndBoardExpression.cpp" />
     <ClCompile Include="CSymbolEngineOpenPPLUserVariables.cpp" />
+    <ClCompile Include="CSymbolEngineOpponentIntrospection.cpp" />
     <ClCompile Include="CSymbolEnginePokerTracker.cpp" />
     <ClCompile Include="CSymbolEnginePokerval.cpp" />
     <ClCompile Include="CSymbolEnginePositions.cpp" />
@@ -356,6 +357,7 @@
     <ClInclude Include="CSymbolEngineMemorySymbols.h" />
     <ClInclude Include="CSymbolEngineOpenPPLHandAndBoardExpression.h" />
     <ClInclude Include="CSymbolEngineOpenPPLUserVariables.h" />
+    <ClInclude Include="CSymbolEngineOpponentIntrospection.h" />
     <ClInclude Include="CSymbolEnginePokerTracker.h" />
     <ClInclude Include="CSymbolEnginePokerval.h" />
     <ClInclude Include="CSymbolEnginePositions.h" />

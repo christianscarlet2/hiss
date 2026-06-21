@@ -473,11 +473,25 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 	// + the manic_burst daemon push here; the OHF reads them as openai_knob_* (no rebuild to retune).
 	if (path.CompareNoCase("/api/knob") == 0) {
 		extern double g_knob_openrange; extern double g_knob_aggro; extern double g_knob_bluff; extern double g_knob_cbet;
+		extern double g_knob_advice_raise; extern double g_knob_advice_value; extern double g_knob_advice_bluff;
+		extern double g_knob_advice_fold; extern double g_knob_advice_persona; extern double g_knob_advice_conf;
+		extern long g_advice_tick; g_advice_tick = (long)GetTickCount();
 		CStringA nm = QueryValue(query, "name");
 		CStringA vl = QueryValue(query, "value");
 		if (!nm.IsEmpty() && !vl.IsEmpty()) {
 			double v = atof(vl);
-			if (nm.CompareNoCase("cbet") == 0) {
+			if (nm.Left(7).CompareNoCase("advice_") == 0) {
+				// Decision-advisor channels: leans clamp -1..1, persona -1..6, conf 0..1.
+				if (nm.CompareNoCase("advice_persona") == 0) g_knob_advice_persona = (v < -1.0 ? -1.0 : (v > 6.0 ? 6.0 : v));
+				else if (nm.CompareNoCase("advice_conf") == 0) g_knob_advice_conf = (v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v));
+				else {
+					double lean = (v < -1.0 ? -1.0 : (v > 1.0 ? 1.0 : v));
+					if (nm.CompareNoCase("advice_raise") == 0) g_knob_advice_raise = lean;
+					else if (nm.CompareNoCase("advice_value") == 0) g_knob_advice_value = lean;
+					else if (nm.CompareNoCase("advice_bluff") == 0) g_knob_advice_bluff = lean;
+					else if (nm.CompareNoCase("advice_fold") == 0) g_knob_advice_fold = lean;
+				}
+			} else if (nm.CompareNoCase("cbet") == 0) {
 				// cbet is special: negative = AUTO (no override / use the computed f$CbetFreq); else clamp 0..1.
 				g_knob_cbet = (v < 0.0) ? -1.0 : (v > 1.0 ? 1.0 : v);
 			} else {
@@ -488,8 +502,12 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 				else if (nm.CompareNoCase("bluff") == 0) g_knob_bluff = v;
 			}
 		}
-		CStringA body; body.Format("{\"ok\":true,\"openrange\":%.3f,\"aggro\":%.3f,\"bluff\":%.3f,\"cbet\":%.3f}",
-			g_knob_openrange, g_knob_aggro, g_knob_bluff, g_knob_cbet);
+		CStringA body; body.Format("{\"ok\":true,\"openrange\":%.3f,\"aggro\":%.3f,\"bluff\":%.3f,\"cbet\":%.3f,"
+			"\"advice_raise\":%.3f,\"advice_value\":%.3f,\"advice_bluff\":%.3f,\"advice_fold\":%.3f,"
+			"\"advice_persona\":%.1f,\"advice_conf\":%.3f}",
+			g_knob_openrange, g_knob_aggro, g_knob_bluff, g_knob_cbet,
+			g_knob_advice_raise, g_knob_advice_value, g_knob_advice_bluff, g_knob_advice_fold,
+			g_knob_advice_persona, g_knob_advice_conf);
 		CStringA response;
 		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
 			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",

@@ -5,6 +5,17 @@ the **OHF** (deep-wired), the **NN driver**, the **synapse harmonizer**, and a r
 **Claude decision advisor**. Goal of every answer: **find the most profitable EXPLOIT of THIS
 player in THIS spot.** Build is one bundle → **single Hiss rebuild + OHF build_and_lint + restart.**
 
+## 0. The spine — INTUITION (everything harmonizes into one read)
+All signals — HUD, introspection (rhythm/exploits/timing/showdown), the card/range guess, the synapse
+state, and the live advisor — are **harmonized by the synapse harmonizer into a single INTUITION**, and
+the strategy makes its decisions FROM that intuition, not from a dozen raw symbols read separately.
+Concretely: the synapse graph fuses every node into intuition outputs, surfaced as `f$Intuition_*`
+(e.g. `f$Intuition_Aggression`, `f$Intuition_VillainStrength`, `f$Intuition_Exploit`,
+`f$Intuition_Confidence`). The OHF decision points (§3) read `f$Intuition_*`; the raw `intro_*`/HUD/
+advisor symbols are the *inputs* the intuition is harmonized from, weighted by confidence + sample.
+The NN consumes the same intuition vector. This is the unifying layer — build §3/§7 so decisions flow
+through it.
+
 ## Status legend  ✅ done/validated · 🟡 coded (needs the rebuild) · ⬜ todo
 
 ## 1. Data foundation ✅ (live, validated on real hands)
@@ -54,8 +65,12 @@ player in THIS spot.** Build is one bundle → **single Hiss rebuild + OHF build
 
 ## 4. Decision Advisor (capstone) ⬜  — `mcp/decision_advisor.py`
 - Trigger: **ismyturn rising edge** (poll cached `/api/symbols`), off-heartbeat, action-timer budget.
-- Assemble a **relevance-ranked context bundle**: introspection answers + their relevance, the relevant
-  symbols, dial/knob settings, synapse state, game state.
+- Assemble a **relevance-ranked context bundle**: introspection answers + their relevance, the
+  per-opponent **HUD stats**, the relevant symbols, dial/knob settings, synapse state, game state.
+- **Attach the live table SCREENSHOT** (claude -p is multimodal): the latest heartbeat frame
+  (`logs/frames/<ms>.bmp` / `/api/frames` / table_screenshot, PNG) so Claude sees board texture, bet
+  sizing, stack depths, who's left to act — visual ground-truth the symbols can't fully encode, and a
+  cross-check on the scrape. Down-scale + cap so it never blows the action-timer budget.
 - `claude -p` (headless CLI, chosen) → best **questions** for the spot + reasoning over the villain's
   **forks** (check/bet/raise/fold), each answered from introspection+synapse+HUD, output a weighted,
   **exploit-oriented** recommendation (aggro/bluff/raise/fold leans + confidence + per-fork plan).
