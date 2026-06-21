@@ -228,6 +228,10 @@ def advise(base, conn, want_shot, log=True):
               % (pathway, b["villain"] or "?", clamp(adv.get("aggro"), 0, 1, 0.5),
                  clamp(adv.get("advice_raise"), -1, 1), adv.get("persona"),
                  clamp(adv.get("confidence"), 0, 1), str(adv.get("rationale"))[:80]), flush=True)
+    # DONK-FEST -> get in CHEAP: widen our range via the openrange knob (a donk-heavy table won't punish
+    # a cheap entry, and we bet heavy for value postflop when we connect). Safe: the knob only widens range.
+    if b.get("intuition", {}).get("donkfest"):
+        push_knob(base, "openrange", 0.75)
     # REMEMBER the situation -> decision_memory (recall fuel), once per decision (first pass only)
     if cur and log:
         try:
