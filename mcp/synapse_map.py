@@ -293,6 +293,10 @@ INTRO_SYNAPSES = [
     ("consider.backward", "intuition.read", "BACKWARD: villain history + recent steam + our table image"),
     ("consider.present", "intuition.read", "PRESENT: the spot right now drives the exploit read"),
     ("consider.forward", "output.decided", "FORWARD: the plan + predicted-response lookahead confirm the pathway"),
+    # the pineal gland: superstition + ultra's music harmonized as a bounded intuitive lean
+    ("knob.superstition", "pineal.third_eye", "the Beast's favor / 666 omen feeds the third eye"),
+    ("knob.ultra", "pineal.third_eye", "ULTRA's music (system-audio) feeds the third eye"),
+    ("pineal.third_eye", "intuition.read", "aligned omens + music lean the read into the moment (bounded)"),
     # live advisor + recall
     ("knob.advice", "intuition.read", "the live claude advisor weights into the read"),
     ("memory.decisions", "intuition.read", "recall of similar past situations (decision_memory) sharpens the read"),
@@ -531,10 +535,32 @@ def compute_considerations(g, prof, intuition, plan, current, perception):
     return {"backward": backward, "present": present, "forward": forward}
 
 
+def compute_pineal(g):
+    """THE PINEAL GLAND (the third eye): harmonizes the decision with SUPERSTITION -- the Beast's favor /
+    the 666 omen resonance -- and ULTRA MODE's MUSIC (the system-audio that drives ultra). A BOUNDED
+    intuitive lean: when the omens + the music swell together, the brain leans into the moment (chase,
+    press); when they're quiet, no influence. It colors the read, it never overrides it."""
+    favor = num(g["beast"].get("favor"), num(g["syms"].get("sb_beastfavor")))
+    superstition_on = bool(g["superstition"].get("engaged"))
+    ultra = g["ultra"]; ultra_on = bool(ultra.get("engaged"))
+    music = num(ultra.get("level", ultra.get("audio", 0.0)))     # ultra's system-audio average 0..1
+    omen = favor if superstition_on else favor * 0.5             # the Beast/666 omen
+    resonance = max(0.0, min(1.0, omen * 0.7 + (music * 0.3 if ultra_on else 0.0)))
+    lean = 0.15 if resonance >= 0.66 else (0.07 if resonance >= 0.40 else 0.0)
+    return {"beastfavor": round(favor, 3), "superstition": superstition_on, "ultra": ultra_on,
+            "music": round(music, 3), "resonance": round(resonance, 3), "lean": lean,
+            "read": ("the Beast favors -- seize it" if resonance >= 0.66
+                     else ("a faint omen stirs" if resonance >= 0.40 else "the omens are quiet"))}
+
+
 def brain(g):
     vname, gt, prof, donkfest = villain_and_table(g)
     perception = compute_perception(g)
     intuition = compute_intuition(g, prof, donkfest, perception)
+    pineal = compute_pineal(g)
+    if pineal["lean"]:                                           # the third-eye nudge (bounded)
+        intuition["aggression"] = round(min(1.0, num(intuition.get("aggression"), 0.5) + pineal["lean"]), 3)
+        intuition["pineal_lean"] = pineal["lean"]
     plan = compute_plan(g, intuition)
     s = g["syms"]
     decision = {"fold": num(s.get("f$fold")), "call": num(s.get("f$call")),
@@ -544,8 +570,9 @@ def brain(g):
     return {"ts_ms": int(time.time() * 1000), "handnumber": g.get("handnumber"),
             "betround": int(num(s.get("betround"))), "villain": vname, "gametype": gt,
             "villain_profile": (prof.get("profile") if prof else None),
-            "perception": perception, "considerations": considerations, "intuition": intuition,
-            "decision_plan": plan, "decision": decision, "current_decided_action": current}
+            "perception": perception, "considerations": considerations, "pineal": pineal,
+            "intuition": intuition, "decision_plan": plan, "decision": decision,
+            "current_decided_action": current}
 
 
 def store_brain(b, history=True):
@@ -608,6 +635,10 @@ def harmonize(g):
     nodes.append({"id": "consider.forward", "value": con["forward"],
                   "ghost": "looking ahead: plan %s%s" % (con["forward"]["plan"],
                            " | SHOW OF FORCE" if con["forward"]["show_of_force"] else "")})
+    pin = bn["pineal"]
+    nodes.append({"id": "pineal.third_eye", "value": pin,
+                  "ghost": "%s (resonance %.2f%s)" % (pin["read"], pin["resonance"],
+                           ", music swelling" if pin["ultra"] and pin["music"] >= 0.5 else "")})
     nodes.append({"id": "intuition.read", "value": intu,
                   "ghost": "exploit %s | aggr %.2f | villain-strength %s%s" % (
                       intu["exploit"], intu["aggression"], intu["villain_strength"],

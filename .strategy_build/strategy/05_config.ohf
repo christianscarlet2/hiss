@@ -40,11 +40,19 @@ WHEN Others RETURN false FORCE
 ##f$AggroFreqMult##
 // Multiplies the c-bet / aggression FREQUENCY. 0.5 (neutral) -> 1.0x; 0 -> 0.55x
 // (passive); 1 -> 1.45x (relentless). Clamped to <= 0.95 downstream in f$CbetFreq.
+// INTROSPECTION (fires only on a CONFIDENT read; base knob logic unchanged otherwise): press
+// relentlessly vs a villain who over-folds / gives up the lead / is steaming.
+WHEN f$Exploit_Overfold OR f$Exploit_GivesUp OR f$Exploit_Tilt RETURN 1.35 FORCE
 WHEN Others RETURN 0.55 + openai_knob_aggro * 0.9 FORCE
 
 ##f$BluffFreqMult##
 // Multiplies every dedicated BLUFF frequency (3-bet bluff, double / triple barrel, stabs).
 // 0.5 (neutral) -> 1.0x; 0 -> 0.55x (value-only); 1 -> 1.45x (high bluff).
+// INTROSPECTION takes PRECEDENCE (fires only on a confident read): NEVER bluff a villain who won't
+// fold (station / sticky bettor / steamer); CRANK bluffs vs one who over-folds; otherwise the base
+// bluff knob is unchanged.
+WHEN f$Exploit_NeverFolds OR f$Exploit_KeepsFiring OR f$Exploit_Tilt RETURN 0.2 FORCE
+WHEN f$Exploit_Overfold OR f$Exploit_GivesUp OR f$Exploit_Folds3Bet RETURN 1.4 FORCE
 WHEN Others RETURN 0.55 + openai_knob_bluff * 0.9 FORCE
 
 //-----------------------------------------------------------------------------

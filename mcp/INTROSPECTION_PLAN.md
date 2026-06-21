@@ -190,7 +190,14 @@ NN feature spec. Unifies the signal so it's visible in the Synapse tab and share
 Once the tournament build is in and we've learned from the live brain_log/decision_memory telemetry, do
 a ground-up REWRITE of the entire system **three successive times**, each iteration distilling the wisdom
 of the previous pass into a cleaner, sharper architecture (rewrite 1 = consolidate; 2 = simplify + harden
-from rewrite-1's hindsight; 3 = optimize + polish). Architecture clear in hindsight each time. This session built it
+from rewrite-1's hindsight; 3 = optimize + polish). Architecture clear in hindsight each time.
+
+## 10. THE BRAIN ⬜ (the culmination — after the x3 rewrites)
+Concentrate EVERYTHING learned into ONE brain: fast, efficient, powerful, intelligent. The three
+rewrites are the path; this is the destination -- a single distilled cognition (perception of them +
+of us + considerations back/present/forward + intuition + plan + prediction + the pineal third eye),
+running hot on swiftsnake's cores over the message bus, deciding exploit-first with sub-perception
+latency. Trained/tuned on the brain_log + decision_memory corpus this whole system has been collecting. This session built it
 by rapid accretion; the rewrite consolidates: one clean brain module (introspection+perception+intuition
 +plan+prediction), the harmonizer, the advisor, the swiftsnake compute, and the OHF/NN integration — with
 the wisdom collected here (exploit precedence, gametype separation, tilt, fire-ASAP, fast/deep model
