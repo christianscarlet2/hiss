@@ -472,19 +472,24 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 	// (clamped 0..1); a BARE /api/knob just reports all three. Default 0.5 = NEUTRAL. The Synapse tab
 	// + the manic_burst daemon push here; the OHF reads them as openai_knob_* (no rebuild to retune).
 	if (path.CompareNoCase("/api/knob") == 0) {
-		extern double g_knob_openrange; extern double g_knob_aggro; extern double g_knob_bluff;
+		extern double g_knob_openrange; extern double g_knob_aggro; extern double g_knob_bluff; extern double g_knob_cbet;
 		CStringA nm = QueryValue(query, "name");
 		CStringA vl = QueryValue(query, "value");
 		if (!nm.IsEmpty() && !vl.IsEmpty()) {
 			double v = atof(vl);
-			if (v < 0.0) v = 0.0;
-			if (v > 1.0) v = 1.0;
-			if (nm.CompareNoCase("openrange") == 0) g_knob_openrange = v;
-			else if (nm.CompareNoCase("aggro") == 0) g_knob_aggro = v;
-			else if (nm.CompareNoCase("bluff") == 0) g_knob_bluff = v;
+			if (nm.CompareNoCase("cbet") == 0) {
+				// cbet is special: negative = AUTO (no override / use the computed f$CbetFreq); else clamp 0..1.
+				g_knob_cbet = (v < 0.0) ? -1.0 : (v > 1.0 ? 1.0 : v);
+			} else {
+				if (v < 0.0) v = 0.0;
+				if (v > 1.0) v = 1.0;
+				if (nm.CompareNoCase("openrange") == 0) g_knob_openrange = v;
+				else if (nm.CompareNoCase("aggro") == 0) g_knob_aggro = v;
+				else if (nm.CompareNoCase("bluff") == 0) g_knob_bluff = v;
+			}
 		}
-		CStringA body; body.Format("{\"ok\":true,\"openrange\":%.3f,\"aggro\":%.3f,\"bluff\":%.3f}",
-			g_knob_openrange, g_knob_aggro, g_knob_bluff);
+		CStringA body; body.Format("{\"ok\":true,\"openrange\":%.3f,\"aggro\":%.3f,\"bluff\":%.3f,\"cbet\":%.3f}",
+			g_knob_openrange, g_knob_aggro, g_knob_bluff, g_knob_cbet);
 		CStringA response;
 		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
 			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",

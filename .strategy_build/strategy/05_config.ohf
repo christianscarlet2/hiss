@@ -217,9 +217,12 @@ WHEN f$Style = 0 RETURN 0.60 FORCE
 WHEN Others RETURN 0.60 FORCE
 
 ##f$CbetFreq##
-// The c-bet frequency actually used by the street files = the book/style/rhythm base
-// (f$CbetFreqBase) scaled by the runtime AGGRESSION knob (f$AggroFreqMult), clamped so we
-// never c-bet 100% (stays deceptive). Knob at neutral (0.5) -> x1.0 = unchanged. [Emrald knob]
+// The c-bet frequency actually used by the street files.
+// DIRECT OVERRIDE [Emrald]: the C-bet Frequency knob (Synapse tab) wins when set -- openai_knob_cbet
+// = -1 means AUTO (compute below); 0..1 forces exactly that c-bet frequency.
+// AUTO = the book/style/rhythm base (f$CbetFreqBase) scaled by the runtime AGGRESSION knob
+// (f$AggroFreqMult), clamped so we never c-bet 100% (stays deceptive). Knob neutral (0.5) -> x1.0.
+WHEN openai_knob_cbet >= 0 RETURN openai_knob_cbet FORCE
 WHEN f$CbetFreqBase * f$AggroFreqMult >= 0.95 RETURN 0.95 FORCE
 WHEN Others RETURN f$CbetFreqBase * f$AggroFreqMult FORCE
 

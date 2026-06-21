@@ -429,8 +429,39 @@
         + '<div class="syn-row"><span class="syn-k">pair&nbsp;with</span><span class="syn-v">' + escapeHtml(k.pair) + '</span></div>'
         + '</div>';
     }
+    // Strategy Style: discrete 3-way (drives /strategy -> f$Style). Works on the live binary now.
+    h += '<div class="knob-card">'
+      + '<div class="knob-top"><span class="syn-icon">&#127899;</span><span class="knob-label">Strategy Style</span>'
+      + '<span class="knob-val" id="styleval">&mdash;</span></div>'
+      + '<div class="style-seg" id="style-seg">'
+      +   '<button type="button" data-style="smallball">Small&nbsp;Ball</button>'
+      +   '<button type="button" data-style="hybrid">Hybrid</button>'
+      +   '<button type="button" data-style="power">Power</button>'
+      + '</div>'
+      + '<div class="syn-row"><span class="syn-k">does</span><span class="syn-v">The master style dial (f$Style). Small Ball = many cheap flops, small pots, wide tricky postflop; Hybrid = balanced (default); Power = big bets, high c-bet, maximum pressure. Retunes opens, 3/4-bets, c-bet frequency and sizing across every street at once.</span></div>'
+      + '<div class="syn-row"><span class="syn-k">pair&nbsp;with</span><span class="syn-v">C-bet Frequency &amp; Aggression (style sets the base they scale) &middot; all bet sizing.</span></div>'
+      + '</div>';
+    // C-bet Frequency: direct override of f$CbetFreq; AUTO = book x aggression. Needs the cbet build.
+    h += '<div class="knob-card">'
+      + '<div class="knob-top"><span class="syn-icon">&#127919;</span><span class="knob-label">C-bet Frequency</span>'
+      + '<span class="knob-val" id="knobval-cbet">AUTO</span></div>'
+      + '<label class="cbet-auto"><input type="checkbox" id="cbet-auto" checked /> Auto (book &times; aggression)</label>'
+      + '<input type="range" class="knob-slider" id="knob-cbet" min="0" max="100" value="80" disabled />'
+      + '<div class="knob-scale"><span>0%</span><span>50%</span><span>100%</span></div>'
+      + '<div class="syn-row"><span class="syn-k">does</span><span class="syn-v">How often I fire a continuation bet as the preflop raiser. AUTO computes it from Style &times; the Aggression knob; turn Auto OFF to FORCE an exact c-bet frequency. (Live after the next relaunch picks up the cbet build.)</span></div>'
+      + '<div class="syn-row"><span class="syn-k">pair&nbsp;with</span><span class="syn-v">Strategy Style &amp; Aggression Frequency (these drive the AUTO value).</span></div>'
+      + '</div>';
     return h + '</div>';
   }
+  function setStyleSegActive(name) {
+    var seg = document.getElementById("style-seg"); if (!seg) return;
+    var bs = seg.querySelectorAll("button");
+    for (var i = 0; i < bs.length; i++) bs[i].classList.toggle("active", bs[i].getAttribute("data-style") === name);
+    var sv = document.getElementById("styleval");
+    if (sv) sv.textContent = (name === "smallball") ? "Small Ball" : (name === "power" ? "Power" : "Hybrid");
+  }
+  function styleNumToName(n) { return (n === 0) ? "smallball" : (n === 1 ? "power" : "hybrid"); }  // f$Style: 0 SB, 1 Power, 2 Hybrid
+  function setCbetLabel(v, auto) { var l = document.getElementById("knobval-cbet"); if (l) l.textContent = auto ? "AUTO" : (Math.round(v * 100) + "%"); }
   function setKnobUI(id, v) {
     var s = document.getElementById("knob-" + id), l = document.getElementById("knobval-" + id);
     if (s) s.value = Math.round(v * 100);
@@ -452,6 +483,29 @@
         postKnob(k.id, v);
       });
     });
+    // Strategy Style segmented control -> /strategy <name> (live on the running binary, no rebuild)
+    var seg = document.getElementById("style-seg");
+    if (seg) seg.addEventListener("click", function (ev) {
+      var b = ev.target && ev.target.closest ? ev.target.closest("button[data-style]") : null;
+      if (!b) return;
+      var name = b.getAttribute("data-style"); knobTouch = Date.now();
+      setStyleSegActive(name);
+      fetch("/api/terminal-input?text=" + encodeURIComponent("/strategy " + name), { cache: "no-store" })
+        .then(function () { setSynConn(true); }).catch(function () { setSynConn(false); });
+    });
+    // C-bet Frequency: Auto checkbox + override slider -> /api/knob name=cbet (-1 = auto)
+    var cb = document.getElementById("cbet-auto"), cs = document.getElementById("knob-cbet");
+    if (cb) cb.addEventListener("change", function () {
+      knobTouch = Date.now(); var o = readKnobLS();
+      if (cb.checked) { if (cs) cs.disabled = true; o.cbet = -1; setCbetLabel(0, true); postKnob("cbet", -1); }
+      else { if (cs) cs.disabled = false; var v = cs ? parseInt(cs.value, 10) / 100 : 0.8; o.cbet = v; setCbetLabel(v, false); postKnob("cbet", v); }
+      writeKnobLS(o);
+    });
+    if (cs) cs.addEventListener("input", function () {
+      if (cb && cb.checked) return;
+      var v = parseInt(cs.value, 10) / 100; knobTouch = Date.now();
+      var o = readKnobLS(); o.cbet = v; writeKnobLS(o); setCbetLabel(v, false); postKnob("cbet", v);
+    });
   }
   function loadKnobs() {
     var o = readKnobLS();
@@ -460,13 +514,36 @@
       setKnobUI(k.id, v);
       if (o[k.id] !== undefined) postKnob(k.id, v);   // re-apply the saved knob to the (maybe restarted) bot
     });
+    // C-bet: restore saved override / auto
+    var cb = document.getElementById("cbet-auto"), cs = document.getElementById("knob-cbet");
+    if (o.cbet !== undefined && o.cbet >= 0) {
+      if (cb) cb.checked = false; if (cs) { cs.disabled = false; cs.value = Math.round(o.cbet * 100); }
+      setCbetLabel(o.cbet, false); postKnob("cbet", o.cbet);   // re-apply the override to the (maybe restarted) bot
+    } else {
+      if (cb) cb.checked = true; if (cs) cs.disabled = true; setCbetLabel(0, true);
+    }
   }
   function pollKnobs() {
     if (Date.now() - knobTouch < 3000) return;        // don't fight an active drag / fresh change
     fetch("/api/knob", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
       setSynConn(true);
       KNOBS.forEach(function (k) { if (j[k.id] !== undefined) setKnobUI(k.id, parseFloat(j[k.id])); });
+      var cb = document.getElementById("cbet-auto"), cs = document.getElementById("knob-cbet");
+      if (j.cbet !== undefined && cb && cs) {
+        var cv = parseFloat(j.cbet);
+        if (cv < 0) { cb.checked = true; cs.disabled = true; }
+        else { cb.checked = false; cs.disabled = false; cs.value = Math.round(cv * 100); setCbetLabel(cv, false); }
+      }
     }).catch(function () {});
+    // Reflect live f$Style (highlight the active style) + live f$CbetFreq (AUTO display)
+    fetch("/api/symbols?names=" + encodeURIComponent("f$Style,f$CbetFreq"), { cache: "no-store" })
+      .then(function (r) { return r.json(); }).then(function (j) {
+        var sv = j["f$Style"]; if (sv !== undefined && sv !== null) setStyleSegActive(styleNumToName(Math.round(parseFloat(sv))));
+        var cb = document.getElementById("cbet-auto"), cf = j["f$CbetFreq"];
+        if (cb && cb.checked && cf !== undefined && cf !== null) {
+          var l = document.getElementById("knobval-cbet"); if (l) l.textContent = "AUTO " + Math.round(parseFloat(cf) * 100) + "%";
+        }
+      }).catch(function () {});
   }
 
   var synWrap = document.getElementById("syn-wrap");

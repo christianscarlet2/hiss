@@ -74,6 +74,8 @@ unsigned long g_beast_favor_tick = 0; // tick when last set; superstition auto-o
 double g_knob_openrange = 0.5;        // Synapse harmonizer runtime knobs (0..1, 0.5 = NEUTRAL),
 double g_knob_aggro     = 0.5;        //   pushed via /api/knob, read by the OHF as openai_knob_*.
 double g_knob_bluff     = 0.5;        //   No staleness: they persist until changed (human-set).
+double g_knob_cbet      = -1.0;       // C-bet frequency DIRECT override: -1 = AUTO (use computed
+                                      //   f$CbetFreq); 0..1 = force that c-bet frequency.
 int g_terminal_port = 0;
 int g_mcp_action_request = -1;       // a k_autoplayer_function_* code (FCKRA)
 double g_mcp_action_amount = -1.0;   // bet/raise size in big blinds (<0 = plain button click)

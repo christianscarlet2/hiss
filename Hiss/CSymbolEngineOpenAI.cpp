@@ -65,10 +65,17 @@ bool CSymbolEngineOpenAI::EvaluateSymbol(const CString name, double *result, boo
     if (result != NULL) *result = g_knob_bluff;
     return true;
   }
+  // C-bet frequency DIRECT override (-1 = AUTO/computed; 0..1 = forced). The OHF f$CbetFreq
+  // returns this verbatim when >= 0, else falls through to the book/style x aggression compute.
+  if (name == "openai_knob_cbet") {
+    extern double g_knob_cbet;
+    if (result != NULL) *result = g_knob_cbet;
+    return true;
+  }
   return false;
 }
 
 CString CSymbolEngineOpenAI::SymbolsProvided() {
   return "openai_paused openai_steer_anchor openai_action openai_autohijack openai_consult "
-         "openai_knob_openrange openai_knob_aggro openai_knob_bluff ";
+         "openai_knob_openrange openai_knob_aggro openai_knob_bluff openai_knob_cbet ";
 }

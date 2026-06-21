@@ -242,3 +242,10 @@ html, body {
 .knob-val { font-size: 13px; color: #ffd166; font-weight: bold; font-variant-numeric: tabular-nums; }
 .knob-slider { width: 100%; accent-color: #ffd166; cursor: pointer; }
 .knob-scale { display: flex; justify-content: space-between; font-size: 9px; color: #6b7d8c; margin-top: 2px; text-transform: uppercase; letter-spacing: .5px; }
+.style-seg { display: flex; gap: 4px; margin: 2px 0 4px; }
+.style-seg button { flex: 1 1 0; background: #1c1c20; color: #9aa; border: 1px solid #333; border-radius: 5px; padding: 5px 4px; font: 600 11px system-ui, sans-serif; cursor: pointer; }
+.style-seg button:hover { color: #cdd6df; border-color: #555; }
+.style-seg button.active { background: #b8860b; color: #fff; border-color: #ffd166; }
+.cbet-auto { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #b9c4cd; margin: 2px 0 5px; cursor: pointer; }
+.cbet-auto input { accent-color: #ffd166; }
+.knob-slider:disabled { opacity: .4; cursor: default; }
