@@ -216,8 +216,12 @@ the training/eval data for the rewrite.
   with hand_results (net bb), flags underperforming areas, and AUTO-TRIGGERS a rewrite by Claude
   (`claude -p`, AUTO_REWRITE-gated) handed the evidence + governing source; edits .strategy_build SOURCE,
   validates via build_and_lint to temp, never auto-deploys. -> growth_log table. Validated.
-- **BEAST↔swiftsnake TCP/UDP fast-path** ⬜ — a direct socket pipeline to beat the postgres bus latency on
-  the hot dispatch (the bus is the cross-machine fallback).
+- **`fastlink.py`** 🟡 — the BEAST↔swiftsnake direct TCP/UDP fast-path (request/reply + UDP events), beats
+  the postgres bus latency on the hot dispatch, **falls back to the bus** when the peer is down. Loopback
+  round-trip passed. Wire: brain_service runs fastlink.serve; the advisor uses fastlink.request.
+- **NN driver** 🟡 — `nn_driver.py` now obeys the brain's exploit-precedence (brain_override reads
+  brain_state; fresh+same-hand; the brain commands BOTH engines). Brain signals registered in the NN
+  feature_spec (31 features, full 39-synapse graph) for the next training run.
 
 ## 8. Build (LAST) ⬜
 Edit all source freely (doesn't touch the running bot). Then ONE pass: compile Hiss (Release config,

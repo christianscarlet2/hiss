@@ -806,6 +806,22 @@ def feature_spec():
         {"name": "opp_vpip", "type": "float", "range": [0, 1]},
         {"name": "opp_pfr", "type": "float", "range": [0, 1]},
         {"name": "opp_af", "type": "float", "range": [0, 10]},
+        # BRAIN features (the unified introspection+perception+intuition read; for the next NN training run)
+        {"name": "intro_known", "type": "bool"},
+        {"name": "intro_cont_freq", "type": "float", "range": [0, 1]},
+        {"name": "intro_fold_to_pressure", "type": "float", "range": [0, 1]},
+        {"name": "intro_tilt", "type": "float", "range": [0, 1]},
+        {"name": "intro_fastbet_tell", "type": "float", "range": [-1, 1]},
+        {"name": "intro_range_strength", "type": "float", "range": [0, 1]},
+        {"name": "intuition_aggression", "type": "float", "range": [0, 1]},
+        {"name": "intuition_villain_strength", "type": "float", "range": [0, 1]},
+        {"name": "intuition_exploit", "type": "categorical", "values":
+            ["none", "attack_fold", "attack_fast", "tilt_value", "value_only", "bluffcatch", "respect", "image_bluff", "image_value"]},
+        {"name": "perception_image", "type": "categorical", "values":
+            ["unknown", "nit", "tag", "lag", "station", "fish", "maniac"]},
+        {"name": "donkfest", "type": "bool"},
+        {"name": "show_of_force", "type": "bool"},
+        {"name": "pineal_resonance", "type": "float", "range": [0, 1]},
     ]
     actions = [
         {"name": "action", "type": "categorical", "values": ["fold", "check", "call", "raise", "allin"]},
@@ -821,7 +837,7 @@ def feature_spec():
         {"name": "knob.style", "type": "categorical", "values": [0, 1, 2], "ohf": "f$Style"},
     ]
     return {"version": 1, "features": features, "actions": actions, "knobs": knobs,
-            "synapses": [{"from": a, "to": b, "kind": k} for a, b, k in SYNAPSES]}
+            "synapses": [{"from": a, "to": b, "kind": k} for a, b, k in (SYNAPSES + INTRO_SYNAPSES)]}
 
 
 def store_state(state):

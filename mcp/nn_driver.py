@@ -127,6 +127,37 @@ def table_is_omaha():
         return False
 
 
+def brain_override(do, amount, sv):
+    """EXPLOIT PRECEDENCE over the NN: if the harmonized brain (synapse_map) has a CONFIDENT exploit /
+    feeler / wisdom-veto override for this spot, steer the NN's action toward it -- so the brain commands
+    BOTH engines, not just the OHF. Reads brain_state (written by synapse_map --watch); fresh (<4s) +
+    same-hand only; graceful -- the NN's own action stands when the brain is quiet."""
+    try:
+        import psycopg2
+        dsn = os.environ.get("HISS_PG_DSN", "host=127.0.0.1 port=5432 dbname=hiss user=postgres password=dbpass")
+        c = psycopg2.connect(dsn); cur = c.cursor()
+        cur.execute("SELECT ts_ms, handnumber, brain FROM brain_state WHERE id=1")
+        r = cur.fetchone(); c.close()
+        if not r:
+            return do, amount, ""
+        ts, hn, b = r
+        if (int(time.time() * 1000) - ts) > 4000:
+            return do, amount, ""                                  # stale brain -> NN stands
+        if sv.get("_handnumber") and hn and str(hn) != str(sv["_handnumber"]):
+            return do, amount, ""                                  # different hand -> NN stands
+        cda = ((b or {}).get("current_decided_action")) or {}
+        src = cda.get("source", "") or ""
+        if not (src.startswith("exploit:") or src.startswith("feeler") or "intelligence_veto" in src or cda.get("overridden")):
+            return do, amount, ""                                  # only a CONFIDENT brain override steers
+        ba = cda.get("action")
+        if ba in ("raise", "call", "check", "fold") and ba != do:
+            namt = float(cda.get("size_bb") or 0) if ba == "raise" else 0
+            return ba, namt, "  [brain %s -> %s]" % (cda.get("exploit"), src)
+    except Exception:
+        pass
+    return do, amount, ""
+
+
 def decide_and_act():
     """Returns True if we read the seat and clicked (or decided, in DRY); False if the hole
     isn't readable yet so the CALLER should retry within the same turn (do NOT skip the turn --
@@ -146,7 +177,7 @@ def decide_and_act():
     allin = ((float(nn.get("f$allin", 0) or 0)) > 0) or a == "allin"
     do = "allin" if allin else ("raise" if a == "raise" else a)
     amount = bb if (do == "raise") else 0
-    note = ""
+    do, amount, note = brain_override(do, amount, sv)   # exploit precedence steers the NN too
     # STACK-DEPTH-PROPORTIONAL sizing (leverage) [Emrald]: a fixed bb raise is nothing to a deep stack
     # and everything to a short one. Scale the NN's raise-TO by the EFFECTIVE stack depth; when SHORT
     # (<=12bb eff) a raise only commits us, so JAM instead. Mirrors the OHF f$DepthSizeMult. The legal
