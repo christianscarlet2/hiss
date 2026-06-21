@@ -39,7 +39,8 @@ def speak(text):
 def _run_claude(prompt):
     try:
         r = subprocess.run([CLAUDE_BIN, "-p", prompt, "--model", CLAUDE_MODEL, "--output-format", "json"],
-                           capture_output=True, text=True, timeout=45)
+                           capture_output=True, text=True, timeout=45,
+                           creationflags=(0x08000000 if os.name == "nt" else 0))   # CREATE_NO_WINDOW
         txt = (r.stdout or "").strip()
         try:
             env = json.loads(txt)

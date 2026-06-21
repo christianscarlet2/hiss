@@ -22,11 +22,19 @@ WHEN validator_ok = 0 AND AmountToCall = 0 Check FORCE
 // 14bb-shove-then-fold-0.21bb leak on hand 2763842893. Placed above every dispatch (incl. the
 // push/fold fold lines) so it pre-empts them. Uses only stock symbols (no rebuild). [Emrald]
 WHEN currentbet >= 2 * bblind AND balance <= AmountToCall AND balance > 0 RaiseMax FORCE
+// BRAIN-ACTION soft pre-empt (Phase 2): the synapse current_decided_action, conf-gated. DISABLED by
+// default (the Python only pushes brain_action when enabled, so brain_action_kind is stale=0 and this
+// never fires); when enabled it lets a CONFIDENT brain decision drive the commit. [Emrald]
+WHEN brain_action_kind >= 1 AND brain_action_conf >= 0.60 RETURN f$BrainAction FORCE
 // @anchor: preflop (id 1)
 // OpenAI hijack override: when the advisor is enabled and returns a concrete
 // raise size, take it. Disabled -> openai_action is the kOpenAiNoOpinion sentinel
 // (<= -1000), so this never fires and play is unchanged. [steering]
 WHEN openai_action > -1000 RETURN openai_action FORCE
+// OBSERVER GOTO (Phase 2): the observer branch's forced line, never over push/fold ICM. f$ObsStrategy is
+// -1 today (the branch steers via the obsbranch_* knobs in f$AggroFreqMult/etc.), so this is an inert,
+// wired hook; per-branch FORCED lines drop into f$ObsStrategy in 11_introspection later. [Emrald]
+WHEN f$ObsStrategy >= 0 AND f$PushFoldStack = 0 RETURN f$ObsStrategy FORCE
 // GAME-TYPE DISPATCH: route Omaha / Omaha-Hi-Lo to their own trees (Strategy\Omaha\ & \Omaha8\). isplo8
 // implies isomaha, so test it first. Falls through to the Hold'em logic below when neither is set. This
 // was present in bot_logic/Strategy/40_preflop.ohf but MISSING from the generated master, so the master's

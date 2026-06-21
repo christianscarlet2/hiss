@@ -89,6 +89,22 @@ double g_knob_advice_conf    = 0.0;
 long   g_advice_tick         = 0;     // GetTickCount() of the last /api/knob advice push; the OHF
                                       //   ignores advice older than ~5s so it never steers on a dead
                                       //   advisor (unlike the persistent human knobs).
+// OBSERVER strategy branch + BRAIN-ACTION pre-empt + MISCHIEF channels (Phase 2). Pushed via /api/knob
+// by the Python brain (observer_strategy / synapse / decision_advisor); fresh-gated like advice so they
+// decay to NEUTRAL the instant the brain goes quiet. obsbranch is the f$ObsStrategy GOTO selector.
+double g_knob_obsbranch       = 0.0;   // 0/NORMAL .. 7 (ISOLATE_SHORTSTACK..PRESS_DOWNTREND)
+double g_knob_obsbranch_aggro = 0.5;
+double g_knob_obsbranch_bluff = 0.5;
+double g_knob_obsbranch_open  = 0.5;
+double g_knob_obsbranch_affin = 1.0;
+long   g_obsbranch_tick       = 0;
+double g_knob_brain_action_kind = 0.0; // 0=none 1=fold 2=check 3=call 4=raise (soft OHF pre-empt, conf-gated)
+double g_knob_brain_action_conf = 0.0;
+double g_knob_brain_action_size = 0.0; // raise-to size in big blinds
+long   g_brain_action_tick      = 0;
+double g_knob_mischief_betpct = 0.0;   // pot-fraction for the mischief odd-bet
+double g_knob_mischief_fire   = 0.0;   // 1 = mischief wants to fire this spot
+long   g_mischief_tick        = 0;
 int g_terminal_port = 0;
 int g_mcp_action_request = -1;       // a k_autoplayer_function_* code (FCKRA)
 double g_mcp_action_amount = -1.0;   // bet/raise size in big blinds (<0 = plain button click)

@@ -570,6 +570,11 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
 			write_log(Preferences()->debug_heartbeat(), "[HeartBeatThread] NN-driver: Fast Sit-In handled\n");
 		}
 	}
+	// Even when the autoplayer is DISABLED (manual / NN driver / off), PUBLISH the would-be OHF decision
+	// so the RED DECISION overlay still shows on scrcpy WHAT IT WOULD HAVE DONE if it were enabled. This
+	// self-gates on ismyturn && isfinalanswer and dedups, so the engaged path (DoAutoplayer already emits
+	// it) is unaffected. [Emrald: show the red decision even when autoplayer is off]
+	p_autoplayer->EmitDecisionTrace();
 	DWORD t_act_ms = GetTickCount() - t_act0;
 
 	// Per-cycle heartbeat timing: scrape vs symbol-engine (EvaluateAll) vs

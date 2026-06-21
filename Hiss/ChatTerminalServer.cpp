@@ -494,6 +494,32 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 			} else if (nm.CompareNoCase("cbet") == 0) {
 				// cbet is special: negative = AUTO (no override / use the computed f$CbetFreq); else clamp 0..1.
 				g_knob_cbet = (v < 0.0) ? -1.0 : (v > 1.0 ? 1.0 : v);
+			} else if (nm.Left(9).CompareNoCase("obsbranch") == 0) {
+				// OBSERVER branch (f$ObsStrategy GOTO selector 0..7) + its aggro/bluff/openrange/affinity knobs.
+				extern double g_knob_obsbranch, g_knob_obsbranch_aggro, g_knob_obsbranch_bluff, g_knob_obsbranch_open, g_knob_obsbranch_affin;
+				extern long g_obsbranch_tick;
+				if (nm.CompareNoCase("obsbranch") == 0) g_knob_obsbranch = (v < 0.0 ? 0.0 : (v > 7.0 ? 7.0 : v));
+				else if (nm.CompareNoCase("obsbranch_affinity") == 0) g_knob_obsbranch_affin = (v < 0.0 ? 0.0 : (v > 3.0 ? 3.0 : v));
+				else { double c = (v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v));
+					if (nm.CompareNoCase("obsbranch_aggro") == 0) g_knob_obsbranch_aggro = c;
+					else if (nm.CompareNoCase("obsbranch_bluff") == 0) g_knob_obsbranch_bluff = c;
+					else if (nm.CompareNoCase("obsbranch_openrange") == 0) g_knob_obsbranch_open = c; }
+				g_obsbranch_tick = (long)GetTickCount();
+			} else if (nm.Left(12).CompareNoCase("brain_action") == 0) {
+				// BRAIN-ACTION soft pre-empt: kind 0..4, conf 0..1, size in bb.
+				extern double g_knob_brain_action_kind, g_knob_brain_action_conf, g_knob_brain_action_size;
+				extern long g_brain_action_tick;
+				if (nm.CompareNoCase("brain_action_kind") == 0) g_knob_brain_action_kind = (v < 0.0 ? 0.0 : (v > 4.0 ? 4.0 : v));
+				else if (nm.CompareNoCase("brain_action_conf") == 0) g_knob_brain_action_conf = (v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v));
+				else if (nm.CompareNoCase("brain_action_size_bb") == 0) g_knob_brain_action_size = (v < 0.0 ? 0.0 : v);
+				g_brain_action_tick = (long)GetTickCount();
+			} else if (nm.Left(8).CompareNoCase("mischief") == 0) {
+				// MISCHIEF odd-bet channel: betpct (pot fraction 0..3) + fire flag.
+				extern double g_knob_mischief_betpct, g_knob_mischief_fire;
+				extern long g_mischief_tick;
+				if (nm.CompareNoCase("mischief_betpct") == 0) g_knob_mischief_betpct = (v < 0.0 ? 0.0 : (v > 3.0 ? 3.0 : v));
+				else if (nm.CompareNoCase("mischief_fire") == 0) g_knob_mischief_fire = (v != 0.0 ? 1.0 : 0.0);
+				g_mischief_tick = (long)GetTickCount();
 			} else {
 				if (v < 0.0) v = 0.0;
 				if (v > 1.0) v = 1.0;

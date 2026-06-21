@@ -25,6 +25,9 @@ WHEN Others RETURN 2 FORCE
 //-----------------------------------------------------------------------------
 
 ##f$OpenRangeKnob##
+// The OBSERVER branch's open-range target takes the wheel when a branch is live (obsbranch>=1, fresh-
+// gated to 0 by the engine when the brain is quiet); else the human/synapse openrange knob.
+WHEN obsbranch >= 1 RETURN obsbranch_openrange FORCE
 WHEN Others RETURN openai_knob_openrange FORCE
 
 ##f$OpenWiden##
@@ -43,6 +46,7 @@ WHEN Others RETURN false FORCE
 // INTROSPECTION (fires only on a CONFIDENT read; base knob logic unchanged otherwise): press
 // relentlessly vs a villain who over-folds / gives up the lead / is steaming.
 WHEN f$Exploit_Overfold OR f$Exploit_GivesUp OR f$Exploit_Tilt RETURN 1.35 FORCE
+WHEN obsbranch >= 1 RETURN 0.55 + obsbranch_aggro * 0.9 FORCE
 WHEN Others RETURN 0.55 + openai_knob_aggro * 0.9 FORCE
 
 ##f$BluffFreqMult##
@@ -53,6 +57,7 @@ WHEN Others RETURN 0.55 + openai_knob_aggro * 0.9 FORCE
 // bluff knob is unchanged.
 WHEN f$Exploit_NeverFolds OR f$Exploit_KeepsFiring OR f$Exploit_Tilt RETURN 0.2 FORCE
 WHEN f$Exploit_Overfold OR f$Exploit_GivesUp OR f$Exploit_Folds3Bet RETURN 1.4 FORCE
+WHEN obsbranch >= 1 RETURN 0.55 + obsbranch_bluff * 0.9 FORCE
 WHEN Others RETURN 0.55 + openai_knob_bluff * 0.9 FORCE
 
 //-----------------------------------------------------------------------------

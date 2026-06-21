@@ -55,7 +55,8 @@ def recent(node, max_age_ms=None):
 def _run_claude(prompt, model):
     try:
         r = subprocess.run([CLAUDE_BIN, "-p", prompt, "--model", model, "--output-format", "json"],
-                           capture_output=True, text=True, timeout=TIMEOUT)
+                           capture_output=True, text=True, timeout=TIMEOUT,
+                           creationflags=(0x08000000 if os.name == "nt" else 0))   # CREATE_NO_WINDOW
         try:
             env = json.loads(r.stdout)
             return env.get("result", r.stdout) if isinstance(env, dict) else r.stdout

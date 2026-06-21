@@ -156,3 +156,27 @@ WHEN Others RETURN 0 FORCE
 WHEN (f$Committed OR PotSize >= 12 * bblind) AND (f$Exploit_Overfold OR f$Exploit_Folds3Bet OR intro_foldpress_raischair > 0.5) RETURN true FORCE
 WHEN (f$Committed OR PotSize >= 12 * bblind) AND f$Range_VillainStrength >= 0 AND f$Range_VillainStrength < 0.4 RETURN true FORCE
 WHEN Others RETURN false FORCE
+
+// ============================ OBSERVER STRATEGY GOTO (Phase 2) =====================================
+// obsbranch (1..7, set by observer_strategy.py via /api/knob, engine-fresh-gated to 0 when the brain is
+// quiet) is the table-wide PLAN selector. Its aggro/bluff/openrange targets already STEER the OHF
+// frequencies (f$AggroFreqMult / f$BluffFreqMult / f$OpenRangeKnob in 05_config) -- VALUE_STATION pushes
+// obsbranch_bluff low so we stop bluffing the station, ATTACK_FOLDERS pushes aggro high. f$ObsStrategy
+// is the GOTO dispatch hook (today a -1 fall-through -> no forced-action / action-constant pitfalls).
+##f$ObsBranch##
+WHEN Others RETURN obsbranch FORCE
+
+##f$ObsStrategy##
+WHEN Others RETURN -1 FORCE
+
+// ============================ BRAIN-ACTION soft pre-empt (Phase 2) =================================
+// The synapse current_decided_action, pushed as brain_action_kind (1 fold / 2 check / 3 call / 4 raise)
+// + brain_action_conf + brain_action_size_bb. f$BrainAction maps it to a concrete action; the street
+// dispatchers gate it on conf >= 0.60 so a stale / low-confidence push never steers. DISABLED by default
+// -- the Python pushes brain_action only when explicitly enabled, exactly like the openai_action hijack.
+##f$BrainAction##
+WHEN brain_action_kind = 4 RETURN brain_action_size_bb FORCE
+WHEN brain_action_kind = 3 Call FORCE
+WHEN brain_action_kind = 2 Check FORCE
+WHEN brain_action_kind = 1 Fold FORCE
+WHEN Others RETURN -1 FORCE

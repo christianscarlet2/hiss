@@ -95,7 +95,8 @@ def _refine_with_llm(astro):
     # claude CLI first (uses the plan, no API key) ...
     try:
         r = subprocess.run([CLAUDE_BIN, "-p", prompt, "--model", ASTRO_MODEL, "--output-format", "json"],
-                           capture_output=True, text=True, timeout=40)
+                           capture_output=True, text=True, timeout=40,
+                           creationflags=(0x08000000 if os.name == "nt" else 0))   # CREATE_NO_WINDOW: no console pop-up
         txt = (r.stdout or "").strip()
         try:
             env = json.loads(txt); txt = env.get("result", txt) if isinstance(env, dict) else txt

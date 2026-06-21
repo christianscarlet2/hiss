@@ -445,10 +445,33 @@ def _brain_spawn(args):
                             stderr=subprocess.STDOUT, creationflags=LAUNCH_FLAGS, startupinfo=no_window_si())
 
 
+_brain_run_cache = {"ts": 0.0, "val": False}
+
+
 def brain_running(port):
+    # Report the REAL brain state so the React button shows correct status however the brain was started
+    # (ail_toggle / engage_brain.bat / manual): engaged if we launched the per-port daemons here OR
+    # brain_state is being written fresh (the synapse ticks every few seconds). CACHED ~2s and we HOLD the
+    # last-known state on a transient DB hiccup, so the button doesn't flicker under postgres load. [Emrald]
     with _brain_lock:
         pp = [p for p in _brain.get(str(port), []) if p.poll() is None]
-        return len(pp) > 0
+    if pp:
+        _brain_run_cache.update(ts=time.time(), val=True)
+        return True
+    now = time.time()
+    if now - _brain_run_cache["ts"] < 2.0:
+        return _brain_run_cache["val"]
+    val = _brain_run_cache["val"]
+    try:
+        import psycopg2
+        c = psycopg2.connect(BRAIN_PG, connect_timeout=2); cur = c.cursor()
+        cur.execute("SELECT ts_ms FROM brain_state WHERE id=1")
+        r = cur.fetchone(); c.close()
+        val = bool(r and (time.time() * 1000 - r[0]) < 10000)   # fresh < 10s -> the harmonizer is live
+    except Exception:
+        pass                                                     # transient DB hiccup -> keep last-known state
+    _brain_run_cache.update(ts=now, val=val)
+    return val
 
 
 def brain_launch(port):
@@ -473,6 +496,23 @@ def brain_launch(port):
     return True, "brain engaged for %s" % bot
 
 
+_BRAIN_DECISION_SCRIPTS = ["synapse_map.py", "decision_advisor.py", "deep_thought.py", "growth.py",
+                           "brain_service.py", "progression_bard.py"]
+
+
+def _kill_brain_processes():
+    """Terminate every brain DECISION daemon by command line, however it was launched (ail_toggle /
+    engage_brain.bat / manual). Data feeds (hud / introspect aggregators) are AIL-managed and left alone."""
+    like = " -or ".join("$_.CommandLine -like '*%s*'" % sc for sc in _BRAIN_DECISION_SCRIPTS)
+    ps = ("Get-CimInstance Win32_Process -Filter \"Name='python.exe' or Name='pythonw.exe'\" | "
+          "Where-Object { %s } | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force } catch {} }" % like)
+    try:
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                       creationflags=CREATE_NO_WINDOW, startupinfo=no_window_si(), timeout=15)
+    except Exception:
+        pass
+
+
 def brain_kill(port):
     port = str(port)
     with _brain_lock:
@@ -489,6 +529,12 @@ def brain_kill(port):
                 except Exception:
                     pass
             _brain_global[:] = []
+    # DISENGAGE must truly STOP the brain: kill every brain decision daemon however it was launched, and
+    # disable the AIL 'synapse' switch so the reconcile loop never revives it -- otherwise brain_state keeps
+    # ticking and brain_running (freshness) reports the button as still engaged. [Emrald]
+    _kill_brain_processes()
+    _state["enabled"]["synapse"] = False
+    save_state()
     return True, "brain disengaged for %s" % port
 
 

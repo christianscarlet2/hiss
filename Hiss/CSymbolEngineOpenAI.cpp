@@ -22,7 +22,11 @@ void CSymbolEngineOpenAI::UpdateOnMyTurn()    {}
 void CSymbolEngineOpenAI::UpdateOnHeartbeat() {}
 
 bool CSymbolEngineOpenAI::EvaluateSymbol(const CString name, double *result, bool log) {
-  if (name.Left(6) != "openai") return false;
+  // This engine also serves the Phase-2 brain channels (observer branch / brain-action / mischief), so
+  // the early bail must admit those bare prefixes too -- otherwise they never reach the blocks below and
+  // evaluate to nothing (obsbranch/f$AggroFreqMult steering went dead). [Emrald]
+  if (name.Left(6) != "openai" && name.Left(9) != "obsbranch"
+      && name.Left(12) != "brain_action" && name.Left(8) != "mischief") return false;
   if (name == "openai_paused") {
     if (result != NULL) *result = COpenAiAdvisor::IsPaused() ? 1.0 : 0.0;
     return true;
@@ -91,6 +95,46 @@ bool CSymbolEngineOpenAI::EvaluateSymbol(const CString name, double *result, boo
     if (result != NULL) *result = r;
     return true;
   }
+  // OBSERVER strategy branch (the f$ObsStrategy GOTO selector + its knob targets). Fresh-gated 6s.
+  if (name.Left(9) == "obsbranch") {
+    extern double g_knob_obsbranch, g_knob_obsbranch_aggro, g_knob_obsbranch_bluff, g_knob_obsbranch_open, g_knob_obsbranch_affin;
+    extern long g_obsbranch_tick;
+    bool fresh = (g_obsbranch_tick != 0) && ((long)GetTickCount() - g_obsbranch_tick < 6000);
+    double r;
+    if      (name == "obsbranch")           r = fresh ? g_knob_obsbranch : 0.0;
+    else if (name == "obsbranch_aggro")     r = fresh ? g_knob_obsbranch_aggro : 0.5;
+    else if (name == "obsbranch_bluff")     r = fresh ? g_knob_obsbranch_bluff : 0.5;
+    else if (name == "obsbranch_openrange") r = fresh ? g_knob_obsbranch_open : 0.5;
+    else if (name == "obsbranch_affinity")  r = fresh ? g_knob_obsbranch_affin : 1.0;
+    else return false;
+    if (result != NULL) *result = r;
+    return true;
+  }
+  // BRAIN-ACTION soft pre-empt (synapse current_decided_action -> 1 fold/2 check/3 call/4 raise + conf + size).
+  if (name.Left(12) == "brain_action") {
+    extern double g_knob_brain_action_kind, g_knob_brain_action_conf, g_knob_brain_action_size;
+    extern long g_brain_action_tick;
+    bool fresh = (g_brain_action_tick != 0) && ((long)GetTickCount() - g_brain_action_tick < 5000);
+    double r;
+    if      (name == "brain_action_kind")    r = fresh ? g_knob_brain_action_kind : 0.0;
+    else if (name == "brain_action_conf")    r = fresh ? g_knob_brain_action_conf : 0.0;
+    else if (name == "brain_action_size_bb") r = fresh ? g_knob_brain_action_size : 0.0;
+    else return false;
+    if (result != NULL) *result = r;
+    return true;
+  }
+  // MISCHIEF at-par odd-bet channel (size as a pot fraction + a fire flag).
+  if (name.Left(8) == "mischief") {
+    extern double g_knob_mischief_betpct, g_knob_mischief_fire;
+    extern long g_mischief_tick;
+    bool fresh = (g_mischief_tick != 0) && ((long)GetTickCount() - g_mischief_tick < 5000);
+    double r;
+    if      (name == "mischief_betpct") r = fresh ? g_knob_mischief_betpct : 0.0;
+    else if (name == "mischief_fire")   r = fresh ? g_knob_mischief_fire : 0.0;
+    else return false;
+    if (result != NULL) *result = r;
+    return true;
+  }
   return false;
 }
 
@@ -98,5 +142,7 @@ CString CSymbolEngineOpenAI::SymbolsProvided() {
   return "openai_paused openai_steer_anchor openai_action openai_autohijack openai_consult "
          "openai_knob_openrange openai_knob_aggro openai_knob_bluff openai_knob_cbet "
          "openai_knob_advice_raise openai_knob_advice_value openai_knob_advice_bluff "
-         "openai_knob_advice_fold openai_knob_advice_persona openai_knob_advice_conf ";
+         "openai_knob_advice_fold openai_knob_advice_persona openai_knob_advice_conf "
+         "obsbranch obsbranch_aggro obsbranch_bluff obsbranch_openrange obsbranch_affinity "
+         "brain_action_kind brain_action_conf brain_action_size_bb mischief_betpct mischief_fire ";
 }

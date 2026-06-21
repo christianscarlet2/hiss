@@ -79,6 +79,15 @@ void CParserSymbolTable::VerifySymbol(CString name) {
       "[CParserSymbolTable] openai-symbol, validated by CSymbolEngineOpenAI\n");
     return;
   }
+  // Phase-2 brain channels (observer branch / brain-action pre-empt / mischief), provided by
+  // CSymbolEngineOpenAI at runtime. They are BARE (no _raischair postfix) so they need the same
+  // dynamic-family pass the openai_* symbols get, else the parser rejects them as unknown. [Emrald]
+  if (memicmp(name, "obsbranch", 9) == 0 || memicmp(name, "brain_action", 12) == 0
+      || memicmp(name, "mischief", 8) == 0) {
+    write_log(Preferences()->debug_symbol_verification(),
+      "[CParserSymbolTable] brain-channel symbol, validated by CSymbolEngineOpenAI\n");
+    return;
+  }
   // Other symbols
   // First: fast lookup of known good symbols
   if (_known_symbols[name]) {

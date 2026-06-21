@@ -180,6 +180,7 @@ for name, body in func_bodies.items():
             if tok.startswith("explain"): continue        # dynamic explanation triggers
             if tok.startswith("openai"): continue         # dynamic OpenAI advisor + advice-knob symbols
             if tok.startswith("intro_") or tok.startswith("exploit_"): continue   # introspection engine symbols
+            if tok.startswith("obsbranch") or tok.startswith("brain_action") or tok.startswith("mischief"): continue  # Phase-2 brain knob channels
                                                           #   (CSymbolEngineOpponentIntrospection; chair-suffixed)
             if tok.startswith("f$"):
                 if tok not in defined_set:

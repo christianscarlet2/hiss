@@ -42,6 +42,9 @@ public:
 public:
 	// public mutators
 	void EngageAutoplayer(bool to_be_enabled_or_not);
+	// Concise OpenPPL decision trace -> the Terminal's Decisions pane + the RED decision overlay. PUBLIC
+	// so the heartbeat can publish the would-be decision even when the autoplayer is disabled. [Emrald]
+	void EmitDecisionTrace();
 
 private:
 	// private functions and variables - not available via accessors or mutators
@@ -49,9 +52,6 @@ private:
 	// Verbose per-cadence dump of button detection + decision state to
 	// logs\button_debug.log (diagnoses why an action isn't clicking).
 	void DumpButtonDebug();
-	// Concise OpenPPL decision trace into the Terminal's Decisions window
-	// (betround + chosen action + size), one line per decision change.
-	void EmitDecisionTrace();
 	bool ExecutePrimaryFormulasIfNecessary();
 	// Scarlet Beast server-scrape: decide via the f$-formulas and POST the action to
 	// poker.scarletbeast.com (/act) instead of clicking screen buttons.

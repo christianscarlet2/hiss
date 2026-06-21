@@ -73,6 +73,35 @@ def _get(path):
     except Exception:
         return {}
 
+
+def _push_knob(name, value):
+    try:
+        urllib.request.urlopen(BOT + "/api/knob?name=%s&value=%s" % (name, value), timeout=3).read()
+    except Exception:
+        pass
+
+
+# observer branch name -> the f$ObsStrategy GOTO code (1..7; 0 = NORMAL / quiet)
+_OBS_CODE = {"ISOLATE_SHORTSTACK": 1, "ATTACK_FOLDERS": 2, "PUNISH_TILT": 3, "VALUE_STATION": 4,
+             "DONKFEST_CHEAP": 5, "STEADY": 6, "PRESS_DOWNTREND": 7, "NORMAL": 0}
+
+
+def push_brain_knobs(b):
+    """Push the brain's OBSERVER branch + MISCHIEF outputs to the OHF via /api/knob (engine fresh-gates
+    them, so they decay to neutral the instant we stop). This makes the observer branch a first-class OHF
+    input: obsbranch drives f$ObsStrategy + the obsbranch_* knobs steer f$AggroFreqMult/f$BluffFreqMult/
+    f$OpenRangeKnob. (brain_action_* is intentionally NOT pushed -- it ships disabled by default.)"""
+    obs = (b or {}).get("observer_strategy") or {}
+    code = _OBS_CODE.get(obs.get("branch"), 0)
+    _push_knob("obsbranch", code)
+    if code:
+        _push_knob("obsbranch_aggro", round(num(obs.get("aggro"), 0.5), 3))
+        _push_knob("obsbranch_bluff", round(num(obs.get("bluff"), 0.5), 3))
+        _push_knob("obsbranch_openrange", round(num(obs.get("openrange"), 0.5), 3))
+        _push_knob("obsbranch_affinity", round(num(obs.get("mischief_affinity"), 1.0), 3))
+    mis = (b or {}).get("mischief") or {}
+    _push_knob("mischief_fire", 1 if (isinstance(mis, dict) and mis.get("fired")) else 0)
+
 # ---- curated signal symbols the synapse map reads every tick --------------------------------
 # NOTE: deliberately EXCLUDES prwin -- its Monte-Carlo evaluation runs synchronously on the HTTP
 # thread in /api/symbols (no heartbeat lock), which is slow and can race the engine -> a heavy query
@@ -984,6 +1013,7 @@ def main():
             state = harmonize(g)
             store_state(state)
             store_brain(state["brain"])   # the easy-API row: INTUITION + PLAN + DECISION + DECIDED ACTION
+            push_brain_knobs(state["brain"])   # observer branch + mischief -> OHF via /api/knob (Phase 2)
             if time.time() - last_flush > 60:    # persist the brain LOAD profile every minute (overwork hooks)
                 flush_load(); last_flush = time.time()
             hn, bal = g.get("handnumber") or "", g.get("hero_balance")

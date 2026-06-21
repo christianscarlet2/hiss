@@ -110,7 +110,8 @@ def grow(a, brief):
     try:
         subprocess.Popen([CLAUDE_BIN, "-p", brief, "--model", os.environ.get("GROW_MODEL", "sonnet"),
                           "--allowedTools", "Read", "Edit", "Bash", "Grep", "Glob"],
-                         cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                         cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         creationflags=(0x08000000 if os.name == "nt" else 0))   # CREATE_NO_WINDOW
         return "growth agent spawned"
     except Exception as e:
         return "spawn failed: %s" % e
