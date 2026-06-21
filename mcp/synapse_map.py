@@ -64,7 +64,7 @@ SYMBOLS = ["betround", "nplayersdealt", "nplayersplaying", "nouts", "PotSize",
            "AmountToCall", "StackSize", "bblind", "sblind", "f$InPositionPost", "f$HeadsUpPot",
            "f$WasPreflopRaiser", "f$HaveStrongMade", "f$HaveOnePair", "f$HaveBigDraw",
            "f$Opp_IsStation", "f$Opp_IsAggro", "sb_beastfavor", "f$fold", "f$call", "f$raise",
-           "f$betsize", "f$Style"]
+           "f$betsize", "f$Style", "raischair", "nsuitedcommon", "f$Committed", "Raises"]
 
 
 def num(v, d=0.0):
@@ -269,14 +269,188 @@ def node_value(node_id, g):
     return None
 
 
+# ================= THE BRAIN: INTUITION + DECISION PLAN + DECISION -> CURRENT DECIDED ACTION ===
+# The single easy-API result. The introspection inputs (opponent_profile, gametype-matched) are
+# harmonized into INTUITION; the multi-street PLAN forms over it; the engine DECISION is folded in;
+# they resolve into ONE current_decided_action. Reads opponent_profile directly, so it works now and
+# stays consistent once the OHF deep-rewire makes the engine decision itself intuition-driven.
+PLANS = {0: "none", 1: "pot_control", 2: "value_three_streets", 3: "flat_then_bluff_scare",
+         4: "check_raise_barrel", 5: "delayed_cbet", 6: "give_up", 7: "show_of_force"}
+
+# extra synapses grown for the introspection -> intuition -> action harmonization
+INTRO_SYNAPSES = [
+    ("signal.introspection", "intuition.read", "per-villain rhythm/exploits/tilt/range -> the harmonized read"),
+    ("signal.opponents", "intuition.read", "HUD base rates anchor the introspection confirmation"),
+    ("knob.advice", "intuition.read", "the live claude advisor weights into the read"),
+    ("intuition.read", "plan.line", "intuition forms the multi-street plan"),
+    ("intuition.read", "output.decided", "intuition drives the decided action"),
+    ("plan.line", "output.decided", "the plan steers the street's action toward the line"),
+    ("output.action", "output.decided", "the engine decision is harmonized into the decided action"),
+]
+
+
+def _profile_for(cur, name, gt):
+    cur.execute("""SELECT window_hands,cont_freq,aggr_index,fold_to_pressure,sd_strong_rate,
+                   fastbet_tell,tilt,profile,exploits FROM opponent_profile
+                   WHERE player=%s AND gametype=%s""", (name, gt))
+    r = cur.fetchone()
+    if not r:
+        return {}
+    return dict(window_hands=r[0], cont_freq=r[1], aggr_index=r[2], fold_to_pressure=r[3],
+               sd_strong_rate=r[4], fastbet_tell=r[5], tilt=r[6], profile=r[7], exploits=(r[8] or {}))
+
+
+def villain_and_table(g):
+    """raischair villain profile + the donk-fest table read, in one DB pass."""
+    s = g["syms"]; ts = g["ts"]
+    gt = "plo" if ts.get("isomaha") else "nlhe"
+    rc = int(num(s.get("raischair"), -1))
+    vname = ""
+    for p in (ts.get("players") or []):
+        if p.get("chair") == rc:
+            vname = (p.get("name") or "").strip(); break
+    prof, ndonks = {}, 0
+    try:
+        import psycopg2
+        c = psycopg2.connect(DSN); cur = c.cursor()
+        if vname:
+            prof = _profile_for(cur, vname, gt)
+        for p in (ts.get("players") or []):
+            nm = (p.get("name") or "").strip()
+            if not p.get("seated") or not nm:
+                continue
+            pr = _profile_for(cur, nm, gt)
+            ex = pr.get("exploits") or {}
+            if pr and (pr.get("profile") in ("station", "fish")
+                       or (pr.get("aggr_index") is not None and pr["aggr_index"] >= 0 and pr["aggr_index"] < 0.25)
+                       or ex.get("never_folds")):
+                ndonks += 1
+        c.close()
+    except Exception:
+        pass
+    return vname, gt, prof, (ndonks >= 3)
+
+
+def compute_intuition(g, prof, donkfest):
+    s = g["syms"]; ex = (prof.get("exploits") or {})
+    bb = num(s.get("bblind"), 1.0) or 1.0
+    pot_bb = num(s.get("PotSize")) / bb
+    known = bool(prof) and num(prof.get("window_hands")) >= 12
+    exploit = "none"
+    if ex.get("tilting"): exploit = "tilt_value"
+    elif ex.get("never_folds"): exploit = "value_only"
+    elif ex.get("keeps_firing"): exploit = "bluffcatch"
+    elif ex.get("overfold") or ex.get("gives_up") or ex.get("folds_to_3bet"): exploit = "attack_fold"
+    elif ex.get("fast_is_weak"): exploit = "attack_fast"
+    elif ex.get("fast_is_strong") or ex.get("honest"): exploit = "respect"
+    vs = -1.0
+    if known and num(prof.get("aggr_index"), -1) >= 0:
+        vs = 0.5 + (0.2 if ex.get("honest") else 0.0)
+        if num(prof.get("sd_strong_rate"), -1) >= 0: vs += (num(prof.get("sd_strong_rate")) - 0.5) * 0.3
+        if ex.get("keeps_firing"): vs -= 0.15
+        vs = max(0.0, min(1.0, vs))
+    aggr = 0.5
+    if exploit == "attack_fold": aggr = 0.75
+    elif exploit == "tilt_value": aggr = 0.72
+    elif exploit == "value_only" and vs >= 0.6: aggr = 0.2
+    committed = num(s.get("f$Committed")) > 0
+    foldable = bool(ex.get("overfold") or ex.get("folds_to_3bet") or num(prof.get("fold_to_pressure"), -1) > 0.5)
+    show_of_force = bool(pot_bb >= 12 and (foldable or committed))
+    persona = "normal"
+    if ex.get("never_folds"): persona = "tag_value"
+    elif ex.get("overfold") or ex.get("folds_to_3bet"): persona = "maniac"
+    elif ex.get("keeps_firing"): persona = "station"
+    elif donkfest: persona = "fish_hunter"
+    return {"known": known, "exploit": exploit, "villain_strength": round(vs, 3),
+            "aggression": round(aggr, 3), "tilt": round(num(prof.get("tilt"), 0.0), 3),
+            "show_of_force": show_of_force, "donkfest": donkfest, "persona": persona,
+            "confidence": 0.6 if known else 0.25}
+
+
+def compute_plan(g, intuition):
+    s = g["syms"]; br = int(num(s.get("betround")))
+    strong = num(s.get("f$HaveStrongMade")) > 0
+    draw = num(s.get("f$HaveBigDraw")) > 0
+    suited_board = num(s.get("nsuitedcommon")) >= 3
+    if intuition["show_of_force"]: code = 7
+    elif strong and intuition["exploit"] != "bluffcatch": code = 2
+    elif draw and suited_board: code = 3                       # flat then represent/bluff the flush scare
+    elif intuition["exploit"] in ("attack_fold", "attack_fast"): code = 4
+    elif intuition["exploit"] == "bluffcatch": code = 1
+    elif intuition["exploit"] == "value_only" and not strong: code = 6
+    else: code = 0
+    return {"code": code, "label": PLANS[code], "street": br}
+
+
+def resolve_action(g, intuition, plan):
+    """INTUITION + PLAN + DECISION -> the CURRENT DECIDED ACTION."""
+    s = g["syms"]; bb = num(s.get("bblind"), 1.0) or 1.0
+    f, cl, rz, bs = (num(s.get("f$fold")), num(s.get("f$call")), num(s.get("f$raise")), num(s.get("f$betsize")))
+    if rz > 0: action, size = "raise", bs
+    elif cl > 0: action, size = "call", 0.0
+    elif f > 0: action, size = "fold", 0.0
+    else: action, size = "none", 0.0
+    return {"action": action, "size_bb": round(size / bb, 2) if size else 0.0, "raw_betsize": round(size, 2),
+            "exploit": intuition["exploit"], "plan": plan["label"], "persona": intuition["persona"],
+            "source": "engine", "confidence": intuition["confidence"]}
+
+
+def brain(g):
+    vname, gt, prof, donkfest = villain_and_table(g)
+    intuition = compute_intuition(g, prof, donkfest)
+    plan = compute_plan(g, intuition)
+    s = g["syms"]
+    decision = {"fold": num(s.get("f$fold")), "call": num(s.get("f$call")),
+                "raise": num(s.get("f$raise")), "betsize": num(s.get("f$betsize"))}
+    current = resolve_action(g, intuition, plan)
+    return {"ts_ms": int(time.time() * 1000), "handnumber": g.get("handnumber"),
+            "betround": int(num(s.get("betround"))), "villain": vname, "gametype": gt,
+            "villain_profile": (prof.get("profile") if prof else None),
+            "intuition": intuition, "decision_plan": plan, "decision": decision,
+            "current_decided_action": current}
+
+
+def store_brain(b):
+    try:
+        import psycopg2
+        c = psycopg2.connect(DSN); cur = c.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS brain_state (id int primary key, ts_ms bigint, "
+                    "handnumber text, betround int, villain text, brain jsonb)")
+        cur.execute("INSERT INTO brain_state (id,ts_ms,handnumber,betround,villain,brain) "
+                    "VALUES (1,%s,%s,%s,%s,%s) ON CONFLICT (id) DO UPDATE SET ts_ms=EXCLUDED.ts_ms,"
+                    "handnumber=EXCLUDED.handnumber,betround=EXCLUDED.betround,villain=EXCLUDED.villain,"
+                    "brain=EXCLUDED.brain",
+                    (b["ts_ms"], b["handnumber"], b["betround"], b["villain"], json.dumps(b)))
+        c.commit(); c.close()
+    except Exception as e:
+        print("[synapse] brain store error:", e, flush=True)
+
+
 def harmonize(g):
     nodes = []
     for nid in NODES:
         val = node_value(nid, g)
         nodes.append({"id": nid, "value": val, "ghost": ghost_node_inference(nid, val, g)})
+    # harmonize the introspection layer into INTUITION -> PLAN -> DECIDED ACTION (grown synapses)
+    bn = brain(g)
+    intu = bn["intuition"]; cda = bn["current_decided_action"]
+    nodes.append({"id": "signal.introspection",
+                  "value": {"villain": bn["villain"], "profile": bn["villain_profile"],
+                            "tilt": intu["tilt"], "exploit": intu["exploit"]},
+                  "ghost": (("%s: %s%s" % (bn["villain"] or "villain", intu["exploit"],
+                            " (TILTING)" if intu["tilt"] >= 0.35 else "")) if intu["known"] else "no read yet")})
+    nodes.append({"id": "intuition.read", "value": intu,
+                  "ghost": "exploit %s | aggr %.2f | villain-strength %s%s" % (
+                      intu["exploit"], intu["aggression"], intu["villain_strength"],
+                      " | SHOW OF FORCE" if intu["show_of_force"] else "")})
+    nodes.append({"id": "plan.line", "value": bn["decision_plan"],
+                  "ghost": "plan: %s" % bn["decision_plan"]["label"]})
+    nodes.append({"id": "output.decided", "value": cda,
+                  "ghost": "DECIDED: %s%s via %s / %s" % (cda["action"].upper(),
+                           (" %.2fbb" % cda["size_bb"]) if cda["size_bb"] else "", cda["exploit"], cda["plan"])})
     return {"ts_ms": int(time.time() * 1000), "hero": g["hero"], "board": g["board"],
-            "betround": int(num(g["syms"].get("betround"))), "nodes": nodes,
-            "synapses": [{"from": a, "to": b, "kind": k} for a, b, k in SYNAPSES]}
+            "betround": int(num(g["syms"].get("betround"))), "nodes": nodes, "brain": bn,
+            "synapses": [{"from": a, "to": b2, "kind": k} for a, b2, k in (SYNAPSES + INTRO_SYNAPSES)]}
 
 
 # ---- NN feature / action / knob spec --------------------------------------------------------
@@ -355,6 +529,11 @@ def render(state):
 def main():
     global BOT
     BOT = (_argval("--bot-url") or BOT).rstrip("/")
+    if "--brain" in sys.argv:
+        # the easy API: the harmonized INTUITION + DECISION PLAN + DECISION -> CURRENT DECIDED ACTION
+        b = brain(gather()); store_brain(b)
+        print(json.dumps(b, indent=2))
+        return
     if "--features" in sys.argv:
         spec = feature_spec()
         path = os.path.join(OUT_DIR, "synapse_features.json")
@@ -381,6 +560,7 @@ def main():
             g = gather()
             state = harmonize(g)
             store_state(state)
+            store_brain(state["brain"])   # the easy-API row: INTUITION + PLAN + DECISION + DECIDED ACTION
             hn, bal = g.get("handnumber") or "", g.get("hero_balance")
             bb_now = num(g["syms"].get("bblind"), 0) or None
             nch_now = g.get("nchairs")

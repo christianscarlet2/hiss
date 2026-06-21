@@ -94,6 +94,26 @@ overfold / range read) + denial of equity + our investment make an overbet/jam +
 overbet/shove sizing when force wins it, never-fold-off-a-big-investment, and protective barrels.
 Weighs into f$Intuition_Aggression + the bet-sizing + the *_vs_bet fold/call gates.
 
+## 3e. THE BRAIN — unified easy API 🟡 (built + validated in synapse_map.py)
+`synapse_map.py` harmonizes the introspection inputs (opponent_profile, gametype-matched) into
+**INTUITION + DECISION PLAN + DECISION -> CURRENT DECIDED ACTION**, the single result. Grown synapses:
+signal.introspection + signal.opponents + knob.advice -> intuition.read -> plan.line + output.decided.
+Easy API: `python synapse_map.py --brain` (JSON) + the `brain_state` postgres table (single row id=1,
+upserted every --watch tick) that ANY consumer reads (OHF future, NN, advisor, MCP). VALIDATED live:
+returns {intuition{exploit,villain_strength,aggression,tilt,show_of_force,donkfest,persona,confidence},
+decision_plan{code,label,street}, decision{fold,call,raise,betsize}, current_decided_action{action,
+size_bb,exploit,plan,persona,confidence}}. Works now (reads profiles directly); stays consistent once
+the OHF deep-rewire makes the engine decision itself intuition-driven.
+
+## 3f. ISMYTURN decision loop + DECISION MEMORY ⬜
+At **ismyturn** the decision references **INTUITION + DECISION PLAN + DECISION + CONTEXT** (the brain +
+the live spot): check whether the CURRENT pathway (villain's line / our situation) **is in the decision
+plan and was considered**; if yes, execute the planned line; if not, adapt (advisor re-forms). Then act.
+And **REMEMBER** the situation + decision + pathway + context in a new `decision_memory` table so future
+decisions recall similar past situations to derive more insightful action (closes the loop back into
+introspection's "what do we/he do in similar conditions"). The advisor (§4) drives this; decision_memory
+is queried for similar-situation recall + fed to the NN.
+
 ## 4. Decision Advisor (capstone) ⬜  — `mcp/decision_advisor.py`
 - Trigger: **ismyturn rising edge** (poll cached `/api/symbols`), off-heartbeat, action-timer budget.
 - Assemble a **relevance-ranked context bundle**: introspection answers + their relevance, the
