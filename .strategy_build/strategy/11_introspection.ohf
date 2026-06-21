@@ -75,6 +75,13 @@ WHEN f$Intro_Known AND exploit_tilting_raischair >= 1 RETURN true FORCE
 WHEN f$Intro_Tilt >= 0.35 RETURN true FORCE
 WHEN Others RETURN false FORCE
 
+// ============================ table read: DONK-FEST ========================
+// A donk-heavy table (3+ fish / stations / loose-passive seated) -> get in CHEAP preflop and value-bet
+// HEAVY postflop when we connect; they pay off, so stack up. (intro_donkfest is a table-level symbol.)
+##f$Table_DonkFest##
+WHEN intro_donkfest >= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
 // ============================ card / range guess ===========================
 // 0 = capped / bluffy .. 1 = nutted. Profile prior (engine) refined by the live line. -1 unknown.
 ##f$Range_VillainStrength##

@@ -92,6 +92,11 @@ WHEN f$HaveComboDraw RaiseMax FORCE
 WHEN f$HaveBigDraw AND f$Style = 1 RaiseBy f$BetPctFlop % FORCE
 WHEN f$HaveBigDraw AND f$CheapDraw Call FORCE
 WHEN f$HaveBigDraw AND f$DecentPrice AND f$InPositionPost Call FORCE
+// INTROSPECTION (exploit precedence, confident read only): vs a villain who OVER-FOLDS / gives up the
+// lead, raise our one pair / draw to push him off it; vs a STEAMING / sticky-firing villain, PEEL our
+// one pair rather than fold (he is bluffing the flop far more than his story suggests).
+WHEN (f$HaveOnePair OR f$HaveBigDraw) AND (f$Exploit_Overfold OR f$Exploit_GivesUp) RaiseBy f$BetPctFlop % FORCE
+WHEN f$HaveOnePair AND (f$Exploit_Tilt OR f$Exploit_KeepsFiring) AND f$DecentPrice Call FORCE
 // STORY (12_aggressor / CtM): RESPECT a credible nut-weighted line. A flop raise
 // (especially a check-raise) from a passive/nit micro villain represents top pair
 // or better the large majority of the time; folding a bare one pair here is the

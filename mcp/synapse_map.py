@@ -316,6 +316,7 @@ INTRO_SYNAPSES = [
     ("intuition.read", "output.decided", "intuition drives the decided action"),
     ("plan.line", "output.decided", "the plan steers the street's action toward the line"),
     ("output.action", "output.decided", "the OHF/NN decision is harmonized in -- exploit takes PRECEDENCE"),
+    ("intelligence.gate", "output.decided", "the WISDOM gate vetoes an unwise/spewy line -- the final check"),
     ("output.decided", "memory.decisions", "every decided action is remembered to learn from later"),
     ("output.decided", "knob.advice", "the decided action is pushed to the live engine via the advice knobs"),
 ]
@@ -585,6 +586,41 @@ def _attach_deep_thought(g, gt, vname, intuition, plan, current, perception):
     return thought
 
 
+def compute_intelligence(g, prof, intuition, plan, current, considerations):
+    """The INTELLIGENCE layer -- the final WISDOM check that the brain's decided action is INTELLIGENT
+    and WISE before it is committed. Catches spew, bad odds, inconsistency with the reads, and survival
+    recklessness. Bounded veto: it can DOWNGRADE an unwise aggressive line to a safer one, but it never
+    invents recklessness. Clever is not the same as wise; this layer is the conscience over the cleverness."""
+    s = g["syms"]; bb = num(s.get("bblind"), 1.0) or 1.0
+    action = current.get("action"); size_bb = num(current.get("size_bb"))
+    strong = num(s.get("f$HaveStrongMade")) > 0
+    draw = num(s.get("f$HaveBigDraw")) > 0
+    a2c = num(s.get("AmountToCall")); pot = num(s.get("PotSize")); stack = num(s.get("StackSize"))
+    pr = current.get("predicted_response") or {}
+    concerns = []; wise = True
+    # 1. don't commit big without equity OR fold equity (spew)
+    if action == "raise" and size_bb * bb >= 0.66 * pot and not strong and not draw:
+        fe = num(pr.get("fold"))
+        if fe < 0.40:
+            concerns.append("big raise, weak hand, only %.0f%% fold equity -- spewy" % (fe * 100)); wise = False
+    # 2. don't call a big bet without a made hand or a draw (bad odds)
+    if action == "call" and pot > 0 and a2c >= 0.5 * pot and not strong and not draw:
+        concerns.append("calling %.1fx pot w/o made hand or draw -- bad odds" % (a2c / pot)); wise = False
+    # 3. consistency: a confident ATTACK read but a passive action
+    if intuition.get("exploit") in ("attack_fold", "attack_fast") and num(intuition.get("confidence")) >= 0.6 \
+       and action in ("fold", "call"):
+        concerns.append("read says ATTACK but the action is passive -- inconsistent")
+    # 4. survival / ICM: a short stack committing big without a strong made hand
+    if action == "raise" and stack > 0 and stack <= 12 * bb and not strong and size_bb * bb >= 0.5 * stack:
+        concerns.append("short-stack big commit w/o a strong made hand -- survival risk"); wise = False
+    adjusted = None
+    if not wise and action == "raise":
+        adjusted = {"action": ("call" if a2c > 0 else "check"),
+                    "reason": "intelligence veto -- " + "; ".join(concerns)}
+    return {"wise": wise, "score": round(max(0.0, 1.0 - 0.34 * len(concerns)), 2),
+            "concerns": concerns, "adjusted": adjusted}
+
+
 def brain(g):
     vname, gt, prof, donkfest = villain_and_table(g)
     perception = compute_perception(g)
@@ -599,13 +635,19 @@ def brain(g):
                 "raise": num(s.get("f$raise")), "betsize": num(s.get("f$betsize"))}
     current = resolve_action(g, intuition, plan, prof)
     considerations = compute_considerations(g, prof, intuition, plan, current, perception)
+    intelligence = compute_intelligence(g, prof, intuition, plan, current, considerations)
+    if intelligence.get("adjusted"):                         # the wisdom gate vetoes an unwise line
+        adj = intelligence["adjusted"]
+        current["action"] = adj["action"]; current["size_bb"] = 0.0; current["raw_betsize"] = 0.0
+        current["source"] = current.get("source", "") + " -> intelligence_veto"
+        current["intelligence_veto"] = adj["reason"]
     dt = _attach_deep_thought(g, gt, vname, intuition, plan, current, perception)
     return {"ts_ms": int(time.time() * 1000), "handnumber": g.get("handnumber"),
             "betround": int(num(s.get("betround"))), "villain": vname, "gametype": gt,
             "villain_profile": (prof.get("profile") if prof else None),
             "perception": perception, "considerations": considerations, "pineal": pineal,
-            "deep_thought": dt, "intuition": intuition, "decision_plan": plan, "decision": decision,
-            "current_decided_action": current}
+            "intelligence": intelligence, "deep_thought": dt, "intuition": intuition,
+            "decision_plan": plan, "decision": decision, "current_decided_action": current}
 
 
 def store_brain(b, history=True):
@@ -678,9 +720,14 @@ def harmonize(g):
                       " | SHOW OF FORCE" if intu["show_of_force"] else "")})
     nodes.append({"id": "plan.line", "value": bn["decision_plan"],
                   "ghost": "plan: %s" % bn["decision_plan"]["label"]})
+    intel = bn["intelligence"]
+    nodes.append({"id": "intelligence.gate", "value": intel,
+                  "ghost": ("wise (%.2f)" % intel["score"]) if intel["wise"]
+                           else ("VETO: %s" % "; ".join(intel["concerns"])[:80])})
     nodes.append({"id": "output.decided", "value": cda,
-                  "ghost": "DECIDED: %s%s via %s / %s" % (cda["action"].upper(),
-                           (" %.2fbb" % cda["size_bb"]) if cda["size_bb"] else "", cda["exploit"], cda["plan"])})
+                  "ghost": "DECIDED: %s%s via %s / %s%s" % (cda["action"].upper(),
+                           (" %.2fbb" % cda["size_bb"]) if cda["size_bb"] else "", cda["exploit"], cda["plan"],
+                           " [vetoed]" if cda.get("intelligence_veto") else "")})
     return {"ts_ms": int(time.time() * 1000), "hero": g["hero"], "board": g["board"],
             "betround": int(num(g["syms"].get("betround"))), "nodes": nodes, "brain": bn,
             "synapses": [{"from": a, "to": b2, "kind": k} for a, b2, k in (SYNAPSES + INTRO_SYNAPSES)]}
