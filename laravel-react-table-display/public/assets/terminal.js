@@ -222,6 +222,7 @@
       if (on) views[j].removeAttribute("hidden"); else views[j].setAttribute("hidden", "");
     }
     if (name === "ail") { loadAudioDevices(); ailListPoll(); ailOutputPoll(); }
+    if (name === "synapse") { renderSynapse(); pollSynapse(); }
     if (name === "hiss") {
       var f = document.getElementById("hiss-frame");   // lazy-load the React table view on first view
       if (f && !f.src) f.src = "/table-display";
@@ -353,6 +354,114 @@
   // AIL timers tick only while the AIL tab is visible.
   setInterval(function () { if (activeTab === "ail") ailListPoll(); }, 2000);
   setInterval(function () { if (activeTab === "ail") ailOutputPoll(); }, 800);
+
+  // ---- Synapse Harmonizer tab: steering dials, what each does, pairings, + live values ----
+  var SYNAPSE_DIALS = [
+    { id: "style", icon: "🎚", label: "Strategy Style  (f$Style)",
+      live: { kind: "symbol", name: "f$Style", map: { "0": "Small Ball", "1": "Power Poker", "2": "Hybrid" } },
+      control: "Terminal:  /strategy smallball | hybrid | power",
+      does: "The MASTER playing-style dial — one switch that retunes opens, 3-bets/4-bets, c-bet frequency and bet-sizing across every street at once. Small Ball (0): many cheap flops, small pots, wide & tricky postflop [Negreanu]. Power Poker (1): big bets, c-bet 0.80, bigger 3/4-bet value range, maximum pressure [Brunson]. Hybrid (2, default): balanced blend.",
+      pair: "C-bet Frequency (Power drives it to 0.80) · Bet SizeMult (multiplies the style's sizes by ICM×depth) · Stack Depth (Small Ball needs depth; short stacks revert to push/fold regardless) · Opponent type (Power punishes nits / foldy tables; Small Ball exploits calling stations cheaply)." },
+    { id: "cbet", icon: "🎯", label: "C-bet Frequency  (f$CbetFreq)",
+      live: { kind: "symbol", name: "f$CbetFreq" },
+      control: "Follows Strategy Style (0.60 smallball / hybrid default / 0.80 power)",
+      does: "How often the bot fires a continuation bet as the preflop raiser in a heads-up pot. Higher = more flop fold-equity & initiative; lower = pot-control vs sticky opponents.",
+      pair: "Strategy Style (Power raises it) · Opponent type (drop vs calling stations, raise vs foldy regs) · board texture (parched boards keep firing)." },
+    { id: "sizemult", icon: "📏", label: "Bet SizeMult  (f$ICM_SizeMult × f$DepthSizeMult)",
+      live: { kind: "note", text: "computed live (not polled — cascades)" },
+      control: "Automatic: ICM chip-value × stack-depth/leverage; fed by the lobby + effective stack",
+      does: "Scales EVERY OHF bet by chip-value × leverage so the size is meaningful for the stack: deep stacks bet bigger (up to ~×1.5), ≤25bb → ×1.0 / push-fold, bubble tightens (~×0.80), ITM ~×0.90. Makes 2bb mean nothing to a 3000bb stack and everything to a 10bb stack.",
+      pair: "Strategy Style (it multiplies the style's base sizes) · ICM (lobby_fetch → players_remaining → f$ICM_SizeMult + f$Stage) · Stack Depth (f$DepthSizeMult)." },
+    { id: "nn", icon: "🧠", label: "NN Driver  (neural net)",
+      live: { kind: "endpoint", url: "/api/nn-driver", field: "engaged" },
+      control: "🧠 toolbar / AIL,  or  /api/nn-driver?on=1|0",
+      does: "Replaces the OHF strategy with the trained PPO neural net for NLH — bypasses the OHF read and FORCES the action (the 'student' that learned from millions of hands). On PLO/PLO8 the OHF still drives (the NN is hold'em-only).",
+      pair: "Autoplayer (the NN needs it as the executor) · ULTRA (auto-flips OHF↔NN) · Strategy Style (f$Style only matters while the OHF is driving — the NN ignores it on NLH)." },
+    { id: "ultra", icon: "⚡", label: "ULTRA Mode",
+      live: { kind: "endpoint", url: "/api/ultra", field: "engaged" },
+      control: "⚡ toolbar,  or  /api/ultra?on=1|0",
+      does: "A meta-controller that randomly flips the bot between OHF and NN using the system-audio average as the entropy source — mixes the master (OHF) and the student (NN) over time.",
+      pair: "NN Driver (ULTRA is what toggles it) · Strategy Style (applies during the OHF phases) · Superstition (the 666 oracle sharpens in the NN phase)." },
+    { id: "superstition", icon: "🔥", label: "Superstition — 666 Card Oracle  (sb_beastfavor)",
+      live: { kind: "endpoint", url: "/api/superstition", field: "engaged" },
+      control: "🔥666 toolbar,  or  /api/superstition?on=1|0",
+      does: "The 666 Card Oracle reads the system-audio resonance with 666 and bends the next-card catch odds (×0.666..×1.666), exposed as the sb_beastfavor symbol + an OHF superstition overlay + spoken omens. Sharpened during the NN phase under ULTRA.",
+      pair: "Beast Favor (the live resonance value it feeds) · ULTRA / NN Driver (sharpens in the NN phase)." },
+    { id: "autoplayer", icon: "🎰", label: "Autoplayer  (executor)",
+      live: { kind: "endpoint", url: "/api/autoplayer", field: "engaged" },
+      control: "toolbar / loop,  or  /api/autoplayer?on=1|0",
+      does: "The always-on executor that actually clicks the table. With NN/ULTRA off it runs the OHF; with NN on it executes the NN's forced action. Must be ON for any play to happen.",
+      pair: "Everything — it's the hands that carry out whatever brain (OHF or NN) is steering." }
+  ];
+
+  var synWrap = document.getElementById("syn-wrap");
+  var synConn = document.getElementById("syn-conn");
+  var synLive = {};
+
+  function setSynConn(ok) {
+    if (!synConn) return;
+    synConn.textContent = ok ? "(live)" : "(bot unreachable)";
+    synConn.className = "syn-conn" + (ok ? "" : " down");
+  }
+
+  function renderSynapse() {
+    if (!synWrap) return;
+    var html = "";
+    for (var i = 0; i < SYNAPSE_DIALS.length; i++) {
+      var d = SYNAPSE_DIALS[i];
+      var lv = synLive[d.id] || "&mdash;";
+      html += '<div class="syn-card">'
+        + '<div class="syn-top"><span class="syn-icon">' + d.icon + '</span>'
+        + '<span class="syn-label">' + escapeHtml(d.label) + '</span>'
+        + '<span class="syn-val" id="synval-' + d.id + '">' + lv + '</span></div>'
+        + '<div class="syn-row"><span class="syn-k">does</span><span class="syn-v">' + escapeHtml(d.does) + '</span></div>'
+        + '<div class="syn-row"><span class="syn-k">pair&nbsp;with</span><span class="syn-v">' + escapeHtml(d.pair) + '</span></div>'
+        + '<div class="syn-row"><span class="syn-k">control</span><span class="syn-v mono">' + escapeHtml(d.control) + '</span></div>'
+        + '</div>';
+    }
+    synWrap.innerHTML = html;
+  }
+
+  function setSynVal(id, str) {
+    synLive[id] = str;
+    var el = document.getElementById("synval-" + id);
+    if (el) el.innerHTML = str;
+  }
+
+  function pollSynapse() {
+    var symDials = SYNAPSE_DIALS.filter(function (d) { return d.live.kind === "symbol"; });
+    if (symDials.length) {
+      var names = symDials.map(function (d) { return d.live.name; }).join(",");
+      fetch("/api/symbols?names=" + encodeURIComponent(names), { cache: "no-store" })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          setSynConn(true);
+          symDials.forEach(function (d) {
+            var v = j[d.live.name];
+            if (v === undefined || v === null) { setSynVal(d.id, "&mdash;"); return; }
+            var num = Math.round(parseFloat(v) * 100) / 100;
+            var s = String(num);
+            if (d.live.map && d.live.map[String(num)] !== undefined) s = d.live.map[String(num)] + " (" + num + ")";
+            setSynVal(d.id, "<b>" + escapeHtml(s) + "</b>");
+          });
+        })
+        .catch(function () { setSynConn(false); });
+    }
+    SYNAPSE_DIALS.filter(function (d) { return d.live.kind === "endpoint"; }).forEach(function (d) {
+      fetch(d.live.url, { cache: "no-store" })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          setSynConn(true);
+          setSynVal(d.id, j[d.live.field] ? '<b class="on">ON</b>' : '<span class="off">OFF</span>');
+        })
+        .catch(function () { setSynVal(d.id, "&mdash;"); });
+    });
+    SYNAPSE_DIALS.filter(function (d) { return d.live.kind === "note"; }).forEach(function (d) {
+      setSynVal(d.id, '<span class="note">' + escapeHtml(d.live.text) + "</span>");
+    });
+  }
+
+  setInterval(function () { if (activeTab === "synapse") pollSynapse(); }, 1500);
 
   poll();
   setInterval(poll, 600);

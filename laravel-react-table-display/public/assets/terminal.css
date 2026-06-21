@@ -200,3 +200,29 @@ html, body {
 .tab .snake { color: #3df57a; filter: drop-shadow(0 0 3px rgba(61,245,122,.6)); }
 #tab-hiss { padding: 0; }
 .hiss-frame { flex: 1 1 auto; width: 100%; height: 100%; border: none; background: var(--bg); }
+
+/* ---- Synapse Harmonizer tab ---- */
+.tab .dna { color: #c77dff; filter: drop-shadow(0 0 3px rgba(199,125,255,.6)); }
+#tab-synapse { padding: 0; }
+.syn-head {
+  flex: 0 0 auto; padding: 8px 12px; background: var(--bg-label);
+  border-bottom: 1px solid var(--border); color: var(--fg-dim); font-size: 12px; line-height: 1.4;
+}
+.syn-conn { color: var(--fg-dim); font-size: 11px; }
+.syn-conn.down { color: #ff5f5f; }
+.syn-wrap {
+  flex: 1 1 auto; overflow-y: auto; padding: 10px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(430px, 1fr)); gap: 10px; align-content: start;
+}
+.syn-card { background: var(--bg-pane); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.syn-top { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.syn-icon { font-size: 18px; }
+.syn-label { color: var(--fg); font-weight: bold; font-size: 13px; flex: 1 1 auto; }
+.syn-val { font-size: 12px; color: var(--fg-dim); white-space: nowrap; }
+.syn-val .on { color: var(--accent); }
+.syn-val .off { color: #6b7d8c; }
+.syn-val .note { color: #6b7d8c; font-style: italic; font-size: 11px; }
+.syn-row { display: flex; gap: 8px; margin-top: 5px; font-size: 11px; line-height: 1.45; }
+.syn-k { flex: 0 0 60px; color: var(--accent); text-transform: uppercase; font-size: 10px; letter-spacing: .5px; padding-top: 1px; }
+.syn-v { flex: 1 1 auto; color: #b9c4cd; }
+.syn-v.mono { color: #9bc1ff; }

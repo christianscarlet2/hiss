@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Hiss Terminal</title>
-    <link rel="stylesheet" href="/terminal/assets/terminal.css?v=5" />
+    <link rel="stylesheet" href="/terminal/assets/terminal.css?v=6" />
   </head>
   <body>
     <div id="app">
@@ -13,6 +13,7 @@
         <nav class="tabs" id="tabs">
           <button type="button" class="tab active" data-tab="terminal">Terminal</button>
           <button type="button" class="tab" data-tab="ail">AIL</button>
+          <button type="button" class="tab" data-tab="synapse"><span class="dna">&#129516;</span>&nbsp;Synapse&nbsp;Harmonizer</button>
           <button type="button" class="tab" data-tab="hiss"><span class="snake">&#128013;</span>&nbsp;Hiss</button>
         </nav>
         <span class="status" id="status">connecting&hellip;</span>
@@ -60,11 +61,17 @@
         </div>
       </div>
 
+      <!-- ============ SYNAPSE HARMONIZER TAB ============ -->
+      <div class="tabview" id="tab-synapse" hidden>
+        <div class="syn-head">Synapse Harmonizer &mdash; the dials &amp; controls that steer the bot, what each effectively does, and what to pair it with. <span class="syn-conn" id="syn-conn"></span></div>
+        <div class="syn-wrap" id="syn-wrap"></div>
+      </div>
+
       <!-- ============ HISS TAB (React Table View) ============ -->
       <div class="tabview" id="tab-hiss" hidden>
         <iframe id="hiss-frame" class="hiss-frame" title="Hiss React Table View"></iframe>
       </div>
     </div>
-    <script src="/terminal/assets/terminal.js?v=5"></script>
+    <script src="/terminal/assets/terminal.js?v=6"></script>
   </body>
 </html>
