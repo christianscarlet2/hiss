@@ -801,6 +801,38 @@ void CAutoplayer::EmitDecisionTrace() {
 	ChatTerminalAppendToScreen("main", kChatTerminalDecisions, stamped);
 }
 
+// ---------------------------------------------------------------------------
+// SHARED TURN-LOCK: hold the cross-instance mouse lock for the WHOLE turn -- every click of a multi-step
+// raise progression (Raise/Options -> preset/keypad -> confirm), which spans several heartbeats and can
+// CLICK-MISS RETRY -- so the OTHER phone bot cannot click in between. Acquired once when we're about to
+// act, released when our turn ends (ismyturn falls) or a TTL fires (crash/abort safety). It is the SAME
+// named mutex as CMyMutex, so it is recursive on our own heartbeat thread (CMyMutex re-enters freely)
+// and blocks the OTHER process for the whole progression. [Emrald: lock the other bot until the
+// two-successive-clicks progression is fully done]
+static HANDLE g_turn_mouse_lock = NULL;
+static bool   g_turn_lock_held  = false;
+static DWORD  g_turn_lock_tick  = 0;
+static const DWORD kTurnLockTtlMs = 8000;          // never hold longer than one realistic turn
+
+static bool AcquireTurnLock() {
+	if (g_turn_lock_held) return true;             // already ours for this turn
+	if (g_turn_mouse_lock == NULL)
+		g_turn_mouse_lock = ::CreateMutex(NULL, FALSE, _T("HissSharedMouseClickLock"));
+	if (g_turn_mouse_lock == NULL) return true;    // can't create the lock -> never block ourselves
+	DWORD w = ::WaitForSingleObject(g_turn_mouse_lock, 0);
+	if (w == WAIT_OBJECT_0 || w == WAIT_ABANDONED) {   // ABANDONED = prior holder crashed; we own it now
+		g_turn_lock_held = true; g_turn_lock_tick = ::GetTickCount();
+		return true;
+	}
+	return false;                                  // another bot is mid-progression -> wait our turn
+}
+static void ReleaseTurnLock() {
+	if (g_turn_lock_held && g_turn_mouse_lock != NULL) {
+		::ReleaseMutex(g_turn_mouse_lock);
+		g_turn_lock_held = false;
+	}
+}
+
 void CAutoplayer::DoAutoplayer(void) {
 	write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Starting Autoplayer cadence...\n");
 	DumpButtonDebug();
@@ -907,6 +939,12 @@ void CAutoplayer::DoAutoplayer(void) {
 	}
 	_was_my_turn = my_turn_now;
 
+	// Release the shared turn-lock the moment our turn ENDS (ismyturn fell) or a TTL fires, so the other
+	// bot can take its turn. While our turn lasts we keep it -> every click of our progression is exclusive.
+	if (!my_turn_now || (g_turn_lock_held && (::GetTickCount() - g_turn_lock_tick) > kTurnLockTtlMs)) {
+		ReleaseTurnLock();
+	}
+
 	write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Going to evaluate primary formulas.\n");
 	// NEW DRIVER MODEL [Emrald]: the autoplayer is ALWAYS the executor (it already handled sit-in /
 	// popups / secondary formulas above), but on a NLH table when the NN driver (or ULTRA, which drives
@@ -922,6 +960,11 @@ void CAutoplayer::DoAutoplayer(void) {
 	if (!nn_bypasses_ohf_nlh && p_engine_container->symbol_engine_autoplayer()->isfinalanswer())	{
 		if (_acted_this_turn) {
 			APTrace("DoAutoplayer -> STOP: already took an FCKRA action this turn (once-per-turn latch)");
+		} else if (!AcquireTurnLock()) {
+			// Another Hiss bot is mid-progression on the shared mouse -> wait. We retry every heartbeat
+			// (still within our turn window) until it releases; our turn-latch is untouched so nothing is lost.
+			APTrace("DoAutoplayer -> STOP: another Hiss bot holds the shared mouse lock; waiting for our turn");
+			write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Waiting: the other bot holds the shared mouse lock\n");
 		} else {
 			APTrace("DoAutoplayer -> isfinalanswer=1, calling ExecutePrimaryFormulasIfNecessary()");
 			p_autoplayer_functions->CalcPrimaryFormulas();

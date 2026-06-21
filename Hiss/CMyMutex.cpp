@@ -15,11 +15,17 @@
 #include "CMyMutex.h"
 
 
-CMyMutex::CMyMutex() : _mutex(false, Preferences()->mutex_name()) {
-  // We want a long timeout to let OHs instances act in FIFO order.
-	// But we can't wait forever because events can happen. Popups, table timeout... 
-  // FIFO order is actually not guaranteed, but seems to work by chance in Win XP:
-  // http://www.maxinmontreal.com/forums/viewtopic.php?f=114&t=18860
+// SHARED anti-collision mutex name, FIXED across every Hiss instance on this machine. The two phone
+// bots mirror to the same desktop and share ONE mouse, so they MUST contend on the SAME named mutex --
+// otherwise each bot locks its own private Preferences()->mutex_name() (which can differ per INI) and
+// they click over each other, especially mid two-successive-clicks (Raise->Options) sequences. The
+// holder keeps it across the WHOLE action (ExecutePrimaryFormulas + the atomic two-click HandleCycle),
+// so the other bot(s) block here until the action completes. [Emrald: lock the other bot while one acts]
+static const TCHAR *kHissSharedClickLock = _T("HissSharedMouseClickLock");
+
+CMyMutex::CMyMutex() : _mutex(false, kHissSharedClickLock) {
+  // We want a long timeout to let the instances act in FIFO order, but not forever (popups, table
+  // timeout). FIFO is not guaranteed but works in practice.
 	if (_mutex.Lock(5000)) {
     write_log(Preferences()->debug_autoplayer(), "[CMyMutex] successfully locked\n");
 	  _locked = TRUE;

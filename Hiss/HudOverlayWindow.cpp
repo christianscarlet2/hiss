@@ -318,8 +318,22 @@ void CHudOverlayWindow::OnPaint() {
 		COLORREF dec_color = RGB((int)(255 + (1 - 255) * t), (int)(1 * t), (int)(1 * t));
 		int hero = (p_engine_container != NULL && p_engine_container->symbol_engine_userchair() != NULL)
 			? p_engine_container->symbol_engine_userchair()->userchair() : -1;
-		if (hero >= 0 && hero < kMaxNumberOfPlayers && _box_visible[hero]) {
-			CRect hb = _box_rect[hero];
+		if (hero >= 0 && hero < kMaxNumberOfPlayers) {
+			// Anchor on the hero's HUD box if it exists, else on the tablemap hero-seat position so the RED
+			// decision ALWAYS shows on scrcpy -- it must NOT depend on HUD samples existing (a fresh account
+			// like scarletchrist has none, and the action still needs to flash). [Emrald: decision across scrcpy]
+			CRect hb;
+			if (_box_visible[hero]) {
+				hb = _box_rect[hero];
+			} else {
+				double fx = _fx[hero], fy = _fy[hero];
+				if (fx < 0.0 || fy < 0.0) {
+					int nch = (p_tablemap != NULL) ? p_tablemap->nchairs() : 0;
+					DefaultFractionForChair(hero, nch, cw, ch, &fx, &fy);
+				}
+				int hx = (int)(fx * cw), hy = (int)(fy * ch);
+				hb = CRect(hx, hy, hx + kHudBoxWidth, hy + kHudLineH);
+			}
 			int ctrx = hb.CenterPoint().x;
 			CString tname = g_table_identity;            // table name = part after the '|'
 			int bar = tname.Find('|'); if (bar >= 0) tname = tname.Mid(bar + 1);
