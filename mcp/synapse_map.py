@@ -80,6 +80,47 @@ def num(v, d=0.0):
         return d
 
 
+# ---- LOAD HOOKS: identify which parts of the brain are OVERWORKED (hot/slow) so GROWTH can optimize --
+import functools
+_PROF = {}    # func -> [calls, total_ms, max_ms]
+
+
+def _timed(fn):
+    @functools.wraps(fn)
+    def w(*a, **k):
+        t = time.time()
+        try:
+            return fn(*a, **k)
+        finally:
+            dt = (time.time() - t) * 1000.0
+            p = _PROF.setdefault(fn.__name__, [0, 0.0, 0.0])
+            p[0] += 1; p[1] += dt
+            if dt > p[2]:
+                p[2] = dt
+    return w
+
+
+def flush_load(reset=True):
+    """Persist the brain's per-component LOAD to brain_load so GROWTH can spot the overworked parts."""
+    if not _PROF:
+        return
+    try:
+        import psycopg2
+        c = psycopg2.connect(DSN); cur = c.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS brain_load (id bigserial primary key, ts_ms bigint, "
+                    "func text, calls bigint, total_ms double precision, avg_ms double precision, max_ms double precision)")
+        ts = int(time.time() * 1000)
+        for fn, (calls, tot, mx) in _PROF.items():
+            cur.execute("INSERT INTO brain_load (ts_ms,func,calls,total_ms,avg_ms,max_ms) VALUES (%s,%s,%s,%s,%s,%s)",
+                        (ts, fn, calls, round(tot, 1), round(tot / calls, 3) if calls else 0, round(mx, 2)))
+        cur.execute("DELETE FROM brain_load WHERE id < (SELECT max(id)-8000 FROM brain_load)")
+        c.commit(); c.close()
+    except Exception:
+        pass
+    if reset:
+        _PROF.clear()
+
+
 def gather():
     """Pull the whole live system into one dict of raw inputs."""
     ts = _get("/api/table-state")
@@ -499,11 +540,21 @@ def resolve_action(g, intuition, plan, prof):
             action, size, source = "call", 0.0, "exploit:bluffcatch"
         elif ex in ("value_only", "image_value") and action == "raise" and vstr is not None and vstr >= 0.6:
             action, size, source = ("call" if a2c > 0 else "check"), 0.0, "exploit:no_bluff_vs_station"
+    # FEELER BET: when we lack INFORMATION (unknown villain / low confidence / murky 50-50 range) and we
+    # would otherwise check in position with no made hand, send out a small PROBE bet to gather intel --
+    # the villain's reaction (fold/call/raise + timing) sharpens the read for the rest of the hand. Cheap
+    # information beats a blind check; the size is small so it's never spew.
+    in_pos = num(s.get("f$InPositionPost")) > 0
+    murky = (not intuition["known"]) or conf < 0.35 or (vstr is not None and 0.40 <= vstr <= 0.60)
+    if action == "none" and a2c == 0 and in_pos and murky and not strong and not intuition["show_of_force"]:
+        action, size, source = "raise", pot * 0.30, "feeler:gather_info"
     # PREDICT the villain's response and confirm the pathway is the most profitable one.
     predicted = predict_response(prof, action, intuition)
     pathway_profitable = True
-    if action == "raise" and not strong and not intuition["show_of_force"] and predicted.get("fold", 1.0) < 0.20:
-        # the exploit raise was a BLUFF, but he won't fold -> not profitable; fall back to the cheap line.
+    if action == "raise" and not strong and not intuition["show_of_force"] and size >= 0.5 * pot \
+       and not source.startswith("feeler") and predicted.get("fold", 1.0) < 0.20:
+        # a BIG bluff-raise the villain won't fold to -> not profitable (a small feeler/probe is exempt:
+        # it is buying information, not fold equity); fall back to the cheap line.
         action, size = ("call" if a2c > 0 else "check"), 0.0
         source += "->no_fold_predicted"
         predicted = predict_response(prof, action, intuition)
@@ -809,6 +860,12 @@ def render(state):
 def main():
     global BOT
     BOT = (_argval("--bot-url") or BOT).rstrip("/")
+    # LOAD HOOKS: wrap the brain components so we can see which are OVERWORKED -> growth.py optimizes them.
+    for _fn in ("villain_and_table", "compute_perception", "compute_intuition", "compute_plan",
+                "resolve_action", "predict_response", "compute_considerations", "compute_intelligence",
+                "compute_pineal", "_attach_deep_thought", "brain", "harmonize"):
+        if _fn in globals():
+            globals()[_fn] = _timed(globals()[_fn])
     if "--brain" in sys.argv:
         # the easy API: the harmonized INTUITION + DECISION PLAN + DECISION -> CURRENT DECIDED ACTION
         b = brain(gather()); store_brain(b)
@@ -827,6 +884,7 @@ def main():
         do_speak = "--speak" in sys.argv
         print("[synapse] ghost online -> %s | inferring every %.0fs%s" % (BOT, every, "  [voiced]" if do_speak else ""), flush=True)
         last_spoke = 0.0
+        last_flush = 0.0
         # per-hand result tracking. We only bank a hand's net when we actually OBSERVED the hero
         # playing it -- hero had hole cards, on the SAME table (blinds + seat count unchanged) across
         # the hand boundary. Otherwise the stack delta spans a table switch / observer view / a
@@ -841,6 +899,8 @@ def main():
             state = harmonize(g)
             store_state(state)
             store_brain(state["brain"])   # the easy-API row: INTUITION + PLAN + DECISION + DECIDED ACTION
+            if time.time() - last_flush > 60:    # persist the brain LOAD profile every minute (overwork hooks)
+                flush_load(); last_flush = time.time()
             hn, bal = g.get("handnumber") or "", g.get("hero_balance")
             bb_now = num(g["syms"].get("bblind"), 0) or None
             nch_now = g.get("nchairs")

@@ -70,6 +70,36 @@ def build_brief(a):
     )
 
 
+AREA_SOURCES["overwork"] = ["mcp/synapse_map.py (optimize the named function: cache repeated profile/DB "
+                            "reads, avoid redundant work, batch queries -- WITHOUT changing its outputs)"]
+
+
+def score_load(cur):
+    """Find OVERWORKED brain parts (slow per call / hot) from brain_load -> growth areas to OPTIMIZE."""
+    cur.execute("""SELECT func, sum(calls), round(avg(avg_ms)::numeric,3), round(max(max_ms)::numeric,2),
+                          round(sum(total_ms)::numeric,1)
+                   FROM brain_load WHERE ts_ms > %s GROUP BY func ORDER BY 5 DESC""",
+                (int(time.time() * 1000) - 3600 * 1000,))          # last hour
+    out = []
+    for func, calls, avg_ms, max_ms, total_ms in cur.fetchall():
+        if float(avg_ms or 0) >= 25.0 or float(max_ms or 0) >= 120.0:   # slow per call or spiky
+            out.append(dict(area_type="overwork", area_key=func, sample=int(calls or 0),
+                            avg_net=-float(avg_ms or 0), total_net=-float(total_ms or 0),
+                            evidence=dict(avg_ms=avg_ms, max_ms=max_ms, total_ms=total_ms, calls=calls)))
+    return out
+
+
+def build_load_brief(a):
+    e = a["evidence"]
+    return ("SELF-GROWTH (PERFORMANCE) TASK for the Hiss poker brain.\n\n"
+            "OVERWORKED PART: %s -- avg %.2f ms/call, max %.2f ms, %s calls, %.1f ms total (last hour).\n\n"
+            "GOVERNING SOURCE:\n  - %s\n\n"
+            "GOAL: make this function FASTER (cache repeated DB/profile reads, avoid redundant work, batch\n"
+            "queries) WITHOUT changing its outputs. Validate the brain still runs: python mcp/synapse_map.py\n"
+            "--brain. The brain runs hot every tick, so shaving this frees latency for deeper thought."
+            % (a["area_key"], e["avg_ms"], e["max_ms"], e["calls"], e["total_ms"], AREA_SOURCES["overwork"][0]))
+
+
 def grow(a, brief):
     """Trigger the growth. Enqueues a 'rewrite' job on the bus (audit trail) and, when AUTO_REWRITE,
     spawns the headless growth agent (staged + validated, never auto-deployed)."""
@@ -105,8 +135,22 @@ def run_once(conn):
                 conn.commit(); areas_grown += 1
                 print("[growth] GROWTH AREA: %s=%r avg %.2f bb x%d -> %s"
                       % (a["area_type"], a["area_key"], a["avg_net"], a["sample"], action), flush=True)
+    # OVERWORKED parts (slow / hot brain components) -> growth-to-OPTIMIZE
+    try:
+        for a in score_load(cur):
+            brief = build_load_brief(a)
+            action = grow(a, brief)
+            cur.execute("""INSERT INTO growth_log (ts_ms,area_type,area_key,sample,avg_net,total_net,
+                evidence,brief,status) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (int(time.time() * 1000), a["area_type"], a["area_key"], a["sample"], a["avg_net"],
+                 a["total_net"], json.dumps(a["evidence"]), brief, action))
+            conn.commit(); areas_grown += 1
+            print("[growth] OVERWORKED: %s avg %.2f ms x%d -> %s"
+                  % (a["area_key"], -a["avg_net"], a["sample"], action), flush=True)
+    except Exception:
+        conn.rollback()
     if not areas_grown:
-        print("[growth] no areas to grow yet (need %d+ hands, < %.1f bb)" % (MIN_SAMPLE, LOSS_BB), flush=True)
+        print("[growth] no areas to grow yet (need %d+ hands < %.1f bb, or a slow part)" % (MIN_SAMPLE, LOSS_BB), flush=True)
     return areas_grown
 
 
