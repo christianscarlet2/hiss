@@ -1,0 +1,158 @@
+//*****************************************************************************
+//  11_introspection - the INTUITION layer.
+//
+//  Harmonizes HUD + per-opponent INTROSPECTION (rhythm / exploits / timing /
+//  range, gametype-separated) + the live Claude decision advisor into a single
+//  read the strategy decides FROM. The decision files (50/60/70/40/05/12) route
+//  through f$Intuition_* / f$Exploit_* below; the raw symbols are just inputs.
+//
+//  Native engine symbols (defined in the rebuilt binary):
+//    intro_* / exploit_*  -> CSymbolEngineOpponentIntrospection (opponent_profile,
+//                            built by mcp/introspect_aggregator.py; gametype-matched)
+//    openai_knob_advice_*  -> mcp/decision_advisor.py via /api/knob (fresh-only)
+//  Villain for "facing a bet" spots = raischair (the current aggressor). The
+//  multiplexer resolves intro_contfreq_raischair -> intro_contfreqN automatically.
+//*****************************************************************************
+
+// ============================ introspection answers ========================
+##f$Intro_Known##
+// enough of a sample on THIS villain in THIS gametype to trust the read
+WHEN intro_known_raischair >= 1 AND intro_simN_raischair >= 12 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Intro_WillKeepFiring##
+// "should I raise him, or will he just fire again?" rhythm 0..1 (-1 unknown)
+WHEN f$Intro_Known AND intro_contfreq_raischair >= 0 RETURN intro_contfreq_raischair FORCE
+WHEN Others RETURN -1 FORCE
+
+##f$Intro_FastTell##
+// "he bet quickly - does he have it when he bets fast?"  P(strong|fast) 0..1 (-1 unknown)
+WHEN intro_fasttell_raischair >= 0 RETURN intro_fasttell_raischair FORCE
+WHEN Others RETURN -1 FORCE
+
+##f$Intro_Tilt##
+// current EMOTION/steam: how far his recent rhythm has deviated from his baseline (0..1; 0 = on his game)
+WHEN f$Intro_Known AND intro_tilt_raischair >= 0 RETURN intro_tilt_raischair FORCE
+WHEN Others RETURN 0 FORCE
+
+// ============================ exploit flags (actionable) ===================
+##f$Exploit_Overfold##
+WHEN f$Intro_Known AND exploit_overfold_raischair >= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_GivesUp##
+WHEN f$Intro_Known AND exploit_givesup_raischair >= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_KeepsFiring##
+WHEN f$Intro_Known AND exploit_keepsfiring_raischair >= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_NeverFolds##
+WHEN f$Intro_Known AND exploit_neverfolds_raischair >= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_Folds3Bet##
+WHEN f$Intro_Known AND exploit_folds3bet_raischair >= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_FastWeak##
+WHEN exploit_fastweak_raischair >= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_FastStrong##
+WHEN exploit_faststrong_raischair >= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_Honest##
+WHEN f$Intro_Known AND exploit_honest_raischair >= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_Tilt##
+// villain is STEAMING (off his baseline) -> stop bluffing him, value-bet bigger, bluff-catch wider;
+// he'll spew if we just let him. The single highest-EV exploit when it fires.
+WHEN f$Intro_Known AND exploit_tilting_raischair >= 1 RETURN true FORCE
+WHEN f$Intro_Tilt >= 0.35 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+// ============================ table read: DONK-FEST ========================
+// A donk-heavy table (3+ fish / stations / loose-passive seated) -> get in CHEAP preflop and value-bet
+// HEAVY postflop when we connect; they pay off, so stack up. (intro_donkfest is a table-level symbol.)
+##f$Table_DonkFest##
+WHEN intro_donkfest >= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+// ============================ card / range guess ===========================
+// 0 = capped / bluffy .. 1 = nutted. Profile prior (engine) refined by the live line. -1 unknown.
+##f$Range_VillainStrength##
+WHEN intro_rangestrength_raischair < 0 RETURN -1 FORCE
+WHEN f$OppMinLead RETURN intro_rangestrength_raischair * 0.5 FORCE
+WHEN (IsTurn OR IsRiver) AND Raises >= 1 RETURN intro_rangestrength_raischair * 0.5 + 0.5 FORCE
+WHEN f$Exploit_FastWeak RETURN intro_rangestrength_raischair * 0.6 FORCE
+WHEN f$Exploit_FastStrong RETURN intro_rangestrength_raischair * 0.6 + 0.4 FORCE
+WHEN Others RETURN intro_rangestrength_raischair FORCE
+
+// ============================ live advisor channels ========================
+// fresh-only in the engine (decay to 0 / -1 when the advisor is quiet)
+##f$Advice_Conf##
+WHEN Others RETURN openai_knob_advice_conf FORCE
+##f$Advice_Raise##
+WHEN Others RETURN openai_knob_advice_raise FORCE
+##f$Advice_Bluff##
+WHEN Others RETURN openai_knob_advice_bluff FORCE
+##f$Advice_Value##
+WHEN Others RETURN openai_knob_advice_value FORCE
+##f$Advice_Fold##
+WHEN Others RETURN openai_knob_advice_fold FORCE
+##f$Advice_Persona##
+WHEN Others RETURN openai_knob_advice_persona FORCE
+
+// ============================ bot counter-persona ==========================
+// The BOT adopts whatever archetype best exploits THIS villain (1 nit..6 maniac; -1 normal).
+// Advisor override first, else infer the nightmare matchup from the villain's exploit profile.
+##f$BotPersona##
+WHEN f$Advice_Persona >= 0 RETURN f$Advice_Persona FORCE
+WHEN f$Exploit_NeverFolds RETURN 2 FORCE                              // station/fish -> tight VALUE (tag)
+WHEN f$Exploit_Overfold OR f$Exploit_Folds3Bet RETURN 6 FORCE        // folds too much -> MANIAC pressure
+WHEN f$Exploit_KeepsFiring RETURN 4 FORCE                            // chronic bettor -> STATION, snap him off
+WHEN Others RETURN -1 FORCE
+
+// ============================ INTUITION (the spine) ========================
+// One harmonized read. Decisions are made FROM these, not from the raw inputs.
+
+##f$Intuition_VillainStrength##
+// unified estimate of the villain's range/holding strength now (0..1; -1 unknown)
+WHEN f$Range_VillainStrength >= 0 RETURN f$Range_VillainStrength FORCE
+WHEN Others RETURN -1 FORCE
+
+##f$Intuition_Confidence##
+// how much to trust the intuition (0..1): advisor confidence, else introspection sample weight
+WHEN f$Advice_Conf > 0 RETURN f$Advice_Conf FORCE
+WHEN f$Intro_Known RETURN 0.6 FORCE
+WHEN Others RETURN 0.2 FORCE
+
+##f$Intuition_Aggression##
+// how aggressive WE should be (0.5 neutral): style knob + advisor raise/bluff lean (weighted by
+// advisor confidence) + a push toward attacking foldable villains / restraint vs sticky ones.
+WHEN f$Exploit_NeverFolds AND f$Range_VillainStrength >= 0.6 RETURN 0.2 FORCE
+WHEN f$Exploit_Tilt RETURN 0.72 FORCE
+WHEN f$Exploit_Overfold OR f$Exploit_GivesUp RETURN 0.75 + f$Advice_Raise * f$Advice_Conf * 0.2 FORCE
+WHEN Others RETURN 0.5 + (openai_knob_aggro - 0.5) * 0.5 + f$Advice_Raise * f$Advice_Conf * 0.3 + f$Advice_Bluff * f$Advice_Conf * 0.2 FORCE
+
+##f$Intuition_Exploit##
+// the dominant exploit to act on: 1 barrel/bluff, 2 value-only, 3 bluff-catch/don't-bluff,
+// 4 attack-fast-bet, 5 respect (fast=strong/honest), 0 none.
+WHEN f$Exploit_Tilt RETURN 2 FORCE
+WHEN f$Exploit_NeverFolds RETURN 2 FORCE
+WHEN f$Exploit_KeepsFiring RETURN 3 FORCE
+WHEN f$Exploit_FastStrong OR f$Exploit_Honest RETURN 5 FORCE
+WHEN f$Exploit_Overfold OR f$Exploit_GivesUp OR f$Exploit_Folds3Bet RETURN 1 FORCE
+WHEN f$Exploit_FastWeak RETURN 4 FORCE
+WHEN Others RETURN 0 FORCE
+
+##f$Intuition_ShowOfForce##
+// We're ATTACHED to the chips (considerable investment / committed) AND a big bet or jam is the best
+// way to WIN the pot now -- fold equity vs this villain + denial make the show of force +EV.
+WHEN (f$Committed OR PotSize >= 12 * bblind) AND (f$Exploit_Overfold OR f$Exploit_Folds3Bet OR intro_foldpress_raischair > 0.5) RETURN true FORCE
+WHEN (f$Committed OR PotSize >= 12 * bblind) AND f$Range_VillainStrength >= 0 AND f$Range_VillainStrength < 0.4 RETURN true FORCE
+WHEN Others RETURN false FORCE
