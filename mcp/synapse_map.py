@@ -280,12 +280,13 @@ PLANS = {0: "none", 1: "pot_control", 2: "value_three_streets", 3: "flat_then_bl
 # extra synapses grown for the introspection -> intuition -> action harmonization
 INTRO_SYNAPSES = [
     ("signal.introspection", "intuition.read", "per-villain rhythm/exploits/tilt/range -> the harmonized read"),
+    ("signal.perception", "intuition.read", "how THEY perceive US (our table image) shapes our exploit"),
     ("signal.opponents", "intuition.read", "HUD base rates anchor the introspection confirmation"),
     ("knob.advice", "intuition.read", "the live claude advisor weights into the read"),
     ("intuition.read", "plan.line", "intuition forms the multi-street plan"),
     ("intuition.read", "output.decided", "intuition drives the decided action"),
     ("plan.line", "output.decided", "the plan steers the street's action toward the line"),
-    ("output.action", "output.decided", "the engine decision is harmonized into the decided action"),
+    ("output.action", "output.decided", "the engine decision is harmonized into the decided action (exploit takes precedence)"),
 ]
 
 
@@ -331,7 +332,42 @@ def villain_and_table(g):
     return vname, gt, prof, (ndonks >= 3)
 
 
-def compute_intuition(g, prof, donkfest):
+def compute_perception(g):
+    """PERCEPTION: how the villain perceives US -- our table image -- so we can exploit their read of
+    us. Our OWN profile IS our image (the aggregator profiles our username like any player): a tight/
+    strong-showdown image -> they FOLD to us (we can bluff/steal more); a loose/wild or caught-light
+    image -> they CALL us (value-bet thin, stop bluffing)."""
+    ts = g["ts"]; gt = "plo" if ts.get("isomaha") else "nlhe"
+    uc = ts.get("userchair", -1)
+    name = ""
+    for p in (ts.get("players") or []):
+        if p.get("chair") == uc:
+            name = (p.get("name") or "").strip(); break
+    sp = {}
+    if name:
+        try:
+            import psycopg2
+            c = psycopg2.connect(DSN); cur = c.cursor()
+            sp = _profile_for(cur, name, gt); c.close()
+        except Exception:
+            pass
+    if not sp or num(sp.get("window_hands")) < 12:
+        return {"known": False, "image": "unknown", "they_respect_us": False,
+                "they_think_we_bluff": False, "exploit": "none"}
+    img = sp.get("profile") or "unknown"
+    aggr = num(sp.get("aggr_index"), -1); sd = num(sp.get("sd_strong_rate"), -1)
+    respect = (img in ("nit", "tag")) or (sd >= 0 and sd > 0.65)
+    bluffy = (img in ("lag", "maniac")) or (aggr >= 0 and aggr > 0.7 and sd >= 0 and sd < 0.45)
+    exploit = "none"
+    if respect and not bluffy:
+        exploit = "leverage_respect_bluff"     # they fold to us -> bluff / steal / barrel more
+    elif bluffy:
+        exploit = "leverage_image_value"       # they call us light -> value-bet thin, stop bluffing
+    return {"known": True, "image": img, "they_respect_us": bool(respect),
+            "they_think_we_bluff": bool(bluffy), "exploit": exploit}
+
+
+def compute_intuition(g, prof, donkfest, perception):
     s = g["syms"]; ex = (prof.get("exploits") or {})
     bb = num(s.get("bblind"), 1.0) or 1.0
     pot_bb = num(s.get("PotSize")) / bb
@@ -361,10 +397,18 @@ def compute_intuition(g, prof, donkfest):
     elif ex.get("overfold") or ex.get("folds_to_3bet"): persona = "maniac"
     elif ex.get("keeps_firing"): persona = "station"
     elif donkfest: persona = "fish_hunter"
+    # PERCEPTION nudge: exploit how THEY see US. Respect -> we can bluff/steal more; if they think we
+    # bluff -> value-bet thin and stop bluffing (they won't fold).
+    pex = (perception or {}).get("exploit")
+    if pex == "leverage_respect_bluff" and exploit == "none":
+        exploit = "image_bluff"; aggr = max(aggr, 0.68)
+    elif pex == "leverage_image_value":
+        aggr = min(aggr, 0.6)
+        if exploit == "none": exploit = "image_value"
     return {"known": known, "exploit": exploit, "villain_strength": round(vs, 3),
             "aggression": round(aggr, 3), "tilt": round(num(prof.get("tilt"), 0.0), 3),
             "show_of_force": show_of_force, "donkfest": donkfest, "persona": persona,
-            "confidence": 0.6 if known else 0.25}
+            "perception_exploit": pex, "confidence": 0.6 if known else 0.25}
 
 
 def compute_plan(g, intuition):
@@ -382,32 +426,76 @@ def compute_plan(g, intuition):
     return {"code": code, "label": PLANS[code], "street": br}
 
 
-def resolve_action(g, intuition, plan):
-    """INTUITION + PLAN + DECISION -> the CURRENT DECIDED ACTION."""
+def predict_response(prof, action, intuition):
+    """Predict the villain's RESPONSE distribution to OUR action, from their profile -- so we confirm
+    the most profitable pathway before acting. (Fold equity is the whole game vs a bluff.)"""
+    if action not in ("raise", "bet"):
+        return {"note": "no villain decision vs %s" % action}
+    ex = (prof.get("exploits") or {}) if prof else {}
+    fp = num(prof.get("fold_to_pressure"), -1) if prof else -1
+    pf = fp if fp >= 0 else 0.45
+    if ex.get("overfold") or ex.get("folds_to_3bet"): pf = max(pf, 0.70)
+    if ex.get("never_folds") or ex.get("tilting"): pf = min(pf, 0.15)
+    cf = num(prof.get("cont_freq"), -1) if prof else -1
+    pr = 0.30 if (ex.get("keeps_firing") or (cf >= 0 and cf > 0.6)) else 0.12
+    if ex.get("never_folds"): pr = min(pr + 0.10, 0.40)
+    pf = min(pf, 1.0 - pr)
+    return {"fold": round(pf, 2), "call": round(max(0.0, 1.0 - pf - pr), 2), "raise": round(pr, 2)}
+
+
+def resolve_action(g, intuition, plan, prof):
+    """INTUITION + PLAN + DECISION + CONTEXT -> the CURRENT DECIDED ACTION.
+
+    EXPLOITABLE PATTERNS TAKE PRECEDENCE: the OHF/NN engine only SUGGESTS the base action; a confident
+    introspection exploit OVERRIDES it. Then we PREDICT the villain's response to the decided action and
+    confirm it is the most profitable pathway -- a bluff the villain won't fold to is downgraded."""
     s = g["syms"]; bb = num(s.get("bblind"), 1.0) or 1.0
     f, cl, rz, bs = (num(s.get("f$fold")), num(s.get("f$call")), num(s.get("f$raise")), num(s.get("f$betsize")))
+    pot = num(s.get("PotSize")); a2c = num(s.get("AmountToCall")); strong = num(s.get("f$HaveStrongMade")) > 0
     if rz > 0: action, size = "raise", bs
     elif cl > 0: action, size = "call", 0.0
     elif f > 0: action, size = "fold", 0.0
     else: action, size = "none", 0.0
+    source = "engine"
+    ex = intuition["exploit"]; conf = intuition["confidence"]; vstr = intuition["villain_strength"]
+    if intuition["known"] and conf >= 0.5:
+        if intuition["show_of_force"]:
+            action, size, source = "raise", max(bs, pot), "exploit:show_of_force"
+        elif ex in ("attack_fold", "attack_fast", "tilt_value", "image_bluff") and action in ("fold", "call", "none"):
+            action, size, source = "raise", (bs or pot * 0.66), "exploit:" + ex
+        elif ex == "bluffcatch" and action == "fold" and a2c > 0:
+            action, size, source = "call", 0.0, "exploit:bluffcatch"
+        elif ex in ("value_only", "image_value") and action == "raise" and vstr is not None and vstr >= 0.6:
+            action, size, source = ("call" if a2c > 0 else "check"), 0.0, "exploit:no_bluff_vs_station"
+    # PREDICT the villain's response and confirm the pathway is the most profitable one.
+    predicted = predict_response(prof, action, intuition)
+    pathway_profitable = True
+    if action == "raise" and not strong and not intuition["show_of_force"] and predicted.get("fold", 1.0) < 0.20:
+        # the exploit raise was a BLUFF, but he won't fold -> not profitable; fall back to the cheap line.
+        action, size = ("call" if a2c > 0 else "check"), 0.0
+        source += "->no_fold_predicted"
+        predicted = predict_response(prof, action, intuition)
+        pathway_profitable = False
     return {"action": action, "size_bb": round(size / bb, 2) if size else 0.0, "raw_betsize": round(size, 2),
-            "exploit": intuition["exploit"], "plan": plan["label"], "persona": intuition["persona"],
-            "source": "engine", "confidence": intuition["confidence"]}
+            "exploit": ex, "plan": plan["label"], "persona": intuition["persona"],
+            "predicted_response": predicted, "pathway_profitable": pathway_profitable,
+            "source": source, "overridden": source != "engine", "confidence": conf}
 
 
 def brain(g):
     vname, gt, prof, donkfest = villain_and_table(g)
-    intuition = compute_intuition(g, prof, donkfest)
+    perception = compute_perception(g)
+    intuition = compute_intuition(g, prof, donkfest, perception)
     plan = compute_plan(g, intuition)
     s = g["syms"]
     decision = {"fold": num(s.get("f$fold")), "call": num(s.get("f$call")),
                 "raise": num(s.get("f$raise")), "betsize": num(s.get("f$betsize"))}
-    current = resolve_action(g, intuition, plan)
+    current = resolve_action(g, intuition, plan, prof)
     return {"ts_ms": int(time.time() * 1000), "handnumber": g.get("handnumber"),
             "betround": int(num(s.get("betround"))), "villain": vname, "gametype": gt,
             "villain_profile": (prof.get("profile") if prof else None),
-            "intuition": intuition, "decision_plan": plan, "decision": decision,
-            "current_decided_action": current}
+            "perception": perception, "intuition": intuition, "decision_plan": plan,
+            "decision": decision, "current_decided_action": current}
 
 
 def store_brain(b):
@@ -439,6 +527,10 @@ def harmonize(g):
                             "tilt": intu["tilt"], "exploit": intu["exploit"]},
                   "ghost": (("%s: %s%s" % (bn["villain"] or "villain", intu["exploit"],
                             " (TILTING)" if intu["tilt"] >= 0.35 else "")) if intu["known"] else "no read yet")})
+    per = bn["perception"]
+    nodes.append({"id": "signal.perception", "value": per,
+                  "ghost": (("they see us as %s -> %s" % (per["image"], per["exploit"]))
+                            if per["known"] else "no table image yet")})
     nodes.append({"id": "intuition.read", "value": intu,
                   "ghost": "exploit %s | aggr %.2f | villain-strength %s%s" % (
                       intu["exploit"], intu["aggression"], intu["villain_strength"],

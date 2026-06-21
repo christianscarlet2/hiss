@@ -1,0 +1,59 @@
+//*****************************************************************************
+//  13_streetplan - the STREET-STRATEGY FORMER (multi-street planning).
+//
+//  Forms ONE line that applies across streets instead of deciding each street in
+//  isolation -- "flat the flop, then represent the flush & barrel a scare card",
+//  "check-raise then keep barreling", "value three streets", "pot-control". It
+//  considers BUCKETS of the villain's exploit pathways (via the f$Exploit_* reads)
+//  and is driven by the harmonized INTUITION (11_introspection). The intuition
+//  inputs are stable across streets, so the plan holds. Codes match brain_state:
+//    1 pot_control  2 value_three_streets  3 flat_then_bluff_scare
+//    4 check_raise_barrel  5 delayed_cbet  6 give_up  7 show_of_force  0 none
+//  The richer plan former is the live advisor (decision_advisor.py); this is the
+//  always-on OHF fallback the deep-rewire (50/60/70) executes toward.
+//*****************************************************************************
+
+##f$Plan##
+WHEN f$Intuition_ShowOfForce RETURN 7 FORCE
+WHEN f$HaveStrongMade AND NOT f$Exploit_KeepsFiring RETURN 2 FORCE
+WHEN f$HaveBigDraw AND FlushPossible RETURN 3 FORCE
+WHEN f$Exploit_Overfold OR f$Exploit_GivesUp OR f$Exploit_FastWeak RETURN 4 FORCE
+WHEN f$Exploit_Tilt RETURN 2 FORCE
+WHEN f$Exploit_KeepsFiring RETURN 1 FORCE
+WHEN f$Exploit_NeverFolds AND NOT f$HaveStrongMade RETURN 6 FORCE
+WHEN Others RETURN 0 FORCE
+
+##f$Plan_IsShowOfForce##
+WHEN f$Plan = 7 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Plan_IsValueTriple##
+WHEN f$Plan = 2 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Plan_IsBluffScare##
+// flat / cheap now, then represent the flush (or a scare card) and barrel on a later street
+WHEN f$Plan = 3 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Plan_IsCheckRaiseBarrel##
+WHEN f$Plan = 4 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Plan_IsPotControl##
+WHEN f$Plan = 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Plan_IsGiveUp##
+WHEN f$Plan = 6 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+// The ismyturn loop asks: is THIS street's pathway already in the plan + considered?
+##f$Plan_PathwayConsidered##
+WHEN f$Plan = 0 RETURN false FORCE
+WHEN f$Plan_IsBluffScare AND (IsTurn OR IsRiver) AND FlushPossible RETURN true FORCE
+WHEN f$Plan_IsValueTriple RETURN true FORCE
+WHEN f$Plan_IsCheckRaiseBarrel RETURN true FORCE
+WHEN f$Plan_IsShowOfForce RETURN true FORCE
+WHEN f$Plan_IsPotControl AND AmountToCall > 0 RETURN true FORCE
+WHEN Others RETURN false FORCE

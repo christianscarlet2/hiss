@@ -142,3 +142,10 @@ WHEN f$Exploit_FastStrong OR f$Exploit_Honest RETURN 5 FORCE
 WHEN f$Exploit_Overfold OR f$Exploit_GivesUp OR f$Exploit_Folds3Bet RETURN 1 FORCE
 WHEN f$Exploit_FastWeak RETURN 4 FORCE
 WHEN Others RETURN 0 FORCE
+
+##f$Intuition_ShowOfForce##
+// We're ATTACHED to the chips (considerable investment / committed) AND a big bet or jam is the best
+// way to WIN the pot now -- fold equity vs this villain + denial make the show of force +EV.
+WHEN (f$Committed OR PotSize >= 12 * bblind) AND (f$Exploit_Overfold OR f$Exploit_Folds3Bet OR intro_foldpress_raischair > 0.5) RETURN true FORCE
+WHEN (f$Committed OR PotSize >= 12 * bblind) AND f$Range_VillainStrength >= 0 AND f$Range_VillainStrength < 0.4 RETURN true FORCE
+WHEN Others RETURN false FORCE

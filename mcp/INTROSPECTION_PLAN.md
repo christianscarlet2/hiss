@@ -114,7 +114,39 @@ decisions recall similar past situations to derive more insightful action (close
 introspection's "what do we/he do in similar conditions"). The advisor (§4) drives this; decision_memory
 is queried for similar-situation recall + fed to the NN.
 
-## 4. Decision Advisor (capstone) ⬜  — `mcp/decision_advisor.py`
+## 3g. PERCEPTION model 🟡 (built in the brain; OHF/NN wire ⬜)
+The mirror of introspection: how THEY perceive US (our table image), to exploit their read. Our OWN
+profile IS our image (the aggregator profiles our username too). `compute_perception` in synapse_map:
+tight/strong-showdown image -> they FOLD to us (`leverage_respect_bluff` -> bluff/steal/barrel more);
+loose/wild or caught-light image -> they CALL us (`leverage_image_value` -> value-bet thin, stop
+bluffing). Harmonized: `signal.perception -> intuition.read` (grown synapse), nudges f$Intuition.
+TODO: OHF `f$Perception_*` + NN feature + per-villain "what THIS villain has seen us do" refinement.
+
+## 3h. RESPONSE PREDICTION + pathway confirmation 🟡 (built in the brain)
+Before confirming, PREDICT the villain's response to OUR decided action (`predict_response`: P(fold/
+call/raise) from his fold_to_pressure / cont_freq / exploits / tilt) and confirm it's the most
+profitable pathway -- a bluff-raise the villain won't fold to (predicted fold < 0.20, no strong made
+hand, not show-of-force) is DOWNGRADED to the cheap line. In `current_decided_action.predicted_response`
++ `pathway_profitable`. The advisor (claude) does the richer multi-ply EV reasoning over forks.
+
+## 3i. SWIFTSNAKE multi-processor offload ⬜ (scaling)
+Heavy brain compute (pathway-EV across many candidate action×size combos, parallel claude passes,
+deep range/perception refinement) offloads to swiftsnake's 32 cores. Design: `brain_worker.py` on
+swiftsnake (reads the LOCAL postgres replica -- profiles already mirror there) runs a
+`multiprocessing.Pool` evaluating candidate pathways in parallel; a thin HTTP/SSH dispatch from
+decision_advisor sends the context and gets back the best pathway + per-fork EVs. Fire-and-merge so
+the local fast pass still answers if the remote is slow (graceful). Lets us run "as many calls as we
+need" truly in parallel within the action-timer window.
+
+## 4. Decision Advisor (capstone) 🟡 BUILT — `mcp/decision_advisor.py`
+On ismyturn it references the brain (INTUITION+PLAN+DECISION+CONTEXT) + recalls SIMILAR PAST SITUATIONS
+(decision_memory) + optional screenshot, asks `claude -p` for fork/exploit reasoning, ACTS via the
+advice knobs (EXPLOITABLE PATTERNS TAKE PRECEDENCE over the engine default), and REMEMBERS the spot.
+Refinements done: **fire ASAP** on ismyturn; **continuous refine** of the brain between turns as actions
+stream in (store_brain every ~0.5s); **as many claude passes as needed** during a turn (re-push knobs
+every poll + a fresh pass every ~2s); **fast model** (haiku) by default via the CLI/plan (no API),
+**deep model** (sonnet) only for big/complex spots (pot>=25bb / short / show-of-force / low-confidence).
+Graceful-degrade; never blocks the bot. Syntax-validated.
 - Trigger: **ismyturn rising edge** (poll cached `/api/symbols`), off-heartbeat, action-timer budget.
 - Assemble a **relevance-ranked context bundle**: introspection answers + their relevance, the
   per-opponent **HUD stats**, the relevant symbols, dial/knob settings, synapse state, game state.
