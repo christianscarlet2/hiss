@@ -44,6 +44,31 @@ struct SHudDbStats {
 	double vpip, pfr, threeb, fourb, fiveb, f3b, f4b, af, cbet, ftc, steal, fts, wtsd;
 };
 
+// Per-opponent INTROSPECTION profile (opponent_profile, fed by introspect_aggregator.py): a
+// rolling-100-hand behavioural model, SEPARATED by gametype. -1.0 = unknown / not enough sample.
+struct SOppProfile {
+	bool    found;
+	int     window_hands;
+	double  cont_freq;         // likelihood to KEEP firing after an aggressive action (rhythm)
+	double  aggr_index;        // aggression density 0..1
+	double  fold_to_pressure;  // over-fold tendency 0..1
+	double  sd_strong_rate;    // of showdowns, how often they actually had it
+	double  fastbet_tell;      // P(strong | bet fast); -1 = unknown
+	int     fast_n;
+	int     profile_code;      // 0=unknown 1=nit 2=tag 3=lag 4=station 5=fish 6=maniac
+	// concrete exploit flags (0/1), deep-wired into the OHF / NN / advisor.
+	int overfold, folds_to_3bet, gives_up, keeps_firing, never_folds, honest, fast_is_weak, fast_is_strong;
+};
+
+// One per-action latency record (timing tell), emitted off the hot path by the introspection engine.
+struct SOppTimingRow {
+	CString   player;
+	int       street;
+	CString   action;
+	int       latency_ms;
+	long long ts_ms;
+};
+
 class CTablemapDB {
 public:
 	CTablemapDB();
@@ -106,7 +131,16 @@ public:
 	bool DBClearAttachedSession(int session_id);
 
 	// Own-data HUD: read computed per-player stats from hud_player_stats (fed by hud_aggregator.py).
+	// The gametype overload filters to 'nlhe'/'plo'/'plo8' so a player's PLO read never bleeds
+	// into their NLH read; the legacy overload sums across gametypes (back-compat).
 	bool GetHudPlayerStats(const CString &player, SHudDbStats *out);
+	bool GetHudPlayerStats(const CString &player, const CString &gametype, SHudDbStats *out);
+	// Per-opponent introspection profile (opponent_profile), gametype-matched.
+	bool GetOpponentProfile(const CString &player, const CString &gametype, SOppProfile *out);
+	// Durable per-action timing rows (latency tells) -> opponent_timing. One batched INSERT,
+	// called off the hot path (hand end), NEVER per heartbeat.
+	bool EmitOpponentTiming(const CString &gametype, const CString &handnumber,
+		const std::vector<SOppTimingRow> &rows);
 
 private:
 	long GetTablemapId(const CString name);   // -1 if not found / error

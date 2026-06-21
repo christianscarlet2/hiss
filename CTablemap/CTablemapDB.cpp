@@ -452,17 +452,30 @@ bool CTablemapDB::DBClearAttachedSession(int session_id) {
 }
 
 bool CTablemapDB::GetHudPlayerStats(const CString &player, SHudDbStats *out) {
+	return GetHudPlayerStats(player, CString(""), out);   // "" -> sum across gametypes (legacy)
+}
+
+bool CTablemapDB::GetHudPlayerStats(const CString &player, const CString &gametype, SHudDbStats *out) {
 	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	if (out == NULL) return false;
 	out->found = false; out->hands = 0;
 	out->vpip = out->pfr = out->threeb = out->fourb = out->fiveb = out->f3b = out->f4b = out->af = out->cbet = out->ftc = out->steal = out->fts = out->wtsd = -1.0;
 	if (player.IsEmpty() || !Connect()) return false;
+	// gametype "" -> aggregate every gametype (back-compat); else filter to that gametype so a
+	// player's PLO read never bleeds into NLH. sum() collapses the now-multi-row (player,gametype) key.
+	CString where;
+	if (gametype.IsEmpty())
+		where.Format("player = '%s'", EscapeSqlLiteral(player).GetString());
+	else
+		where.Format("player = '%s' AND gametype = '%s'",
+			EscapeSqlLiteral(player).GetString(), EscapeSqlLiteral(gametype).GetString());
 	CString sql;
 	sql.Format(
-		"SELECT hands, vpip_n, vpip_d, pfr_n, pfr_d, threeb_n, threeb_d, f3b_n, f3b_d, cbet_n, cbet_d,"
-		" ftc_n, ftc_d, steal_n, steal_d, fts_n, fts_d, aggr_actions, call_actions, wtsd_n, wtsd_d,"
-		" fourb_n, fourb_d, fiveb_n, fiveb_d, f4b_n, f4b_d"
-		" FROM hud_player_stats WHERE player = '%s'", EscapeSqlLiteral(player).GetString());
+		"SELECT sum(hands), sum(vpip_n), sum(vpip_d), sum(pfr_n), sum(pfr_d), sum(threeb_n), sum(threeb_d),"
+		" sum(f3b_n), sum(f3b_d), sum(cbet_n), sum(cbet_d), sum(ftc_n), sum(ftc_d), sum(steal_n), sum(steal_d),"
+		" sum(fts_n), sum(fts_d), sum(aggr_actions), sum(call_actions), sum(wtsd_n), sum(wtsd_d),"
+		" sum(fourb_n), sum(fourb_d), sum(fiveb_n), sum(fiveb_d), sum(f4b_n), sum(f4b_d)"
+		" FROM hud_player_stats WHERE %s", where.GetString());
 	PGresult *res = PQexec((PGconn *)_conn, sql.GetString());
 	if (PQresultStatus(res) != PGRES_TUPLES_OK) {
 		_last_error.Format("SQL error: %s", PQerrorMessage((PGconn *)_conn));
@@ -485,7 +498,7 @@ bool CTablemapDB::GetHudPlayerStats(const CString &player, SHudDbStats *out) {
 		double fourb_n = atof(PgVal(res, 0, c++)), fourb_d = atof(PgVal(res, 0, c++));
 		double fiveb_n = atof(PgVal(res, 0, c++)), fiveb_d = atof(PgVal(res, 0, c++));
 		double f4b_n = atof(PgVal(res, 0, c++)), f4b_d = atof(PgVal(res, 0, c++));
-		out->found  = true;
+		out->found  = (out->hands > 0);   // sum() always returns 1 row; "found" means real data
 		out->vpip   = vpip_d   > 0 ? 100.0 * vpip_n / vpip_d     : -1.0;
 		out->pfr    = pfr_d    > 0 ? 100.0 * pfr_n / pfr_d       : -1.0;
 		out->threeb = threeb_d > 0 ? 100.0 * threeb_n / threeb_d : -1.0;
@@ -502,6 +515,78 @@ bool CTablemapDB::GetHudPlayerStats(const CString &player, SHudDbStats *out) {
 	}
 	PQclear(res);
 	return out->found;
+}
+
+// Per-opponent introspection profile (opponent_profile), gametype-matched. Fed by introspect_aggregator.py.
+bool CTablemapDB::GetOpponentProfile(const CString &player, const CString &gametype, SOppProfile *out) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
+	if (out == NULL) return false;
+	out->found = false; out->window_hands = 0; out->fast_n = 0; out->profile_code = 0;
+	out->cont_freq = out->aggr_index = out->fold_to_pressure = out->sd_strong_rate = out->fastbet_tell = -1.0;
+	out->overfold = out->folds_to_3bet = out->gives_up = out->keeps_firing = 0;
+	out->never_folds = out->honest = out->fast_is_weak = out->fast_is_strong = 0;
+	if (player.IsEmpty() || !Connect()) return false;
+	CString sql;
+	sql.Format(
+		"SELECT window_hands, cont_freq, aggr_index, fold_to_pressure, sd_strong_rate, fastbet_tell, fast_n, profile,"
+		" COALESCE((exploits->>'overfold')::int,0), COALESCE((exploits->>'folds_to_3bet')::int,0),"
+		" COALESCE((exploits->>'gives_up')::int,0), COALESCE((exploits->>'keeps_firing')::int,0),"
+		" COALESCE((exploits->>'never_folds')::int,0), COALESCE((exploits->>'honest')::int,0),"
+		" COALESCE((exploits->>'fast_is_weak')::int,0), COALESCE((exploits->>'fast_is_strong')::int,0)"
+		" FROM opponent_profile WHERE player='%s' AND gametype='%s'",
+		EscapeSqlLiteral(player).GetString(), EscapeSqlLiteral(gametype).GetString());
+	PGresult *res = PQexec((PGconn *)_conn, sql.GetString());
+	if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+		_last_error.Format("SQL error: %s", PQerrorMessage((PGconn *)_conn));
+		if (res) PQclear(res);
+		return false;
+	}
+	if (PQntuples(res) > 0) {
+		int c = 0;
+		out->window_hands     = atoi(PgVal(res, 0, c++));
+		out->cont_freq        = atof(PgVal(res, 0, c++));
+		out->aggr_index       = atof(PgVal(res, 0, c++));
+		out->fold_to_pressure = atof(PgVal(res, 0, c++));
+		out->sd_strong_rate   = atof(PgVal(res, 0, c++));
+		out->fastbet_tell     = atof(PgVal(res, 0, c++));
+		out->fast_n           = atoi(PgVal(res, 0, c++));
+		CString prof          = PgVal(res, 0, c++);
+		out->overfold         = atoi(PgVal(res, 0, c++));
+		out->folds_to_3bet    = atoi(PgVal(res, 0, c++));
+		out->gives_up         = atoi(PgVal(res, 0, c++));
+		out->keeps_firing     = atoi(PgVal(res, 0, c++));
+		out->never_folds      = atoi(PgVal(res, 0, c++));
+		out->honest           = atoi(PgVal(res, 0, c++));
+		out->fast_is_weak     = atoi(PgVal(res, 0, c++));
+		out->fast_is_strong   = atoi(PgVal(res, 0, c++));
+		if      (prof == "nit")     out->profile_code = 1;
+		else if (prof == "tag")     out->profile_code = 2;
+		else if (prof == "lag")     out->profile_code = 3;
+		else if (prof == "station") out->profile_code = 4;
+		else if (prof == "fish")    out->profile_code = 5;
+		else if (prof == "maniac")  out->profile_code = 6;
+		else                        out->profile_code = 0;
+		out->found = (out->window_hands > 0);
+	}
+	PQclear(res);
+	return out->found;
+}
+
+// Durable per-action timing rows -> opponent_timing (one batched INSERT, called off the hot path).
+bool CTablemapDB::EmitOpponentTiming(const CString &gametype, const CString &handnumber,
+		const std::vector<SOppTimingRow> &rows) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
+	if (rows.empty() || !Connect()) return false;
+	CString sql = "INSERT INTO opponent_timing (ts_ms, handnumber, player, gametype, street, action, latency_ms) VALUES ";
+	for (size_t i = 0; i < rows.size(); ++i) {
+		CString v;
+		v.Format("%s(%lld,'%s','%s','%s',%d,'%s',%d)", (i ? "," : ""),
+			rows[i].ts_ms, EscapeSqlLiteral(handnumber).GetString(),
+			EscapeSqlLiteral(rows[i].player).GetString(), EscapeSqlLiteral(gametype).GetString(),
+			rows[i].street, EscapeSqlLiteral(rows[i].action).GetString(), rows[i].latency_ms);
+		sql += v;
+	}
+	return ExecCommand(sql);
 }
 
 bool CTablemapDB::GetSettingArray(const CString key, const CString field, std::vector<CString> *out) {

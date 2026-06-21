@@ -238,10 +238,10 @@ def _classify(hud, cont_freq, aggr_index, fold_to_pressure):
         if v > 28 and p > 20 and af > 2.5: return "lag"
         if 18 <= v <= 26 and (v - p) < 6 and af >= 2: return "tag"
         if v < 17: return "nit"
-    # introspection-only fallback (no/low HUD sample)
-    if aggr_index > 0.7 and cont_freq > 0.6: return "lag"
-    if aggr_index < 0.25: return "station"
-    if fold_to_pressure > 0.6: return "nit"
+    # introspection-only fallback (no/low HUD sample). Guard -1 == unknown.
+    if aggr_index >= 0 and cont_freq >= 0 and aggr_index > 0.7 and cont_freq > 0.6: return "lag"
+    if aggr_index >= 0 and aggr_index < 0.25: return "station"
+    if fold_to_pressure >= 0 and fold_to_pressure > 0.6: return "nit"
     return "unknown"
 
 
