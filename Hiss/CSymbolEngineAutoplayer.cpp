@@ -23,6 +23,7 @@
 
 #include "CScraper.h"  
 #include "CStableFramesCounter.h"
+#include "CSymbolEngineIsOmaha.h"   // isomaha() -- gates the prwin-grace in the clean-read latch
 #include "CSymbolengineDebug.h"
 #include "CSymbolEngineTime.h"
 #include "CSymbolEngineUserchair.h"
@@ -47,6 +48,8 @@ void CSymbolEngineAutoplayer::InitOnStartup() {
 	_issittingin   = false;
 	_isautopost    = false;
 	_isfinalanswer = false;
+	_clean_latched_this_turn = false;
+	_last_ismyturn = false;
 }
 
 
@@ -56,6 +59,8 @@ void CSymbolEngineAutoplayer::UpdateOnConnection() {
 	_isautopost      = false;
 	_isfinalanswer   = false;
 	_last_myturnbits = 0;
+	_clean_latched_this_turn = false;
+	_last_ismyturn = false;
 }
 
 void CSymbolEngineAutoplayer::UpdateOnHandreset() {
@@ -124,35 +129,33 @@ bool CSymbolEngineAutoplayer::isfinaltable() {
 }
 
 void CSymbolEngineAutoplayer::CalculateFinalAnswer() {
-	// [IMPERFECT CODE] Updates stable-frames-counter as a side-effect
-	// and should therefore only get called once per heartbeat.
-	_isfinalanswer = true;
-	// check factors that affect isFinalAnswer status
-	if (p_iterator_thread->IteratorThreadWorking())	{
-		write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Not Final Answer because iterator_thread still running\n");
-		_isfinalanswer = false;
+	// PER-TURN CLEAN-READ LATCH. On a jittery phone-mirror feed the old AND-gate (iterator's prwin
+	// running, <2 buttons on a mid-flip frame, the hero hole-card flip unsettled, and the whole-table
+	// StableFramesCounter resetting on ANY opponent jitter) rarely all passed on the SAME heartbeat, so
+	// the bot saw ismyturn=1 but never committed. Instead we LATCH once a verified-clean frame is seen
+	// this turn and stop re-gating on later mid-flip frames. The latch is only ever SET on a clean
+	// frame and never re-reads the cards once set, so the bot acts WITHIN the turn without acting on a
+	// mis-scrape. [Emrald: "isfinalanswer not latching -> bot doesn't act"]
+	bool my_turn = ismyturn();
+	if (my_turn && !_last_ismyturn) {
+		_clean_latched_this_turn = false;          // rising edge of a new turn -> require a fresh clean read
+	} else if (!my_turn) {
+		_clean_latched_this_turn = false;
 	}
-	// Change from only requiring one visible button (OpenHoldem 2008-04-03)
-	else if (p_casino_interface->NumberOfVisibleAutoplayerButtons() < k_min_buttons_needed_for_my_turn)	{
-		write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Not Final Answer because too few buttons visible\n");
-		write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Buttons visible: %i\n", p_casino_interface->NumberOfVisibleAutoplayerButtons());
-		write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Either not your turn or problem with the tablemap\n");
-		_isfinalanswer = false;
-	}
-  // if we are not playing (occluded?) 2008-03-25 Matrix
-	else if (!p_table_state->User()->HasKnownCards())	{
-		write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Not Final Answer because the user is \"not playing\"\n");
-		write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Chair %d (locked) has no cards\n", p_engine_container->symbol_engine_userchair()->userchair());
-		write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Possibly a tablemap-problem\n");
-		_isfinalanswer = false;
-	}
-	else {
-		// HERO HOLE-CARD VALIDITY GATE. On these phone tables the hero's hole cards are shown
-		// face-up only when it is the hero's turn (round 1) and flip in via a brief animation.
-		// Scraping mid-flip yields a card still reading BACK (incomplete) or a DUPLICATE face
-		// (a card mis-matched as a repeat, e.g. Kd 8d 7d Kd -> the bot then folds a real hand blind,
-		// observed live on hand 2762863627). Require a COMPLETE, internally-consistent face-up read
-		// before committing to an action; otherwise wait for the flip to settle / a clean re-scrape.
+	_last_ismyturn = my_turn;
+
+	// Is THIS heartbeat a verified-clean read: enough buttons, hero has known cards, and the hole-card
+	// face-up read is complete + internally consistent (no BACK, no duplicate, and no hero card that
+	// also appears on the board -- the "Kd 8d 7d Kd" mid-flip mis-scrape).
+	bool clean_this_frame = true;
+	if (p_casino_interface->NumberOfVisibleAutoplayerButtons() < k_min_buttons_needed_for_my_turn) {
+		write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] not clean: too few buttons (%i)\n",
+			p_casino_interface->NumberOfVisibleAutoplayerButtons());
+		clean_this_frame = false;
+	} else if (!p_table_state->User()->HasKnownCards()) {
+		write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] not clean: hero has no known cards\n");
+		clean_this_frame = false;
+	} else {
 		int known = 0, back = 0, vals[kMaxNumberOfCardsPerPlayer]; bool dup = false;
 		for (int i = 0; i < kMaxNumberOfCardsPerPlayer; ++i) {
 			Card *hc = p_table_state->User()->hole_cards(i);
@@ -160,6 +163,10 @@ void CSymbolEngineAutoplayer::CalculateFinalAnswer() {
 			if (hc->IsKnownCard()) {
 				int v = hc->GetValue();
 				for (int j = 0; j < known; ++j) if (vals[j] == v) dup = true;
+				for (int b = 0; b < kNumberOfCommunityCards; ++b) {        // a hero card also on the board = mis-scrape
+					Card *cc = p_table_state->CommonCards(b);
+					if (cc != NULL && cc->IsKnownCard() && cc->GetValue() == v) dup = true;
+				}
 				vals[known++] = v;
 			} else if (hc->IsCardBack()) {
 				++back;
@@ -167,29 +174,43 @@ void CSymbolEngineAutoplayer::CalculateFinalAnswer() {
 		}
 		if (back > 0 || dup) {
 			write_log(Preferences()->debug_autoplayer(),
-				"[AutoPlayer] Not Final Answer: hero hole cards not a clean face-up read "
-				"(known=%d back=%d dup=%d) -- waiting for the flip to settle\n", known, back, dup ? 1 : 0);
-			_isfinalanswer = false;
+				"[AutoPlayer] not clean: hero hole cards not a clean face-up read (known=%d back=%d dup=%d)\n",
+				known, back, dup ? 1 : 0);
+			clean_this_frame = false;
 		}
 	}
-	//  Avoiding unnecessary calls to p_stableframescounter->UpdateNumberOfStableFrames(),
-	if (_isfinalanswer)	{
+
+	// DECOUPLE the prwin iterator: a running Monte-Carlo blocks the latch only during a brief grace
+	// window; a slow/stuck iterator must never block the turn forever. Omaha doesn't gate on prwin.
+	const double kPrwinGraceMs = 1200.0;
+	bool prwin_needed = !p_engine_container->symbol_engine_isomaha()->isomaha();
+	double milli_seconds_since_my_turn = p_engine_container->symbol_engine_time()->elapsedmyturn() * 1000;
+	bool iter_blocking = prwin_needed
+		&& (p_iterator_thread != NULL) && p_iterator_thread->IteratorThreadWorking()
+		&& (milli_seconds_since_my_turn < kPrwinGraceMs);
+
+	// Latch on the first verified-clean, non-iterator-blocked frame of the turn; hold it for the turn.
+	if (my_turn && clean_this_frame && !iter_blocking) {
+		_clean_latched_this_turn = true;
+	}
+	_isfinalanswer = my_turn && _clean_latched_this_turn;
+
+	// Telemetry only (the latch replaced the whole-table stability the phone mirror never meets).
+	if (_isfinalanswer) {
 		p_stableframescounter->UpdateNumberOfStableFrames();
 	}
-  write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Number of stable frames: % d\n", p_stableframescounter->NumberOfStableFrames());
-  CString delay_function = k_standard_function_names[k_standard_function_delay];
-  double desired_delay_in_milli_seconds = p_function_collection->Evaluate(delay_function, Preferences()->log_delay_function());
-  p_engine_container->symbol_engine_debug()->SetValue(1, desired_delay_in_milli_seconds);
-  double milli_seconds_since_my_turn = p_engine_container->symbol_engine_time()->elapsedmyturn() * 1000;
-  p_engine_container->symbol_engine_debug()->SetValue(2, milli_seconds_since_my_turn);
-  if (milli_seconds_since_my_turn < desired_delay_in_milli_seconds) {
-    write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Not isfinalanswer because of f$delay\n");
-    _isfinalanswer = false;
-  }
-	// If we don't have enough stable frames, or have not waited f$delay milliseconds, then return.
-	if (p_stableframescounter->NumberOfStableFrames() < Preferences()->frame_delay()) {
-		write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] Not Final Answer because we don't have enough stable frames, or have not waited f$delay (=%.0f ms)\n", 
-       p_function_collection->Evaluate(delay_function, Preferences()->log_delay_function()));
+	write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] stable frames (telemetry): % d  latched=%d\n",
+		p_stableframescounter->NumberOfStableFrames(), _clean_latched_this_turn ? 1 : 0);
+
+	// KEEP the f$delay throttle on the COMMIT (not the latch): do not click before f$delay ms into the
+	// turn. f$delay is 0 by default here, so this is a no-op then. The StableFramesCounter < frame_delay
+	// gate is GONE -- the per-turn latch supersedes it.
+	CString delay_function = k_standard_function_names[k_standard_function_delay];
+	double desired_delay_in_milli_seconds = p_function_collection->Evaluate(delay_function, Preferences()->log_delay_function());
+	p_engine_container->symbol_engine_debug()->SetValue(1, desired_delay_in_milli_seconds);
+	p_engine_container->symbol_engine_debug()->SetValue(2, milli_seconds_since_my_turn);
+	if (milli_seconds_since_my_turn < desired_delay_in_milli_seconds) {
+		write_log(Preferences()->debug_autoplayer(), "[AutoPlayer] holding the commit for f$delay\n");
 		_isfinalanswer = false;
 	}
   p_engine_container->symbol_engine_debug()->SetValue(3, _isfinalanswer);

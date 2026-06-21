@@ -1,0 +1,152 @@
+{
+  "design": {
+    "overview": "Two coupled changes. (A) The autoplayer never commits on fast phone-mirror turns because CalculateFinalAnswer AND-gates four blockers a jittering scrcpy feed never satisfies in one heartbeat: prwin iterator running, fewer than 2 buttons on a mid-flip frame, the hero hole-card validity gate (back/dup mid-flip), and StableFramesCounter (a whole-table compare that resets on ANY opponent balance/bet/card jitter). frame_delay is already forced to 0 (Preferences.cpp:180/226) so the stable COUNT passes at 0, but the per-heartbeat recompute means one bad frame at action time flips _isfinalanswer back to 0 and DoAutoplayer (CAutoplayer.cpp:922) skips. Fix is a per-turn clean-read latch. (B) The OHF tree is rewritten so the brain is a first-class input with exploit precedence: a new f$ObsStrategy GOTO dispatcher fed by a new fresh-only obsbranch_* knob channel from observer_strategy.py via /api/knob (mirroring openai_knob_advice_*), native intro_*/exploit_* symbols driving one exploit-precedence block ABOVE the book lines in every street, the advisor decided action reaching the OHF as a soft pre-empt (brain_action_*), and mischief on a bounded randomround channel, all while keeping every existing concept (push/fold ICM, position ranges, c-bet/barrel, pot-committed dust guard) via strict ordering: hard safety, committed dust, brain action override, observer branch, exploit precedence, book base.",
+    "isfinalanswer_fix": "Rewrite CSymbolEngineAutoplayer::CalculateFinalAnswer (CSymbolEngineAutoplayer.cpp:126) to use a per-turn clean-read latch instead of AND-gating every heartbeat. Add private members bool _clean_latched_this_turn and bool _last_ismyturn (init false in InitOnStartup and UpdateOnConnection). Body: (1) my_turn=ismyturn(); on rising edge (my_turn and !_last_ismyturn) reset _clean_latched_this_turn=false; when !my_turn also reset it; store _last_ismyturn=my_turn. (2) clean_this_frame = (NumberOfVisibleAutoplayerButtons>=k_min_buttons_needed_for_my_turn) and User HasKnownCards and the existing hero hole-card known/back/dup scan (back==0 and !dup), extended to reject any card appearing in both hero and board. (3) Decouple prwin: prwin_needed=!isomaha(); iter_blocking = prwin_needed and IteratorThreadWorking() and (elapsedmyturn*1000 < kPrwinGraceMs=1200) so a stuck Monte-Carlo cannot block forever. (4) if (my_turn and clean_this_frame and !iter_blocking) _clean_latched_this_turn=true. (5) _isfinalanswer = my_turn and _clean_latched_this_turn. (6) DELETE the StableFramesCounter gate (lines 190-194) since the latch replaces the whole-table stability the phone mirror never meets; still call UpdateNumberOfStableFrames once for telemetry. (7) KEEP the f$delay gate (180-188) but apply it to the click not the latch: the latch stays set and DoAutoplayer throttles via f$delay + _acted_this_turn. Net: first clean heartbeat latches; later mid-flip mis-scrapes keep _isfinalanswer=1 but DoAutoplayer reads the OHF on the latched-clean frame, and the once-per-turn latch plus CLICK-MISS RETRY (CAutoplayer.cpp:896) handle the single commit. The latch is only ever SET on a verified-clean frame and never re-reads cards after being set, so it acts within the turn without acting on a mis-scrape.",
+    "ohf_function_rewrites": [
+      {
+        "name": "f$ObsStrategy (NEW in 11_introspection)",
+        "why": "observer branch is computed in observer_strategy.py and written to brain_state but the OHF has no dispatch (the observer-GOTO-not-wired high finding); this makes the branch a first-class table-wide plan selector.",
+        "new_logic": "Add fresh-only channel obsbranch (1..7; 0/-1=NORMAL) + obsbranch_aggro/bluff/openrange/affinity via /api/knob like openai_knob_advice_*. f$ObsBranch returns obsbranch or 0. f$ObsStrategy is a pure GOTO: WHEN f$ObsBranch=1 RETURN f$Obs_IsolateShort FORCE; =2 f$Obs_AttackFolders; =3 f$Obs_PunishTilt; =4 f$Obs_ValueStation; =5 f$Obs_DonkfestCheap; =6 f$Obs_Steady; =7 f$Obs_PressDowntrend; Others RETURN -1. Each helper returns an action ONLY in its signature spot else -1 to fall through, e.g. f$Obs_AttackFolders: WHEN AmountToCall=0 AND f$WasPreflopRaiser AND randomround<(f$CbetFreq+0.20) RaiseBy f$BetPctFlop % FORCE / Others -1; f$Obs_ValueStation: WHEN AmountToCall=0 AND (f$HaveOnePair OR HaveTopPair OR HaveOverPair) RaiseBy f$BetPctVsStation % FORCE / WHEN AmountToCall=0 AND NOT f$HaveDecentMade Check FORCE / Others -1. obsbranch_aggro/bluff/openrange also feed f$AggroFreqMult/f$BluffFreqMult/f$OpenRangeKnob so the branch steers frequency even when the helper returns -1."
+      },
+      {
+        "name": "f$preflop (40_preflop.ohf)",
+        "why": "make the brain first-class with exploit precedence while preserving the safety gate, committed-dust guard, push/fold ICM and position ranges.",
+        "new_logic": "Order: (1) KEEP validator_ok=0 AND AmountToCall=0 Check. (2) KEEP committed-dust jam currentbet>=2*bblind AND balance<=AmountToCall AND balance>0 RaiseMax. (3) ADD WHEN brain_action_kind>=1 AND brain_action_conf>=0.60 RETURN f$BrainAction FORCE (f$BrainAction maps 1 Fold/2 Check/3 Call/4 RaiseTo brain_action_size_bb). (4) KEEP openai_action>-1000. (5) ADD WHEN f$ObsStrategy>=0 AND f$PushFoldStack=0 RETURN f$ObsStrategy FORCE (observer never overrides push/fold ICM). (6) KEEP isplo8/isomaha dispatch, f$PushFoldStack route, reshove jam, Raises>=2 / ==1 / Others. In f$preflop_open add one exploit line above the positional opens: WHEN (InButton OR InCutOff OR InLatePosition OR InSmallBlind) AND f$Exploit_Overfold AND listStealNit AND explain_open RaiseTo f$Open_RaiseTo FORCE, gated by f$Intro_Known inside f$Exploit_Overfold."
+      },
+      {
+        "name": "f$flop (50_flop.ohf)",
+        "why": "consolidate the brain into one exploit-precedence block above the book c-bet/value/draw lines, keeping the c-bet/barrel engine and pot-control.",
+        "new_logic": "After safety + openai lines insert WHEN brain_action_kind>=1 AND brain_action_conf>=0.62 RETURN f$BrainAction FORCE then WHEN f$ObsStrategy>=0 RETURN f$ObsStrategy FORCE. Keep AmountToCall dispatch. In f$flop_nobet and f$flop_vs_bet hoist the introspection lines into one block ABOVE the book lines but BELOW the HaveStrongMade/HaveSet value lines: keep WHEN (f$HaveOnePair OR f$HaveBigDraw) AND (f$Exploit_Overfold OR f$Exploit_GivesUp) RaiseBy f$BetPctFlop % and WHEN f$HaveOnePair AND (f$Exploit_Tilt OR f$Exploit_KeepsFiring) AND f$DecentPrice Call, and ADD WHEN f$Exploit_FastWeak AND f$InPositionPost AND f$HaveAnyDraw RaiseBy f$BetPctFlop %. All gated on f$Intro_Known. f$CbetFreq already absorbs obsbranch_aggro via f$AggroFreqMult."
+      },
+      {
+        "name": "f$turn (60_turn.ohf)",
+        "why": "same pattern; the turn is the barrel street where PUNISH_TILT/ATTACK_FOLDERS pay most, committed/ICM and pot-control kept intact.",
+        "new_logic": "Insert after safety/openai WHEN brain_action_kind>=1 AND brain_action_conf>=0.62 RETURN f$BrainAction FORCE and WHEN f$ObsStrategy>=0 RETURN f$ObsStrategy FORCE. In f$turn_nobet let the double-barrel ride obsbranch_bluff: WHEN f$DoubleBarrel AND randomround<(0.62*f$BluffFreqMult) RaiseBy f$BetPctTurn %. In f$turn_vs_bet keep the committed get-it-in lines FIRST, then the exploit block ABOVE the nut-story folds: WHEN (f$HaveOnePair OR f$HaveBigDraw) AND (f$Exploit_Overfold OR f$Exploit_GivesUp) RaiseBy f$BetPctTurn % and WHEN f$HaveOnePair AND (f$Exploit_Tilt OR f$Exploit_KeepsFiring) AND f$DecentPrice Call so a confident read overrides the book fold; Opp_NutsyRaise/OppStoryStrong folds remain the fallback when f$Intro_Known is false."
+      },
+      {
+        "name": "f$river (70_river.ohf)",
+        "why": "exploit precedence matters most on the river bluff-catch: a confident tilt/keeps-firing read overrides 'river raises are always the nuts', an honest/fast-strong read reinforces it; keep low bluff frequency and the pot-committed check.",
+        "new_logic": "Insert after safety/openai WHEN brain_action_kind>=1 AND brain_action_conf>=0.65 RETURN f$BrainAction FORCE (highest conf on the most committing street) and WHEN f$ObsStrategy>=0 RETURN f$ObsStrategy FORCE. KEEP f$Opp_PotCommitted Check in river_nobet and the low-freq triple-barrel. In f$river_vs_bet keep value-raise + the NutsyRaise-fold for set/2pair, then ensure the exploit lines sit ABOVE the generic f$OppStoryStrong fold (lines 65-66 vs 70): WHEN f$HaveOnePair AND (f$Exploit_Tilt OR f$Exploit_KeepsFiring) AND f$DecentPrice Call and WHEN f$HaveOnePair AND (f$Exploit_Honest OR f$Exploit_FastStrong) AND NOT f$Opp_MinBetLead Fold, both gated on f$Intro_Known so an unknown opponent's snap bet does not trigger a bad call/fold."
+      },
+      {
+        "name": "11_introspection FALLBACK/NATIVE reconciliation",
+        "why": "FALLBACK and NATIVE diverge: FALLBACK fires f$Exploit_FastWeak/FastStrong with no sample gate and silently ignores real intro_* if the .native swap is missed; exploit precedence is only safe with a sample gate.",
+        "new_logic": "Add the f$Intro_Known/f$Opp_Known sample gate to FALLBACK f$Exploit_FastWeak/FastStrong (WHEN f$Opp_Known AND f$TimingSaysWeak RETURN true FORCE). Add f$IntroIsNative (WHEN intro_known_raischair>=0 RETURN 1 FORCE / Others 0) referenced once in 15_explain so a missed swap surfaces as explain_ text. Keep all f$Exploit_*/f$Intuition_*/f$ObsStrategy names identical across both files so the dispatchers are version-agnostic; add obsbranch_*/brain_action_* polyfills (return 0/-1) to the FALLBACK so an un-rebuilt binary parses clean and ignores the brain."
+      }
+    ],
+    "new_brain_inputs": [
+      "intro_known_raischair / intro_simN_raischair: per-opponent sample gate backing f$Intro_Known (>=12 hands)",
+      "intro_contfreq_raischair, intro_tilt_raischair, intro_rangestrength_raischair, intro_foldpress_raischair, intro_fasttell_raischair: rhythm/tilt/range reads for f$Intuition_* and f$Intuition_ShowOfForce",
+      "exploit_overfold/givesup/keepsfiring/neverfolds/folds3bet/honest/fastweak/faststrong/tilting _raischair: actionable per-villain exploit flags at exploit precedence",
+      "intro_donkfest / intro_ndonks: table-level read for f$Table_DonkFest and DONKFEST_CHEAP",
+      "openai_knob_advice_raise/value/bluff/fold/persona/conf: fresh-only decision_advisor leans wired into f$Intuition_Aggression",
+      "obsbranch, obsbranch_aggro, obsbranch_bluff, obsbranch_openrange, obsbranch_affinity (NEW /api/knob channel): observer branch code + knob targets for f$ObsStrategy and f$AggroFreqMult/f$BluffFreqMult/f$OpenRangeKnob",
+      "brain_action_kind, brain_action_conf, brain_action_size_bb (NEW channel): synapse_map current_decided_action as a soft OHF action pre-empt (1 fold/2 check/3 call/4 raise + conf + size)",
+      "mischief_betpct / mischief_fire (NEW bounded channel): mischief at-par odd-bet size + fire flag, gated so it rides only where an action is already at par"
+    ],
+    "goto_branches": [
+      "ISOLATE_SHORTSTACK (code 1, f$Obs_IsolateShort): vs a jam-or-fold short stack, iso-raise limps/min-opens wider preflop and flat less; obsbranch_aggro~0.72 openrange~0.70; helper returns RaiseTo on iso spots else -1, never overrides push/fold or positional book lines at pushfold depth.",
+      "ATTACK_FOLDERS (code 2, f$Obs_AttackFolders): relentless pressure vs proven overfolders/give-ups, widens c-bet/barrel frequency (randomround<f$CbetFreq+0.20, bluff gate=obsbranch_bluff~0.72), aggro~0.78; fires extra bets only in c-bet/barrel spots, made hands still value-bet via earlier lines.",
+      "PUNISH_TILT (code 3, f$Obs_PunishTilt): a steaming villain, widens barrels and bluff-catches by routing through f$Exploit_Tilt (value thicker, peel/call wider, stop folding to his sticky firing); aggro~0.75 bluff~0.62; relies on the exploit block, not on overriding made hands.",
+      "VALUE_STATION (code 4, f$Obs_ValueStation): a calling station, STOP bluffing (NOT f$HaveDecentMade -> Check) and thin-value thicker (RaiseBy f$BetPctVsStation%); aggro~0.55 bluff~0.20; fires only when checked to so it never bloats a bluff into a station; the most loss-saving branch.",
+      "DONKFEST_CHEAP (code 5, f$Obs_DonkfestCheap): a donk-heavy table, get in cheap preflop (flat more, openrange~0.80) and value-bet BIG postflop when connected; mischief affinity 1.3 since spew is cheap; backed by f$Table_DonkFest/intro_donkfest.",
+      "STEADY (code 6, f$Obs_Steady): winning session, dial variance and mischief DOWN (affinity 0.5, bluff~0.45, aggro~0.50); helper returns -1 (no action change) but CAPS the randomround bluff gates and mischief_fire to protect the up-trend.",
+      "PRESS_DOWNTREND (code 7, f$Obs_PressDowntrend): losing session, pick better spots with controlled aggression; tightens opens toward listOpenMP, trims marginal bluffs (aggro~0.62 openrange~0.55); helper mostly -1, steering via the knob targets so the book base stays intact but narrower.",
+      "NORMAL (code 0/-1): no strong read, f$ObsStrategy returns -1 and every street falls straight through to its book base; behavior identical to today when the observer is quiet/stale, the safe default."
+    ],
+    "risks": [
+      "Removing the StableFramesCounter guard means if the hero scan passes on a transient duplicate the dup-check misses (two identical OCR errors), the latch fixes a wrong read for the whole turn; extending clean_this_frame to reject a card in both hero and board mitigates, but a same-rank/suit double-OCR is a residual edge.",
+      "kPrwinGraceMs (1200ms) makes the bot act on card-based lines before prwin finishes on a slow Monte-Carlo; OHF lines reading prwin/prlos directly could see a stale/zero prwin on the first clean heartbeat. Audit 30_classify and the draw lines, gate raw prwin reads on prwin>0, fall back to f$CheapDraw/f$DecentPrice.",
+      "brain_action_kind as a primary RETURN f$BrainAction override gives the Python advisor direct control of the commit; a buggy/stale push at high conf could fold a made hand. 5s decay + conf>=0.60-0.65 gate + the committed-dust guard above it mitigate, but ship it disabled-by-default behind a knob like the openai_action hijack until measured.",
+      "Exploit precedence overriding nut-story folds on turn/river is only as good as the intro_* sample; a mislabeled-but-sampled villain makes the bot call/raise into value. f$Intro_Known (intro_simN>=12) bounds it; keep these as soft Call/Raise widenings, never stack-off lines.",
+      "The .native vs FALLBACK swap is manual and lint can clobber the live master; referencing new obsbranch_*/brain_action_* symbols on a binary that lacks them pops Parse-Error modals and can break the seated bot. Add the new symbols to the lint whitelist and keep the FALLBACK polyfilling obsbranch=0/brain_action_kind=0 so an un-rebuilt binary parses clean.",
+      "frame_delay=0 plus the latch leaves no multi-frame debounce; a frame torn exactly at the buttons could pass clean_this_frame once and latch a stale FCKRA. CLICK-MISS RETRY plus the once-per-turn latch catch a missed click but not a wrong-button click; consider requiring 2 consecutive clean frames before latching if live testing shows torn-frame commits."
+    ]
+  },
+  "plan": {
+    "summary": "HISS plan: acting-first, then perf, then cleanliness.",
+    "priorities": [
+      {
+        "rank": 1,
+        "title": "Clean-read latch for _isfinalanswer",
+        "subsystem": "autoplayer",
+        "action": "CSymbolEngineAutoplayer.cpp:126-196 latch per turn; delete gate 190-194.",
+        "effort": "M",
+        "risk": "med",
+        "needs_rebuild": true
+      },
+      {
+        "rank": 2,
+        "title": "RefreshSeatView off heartbeat",
+        "subsystem": "scraper",
+        "action": "CScraper.cpp:1062 async + cache.",
+        "effort": "M",
+        "risk": "med",
+        "needs_rebuild": true
+      },
+      {
+        "rank": 3,
+        "title": "Offload SaveHeartbeatFrame",
+        "subsystem": "scraper",
+        "action": "CScraper.cpp:2055 async write.",
+        "effort": "M",
+        "risk": "low",
+        "needs_rebuild": true
+      },
+      {
+        "rank": 4,
+        "title": "Brain-first OHF rewrite",
+        "subsystem": "ohf-strategy",
+        "action": "Staged .strategy_build: exploit precedence + obsbranch knobs.",
+        "effort": "L",
+        "risk": "high",
+        "needs_rebuild": true
+      },
+      {
+        "rank": 5,
+        "title": "Cache ProcessRegion",
+        "subsystem": "scraper",
+        "action": "CScraper.cpp:534 reuse region_changed.",
+        "effort": "S",
+        "risk": "low",
+        "needs_rebuild": true
+      },
+      {
+        "rank": 6,
+        "title": "Hash gate before BitmapsAreEqual",
+        "subsystem": "scraper",
+        "action": "CScraper.cpp:2401 hash first.",
+        "effort": "S",
+        "risk": "low",
+        "needs_rebuild": true
+      },
+      {
+        "rank": 7,
+        "title": "Tighten PreOcrParallel wait",
+        "subsystem": "scraper",
+        "action": "CScraper.cpp:595 30s to 5s.",
+        "effort": "S",
+        "risk": "low",
+        "needs_rebuild": true
+      },
+      {
+        "rank": 8,
+        "title": "Skip opponent scraping when out of hand",
+        "subsystem": "scraper",
+        "action": "CLazyScraper.cpp:82 gate names/bets.",
+        "effort": "M",
+        "risk": "med",
+        "needs_rebuild": true
+      },
+      {
+        "rank": 9,
+        "title": "Region-class provenance tags",
+        "subsystem": "brain",
+        "action": "Tag hero_hand/villain_i/observer roles.",
+        "effort": "M",
+        "risk": "low",
+        "needs_rebuild": true
+      }
+    ]
+  }
+}

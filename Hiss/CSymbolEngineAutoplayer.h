@@ -58,6 +58,12 @@ class CSymbolEngineAutoplayer: public CVirtualSymbolEngine {
 	bool _isfinalanswer; 
  private:
 	bool _last_myturnbits;
+	// PER-TURN CLEAN-READ LATCH (CalculateFinalAnswer): on a jittery phone-mirror feed the four
+	// final-answer gates rarely all pass on the SAME heartbeat, so the bot saw ismyturn=1 but never
+	// committed. Once a VERIFIED-CLEAN frame is seen this turn we latch and stop re-gating on later
+	// mid-flip frames; reset on the rising edge of a new turn.
+	bool _clean_latched_this_turn;
+	bool _last_ismyturn;
 };
 
 #endif INC_CSYMBOLENGINEAUTOPLAYER_H
