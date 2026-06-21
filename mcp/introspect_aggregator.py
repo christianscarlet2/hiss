@@ -186,6 +186,7 @@ def ensure_schema(conn):
       sd_strong_rate REAL DEFAULT 0,   -- of showdowns, how often they actually had it
       fastbet_tell REAL DEFAULT -1,    -- P(strong | bet fast) from opponent_timing; -1 = unknown
       fast_n INT DEFAULT 0,
+      tilt REAL DEFAULT 0,             -- recent rhythm deviation from baseline = emotional steam
       profile TEXT DEFAULT 'unknown',
       exploits JSONB DEFAULT '{}'::jsonb,
       updated_at TIMESTAMP DEFAULT now(),
@@ -245,9 +246,12 @@ def _classify(hud, cont_freq, aggr_index, fold_to_pressure):
     return "unknown"
 
 
-def _exploits(hud, cont_freq, aggr_index, fold_to_pressure, sd_strong_rate, fastbet_tell, label):
+def _exploits(hud, cont_freq, aggr_index, fold_to_pressure, sd_strong_rate, fastbet_tell, label, tilt=0.0):
     """Concrete, OHF-consumable exploit flags. Each is a 0/1 the strategy deep-wires."""
     e = {}
+    # TILT is the strongest exploit: villain is off his baseline (steaming) -> stop bluffing him,
+    # value-bet bigger, bluff-catch wider; he'll spew chips if we just let him.
+    e["tilting"] = 1 if tilt > 0.25 else 0
     ftc = hud["ftc"] if hud else -1
     f3b = hud["f3b"] if hud else -1
     # over-folds -> attack relentlessly
@@ -283,21 +287,34 @@ def recompute_profile(cur, player, gametype):
     aggr_index = (aggr / (aggr + passive)) if (aggr + passive) else -1.0
     fold_to_pressure = (facing_fold / facing_d) if facing_d else -1.0
     sd_strong_rate = (sd_strong / sd_seen) if sd_seen else -1.0
+    # TILT = deviation of the RECENT window (last ~8 hands) from the 100-hand baseline: a steaming
+    # spike in aggression and/or a sudden refusal to fold == an emotional shift we can exploit.
+    recent = w[:8]
+    r_aggr = sum(r[6] for r in recent); r_pass = sum(r[7] for r in recent)
+    r_ai = (r_aggr / (r_aggr + r_pass)) if (r_aggr + r_pass) else -1.0
+    r_fd = sum(r[4] for r in recent); r_ff = sum(r[5] for r in recent)
+    r_fp = (r_ff / r_fd) if r_fd else -1.0
+    tilt = 0.0
+    if r_ai >= 0 and aggr_index >= 0:
+        tilt += max(0.0, r_ai - aggr_index)                          # firing more than his norm
+    if r_fp >= 0 and fold_to_pressure >= 0 and (fold_to_pressure - r_fp) > 0.2:
+        tilt += 0.25                                                 # folding far less than his norm
+    tilt = min(1.0, tilt)
     hud = _hud(cur, player, gametype)
     fastbet_tell, fast_n = _timing_tell(cur, player, gametype)
     label = _classify(hud, cont_freq, aggr_index, fold_to_pressure)
-    exploits = _exploits(hud, cont_freq, aggr_index, fold_to_pressure, sd_strong_rate, fastbet_tell, label)
+    exploits = _exploits(hud, cont_freq, aggr_index, fold_to_pressure, sd_strong_rate, fastbet_tell, label, tilt)
     cur.execute("""
       INSERT INTO opponent_profile (player, gametype, window_hands, cont_freq, aggr_index,
-        fold_to_pressure, sd_strong_rate, fastbet_tell, fast_n, profile, exploits, updated_at)
-      VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now())
+        fold_to_pressure, sd_strong_rate, fastbet_tell, fast_n, tilt, profile, exploits, updated_at)
+      VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now())
       ON CONFLICT (player, gametype) DO UPDATE SET window_hands=EXCLUDED.window_hands,
         cont_freq=EXCLUDED.cont_freq, aggr_index=EXCLUDED.aggr_index,
         fold_to_pressure=EXCLUDED.fold_to_pressure, sd_strong_rate=EXCLUDED.sd_strong_rate,
-        fastbet_tell=EXCLUDED.fastbet_tell, fast_n=EXCLUDED.fast_n, profile=EXCLUDED.profile,
-        exploits=EXCLUDED.exploits, updated_at=now()""",
+        fastbet_tell=EXCLUDED.fastbet_tell, fast_n=EXCLUDED.fast_n, tilt=EXCLUDED.tilt,
+        profile=EXCLUDED.profile, exploits=EXCLUDED.exploits, updated_at=now()""",
       (player, gametype, len(w), cont_freq, aggr_index, fold_to_pressure, sd_strong_rate,
-       fastbet_tell, fast_n, label, json.dumps(exploits)))
+       fastbet_tell, fast_n, tilt, label, json.dumps(exploits)))
 
 
 def trim_window(cur, player, gametype):

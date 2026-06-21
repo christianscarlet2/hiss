@@ -30,6 +30,11 @@ WHEN Others RETURN -1 FORCE
 WHEN intro_fasttell_raischair >= 0 RETURN intro_fasttell_raischair FORCE
 WHEN Others RETURN -1 FORCE
 
+##f$Intro_Tilt##
+// current EMOTION/steam: how far his recent rhythm has deviated from his baseline (0..1; 0 = on his game)
+WHEN f$Intro_Known AND intro_tilt_raischair >= 0 RETURN intro_tilt_raischair FORCE
+WHEN Others RETURN 0 FORCE
+
 // ============================ exploit flags (actionable) ===================
 ##f$Exploit_Overfold##
 WHEN f$Intro_Known AND exploit_overfold_raischair >= 1 RETURN true FORCE
@@ -61,6 +66,13 @@ WHEN Others RETURN false FORCE
 
 ##f$Exploit_Honest##
 WHEN f$Intro_Known AND exploit_honest_raischair >= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_Tilt##
+// villain is STEAMING (off his baseline) -> stop bluffing him, value-bet bigger, bluff-catch wider;
+// he'll spew if we just let him. The single highest-EV exploit when it fires.
+WHEN f$Intro_Known AND exploit_tilting_raischair >= 1 RETURN true FORCE
+WHEN f$Intro_Tilt >= 0.35 RETURN true FORCE
 WHEN Others RETURN false FORCE
 
 // ============================ card / range guess ===========================
@@ -116,12 +128,14 @@ WHEN Others RETURN 0.2 FORCE
 // how aggressive WE should be (0.5 neutral): style knob + advisor raise/bluff lean (weighted by
 // advisor confidence) + a push toward attacking foldable villains / restraint vs sticky ones.
 WHEN f$Exploit_NeverFolds AND f$Range_VillainStrength >= 0.6 RETURN 0.2 FORCE
+WHEN f$Exploit_Tilt RETURN 0.72 FORCE
 WHEN f$Exploit_Overfold OR f$Exploit_GivesUp RETURN 0.75 + f$Advice_Raise * f$Advice_Conf * 0.2 FORCE
 WHEN Others RETURN 0.5 + (openai_knob_aggro - 0.5) * 0.5 + f$Advice_Raise * f$Advice_Conf * 0.3 + f$Advice_Bluff * f$Advice_Conf * 0.2 FORCE
 
 ##f$Intuition_Exploit##
 // the dominant exploit to act on: 1 barrel/bluff, 2 value-only, 3 bluff-catch/don't-bluff,
 // 4 attack-fast-bet, 5 respect (fast=strong/honest), 0 none.
+WHEN f$Exploit_Tilt RETURN 2 FORCE
 WHEN f$Exploit_NeverFolds RETURN 2 FORCE
 WHEN f$Exploit_KeepsFiring RETURN 3 FORCE
 WHEN f$Exploit_FastStrong OR f$Exploit_Honest RETURN 5 FORCE

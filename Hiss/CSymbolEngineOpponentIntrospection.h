@@ -54,6 +54,11 @@ class CSymbolEngineOpponentIntrospection : public CVirtualSymbolEngine {
 	int         _last_latency_ms[kIntroChairs];
 	std::vector<SOppTimingRow> _timing_batch;
 	CString     _timing_handnumber;
+	// table-level read: how many seated players are donks (fish/station/loose-passive). A donk-heavy
+	// freeroll = get in cheap + bet heavy for value to stack up.
+	int         _ndonks;
+	DWORD       _table_scan_tick;
+	void        ScanTableDonks();
 };
 
 #endif // INC_CSYMBOLENGINEOPPONENTINTROSPECTION_H

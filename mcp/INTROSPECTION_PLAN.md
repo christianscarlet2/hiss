@@ -63,6 +63,37 @@ through it.
   + bluff/value lines. Rule: **never bluff `keeps_firing`/`never_folds`; barrel `overfold`/`gives_up`;
   attack `fast_is_weak`; respect `fast_is_strong`/`honest`; value-target stations big.**
 
+## 3b. Table read — DONK-FEST 🟡 (engine done, OHF wire ⬜)
+Engine counts seated donks (fish/station/loose-passive) → `intro_ndonks` / `intro_donkfest` (>=3).
+OHF `f$Table_DonkFest`: against a donk-heavy freeroll, **get in CHEAP** (limp/min-open/flat wide,
+small preflop investment — they don't punish) and **bet HEAVY for value** postflop when we connect
+(they pay off) to STACK UP. Drives preflop sizing/openrange down + postflop value sizing up; pairs
+with `f$BotPersona` fish-hunter.
+
+## 3c. STREET-STRATEGY FORMER ⬜ (multi-street planning — deep wire)
+Stop deciding street-by-street in isolation. On an early street FORM a multi-street PLAN and execute
+toward it on later streets. Plans (buckets): pot-control / flat-then-bluff-scare (e.g. "flat the flop,
+represent the flush & barrel if a flush card lands") / check-raise-then-barrel / value-3-streets /
+delayed-cbet / give-up. The former **considers BUCKETS of the villain(s)' exploit PATHWAYS** — how
+they could attack us on each line (float & stab, raise our cbet, donk-lead, check-raise bluff,
+call-down light) — and picks the plan most robust to / most punishing of those pathways, weighted by
+intuition + advisor. Persist the chosen plan across streets via OHF memory symbols (me_st_/me_re_,
+reset on handreset like the aggressor system) + an advisor `advice_plan` channel. New
+`13_streetplan.ohf`: `f$FormPlan` (sets the plan on flop from hand+board+f$Intuition_*+villain
+exploit-pathway buckets), `f$Plan` (reads it), `f$Plan_IsBluffScare/IsCheckRaise/IsValueTriple/
+IsPotControl/...` executed in 50/60/70. The advisor's fork reasoning (§4) is the richest plan former;
+the OHF f$FormPlan is the no-advisor fallback. Feeds and is fed by INTUITION (§0).
+
+## 3d. SHOW OF FORCE / investment protection ⬜ (intuition sub-layer)
+Once we've put a considerable amount in (past a BB threshold / SPR), we're ATTACHED to those chips and
+must protect them with exploitable force. New intuition reads: `f$ChipsInvested` (our contribution this
+hand, in BB), `f$Intuition_Committed` (extends the existing f$Committed with the investment-attachment:
+past the threshold we don't fold off the investment), and `f$Intuition_ShowOfForce` (when a big
+bet/shove is the best way to WIN the pot now — fold equity vs the villain (intro_foldpress / exploit_
+overfold / range read) + denial of equity + our investment make an overbet/jam +EV). Drives:
+overbet/shove sizing when force wins it, never-fold-off-a-big-investment, and protective barrels.
+Weighs into f$Intuition_Aggression + the bet-sizing + the *_vs_bet fold/call gates.
+
 ## 4. Decision Advisor (capstone) ⬜  — `mcp/decision_advisor.py`
 - Trigger: **ismyturn rising edge** (poll cached `/api/symbols`), off-heartbeat, action-timer budget.
 - Assemble a **relevance-ranked context bundle**: introspection answers + their relevance, the

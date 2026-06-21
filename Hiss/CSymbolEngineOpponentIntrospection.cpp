@@ -23,6 +23,8 @@ CSymbolEngineOpponentIntrospection::CSymbolEngineOpponentIntrospection() {
 	assert(p_engine_container->symbol_engine_raisers() != NULL);
 	_toact_chair = -1;
 	_toact_since = 0;
+	_ndonks = 0;
+	_table_scan_tick = 0;
 	for (int i = 0; i < kIntroChairs; ++i) { _last_load_tick[i] = 0; _last_latency_ms[i] = -1; }
 	UpdateOnConnection();
 }
@@ -42,6 +44,24 @@ void CSymbolEngineOpponentIntrospection::UpdateOnConnection() {
 	_toact_chair = -1;
 	_timing_batch.clear();
 	_timing_handnumber = "";
+	_ndonks = 0;
+	_table_scan_tick = 0;
+}
+
+void CSymbolEngineOpponentIntrospection::ScanTableDonks() {
+	// Count seated players who are donks (fish/station, or a known loose-passive caller). A donk-heavy
+	// freeroll table -> the strategy gets in cheap and bets heavy for value to stack up.
+	if (p_table_state == NULL) return;
+	int n = 0;
+	for (int c = 0; c < kIntroChairs; ++c) {
+		if (!p_table_state->Player(c)->seated()) continue;
+		LoadProfileIfStale(c);
+		const SOppProfile &p = _profile[c];
+		if (!p.found) continue;
+		if (p.profile_code == 4 || p.profile_code == 5) { ++n; continue; }          // station / fish
+		if (p.never_folds || (p.aggr_index >= 0 && p.aggr_index < 0.25)) ++n;        // loose-passive caller
+	}
+	_ndonks = n;
 }
 
 void CSymbolEngineOpponentIntrospection::UpdateOnHandreset() {
@@ -118,8 +138,13 @@ void CSymbolEngineOpponentIntrospection::FlushTiming() {
 
 void CSymbolEngineOpponentIntrospection::UpdateOnHeartbeat() {
 	CaptureTiming();
-	// Profiles load lazily in EvaluateSymbol (only chairs the formula asks about), throttled by
-	// LoadProfileIfStale -- nothing heavy here, so the heartbeat stays sub-ms.
+	// Per-villain profiles load lazily in EvaluateSymbol (only chairs the formula asks about). The
+	// table-level donk count needs every seated chair, so scan it on a slow throttle (every ~4s).
+	DWORD now = GetTickCount();
+	if (now - _table_scan_tick > 4000) {
+		_table_scan_tick = now;
+		ScanTableDonks();
+	}
 }
 
 double CSymbolEngineOpponentIntrospection::RangeStrength(int chair) {
@@ -142,6 +167,9 @@ bool CSymbolEngineOpponentIntrospection::EvaluateSymbol(const CString name, doub
 	bool is_intro = (memcmp(name, "intro_", 6) == 0);
 	bool is_exploit = (memcmp(name, "exploit_", 8) == 0);
 	if (!is_intro && !is_exploit) return false;
+	// table-level reads (no chair suffix): how donk-heavy is the table.
+	if (name == "intro_ndonks")   { if (result != NULL) *result = _ndonks; return true; }
+	if (name == "intro_donkfest") { if (result != NULL) *result = (_ndonks >= 3) ? 1.0 : 0.0; return true; }
 	CString last = name.Right(1);
 	if (last.IsEmpty() || !isdigit((unsigned char)last[0])) return false;
 	int chair = atoi(last.GetString());
@@ -158,6 +186,7 @@ bool CSymbolEngineOpponentIntrospection::EvaluateSymbol(const CString name, doub
 	else if (base == "intro_sdstrong")      r = p.sd_strong_rate;
 	else if (base == "intro_fasttell")      r = p.fastbet_tell;
 	else if (base == "intro_profile")       r = p.profile_code;
+	else if (base == "intro_tilt")          r = p.tilt;
 	else if (base == "intro_rangestrength") r = RangeStrength(chair);
 	else if (base == "intro_lastspeed")     r = (_last_latency_ms[chair] < 0) ? -1.0
 	                                            : (_last_latency_ms[chair] <= 1500 ? 2.0
@@ -170,6 +199,7 @@ bool CSymbolEngineOpponentIntrospection::EvaluateSymbol(const CString name, doub
 	else if (base == "exploit_honest")      r = p.honest;
 	else if (base == "exploit_fastweak")    r = p.fast_is_weak;
 	else if (base == "exploit_faststrong")  r = p.fast_is_strong;
+	else if (base == "exploit_tilting")     r = p.tilting;
 	else return false;
 	if (result != NULL) *result = r;
 	return true;
@@ -177,7 +207,8 @@ bool CSymbolEngineOpponentIntrospection::EvaluateSymbol(const CString name, doub
 
 CString CSymbolEngineOpponentIntrospection::SymbolsProvided() {
 	return "intro_known intro_simN intro_contfreq intro_aggrindex intro_foldpress intro_sdstrong "
-	       "intro_fasttell intro_profile intro_rangestrength intro_lastspeed "
+	       "intro_fasttell intro_profile intro_tilt intro_rangestrength intro_lastspeed "
+	       "intro_ndonks intro_donkfest "
 	       "exploit_overfold exploit_folds3bet exploit_givesup exploit_keepsfiring exploit_neverfolds "
-	       "exploit_honest exploit_fastweak exploit_faststrong ";
+	       "exploit_honest exploit_fastweak exploit_faststrong exploit_tilting ";
 }

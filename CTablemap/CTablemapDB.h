@@ -55,9 +55,10 @@ struct SOppProfile {
 	double  sd_strong_rate;    // of showdowns, how often they actually had it
 	double  fastbet_tell;      // P(strong | bet fast); -1 = unknown
 	int     fast_n;
+	double  tilt;              // recent-rhythm deviation from baseline (0..1) = emotional steam
 	int     profile_code;      // 0=unknown 1=nit 2=tag 3=lag 4=station 5=fish 6=maniac
 	// concrete exploit flags (0/1), deep-wired into the OHF / NN / advisor.
-	int overfold, folds_to_3bet, gives_up, keeps_firing, never_folds, honest, fast_is_weak, fast_is_strong;
+	int overfold, folds_to_3bet, gives_up, keeps_firing, never_folds, honest, fast_is_weak, fast_is_strong, tilting;
 };
 
 // One per-action latency record (timing tell), emitted off the hot path by the introspection engine.

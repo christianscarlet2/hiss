@@ -521,10 +521,10 @@ bool CTablemapDB::GetHudPlayerStats(const CString &player, const CString &gamety
 bool CTablemapDB::GetOpponentProfile(const CString &player, const CString &gametype, SOppProfile *out) {
 	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	if (out == NULL) return false;
-	out->found = false; out->window_hands = 0; out->fast_n = 0; out->profile_code = 0;
+	out->found = false; out->window_hands = 0; out->fast_n = 0; out->profile_code = 0; out->tilt = 0.0;
 	out->cont_freq = out->aggr_index = out->fold_to_pressure = out->sd_strong_rate = out->fastbet_tell = -1.0;
 	out->overfold = out->folds_to_3bet = out->gives_up = out->keeps_firing = 0;
-	out->never_folds = out->honest = out->fast_is_weak = out->fast_is_strong = 0;
+	out->never_folds = out->honest = out->fast_is_weak = out->fast_is_strong = out->tilting = 0;
 	if (player.IsEmpty() || !Connect()) return false;
 	CString sql;
 	sql.Format(
@@ -532,7 +532,8 @@ bool CTablemapDB::GetOpponentProfile(const CString &player, const CString &gamet
 		" COALESCE((exploits->>'overfold')::int,0), COALESCE((exploits->>'folds_to_3bet')::int,0),"
 		" COALESCE((exploits->>'gives_up')::int,0), COALESCE((exploits->>'keeps_firing')::int,0),"
 		" COALESCE((exploits->>'never_folds')::int,0), COALESCE((exploits->>'honest')::int,0),"
-		" COALESCE((exploits->>'fast_is_weak')::int,0), COALESCE((exploits->>'fast_is_strong')::int,0)"
+		" COALESCE((exploits->>'fast_is_weak')::int,0), COALESCE((exploits->>'fast_is_strong')::int,0),"
+		" COALESCE(tilt,0), COALESCE((exploits->>'tilting')::int,0)"
 		" FROM opponent_profile WHERE player='%s' AND gametype='%s'",
 		EscapeSqlLiteral(player).GetString(), EscapeSqlLiteral(gametype).GetString());
 	PGresult *res = PQexec((PGconn *)_conn, sql.GetString());
@@ -559,6 +560,8 @@ bool CTablemapDB::GetOpponentProfile(const CString &player, const CString &gamet
 		out->honest           = atoi(PgVal(res, 0, c++));
 		out->fast_is_weak     = atoi(PgVal(res, 0, c++));
 		out->fast_is_strong   = atoi(PgVal(res, 0, c++));
+		out->tilt             = atof(PgVal(res, 0, c++));
+		out->tilting          = atoi(PgVal(res, 0, c++));
 		if      (prof == "nit")     out->profile_code = 1;
 		else if (prof == "tag")     out->profile_code = 2;
 		else if (prof == "lag")     out->profile_code = 3;
