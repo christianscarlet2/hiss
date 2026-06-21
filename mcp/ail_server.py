@@ -21,9 +21,18 @@ state persists in Release/logs/ail_state.json so the switches survive a restart 
 that was on). Launched with CREATE_NO_WINDOW so no console ever pops up. Adopts an already-running
 daemon (PowerShell cmdline scan) instead of starting a duplicate.
 """
-import os, sys, json, glob, time, threading, subprocess, traceback
+import os, sys, json, glob, re, time, threading, subprocess, traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
+
+# pythonw.exe (windowless) sets sys.stdout/stderr to None; back them with devnull so any write
+# (e.g. the startup banner) can't crash the server. Same gotcha as lilith_tts.
+for _nm in ("stdout", "stderr"):
+    if getattr(sys, _nm, None) is None:
+        try:
+            setattr(sys, _nm, open(os.devnull, "w"))
+        except Exception:
+            pass
 
 REPO       = os.environ.get("HISS_REPO", r"C:\www\openholdembot_old")
 MCPDIR     = os.path.join(REPO, "mcp")
@@ -60,6 +69,31 @@ def daemon_python():
         if p == "python" or os.path.isfile(p):
             return p
     return sys.executable
+
+def capture_python():
+    """A console python.exe (NOT pythonw) for subprocesses whose stdout we capture (windowless via
+    CREATE_NO_WINDOW). pythonw's stdout pipe can be flaky; python.exe + CREATE_NO_WINDOW is reliable."""
+    for p in (r"C:\Users\scarl\AppData\Local\Programs\Python\Python310\python.exe", sys.executable, "python"):
+        if p == "python" or os.path.isfile(p):
+            return p
+    return sys.executable
+
+# --- audio input devices (for the Voice Feedback AIL mic picker) ------------
+def list_audio_devices():
+    """Reuse `voice_feedback.py --list` so the device indices match exactly what the daemon will use.
+    --list returns before importing whisper/psycopg2, so it's quick (just sounddevice)."""
+    try:
+        out = subprocess.run([capture_python(), os.path.join(MCPDIR, "voice_feedback.py"), "--list"],
+                             capture_output=True, text=True, timeout=25,
+                             creationflags=CREATE_NO_WINDOW, startupinfo=no_window_si()).stdout
+    except Exception:
+        return []
+    devs = []
+    for ln in out.splitlines():
+        m = re.match(r"^\s*in\[(\d+)\]\s+(.*\S)\s*$", ln)
+        if m:
+            devs.append({"index": int(m.group(1)), "name": m.group(2)})
+    return devs
 
 # --- the AIL registry -------------------------------------------------------
 # Each entry is a python daemon launched detached; args[0] is its (unique) script filename, also used
@@ -169,6 +203,10 @@ def start_daemon(name):
         lf.write(("\n==== %s started %s ====\n"
                   % (name, time.strftime("%Y-%m-%d %H:%M:%S"))).encode())
         cmd = [daemon_python(), "-u"] + a["args"]
+        if name == "voice":   # apply the AIL-tab-selected mic device
+            dev = _state.get("voice_device")
+            if dev not in (None, "", "default"):
+                cmd += ["--device", str(dev)]
         p = subprocess.Popen(cmd, cwd=MCPDIR, stdout=lf, stderr=lf, stdin=subprocess.DEVNULL,
                              close_fds=True, creationflags=LAUNCH_FLAGS)
         _state["pid"][name] = p.pid
@@ -313,6 +351,19 @@ class Handler(BaseHTTPRequestHandler):
                 ok, msg = (start_daemon(n) if on else stop_daemon(n))
                 return self._send(200, {"name": n, "enabled": bool(_state["enabled"].get(n)),
                                         "running": is_running(n), "ok": ok, "msg": msg})
+            if path == "/ail/audio-devices":
+                return self._send(200, {"devices": list_audio_devices(),
+                                        "selected": _state.get("voice_device")})
+            if path == "/ail/audio-device":
+                idx = (q.get("index") or q.get("device") or [""])[0]
+                _state["voice_device"] = idx if idx not in ("", "default") else None
+                save_state()
+                restarted = False
+                if is_running("voice"):          # apply the new mic right away
+                    stop_daemon("voice")
+                    start_daemon("voice")
+                    restarted = True
+                return self._send(200, {"selected": _state.get("voice_device"), "restarted": restarted})
             if path == "/ail/output":
                 since = int((q.get("since") or ["0"])[0] or 0)
                 mx = int((q.get("max") or ["400"])[0] or 400)

@@ -221,7 +221,7 @@
       views[j].classList.toggle("active", on);
       if (on) views[j].removeAttribute("hidden"); else views[j].setAttribute("hidden", "");
     }
-    if (name === "ail") { ailListPoll(); ailOutputPoll(); }
+    if (name === "ail") { loadAudioDevices(); ailListPoll(); ailOutputPoll(); }
     if (name === "hiss") {
       var f = document.getElementById("hiss-frame");   // lazy-load the React table view on first view
       if (f && !f.src) f.src = "/table-display";
@@ -240,6 +240,22 @@
   var ailCursor = 0;
   var ailLines = [];
   var togglingUntil = {};   // name -> ts: keep the optimistic switch state briefly after a click
+  var ailAudioDevices = null;   // [{index,name}] mic list for the Voice Feedback AIL
+  var ailAudioSelected = null;  // selected device index (string) or null = default mic
+  var ailAudioLoaded = false;
+
+  function loadAudioDevices(force) {
+    if (ailAudioLoaded && !force) return;
+    ailAudioLoaded = true;
+    fetch(AIL_BASE + "/ail/audio-devices", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        ailAudioDevices = d.devices || [];
+        ailAudioSelected = (d.selected === undefined || d.selected === null || d.selected === "") ? null : String(d.selected);
+        ailListPoll();   // re-render so the Voice card shows the populated dropdown
+      })
+      .catch(function () { ailAudioLoaded = false; });
+  }
 
   function setAilConn(ok) {
     if (!ailConn) return;
@@ -257,10 +273,27 @@
       var run = a.enabled
         ? (a.running ? '<span class="run">running</span>' : '<span class="stale">starting&hellip;</span>')
         : "";
+      // Voice Feedback gets a mic-device dropdown.
+      var extra = "";
+      if (a.name === "voice") {
+        var opts = '<option value="default"' + (ailAudioSelected === null ? " selected" : "") + ">Default mic</option>";
+        if (ailAudioDevices === null) {
+          opts += '<option disabled>loading devices&hellip;</option>';
+        } else if (ailAudioDevices.length === 0) {
+          opts += '<option disabled>no input devices found</option>';
+        } else {
+          for (var k = 0; k < ailAudioDevices.length; k++) {
+            var dv = ailAudioDevices[k];
+            opts += '<option value="' + dv.index + '"' + (ailAudioSelected === String(dv.index) ? " selected" : "")
+              + ">" + escapeHtml("in[" + dv.index + "] " + dv.name) + "</option>";
+          }
+        }
+        extra = '<select class="ail-audio" data-ail-audio title="Microphone device for Voice Feedback">' + opts + "</select>";
+      }
       html += '<div class="ail-card' + (checked ? " on" : "") + '">'
         + '<div class="ail-icon">' + (a.icon || "&bull;") + "</div>"
         + '<div class="ail-text"><div class="ail-name">' + escapeHtml(a.label) + run + "</div>"
-        + '<div class="ail-desc">' + escapeHtml(a.desc || "") + "</div></div>"
+        + '<div class="ail-desc">' + escapeHtml(a.desc || "") + "</div>" + extra + "</div>"
         + '<label class="ail-toggle"><input type="checkbox" data-ail="' + escapeHtml(a.name) + '"'
         + (checked ? " checked" : "") + '><span class="ail-slider"></span></label>'
         + "</div>";
@@ -277,6 +310,16 @@
 
   if (ailSwitches) ailSwitches.addEventListener("change", function (e) {
     var cb = e.target;
+    // Voice Feedback mic-device dropdown.
+    if (cb && cb.hasAttribute && cb.hasAttribute("data-ail-audio")) {
+      var val = cb.value;
+      ailAudioSelected = (val === "default") ? null : val;
+      fetch(AIL_BASE + "/ail/audio-device?index=" + encodeURIComponent(val), { cache: "no-store" })
+        .then(function (r) { return r.json(); })
+        .then(function () { setTimeout(ailListPoll, 600); })
+        .catch(function () {});
+      return;
+    }
     if (!cb || !cb.hasAttribute || !cb.hasAttribute("data-ail")) return;
     var name = cb.getAttribute("data-ail");
     var on = cb.checked;
