@@ -59,6 +59,11 @@ WHEN f$HaveBigMade AND NOT f$Opp_IsPassive RaiseBy f$BetPctRiver % FORCE
 WHEN f$Opp_NutsyRaise AND NOT (HaveSet OR HaveTwoPair OR f$HaveBigMade) AND NOT f$Opp_MinBetLead AND explain_fold_pre Fold FORCE
 WHEN f$HaveBigMade Call FORCE
 WHEN (HaveSet OR HaveTwoPair) Call FORCE
+// INTROSPECTION (exploit precedence, confident read only): a STEAMING / sticky-firing villain bluffs
+// the river far more than his story suggests -> bluff-catch one pair WIDER (override the nut-story fold);
+// an HONEST / fast-strong bettor has it -> fold the bluff-catcher.
+WHEN f$HaveOnePair AND (f$Exploit_Tilt OR f$Exploit_KeepsFiring) AND f$DecentPrice Call FORCE
+WHEN f$HaveOnePair AND (f$Exploit_Honest OR f$Exploit_FastStrong) AND NOT f$Opp_MinBetLead Fold FORCE
 // STORY (12_aggressor / CtM): RESPECT a credible nut-weighted river line - a nit /
 // passive player firing represents value ~9/10 times; fold the one-pair bluff-catchers
 // rather than make the "crying call." [CtM p188 "vs a nit calling is a bad idea"; p202]

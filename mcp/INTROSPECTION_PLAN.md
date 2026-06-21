@@ -204,6 +204,21 @@ the wisdom collected here (exploit precedence, gametype separation, tilt, fire-A
 tiering, response-prediction, decision-memory recall). Telemetry tables (brain_log, decision_memory) are
 the training/eval data for the rewrite.
 
+## 7b. NERVOUS SYSTEM — bus + deep thought + growth (built + validated)
+- **`bus.py`** 🟡 — the message bus + IO pipelines over postgres (LISTEN/NOTIFY pub/sub + a `work_queue`
+  request/response pipeline), cross-machine via the primary. Channels: hiss.ismyturn/action, brain.ready,
+  advice.ready, work/work_done, thought.ready. Round-trip self-test passed.
+- **`brain_service.py`** 🟡 — swiftsnake worker consuming `pathway_eval` jobs (brain_worker parallel EV).
+- **`deep_thought.py`** 🟡 — ASYNC "deep thought" any synapse point can request over the queue; answered
+  by a FAST model (claude haiku) or MAIN model (claude sonnet) or OpenAI (graceful), result → deep_thoughts
+  table + 'thought.ready'. Wired into brain() (reads latest non-blocking; spawns on key spots). Validated.
+- **`growth.py`** 🟡 — the SELF-GROWTH loop: joins brain_log (decisions by exploit/plan/persona/source)
+  with hand_results (net bb), flags underperforming areas, and AUTO-TRIGGERS a rewrite by Claude
+  (`claude -p`, AUTO_REWRITE-gated) handed the evidence + governing source; edits .strategy_build SOURCE,
+  validates via build_and_lint to temp, never auto-deploys. -> growth_log table. Validated.
+- **BEAST↔swiftsnake TCP/UDP fast-path** ⬜ — a direct socket pipeline to beat the postgres bus latency on
+  the hot dispatch (the bus is the cross-machine fallback).
+
 ## 8. Build (LAST) ⬜
 Edit all source freely (doesn't touch the running bot). Then ONE pass: compile Hiss (Release config,
 `Hiss.sln /t:Hiss`), `build_and_lint.py` for the OHF, terminate+relaunch Hiss, live-verify the full

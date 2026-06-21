@@ -28,6 +28,12 @@ voice feedback tell it what to improve. The feature spec connects it all to NN t
 """
 import sys, os, json, time, urllib.request
 
+try:
+    import deep_thought                      # async LLM "deep thought" for any synapse point (over the bus)
+except Exception:
+    deep_thought = None
+_dt_last_key = None                          # dedup: one deep thought per (hand, street, action)
+
 BOT = "http://127.0.0.1:27654"
 DSN = os.environ.get("HISS_PG_DSN", "host=127.0.0.1 port=5432 dbname=hiss user=postgres password=dbpass")
 OUT_DIR = os.environ.get("HISS_SYNAPSE_DIR", r"C:\www\openholdembot_old\Release\logs")
@@ -553,6 +559,32 @@ def compute_pineal(g):
                      else ("a faint omen stirs" if resonance >= 0.40 else "the omens are quiet"))}
 
 
+def _attach_deep_thought(g, gt, vname, intuition, plan, current, perception):
+    """Read the latest async DEEP THOUGHT for this spot (non-blocking) and, on a KEY spot (an exploit
+    override / show-of-force / low confidence), spawn a fresh one over the queue. Any synapse point can
+    do this; here it's the decision node."""
+    if deep_thought is None:
+        return None
+    global _dt_last_key
+    s = g["syms"]; node = "decision." + gt
+    thought = None
+    try:
+        r = deep_thought.recent(node, max_age_ms=25000)
+        thought = r.get("thought") if r else None
+        keyspot = bool(current.get("overridden") or intuition.get("show_of_force")
+                       or num(intuition.get("confidence"), 1.0) < 0.4)
+        dkey = (g.get("handnumber"), int(num(s.get("betround"))), current.get("action"), current.get("source"))
+        if keyspot and dkey != _dt_last_key:
+            _dt_last_key = dkey
+            deep_thought.think(node, {"villain": vname, "intuition": intuition, "plan": plan,
+                                      "perception": perception, "decided": current},
+                               "Sharpest exploit of this villain here -- is our decided action the most profitable line?",
+                               depth=("deep" if intuition.get("show_of_force") else "fast"))
+    except Exception:
+        pass
+    return thought
+
+
 def brain(g):
     vname, gt, prof, donkfest = villain_and_table(g)
     perception = compute_perception(g)
@@ -567,11 +599,12 @@ def brain(g):
                 "raise": num(s.get("f$raise")), "betsize": num(s.get("f$betsize"))}
     current = resolve_action(g, intuition, plan, prof)
     considerations = compute_considerations(g, prof, intuition, plan, current, perception)
+    dt = _attach_deep_thought(g, gt, vname, intuition, plan, current, perception)
     return {"ts_ms": int(time.time() * 1000), "handnumber": g.get("handnumber"),
             "betround": int(num(s.get("betround"))), "villain": vname, "gametype": gt,
             "villain_profile": (prof.get("profile") if prof else None),
             "perception": perception, "considerations": considerations, "pineal": pineal,
-            "intuition": intuition, "decision_plan": plan, "decision": decision,
+            "deep_thought": dt, "intuition": intuition, "decision_plan": plan, "decision": decision,
             "current_decided_action": current}
 
 
