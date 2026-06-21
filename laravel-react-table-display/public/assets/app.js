@@ -350,6 +350,17 @@ function rgPlayerVpip(player) {
   }
   return null;
 }
+// PFR% (preflop-raise) = the player's RAISING / value core, a subset of their VPIP range. Drives the
+// inner highlight in the grid (the hands they'd raise, i.e. what an aggressive line represents). [Emrald]
+function rgPlayerPfr(player) {
+  var hud = player.hud || [];
+  for (var k = 0; k < hud.length; k++) {
+    var a = (hud[k].abbr || '').toLowerCase(), n = (hud[k].name || '').toLowerCase();
+    var isPfr = (a.indexOf('pfr') >= 0 || a === 'pr' || n.indexOf('pfr') >= 0 || (n.indexOf('pre') >= 0 && n.indexOf('rais') >= 0));
+    if (isPfr) { var v = parseFloat(hud[k].value); if (!isNaN(v)) return v; }
+  }
+  return null;
+}
 var rgOpen = {};   // chair -> expanded? persists across the 500ms table re-renders (remount fallback)
 function RangeGrid(props) {
   var chair = props.player.chair;
@@ -357,18 +368,28 @@ function RangeGrid(props) {
   var open = stPair[0], setOpen = stPair[1];
   var vpip = rgPlayerVpip(props.player);
   if (vpip === null || !props.player.seated) return null;   // no PT sample / empty seat -> nothing
+  // The RAISING / value core = PFR% (a subset of VPIP). If PFR isn't sampled, estimate it as ~72% of
+  // VPIP (a typical micro VPIP/PFR gap). This is the "what their aggressive line represents" inner range.
+  var pfr = rgPlayerPfr(props.player);
+  if (pfr === null || isNaN(pfr)) pfr = vpip * 0.72;
+  if (pfr > vpip) pfr = vpip;
   var toggle = function (ev) { ev.stopPropagation(); rgOpen[chair] = !open; setOpen(!open); };
   var header = e('div', {
     className: 'rg-toggle' + (open ? ' open' : ''),
     onClick: toggle,
-    title: 'Estimated range ~' + Math.round(vpip) + '% of hands (VPIP-based) — click to ' + (open ? 'hide' : 'show')
-  }, (open ? '▾ ' : '▸ ') + 'range ' + Math.round(vpip) + '%');
+    title: 'Estimated range: outer = VPIP ~' + Math.round(vpip) + '% (all hands played); inner gold = PFR ~'
+      + Math.round(pfr) + '% (the raising / value core they represent when aggressive) — click to ' + (open ? 'hide' : 'show')
+  }, (open ? '▾ ' : '▸ ') + 'range V' + Math.round(vpip) + '% / R' + Math.round(pfr) + '%');
   if (!open) return header;                 // COLLAPSED by default: just the toggle
-  var set = rgInRange(vpip);
+  var setV = rgInRange(vpip), setP = rgInRange(pfr);
   var cells = [];
   for (var i = 0; i < 13; i++) for (var j = 0; j < 13; j++) {
-    var h = rgHand(i, j), on = set[i * 13 + j];
-    cells.push(e('div', { key: i * 13 + j, className: 'rg-cell' + (on ? ' on ' + h.kind : ''), title: h.label }));
+    var idx = i * 13 + j, h = rgHand(i, j), on = setV[idx], core = setP[idx];
+    cells.push(e('div', {
+      key: idx,
+      className: 'rg-cell' + (on ? ' on ' + h.kind : '') + (core ? ' val' : ''),
+      title: h.label + (core ? ' — value/raise' : (on ? ' — call/limp' : ''))
+    }));
   }
   return e('div', { className: 'range-wrap' }, header, e('div', { className: 'range-grid' }, cells));
 }
