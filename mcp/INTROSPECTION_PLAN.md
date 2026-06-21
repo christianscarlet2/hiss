@@ -186,6 +186,17 @@ features added to the spec for future training.
 Introspection / exploit / timing / range / advisor nodes + synapses → `synapse_state`, ghost inference,
 NN feature spec. Unifies the signal so it's visible in the Synapse tab and shared with the NN.
 
+## 9. FULL REWRITE x3 ⬜ (after the tournament — Emrald)
+Once the tournament build is in and we've learned from the live brain_log/decision_memory telemetry, do
+a ground-up REWRITE of the entire system **three successive times**, each iteration distilling the wisdom
+of the previous pass into a cleaner, sharper architecture (rewrite 1 = consolidate; 2 = simplify + harden
+from rewrite-1's hindsight; 3 = optimize + polish). Architecture clear in hindsight each time. This session built it
+by rapid accretion; the rewrite consolidates: one clean brain module (introspection+perception+intuition
++plan+prediction), the harmonizer, the advisor, the swiftsnake compute, and the OHF/NN integration — with
+the wisdom collected here (exploit precedence, gametype separation, tilt, fire-ASAP, fast/deep model
+tiering, response-prediction, decision-memory recall). Telemetry tables (brain_log, decision_memory) are
+the training/eval data for the rewrite.
+
 ## 8. Build (LAST) ⬜
 Edit all source freely (doesn't touch the running bot). Then ONE pass: compile Hiss (Release config,
 `Hiss.sln /t:Hiss`), `build_and_lint.py` for the OHF, terminate+relaunch Hiss, live-verify the full

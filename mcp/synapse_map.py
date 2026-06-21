@@ -277,16 +277,33 @@ def node_value(node_id, g):
 PLANS = {0: "none", 1: "pot_control", 2: "value_three_streets", 3: "flat_then_bluff_scare",
          4: "check_raise_barrel", 5: "delayed_cbet", 6: "give_up", 7: "show_of_force"}
 
-# extra synapses grown for the introspection -> intuition -> action harmonization
+# the grown synapses that harmonize the WHOLE system -> intuition -> plan -> decided action.
 INTRO_SYNAPSES = [
-    ("signal.introspection", "intuition.read", "per-villain rhythm/exploits/tilt/range -> the harmonized read"),
+    # perception of them
+    ("signal.introspection", "intuition.read", "per-villain rhythm/exploits/range -> the harmonized read"),
+    ("signal.tilt", "signal.introspection", "recent-vs-baseline steam = the strongest exploit"),
+    ("signal.timing", "signal.introspection", "bet-speed tell: does he have it when he's fast"),
+    ("signal.range", "intuition.read", "card/holdings guess refines the read"),
+    ("signal.donkfest", "intuition.persona", "a donk-heavy table -> cheap-in + heavy-value persona"),
+    # perception of us
     ("signal.perception", "intuition.read", "how THEY perceive US (our table image) shapes our exploit"),
+    ("signal.perception", "intuition.persona", "respect -> bluff more; they-think-we-bluff -> value thin"),
     ("signal.opponents", "intuition.read", "HUD base rates anchor the introspection confirmation"),
+    # live advisor + recall
     ("knob.advice", "intuition.read", "the live claude advisor weights into the read"),
-    ("intuition.read", "plan.line", "intuition forms the multi-street plan"),
+    ("memory.decisions", "intuition.read", "recall of similar past situations (decision_memory) sharpens the read"),
+    ("compute.swiftsnake", "knob.advice", "swiftsnake's 32 cores evaluate pathways in parallel -> advice"),
+    # intuition -> plan -> decided
+    ("intuition.read", "plan.line", "intuition forms the multi-street plan over villain exploit-pathway buckets"),
+    ("intuition.read", "intuition.persona", "the read picks the bot's counter-persona"),
+    ("intuition.persona", "output.decided", "the adopted persona swings the decided action"),
+    ("intuition.read", "signal.prediction", "we predict the villain's response to our decided action"),
+    ("signal.prediction", "output.decided", "confirm the most profitable pathway before acting"),
     ("intuition.read", "output.decided", "intuition drives the decided action"),
     ("plan.line", "output.decided", "the plan steers the street's action toward the line"),
-    ("output.action", "output.decided", "the engine decision is harmonized into the decided action (exploit takes precedence)"),
+    ("output.action", "output.decided", "the OHF/NN decision is harmonized in -- exploit takes PRECEDENCE"),
+    ("output.decided", "memory.decisions", "every decided action is remembered to learn from later"),
+    ("output.decided", "knob.advice", "the decided action is pushed to the live engine via the advice knobs"),
 ]
 
 
@@ -498,7 +515,10 @@ def brain(g):
             "decision": decision, "current_decided_action": current}
 
 
-def store_brain(b):
+def store_brain(b, history=True):
+    """brain_state = the latest row (easy API). brain_log = a DEBUG HISTORY of every decided action
+    (one row per real decision: action change or new betround) so we can replay/analyze later and
+    improve. Bounded to ~20k rows."""
     try:
         import psycopg2
         c = psycopg2.connect(DSN); cur = c.cursor()
@@ -509,6 +529,21 @@ def store_brain(b):
                     "handnumber=EXCLUDED.handnumber,betround=EXCLUDED.betround,villain=EXCLUDED.villain,"
                     "brain=EXCLUDED.brain",
                     (b["ts_ms"], b["handnumber"], b["betround"], b["villain"], json.dumps(b)))
+        if history:
+            cur.execute("CREATE TABLE IF NOT EXISTS brain_log (id bigserial primary key, ts_ms bigint, "
+                        "handnumber text, betround int, villain text, action text, exploit text, "
+                        "plan text, source text, brain jsonb)")
+            cda = b.get("current_decided_action", {})
+            # dedup: only log when the decided action / betround / villain changed (a real new decision)
+            cur.execute("SELECT handnumber, betround, action, source FROM brain_log ORDER BY id DESC LIMIT 1")
+            prev = cur.fetchone()
+            keynow = (b["handnumber"], b["betround"], cda.get("action"), cda.get("source"))
+            if not prev or tuple(prev) != keynow:
+                cur.execute("INSERT INTO brain_log (ts_ms,handnumber,betround,villain,action,exploit,plan,source,brain) "
+                            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                            (b["ts_ms"], b["handnumber"], b["betround"], b["villain"], cda.get("action"),
+                             cda.get("exploit"), cda.get("plan"), cda.get("source"), json.dumps(b)))
+                cur.execute("DELETE FROM brain_log WHERE id < (SELECT max(id)-20000 FROM brain_log)")
         c.commit(); c.close()
     except Exception as e:
         print("[synapse] brain store error:", e, flush=True)
