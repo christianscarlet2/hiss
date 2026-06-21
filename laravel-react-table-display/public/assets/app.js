@@ -586,18 +586,24 @@ function DecisionOverlay() {
   var fade = age < 8 ? 1 : (10 - age) / 2;                 // hold 8s, fade the last 2s
   var flick = 0.6 + 0.4 * Math.abs(Math.sin(Date.now() / 120));
   var act = (shown.action || '').toUpperCase();
+  // LINE 1: the action on fire. LINE 2: the exploit + observer branch. LINE 3: mischief + source. Sits
+  // right below the community cards and spans the open felt. [Emrald: red decision below the board, 2-3 lines]
   var big = '🔥 ' + act + (shown.size ? ('  ' + Number(shown.size).toFixed(1) + 'bb') : '') + ' 🔥';
-  var sub = [shown.exploit && shown.exploit !== 'none' ? ('exploit ' + shown.exploit) : null,
-             shown.branch && shown.branch !== 'NORMAL' ? ('« ' + shown.branch + ' »') : null,
-             shown.mischief ? ('mischief: ' + shown.mischief) : null].filter(Boolean).join('   ·   ');
-  return e('div', { style: { position: 'fixed', top: '76px', left: '50%', transform: 'translateX(-50%)',
-        zIndex: 60, pointerEvents: 'none', opacity: fade, textAlign: 'center' } },
+  var line2 = [shown.exploit && shown.exploit !== 'none' ? ('exploit ' + shown.exploit) : null,
+               shown.branch && shown.branch !== 'NORMAL' ? ('« ' + shown.branch + ' »') : null].filter(Boolean).join('   ·   ');
+  var line3 = [shown.mischief ? ('mischief: ' + shown.mischief) : null,
+               (shown.source && shown.source !== 'engine') ? shown.source : null].filter(Boolean).join('   ·   ');
+  return e('div', { className: 'decision-overlay', style: {
+        margin: '6px auto 2px', width: '100%', maxWidth: '540px', textAlign: 'center',
+        pointerEvents: 'none', opacity: fade, lineHeight: '1.15' } },
     e('div', { style: {
-        fontFamily: 'monospace', fontWeight: 'bold', fontSize: '34px', letterSpacing: '3px', color: '#ff5a3c',
+        fontFamily: 'monospace', fontWeight: 'bold', fontSize: '30px', letterSpacing: '3px', color: '#ff5a3c',
         textShadow: '0 0 ' + (6 + 16 * flick) + 'px rgba(255,70,30,' + (0.65 * flick) + '), 0 0 ' + (2 + 6 * flick) + 'px #ff2a00',
         WebkitTextStroke: '1px rgba(120,10,0,.55)' } }, big),
-    sub ? e('div', { style: { marginTop: '2px', fontFamily: 'monospace', fontSize: '12px', color: '#ffb199',
-        letterSpacing: '1px', textShadow: '0 0 6px rgba(255,80,40,.6)' } }, sub) : null);
+    line2 ? e('div', { style: { marginTop: '1px', fontFamily: 'monospace', fontSize: '13px', color: '#ffb199',
+        letterSpacing: '1px', textShadow: '0 0 6px rgba(255,80,40,.6)' } }, line2) : null,
+    line3 ? e('div', { style: { marginTop: '1px', fontFamily: 'monospace', fontSize: '11px', color: '#e8927a',
+        letterSpacing: '.5px' } }, line3) : null);
 }
 
 function App() {
@@ -759,7 +765,6 @@ function App() {
   DISPLAY.bb = Number(limits.bblind || 0);
   return e('main', { className: 'app' },
     e(MatrixRain),
-    e(DecisionOverlay),
     e('header', { className: 'topbar' },
       e('div', { className: 'title' }, 'Hiss React Table Display — port ' + instancePort),
       e('div', { className: 'meta' },
@@ -854,6 +859,7 @@ function App() {
         e('div', { className: 'cards' }, (table.commonCards || []).map(function (card, index) {
           return e(CardView, { key: index, value: card });
         })),
+        e(DecisionOverlay),
         e('div', { className: 'pot', onDoubleClick: toggleUnit, title: 'Double-click to toggle BB / $' }, 'Pot ' + bb(table.pot)),
         e(OddsPanel, { odds: computeOdds(table) })
       ),
