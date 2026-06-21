@@ -178,7 +178,9 @@ for name, body in func_bodies.items():
                                   f"by the engine parser and blocks Hiss startup)")
                 continue
             if tok.startswith("explain"): continue        # dynamic explanation triggers
-            if tok.startswith("openai"): continue         # dynamic OpenAI advisor symbols
+            if tok.startswith("openai"): continue         # dynamic OpenAI advisor + advice-knob symbols
+            if tok.startswith("intro_") or tok.startswith("exploit_"): continue   # introspection engine symbols
+                                                          #   (CSymbolEngineOpponentIntrospection; chair-suffixed)
             if tok.startswith("f$"):
                 if tok not in defined_set:
                     errors.append(f"{name}:{n}: undefined function reference '{tok}'")

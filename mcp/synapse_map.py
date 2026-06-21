@@ -289,6 +289,10 @@ INTRO_SYNAPSES = [
     ("signal.perception", "intuition.read", "how THEY perceive US (our table image) shapes our exploit"),
     ("signal.perception", "intuition.persona", "respect -> bluff more; they-think-we-bluff -> value thin"),
     ("signal.opponents", "intuition.read", "HUD base rates anchor the introspection confirmation"),
+    # CONSIDERATIONS: the three temporal lenses the brain weighs
+    ("consider.backward", "intuition.read", "BACKWARD: villain history + recent steam + our table image"),
+    ("consider.present", "intuition.read", "PRESENT: the spot right now drives the exploit read"),
+    ("consider.forward", "output.decided", "FORWARD: the plan + predicted-response lookahead confirm the pathway"),
     # live advisor + recall
     ("knob.advice", "intuition.read", "the live claude advisor weights into the read"),
     ("memory.decisions", "intuition.read", "recall of similar past situations (decision_memory) sharpens the read"),
@@ -499,6 +503,34 @@ def resolve_action(g, intuition, plan, prof):
             "source": source, "overridden": source != "engine", "confidence": conf}
 
 
+def compute_considerations(g, prof, intuition, plan, current, perception):
+    """CONSIDERATIONS: the brain weighs three TEMPORAL lenses before deciding.
+       BACKWARD (what has happened: villain history, his recent steam, our table image),
+       PRESENT  (the spot right now: intuition, exploit, range, confidence),
+       FORWARD  (what comes next: the multi-street plan, our predicted-response lookahead,
+                 the show-of-force / future-pot picture)."""
+    backward = {
+        "villain_history": (prof.get("profile") if prof else None),
+        "villain_baseline_aggr": (round(num(prof.get("aggr_index"), -1), 3) if prof else -1),
+        "recent_tilt": intuition.get("tilt", 0.0),
+        "our_table_image": perception.get("image"),
+        "they_perceive_us_as": perception.get("exploit"),
+    }
+    present = {
+        "exploit": intuition.get("exploit"),
+        "villain_strength_now": intuition.get("villain_strength"),
+        "aggression_now": intuition.get("aggression"),
+        "confidence": intuition.get("confidence"),
+    }
+    forward = {
+        "plan": plan.get("label"),
+        "predicted_response": current.get("predicted_response"),
+        "pathway_profitable": current.get("pathway_profitable"),
+        "show_of_force": intuition.get("show_of_force"),
+    }
+    return {"backward": backward, "present": present, "forward": forward}
+
+
 def brain(g):
     vname, gt, prof, donkfest = villain_and_table(g)
     perception = compute_perception(g)
@@ -508,11 +540,12 @@ def brain(g):
     decision = {"fold": num(s.get("f$fold")), "call": num(s.get("f$call")),
                 "raise": num(s.get("f$raise")), "betsize": num(s.get("f$betsize"))}
     current = resolve_action(g, intuition, plan, prof)
+    considerations = compute_considerations(g, prof, intuition, plan, current, perception)
     return {"ts_ms": int(time.time() * 1000), "handnumber": g.get("handnumber"),
             "betround": int(num(s.get("betround"))), "villain": vname, "gametype": gt,
             "villain_profile": (prof.get("profile") if prof else None),
-            "perception": perception, "intuition": intuition, "decision_plan": plan,
-            "decision": decision, "current_decided_action": current}
+            "perception": perception, "considerations": considerations, "intuition": intuition,
+            "decision_plan": plan, "decision": decision, "current_decided_action": current}
 
 
 def store_brain(b, history=True):
@@ -566,6 +599,15 @@ def harmonize(g):
     nodes.append({"id": "signal.perception", "value": per,
                   "ghost": (("they see us as %s -> %s" % (per["image"], per["exploit"]))
                             if per["known"] else "no table image yet")})
+    con = bn["considerations"]
+    nodes.append({"id": "consider.backward", "value": con["backward"],
+                  "ghost": "looking back: %s%s" % (con["backward"]["villain_history"] or "no history",
+                           " (STEAMING)" if con["backward"]["recent_tilt"] >= 0.35 else "")})
+    nodes.append({"id": "consider.present", "value": con["present"],
+                  "ghost": "right now: %s @ conf %s" % (con["present"]["exploit"], con["present"]["confidence"])})
+    nodes.append({"id": "consider.forward", "value": con["forward"],
+                  "ghost": "looking ahead: plan %s%s" % (con["forward"]["plan"],
+                           " | SHOW OF FORCE" if con["forward"]["show_of_force"] else "")})
     nodes.append({"id": "intuition.read", "value": intu,
                   "ghost": "exploit %s | aggr %.2f | villain-strength %s%s" % (
                       intu["exploit"], intu["aggression"], intu["villain_strength"],

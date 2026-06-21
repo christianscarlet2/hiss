@@ -4,6 +4,8 @@
 #include <math.h>
 #include <float.h>
 #include "CPokerTrackerThread.h"
+#include "CEngineContainer.h"           // p_engine_container -> current gametype for per-gametype HUD
+#include "CSymbolEngineIsOmaha.h"
 #include "CTableState.h"
 #include "..\CTablemap\CTablemapDB.h"   // own-data HUD: hud_player_stats (replaces PT4)
 #include "..\PokerTracker_Query_Definitions\pokertracker_query_definitions.h"
