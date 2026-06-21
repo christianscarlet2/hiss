@@ -32,6 +32,18 @@ try:
     import deep_thought                      # async LLM "deep thought" for any synapse point (over the bus)
 except Exception:
     deep_thought = None
+try:
+    import mischief                          # the MISCHIEF layer: odd/random antagonizing bets, at par
+except Exception:
+    mischief = None
+try:
+    import astrology                         # ENERGY IN THE AIR (moon/planetary hour + LLM) for the pineal
+except Exception:
+    astrology = None
+try:
+    import observer_strategy                 # OBSERVER reads -> strategy BRANCH (GOTO) -> knobs/NN/mischief
+except Exception:
+    observer_strategy = None
 _dt_last_key = None                          # dedup: one deep thought per (hand, street, action)
 
 BOT = "http://127.0.0.1:27654"
@@ -595,20 +607,30 @@ def compute_considerations(g, prof, intuition, plan, current, perception):
 
 def compute_pineal(g):
     """THE PINEAL GLAND (the third eye): harmonizes the decision with SUPERSTITION -- the Beast's favor /
-    the 666 omen resonance -- and ULTRA MODE's MUSIC (the system-audio that drives ultra). A BOUNDED
-    intuitive lean: when the omens + the music swell together, the brain leans into the moment (chase,
-    press); when they're quiet, no influence. It colors the read, it never overrides it."""
+    the 666 omen resonance -- ULTRA MODE's MUSIC (the system-audio that drives ultra), and the ENERGY
+    IN THE AIR (astrology: moon phase + planetary hour, LLM-refined). A BOUNDED intuitive lean: when
+    the omens + the music + the sky's charge swell together, the brain leans into the moment and
+    EXPLOITS HARDER; when they're quiet, no influence. It colors the read, it never overrides it."""
     favor = num(g["beast"].get("favor"), num(g["syms"].get("sb_beastfavor")))
     superstition_on = bool(g["superstition"].get("engaged"))
     ultra = g["ultra"]; ultra_on = bool(ultra.get("engaged"))
     music = num(ultra.get("level", ultra.get("audio", 0.0)))     # ultra's system-audio average 0..1
+    astro = g.get("astro") or {}
+    energy = num(astro.get("energy"), 0.0)                       # 0..1 charge in the air
     omen = favor if superstition_on else favor * 0.5             # the Beast/666 omen
-    resonance = max(0.0, min(1.0, omen * 0.7 + (music * 0.3 if ultra_on else 0.0)))
+    # the third eye blends the omen, the music and the sky -- energy is always read (it needs no toggle)
+    resonance = max(0.0, min(1.0, omen * 0.55 + (music * 0.25 if ultra_on else 0.0) + energy * 0.30))
     lean = 0.15 if resonance >= 0.66 else (0.07 if resonance >= 0.40 else 0.0)
+    if energy >= 0.66:                                           # a charged sky -> press a touch harder
+        lean = min(0.20, lean + 0.05)
+    read = ("the Beast favors -- seize it" if resonance >= 0.66
+            else ("a faint omen stirs" if resonance >= 0.40 else "the omens are quiet"))
     return {"beastfavor": round(favor, 3), "superstition": superstition_on, "ultra": ultra_on,
-            "music": round(music, 3), "resonance": round(resonance, 3), "lean": lean,
-            "read": ("the Beast favors -- seize it" if resonance >= 0.66
-                     else ("a faint omen stirs" if resonance >= 0.40 else "the omens are quiet"))}
+            "music": round(music, 3), "energy": round(energy, 3),
+            "energy_reading": astro.get("reading"), "energy_source": astro.get("source"),
+            "moon": astro.get("moon_name"), "planetary_hour": astro.get("planetary_hour"),
+            "resonance": round(resonance, 3), "lean": lean,
+            "exploit_more": energy >= 0.55, "read": read}
 
 
 def _attach_deep_thought(g, gt, vname, intuition, plan, current, perception):
@@ -674,17 +696,63 @@ def compute_intelligence(g, prof, intuition, plan, current, considerations):
 
 def brain(g):
     vname, gt, prof, donkfest = villain_and_table(g)
+    # ENERGY IN THE AIR (astrology) -- cached hourly, so this is free per heartbeat. Feeds the pineal.
+    if astrology is not None and "astro" not in g:
+        try:
+            g["astro"] = astrology.energy_in_the_air()
+        except Exception:
+            g["astro"] = None
     perception = compute_perception(g)
     intuition = compute_intuition(g, prof, donkfest, perception)
     pineal = compute_pineal(g)
     if pineal["lean"]:                                           # the third-eye nudge (bounded)
         intuition["aggression"] = round(min(1.0, num(intuition.get("aggression"), 0.5) + pineal["lean"]), 3)
         intuition["pineal_lean"] = pineal["lean"]
+    # OBSERVER -> STRATEGY BRANCH (GOTO): the observer's live reads pick a branch that steers the knobs
+    # (OHF + NN), the mischief affinity, and -- when the read is strong -- nudges the brain OFF a blind
+    # fold into the branch's exploit. This is why the brain stops "always folding": with a real read it
+    # has a proactive direction instead of mirroring the OHF's tight base.
+    obs = None
+    if observer_strategy is not None:
+        try:
+            obs = observer_strategy.observe_strategy(villain=vname, table=g.get("table"))
+        except Exception:
+            obs = None
+    if obs and obs.get("branch") not in (None, "NORMAL"):
+        # map the observer branch into the intuition exploit so resolve_action acts on it even with a
+        # thin HUD sample (the observer read is its own evidence).
+        _BR2EX = {"ATTACK_FOLDERS": "attack_fold", "PUNISH_TILT": "tilt_value",
+                  "ISOLATE_SHORTSTACK": "attack_fold", "VALUE_STATION": "value_only",
+                  "DONKFEST_CHEAP": "attack_fold"}
+        if intuition.get("exploit") in ("none", None) and obs["branch"] in _BR2EX:
+            intuition["exploit"] = _BR2EX[obs["branch"]]
+            intuition["confidence"] = max(num(intuition.get("confidence"), 0.25), 0.55)
+            intuition["known"] = True
+            intuition["observer_branch"] = obs["branch"]
+        intuition["aggression"] = round(min(1.0, max(num(intuition.get("aggression"), 0.5), obs["aggro"])), 3)
     plan = compute_plan(g, intuition)
     s = g["syms"]
     decision = {"fold": num(s.get("f$fold")), "call": num(s.get("f$call")),
                 "raise": num(s.get("f$raise")), "betsize": num(s.get("f$betsize"))}
     current = resolve_action(g, intuition, plan, prof)
+    # MISCHIEF: deviate into odd/antagonizing bets WHENEVER it's cheap (at par), charged by the sky's
+    # energy AND the observer's branch affinity. Applied BEFORE the wisdom gate so a reckless prank is
+    # still vetoed -- annoy, never punt.
+    mis = None
+    if mischief is not None:
+        try:
+            mis = mischief.compute_mischief(g, intuition, current, prof, energy=num(pineal.get("energy")),
+                                            affinity=(obs.get("mischief_affinity", 1.0) if obs else 1.0))
+        except Exception:
+            mis = None
+        if mis and mis.get("fired"):
+            current["par_action"] = mis["par_action"]; current["par_size_bb"] = mis["par_size_bb"]
+            current["action"] = mis["action"]
+            current["size_bb"] = mis["size_bb"]
+            current["raw_betsize"] = round(mis["size_bb"] * (num(s.get("bblind"), 1.0) or 1.0), 2)
+            current["source"] = (current.get("source", "") + " +mischief:" + mis["kind"]).strip()
+            current["mischief"] = mis
+            intuition["aggression"] = round(min(1.0, num(intuition.get("aggression"), 0.5) + mis.get("aggro_nudge", 0.0)), 3)
     considerations = compute_considerations(g, prof, intuition, plan, current, perception)
     intelligence = compute_intelligence(g, prof, intuition, plan, current, considerations)
     if intelligence.get("adjusted"):                         # the wisdom gate vetoes an unwise line
@@ -697,7 +765,8 @@ def brain(g):
             "betround": int(num(s.get("betround"))), "villain": vname, "gametype": gt,
             "villain_profile": (prof.get("profile") if prof else None),
             "perception": perception, "considerations": considerations, "pineal": pineal,
-            "intelligence": intelligence, "deep_thought": dt, "intuition": intuition,
+            "observer_strategy": obs, "mischief": mis, "intelligence": intelligence,
+            "deep_thought": dt, "intuition": intuition,
             "decision_plan": plan, "decision": decision, "current_decided_action": current}
 
 
@@ -956,7 +1025,18 @@ def main():
                 cur_bb, cur_nchairs = bb_now, nch_now
                 cur_table = table_now
             head = next((n["ghost"] for n in state["nodes"] if n["id"] == "output.action"), "")
-            print("[synapse] r%d %s | %s" % (state["betround"], state["hero"] or "-", head), flush=True)
+            # The OHF base LEAN is only half the story -- show the brain's ACTUAL decided action, which
+            # deviates when an exploit / observer-branch / mischief override fires. (This is why it looked
+            # like the synapses "always lean fold": the render showed the OHF mirror, not the decision.)
+            cda = (state.get("brain") or {}).get("current_decided_action", {}) or {}
+            decided = (cda.get("action") or "?").upper()
+            decided += (" %.1fbb" % cda["size_bb"]) if cda.get("size_bb") else ""
+            src = cda.get("source") or ""
+            obs_b = ((state.get("brain") or {}).get("observer_strategy") or {}).get("branch")
+            print("[synapse] r%d %s | %s -> BRAIN: %s%s%s" % (
+                state["betround"], state["hero"] or "-", head, decided,
+                ("  <%s>" % src) if src and src != "engine" else "",
+                ("  [obs:%s]" % obs_b) if obs_b and obs_b != "NORMAL" else ""), flush=True)
             if do_speak and head and head != "no decision at this instant" and time.time() - last_spoke > 20:
                 speak("The ghost reads: " + head); last_spoke = time.time()
             time.sleep(every)

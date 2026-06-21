@@ -225,15 +225,17 @@ def parse_hand(hh):
     return res
 
 
-def upsert(cur, name, c):
+def upsert(cur, name, c, gt="nlhe"):
     cols = ["hands"] + [s + "_n" for s in STAT_COLS] + [s + "_d" for s in STAT_COLS] + ["aggr_actions", "call_actions"]
     vals = [c.get("hands", 0)] + [c.get(s + "_n", 0) for s in STAT_COLS] + [c.get(s + "_d", 0) for s in STAT_COLS] + [c.get("aggr", 0), c.get("call", 0)]
     sets = ", ".join("%s = hud_player_stats.%s + EXCLUDED.%s" % (col, col, col) for col in cols)
+    # the table is keyed by (player, gametype) -- the ON CONFLICT target MUST match that PK or every
+    # insert aborts the batch (the freeze that stopped HUD aggregation).
     cur.execute(
-        "INSERT INTO hud_player_stats (player, %s, updated_at) VALUES (%%s, %s, now()) "
-        "ON CONFLICT (player) DO UPDATE SET %s, updated_at=now()"
+        "INSERT INTO hud_player_stats (player, gametype, %s, updated_at) VALUES (%%s, %%s, %s, now()) "
+        "ON CONFLICT (player, gametype) DO UPDATE SET %s, updated_at=now()"
         % (", ".join(cols), ", ".join(["%s"] * len(cols)), sets),
-        [name] + vals)
+        [name, gt] + vals)
 
 
 def run_once(conn):
@@ -249,10 +251,11 @@ def run_once(conn):
         except Exception as e:
             print("parse error hand id %s: %s" % (hid, e)); contrib = {}
         vset = set(verified) if verified else None   # None -> count all (legacy)
+        gt = gametype_from_hh(hh)
         for name, c in contrib.items():
             if vset is not None and name not in vset:
                 continue
-            upsert(cur, name, c)
+            upsert(cur, name, c, gt)
         wm = hid; n_hands += 1
     cur.execute("UPDATE hud_aggregator_state SET last_hand_id=%s WHERE id=1", (wm,))
     conn.commit()

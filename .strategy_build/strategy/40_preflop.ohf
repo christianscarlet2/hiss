@@ -16,6 +16,12 @@
 // do NOT auto-fold here -- folding a made hand on a transient bad frame is worse than the
 // mis-scrape (it folded a made straight once). Facing a bet, fall through to normal logic.
 WHEN validator_ok = 0 AND AmountToCall = 0 Check FORCE
+// POT-COMMITTED DUST: once we've put >= 2bb in this round and our remaining stack can no longer
+// cover the call (so calling is itself all-in), NEVER fold the committed chips -- jam the sliver.
+// The pot odds on our last chips are astronomical; folding them is pure loss. This is the
+// 14bb-shove-then-fold-0.21bb leak on hand 2763842893. Placed above every dispatch (incl. the
+// push/fold fold lines) so it pre-empts them. Uses only stock symbols (no rebuild). [Emrald]
+WHEN currentbet >= 2 * bblind AND balance <= AmountToCall AND balance > 0 RaiseMax FORCE
 // @anchor: preflop (id 1)
 // OpenAI hijack override: when the advisor is enabled and returns a concrete
 // raise size, take it. Disabled -> openai_action is the kOpenAiNoOpinion sentinel
