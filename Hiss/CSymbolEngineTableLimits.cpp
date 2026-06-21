@@ -267,6 +267,12 @@ double CSymbolEngineTableLimits::sblind() {
 
 double CSymbolEngineTableLimits::bblind(){
 	double bb = BestTableLimitsToBeUsed().bblind;
+	// OCR-misread guard [Emrald 2026-06-21]: on a BB-denominated table (stacks/bets shown in big
+	// blinds) the big blind IS the unit (~1), but the big-blind position sometimes OCR-reads the
+	// single "1" with a tripled/doubled digit -- "111" or "11". No real blind level is 11 or 111,
+	// so snap those misreads back to 1 AT THE SYMBOL LEVEL -- otherwise depth / pot-odds / bet-
+	// sizing blow up ~11-111x and the bot stops jamming / mis-sizes. Covers every path feeding bblind.
+	if ((bb > 10.5 && bb < 11.5) || (bb > 110.5 && bb < 111.5)) return 1.0;
 	// BB-only model: this bot scrapes and reasons entirely in big blinds, so a big
 	// blind IS the unit (bblind == 1 is the identity). When the blind-guesser
 	// can't settle a value yet it returns 0, which would zero every dollar-based

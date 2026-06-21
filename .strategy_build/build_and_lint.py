@@ -6,7 +6,11 @@ import os, re, glob, sys
 ROOT = r"C:\www\openholdembot_old"
 SEGDIR = os.path.join(ROOT, ".strategy_build", "strategy")
 LIBDIR = os.path.join(ROOT, "Hiss", "bot_logic", "OpenPPL_Library")
-MASTER = os.path.join(ROOT, "Release", "ScarletBeast_PowerHoldem.ohf")
+# Output path for the concatenated master. Defaults to the LIVE Release master Hiss parses, but can be
+# redirected via HISS_MASTER_OUT to lint/stage WITHOUT clobbering the running bot's OHF (the live master
+# overwrite is what popped Parse Error modals mid-session when the staged OHF referenced new engine
+# symbols the running binary lacked). See memory: lint-clobbers-live-master.
+MASTER = os.environ.get("HISS_MASTER_OUT") or os.path.join(ROOT, "Release", "ScarletBeast_PowerHoldem.ohf")
 
 # ---- 1. concatenate segments in filename order -----------------------------
 segs = sorted(glob.glob(os.path.join(SEGDIR, "*.ohf")))

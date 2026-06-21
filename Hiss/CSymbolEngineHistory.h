@@ -67,6 +67,9 @@ class CSymbolEngineHistory: public CVirtualSymbolEngine {
   double HistorySymbol(const CString sym, const int round);
  private:
 	int _prevaction;
+	// [Emrald] cross-street aggressor memory: chair of the last raiser (-1 = none yet this hand),
+	// carried across streets in CalculateHistory, reset in UpdateOnHandreset. Backs aggressorchair().
+	int _aggressor_chair;
  private:
 	// Element 0 is unused
 	// Elements 1..4 are for the 4 betrounds
