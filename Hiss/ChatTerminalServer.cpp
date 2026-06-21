@@ -468,6 +468,31 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		return;
 	}
 
+	// Synapse-harmonizer runtime knobs:  /api/knob?name=openrange|aggro|bluff&value=0..1  sets one
+	// (clamped 0..1); a BARE /api/knob just reports all three. Default 0.5 = NEUTRAL. The Synapse tab
+	// + the manic_burst daemon push here; the OHF reads them as openai_knob_* (no rebuild to retune).
+	if (path.CompareNoCase("/api/knob") == 0) {
+		extern double g_knob_openrange; extern double g_knob_aggro; extern double g_knob_bluff;
+		CStringA nm = QueryValue(query, "name");
+		CStringA vl = QueryValue(query, "value");
+		if (!nm.IsEmpty() && !vl.IsEmpty()) {
+			double v = atof(vl);
+			if (v < 0.0) v = 0.0;
+			if (v > 1.0) v = 1.0;
+			if (nm.CompareNoCase("openrange") == 0) g_knob_openrange = v;
+			else if (nm.CompareNoCase("aggro") == 0) g_knob_aggro = v;
+			else if (nm.CompareNoCase("bluff") == 0) g_knob_bluff = v;
+		}
+		CStringA body; body.Format("{\"ok\":true,\"openrange\":%.3f,\"aggro\":%.3f,\"bluff\":%.3f}",
+			g_knob_openrange, g_knob_aggro, g_knob_bluff);
+		CStringA response;
+		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+			body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
 	// Manually act on the table (only fires on an explicit request, e.g. learner.exe):
 	//   /api/action?do=fold|check|call|raise|allin            -> click that button
 	//   /api/action?do=bet|raise&amount=<bb>                  -> sized bet/raise via the
@@ -939,7 +964,7 @@ CStringA CChatTerminalServer::BuildTableStateJson(void)
 			// The hero's own name needs no OCR name-verification (the bot IS the hero), so
 			// always surface the hero's own HUD stats + sample size.
 			if (userchair >= 0 && chair == userchair) { name_verified = true; if (pt_name.IsEmpty()) pt_name = name; }
-			if (name_verified && p_hud_manager != NULL) {
+			if (p_hud_manager != NULL) {   // [Emrald] no name_verified gate: surface samples for any chair, like scrcpy
 				pt_samples = p_hud_manager->SamplesForChair(chair);
 			}
 		}
@@ -968,7 +993,7 @@ CStringA CChatTerminalServer::BuildTableStateJson(void)
 			json += p_scarlet_beast->ServerHudArrayForChair(chair).c_str();
 		}
 		// Otherwise: PT4 stats, only once the name mapping is verified ("confirmed").
-		else if (name_verified && p_hud_manager != NULL && p_hud_manager->IsEnabled()) {
+		else if (p_hud_manager != NULL && p_hud_manager->IsEnabled()) {   // [Emrald] no name_verified gate: HUD for any chair, like scrcpy
 			const std::vector<SHudStatValue> &stats = p_hud_manager->StatsForChair(chair);
 			for (size_t stat_index = 0; stat_index < stats.size(); ++stat_index) {
 				if (stat_index > 0) json += ",";

@@ -290,7 +290,7 @@ function Player(props) {
     ),
     e('div', { className: 'balance', onDoubleClick: toggleUnit, title: 'Double-click to toggle BB / $' },
       player.seated ? bb(player.balance) : ('Out (' + bb(player.balance) + ')')),
-    (player.samples >= 0 || (player.hud || []).length) ? e('div', { className: 'hud' },
+    e('div', { className: 'hud' },   // [Emrald] no gate: always render the HUD on the React view, like scrcpy
       player.samples >= 0 ? e('span', {
         key: 'samples',
         className: 'hud-samples',
@@ -303,8 +303,74 @@ function Player(props) {
           title: stat.name || stat.abbr
         }, (stat.abbr || '') + ' ' + (stat.value || '-'));
       })
-    ) : null
+    ),
+    e(RangeGrid, { player: player })
   );
+}
+
+// ---- Opponent range grid: 13x13 hand heat-matrix under the HUD, VPIP%-driven. [Emrald]
+// Standard layout: row=first rank, col=second; diagonal=pairs, upper-right=suited, lower-left=offsuit.
+// Estimates the player's range as the top VPIP% of hands (by a heuristic preflop strength score,
+// combo-weighted). A first pass keyed to VPIP; the line-narrowed (representing) range refines later.
+var RG_RANKS = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
+var RG_VAL = { 'A': 14, 'K': 13, 'Q': 12, 'J': 11, 'T': 10, '9': 9, '8': 8, '7': 7, '6': 6, '5': 5, '4': 4, '3': 3, '2': 2 };
+function rgHand(i, j) {
+  var r1 = RG_RANKS[i], r2 = RG_RANKS[j];
+  if (i === j) return { label: r1 + r2, combos: 6, kind: 'pair', hi: RG_VAL[r1], lo: RG_VAL[r2] };
+  if (i < j) return { label: r1 + r2 + 's', combos: 4, kind: 'suited', hi: RG_VAL[r1], lo: RG_VAL[r2] };
+  return { label: r2 + r1 + 'o', combos: 12, kind: 'offsuit', hi: RG_VAL[r2], lo: RG_VAL[r1] };
+}
+function rgScore(h) {
+  if (h.kind === 'pair') return 1000 + h.hi * 12;
+  var s = h.hi * 8 + h.lo * 2, gap = h.hi - h.lo - 1;
+  if (h.kind === 'suited') s += 28;
+  if (gap === 0) s += 18; else if (gap === 1) s += 9; else if (gap === 2) s += 4; else s -= gap * 3;
+  if (h.lo >= 10) s += 14;          // both broadway
+  if (h.hi === 14) s += 6;          // ace-high kicker
+  return s;
+}
+var RG_SORTED = (function () {
+  var all = [];
+  for (var i = 0; i < 13; i++) for (var j = 0; j < 13; j++) { var h = rgHand(i, j); h.i = i; h.j = j; h.score = rgScore(h); all.push(h); }
+  return all.sort(function (a, b) { return b.score - a.score; });
+})();
+var rgCache = {};
+function rgInRange(pct) {
+  var key = Math.round(Math.max(0, Math.min(100, pct)));
+  if (rgCache[key]) return rgCache[key];
+  var target = 1326 * key / 100, cum = 0, set = {};
+  for (var k = 0; k < RG_SORTED.length; k++) { if (cum >= target) break; var h = RG_SORTED[k]; set[h.i * 13 + h.j] = true; cum += h.combos; }
+  rgCache[key] = set; return set;
+}
+function rgPlayerVpip(player) {
+  var hud = player.hud || [];
+  for (var k = 0; k < hud.length; k++) {
+    var a = (hud[k].abbr || '').toLowerCase(), n = (hud[k].name || '').toLowerCase();
+    if (a.indexOf('vp') >= 0 || n.indexOf('vpip') >= 0) { var v = parseFloat(hud[k].value); if (!isNaN(v)) return v; }
+  }
+  return null;
+}
+var rgOpen = {};   // chair -> expanded? persists across the 500ms table re-renders (remount fallback)
+function RangeGrid(props) {
+  var chair = props.player.chair;
+  var stPair = useState(!!rgOpen[chair]);   // hook FIRST (unconditional) so hook order is stable
+  var open = stPair[0], setOpen = stPair[1];
+  var vpip = rgPlayerVpip(props.player);
+  if (vpip === null || !props.player.seated) return null;   // no PT sample / empty seat -> nothing
+  var toggle = function (ev) { ev.stopPropagation(); rgOpen[chair] = !open; setOpen(!open); };
+  var header = e('div', {
+    className: 'rg-toggle' + (open ? ' open' : ''),
+    onClick: toggle,
+    title: 'Estimated range ~' + Math.round(vpip) + '% of hands (VPIP-based) — click to ' + (open ? 'hide' : 'show')
+  }, (open ? '▾ ' : '▸ ') + 'range ' + Math.round(vpip) + '%');
+  if (!open) return header;                 // COLLAPSED by default: just the toggle
+  var set = rgInRange(vpip);
+  var cells = [];
+  for (var i = 0; i < 13; i++) for (var j = 0; j < 13; j++) {
+    var h = rgHand(i, j), on = set[i * 13 + j];
+    cells.push(e('div', { key: i * 13 + j, className: 'rg-cell' + (on ? ' on ' + h.kind : ''), title: h.label }));
+  }
+  return e('div', { className: 'range-wrap' }, header, e('div', { className: 'range-grid' }, cells));
 }
 
 // Dealer button, positioned on the felt just in front of the seat (a short hop from the

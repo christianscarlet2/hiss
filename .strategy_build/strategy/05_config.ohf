@@ -13,6 +13,41 @@ WHEN openai_steer_anchor == 13 RETURN 2 FORCE
 WHEN Others RETURN 2 FORCE
 
 //-----------------------------------------------------------------------------
+//  RUNTIME SYNAPSE-HARMONIZER KNOBS [Emrald 2026-06-21]
+//  Three live 0..1 dials pushed from the Synapse Harmonizer tab via /api/knob
+//  (engine symbols openai_knob_openrange / openai_knob_aggro / openai_knob_bluff;
+//  DEFAULT 0.5 = NEUTRAL = today's behavior). No rebuild to retune - turn the dial.
+//    openrange  1 = open MANY more hands  ...  0 = open far fewer (tight)
+//    aggro      1 = bet/raise much more often  ...  0 = passive (check/call)
+//    bluff      1 = bluff much more often  ...  0 = bluff almost never (value-only)
+//  openrange retunes the preflop open tree (40_preflop); aggro scales f$CbetFreq;
+//  bluff scales every dedicated bluff frequency (3-bet bluff, barrels, stabs).
+//-----------------------------------------------------------------------------
+
+##f$OpenRangeKnob##
+WHEN Others RETURN openai_knob_openrange FORCE
+
+##f$OpenWiden##
+// Knob turned UP past neutral -> open the wide ~65% steal range from late / the SB.
+WHEN f$OpenRangeKnob >= 0.62 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$OpenTightenHard##
+// Knob turned DOWN past neutral -> open only the MP-strength range from every seat.
+WHEN f$OpenRangeKnob <= 0.30 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$AggroFreqMult##
+// Multiplies the c-bet / aggression FREQUENCY. 0.5 (neutral) -> 1.0x; 0 -> 0.55x
+// (passive); 1 -> 1.45x (relentless). Clamped to <= 0.95 downstream in f$CbetFreq.
+WHEN Others RETURN 0.55 + openai_knob_aggro * 0.9 FORCE
+
+##f$BluffFreqMult##
+// Multiplies every dedicated BLUFF frequency (3-bet bluff, double / triple barrel, stabs).
+// 0.5 (neutral) -> 1.0x; 0 -> 0.55x (value-only); 1 -> 1.45x (high bluff).
+WHEN Others RETURN 0.55 + openai_knob_bluff * 0.9 FORCE
+
+//-----------------------------------------------------------------------------
 //  Stack-depth regime (in big blinds).  Small ball requires depth; once short,
 //  both authors revert to a tight raise/limp-or-push game. [N pp.33-34][B S8.3]
 //  YIELD AND FLOW to the depth: the stiff/unyielding plan dies, the soft/adaptive
@@ -151,7 +186,7 @@ WHEN Others RETURN (f$EffStack - PotSize) / 3 FORCE
 // strong made hand for max value; even overbet on "bingo" boards. [CtM p147,149]
 WHEN Others RETURN 100 FORCE
 
-##f$CbetFreq##
+##f$CbetFreqBase##
 // How often we fire a continuation bet with air as the pre-flop raiser. [B ~90%][N ~60%]
 // [T] TAO of Poker (Phillips) Ch.6 & Ch.14: in loose low-limit fields (our freerolls)
 // bluffing into calling stations just donates -- "you still have to win once in a while."
@@ -162,10 +197,31 @@ WHEN Others RETURN 100 FORCE
 // PHILOSOPHY: the dialed-DOWN bluff frequency is restraint, not timidity - over-bluffing
 // is forcing. [Tao ch.9 "fill a cup to its brim and it spills"][Tao ch.24 "he who strides
 // cannot keep pace"][48L L16 "use absence to increase respect" - don't over-bluff].
+//
+// AGGRESSOR-KNOB MODULATION [Emrald 2026-06-20]: the cross-street rhythm (12_aggressor)
+// retunes the air-c-bet frequency. f$AggressorKnob is the PFR=aggressor by definition
+// on the flop, so it reads 2 in position / 1 OOP whenever we c-bet; f$ConservativeKnob
+// reads >0 only when an OPPONENT is the carried aggressor (i.e. we are NOT the flop PFR,
+// so the air-c-bet branches below cannot fire then anyway) - it is wired here for the
+// post-flop streets that also call f$CbetFreq (turn float / stab) where we may NOT hold
+// the lead. Net effect: fire MORE when pressing in position (knob 2), LESS / give up when
+// out of position vs an opp-aggressor in a sticky spot. The f$Style base is preserved.
+// [CtM p130 cbet ~75% as the aggressor; p153 give up when they fight back]
+WHEN f$ConservativeKnob >= 2 RETURN 0.30 FORCE
+WHEN f$ConservativeKnob = 1 RETURN 0.45 FORCE
+WHEN f$AggressorKnob >= 2 AND f$HeadsUpPot AND NOT f$Opp_IsStation RETURN 0.88 FORCE
+WHEN f$AggressorKnob >= 2 RETURN 0.78 FORCE
 WHEN f$HeadsUpPot AND NOT f$Opp_IsStation RETURN 0.80 FORCE
 WHEN f$Style = 1 RETURN 0.80 FORCE
 WHEN f$Style = 0 RETURN 0.60 FORCE
 WHEN Others RETURN 0.60 FORCE
+
+##f$CbetFreq##
+// The c-bet frequency actually used by the street files = the book/style/rhythm base
+// (f$CbetFreqBase) scaled by the runtime AGGRESSION knob (f$AggroFreqMult), clamped so we
+// never c-bet 100% (stays deceptive). Knob at neutral (0.5) -> x1.0 = unchanged. [Emrald knob]
+WHEN f$CbetFreqBase * f$AggroFreqMult >= 0.95 RETURN 0.95 FORCE
+WHEN Others RETURN f$CbetFreqBase * f$AggroFreqMult FORCE
 
 //-----------------------------------------------------------------------------
 //  Draw / pot-odds thresholds.
@@ -387,7 +443,7 @@ WHEN StraightPossible AND prwin < 0.50 RETURN false FORCE
 WHEN (f$ScaryBoard OR f$BoardDry) AND f$Opp_Foldy RETURN true FORCE
 WHEN Others RETURN false FORCE
 
-##f$ThreeBetBluffFreq##
+##f$ThreeBetBluffFreqBase##
 // Frequency cap for 3-bet bluffs by opponent type: bluff foldy/nits often (they over-fold),
 // never stations/fish or light-3-bettors (no fold equity / they fight back). [ER p7][LTBR p11]
 // [SunTzu VI.30 "attack where he is unprepared, undefended" -> attack fold equity (foldy/nit
@@ -402,6 +458,34 @@ WHEN f$Opp_ThreeBetsLight RETURN 0 FORCE
 WHEN f$Opp_IsNit RETURN 0.70 FORCE
 WHEN f$Opp_Foldy RETURN 0.55 FORCE
 WHEN Others RETURN 0.30 FORCE
+
+##f$ThreeBetBluffFreq##
+// The 3-bet-bluff frequency used by 40_preflop = the opponent-typed base scaled by the runtime
+// BLUFF knob (f$BluffFreqMult). Capped at 0.90 so we never 3-bet-bluff a foldy type 100%. Vs
+// stations/fish/light-3bettors/pot-committed the base is already 0 -> stays 0 (knob can't create
+// fold equity that isn't there). Knob neutral -> unchanged. [Emrald bluff knob]
+WHEN f$ThreeBetBluffFreqBase * f$BluffFreqMult >= 0.90 RETURN 0.90 FORCE
+WHEN Others RETURN f$ThreeBetBluffFreqBase * f$BluffFreqMult FORCE
+
+##f$DoubleBarrelFreq##
+// Turn double-barrel bluff frequency (base 0.62) scaled by the runtime BLUFF knob. [Emrald]
+WHEN 0.62 * f$BluffFreqMult >= 0.95 RETURN 0.95 FORCE
+WHEN Others RETURN 0.62 * f$BluffFreqMult FORCE
+
+##f$TripleBarrelFreq##
+// River triple-barrel bluff frequency (base 0.22, kept deliberately LOW) scaled by the BLUFF knob.
+WHEN 0.22 * f$BluffFreqMult >= 0.60 RETURN 0.60 FORCE
+WHEN Others RETURN 0.22 * f$BluffFreqMult FORCE
+
+##f$FloatStabFreq##
+// In-position flop stab/float frequency (base 0.50) scaled by the BLUFF knob.
+WHEN 0.50 * f$BluffFreqMult >= 0.90 RETURN 0.90 FORCE
+WHEN Others RETURN 0.50 * f$BluffFreqMult FORCE
+
+##f$FloatTurnFreq##
+// Float-the-turn take-away frequency (base 0.70) scaled by the BLUFF knob.
+WHEN 0.70 * f$BluffFreqMult >= 0.95 RETURN 0.95 FORCE
+WHEN Others RETURN 0.70 * f$BluffFreqMult FORCE
 
 //-----------------------------------------------------------------------------
 //  Bet-timing tells.  Hiss measures how long each chair dwells on its to-act

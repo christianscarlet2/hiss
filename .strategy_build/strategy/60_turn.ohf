@@ -17,10 +17,12 @@ WHEN Others RETURN f$turn_vs_bet FORCE
 //-----------------------------------------------------------------------------
 
 ##f$turn_nobet##
-// Value with strong made hands. Vs a calling station, size UP (pot/overbet) for
-// value - they pay on their own hand - exactly as on the flop. Carry the station
-// upsizing across the streets so the value plan stays coherent. [CtM p147,149]
-WHEN f$HaveStrongMade AND f$Opp_IsStation RaiseBy f$BetPctVsStation % FORCE
+// Value with strong made hands. Vs ANY passive calling type - station, fish, SLP -
+// size UP (pot/overbet) for value: they pay on their own hand - exactly as on the
+// flop. EXTRACTION: bet, bet, shop the strong hands; carry the value-big plan across
+// every street so it stays coherent. [CtM p147,149 value big; p193 extraction; p171
+// barrel two-pair+ for stacks; p169 barrel SLPs/fish]
+WHEN f$HaveStrongMade AND (f$Opp_IsStation OR f$Opp_IsFish OR f$Opp_IsSLP) RaiseBy f$BetPctVsStation % FORCE
 WHEN f$HaveStrongMade RaiseBy f$BetPctTurn % FORCE
 // SUPERSTITION (666 Card Oracle): the Beast favors -> fire EVERY draw as a semibluff. Inert when off.
 WHEN (f$HaveWeakDraw OR f$HaveBigDraw OR f$HaveComboDraw) AND sb_beastfavor >= 0.66 RaiseBy f$BetPctTurn % FORCE
@@ -33,9 +35,19 @@ WHEN f$InPositionPost AND f$HeadsUpPot AND BotCalledOnFlop AND NOT f$Opp_IsStati
 // Double-barrel: the turn is an under-bet street. Fire vs reg/foldy types (never
 // stations/fish) on scary/dry boards that miss villain's peeling range. [EG][ER][LTBR][ASH]
 WHEN f$DoubleBarrel AND randomround < 0.62 RaiseBy f$BetPctTurn % FORCE
-// One pair: thin value vs a station; power-style barrels heads-up; else POT CONTROL (check). [N]
-WHEN f$HaveOnePair AND f$Opp_IsStation RaiseBy f$BetPctTurn % FORCE
+// RHYTHM (12_aggressor): when an opponent holds the initiative and I act before him,
+// do NOT lead a marginal hand into the aggressor on the turn - check and let him bet,
+// then bluff-catch the good ones at a price (handled in turn_vs_bet). Strong made fired
+// above. [CtM p166-168 give up / pot-control OOP][Tao ch.78 yielding]
+WHEN f$ActBeforeAggressor AND NOT f$HaveStrongMade AND NOT f$HaveBigDraw AND NOT f$HaveComboDraw Check FORCE
+// One pair: thin value vs a station/SLP/fish; power-style barrels heads-up; else POT
+// CONTROL (check). Don't bother thin-value-barrelling regs - they won't call worse. [N][CtM p169]
+WHEN f$HaveOnePair AND (f$Opp_IsStation OR f$Opp_IsSLP OR f$Opp_IsFish) RaiseBy f$BetPctTurn % FORCE
 WHEN f$HaveOnePair AND f$Style = 1 AND f$HeadsUpPot RaiseBy f$BetPctTurn % FORCE
+// FEELER (12_aggressor): instead of checking blind with a marginal made hand, fire a small
+// controlled bet (f$FeelerSize) to learn where I stand + control the pot - IP or with the lead
+// only. The response is read by f$OppRepresents on the river. [Emrald feeler system]
+WHEN f$FeelerBet RaiseBy f$FeelerSize % FORCE
 WHEN Others Check FORCE
 
 //-----------------------------------------------------------------------------
@@ -56,8 +68,21 @@ WHEN f$HaveComboDraw RaiseMax FORCE
 // Big draws: continue at a price; in position can peel a bit wider.
 WHEN f$HaveBigDraw AND f$CheapDraw Call FORCE
 WHEN f$HaveBigDraw AND f$DecentPrice AND f$InPositionPost Call FORCE
+// STORY (12_aggressor / CtM): a TURN raise or lead-into is "usually the nuts" (two
+// pair+) at the micros - passive players don't turn a hand into a bluff here. Once we
+// are NOT committed (the get-it-in branch above already fired the truly committed
+// hands), fold even an overpair / top pair a fair bit of the time to a credible
+// turn-aggression story. Don't pay it off, don't bluff-raise it. [CtM p172 "fold to
+// turn raises/leads without a strong hand vs all types"; p202-203 fold overpair vs nits;
+// p216 "turn raises are usually the nuts"]
+WHEN (f$HaveOnePair OR HaveOverPair OR HaveTopPair) AND NOT f$Committed AND f$Opp_NutsyRaise Fold FORCE
+WHEN (f$HaveOnePair OR HaveOverPair OR HaveTopPair) AND NOT f$Committed AND f$OppStoryStrong AND (f$Opp_IsNit OR f$Opp_IsPassive) Fold FORCE
 // Timing tell: a tanked turn bet is usually strength -> release a bare one pair. [Caro]
 WHEN f$HaveOnePair AND f$TimingSaysStrong Fold FORCE
+// ATTACK a capped/weak turn line (a min/probe lead or a checked-prior-street stab):
+// bluff-catch one pair wider at a price - and never vs a pot-committed villain. [CtM
+// p210-211 probe bets are weak; p162 delayed/floated lines are capped]
+WHEN f$HaveOnePair AND f$OppStoryCapped AND f$DecentPrice AND NOT f$Opp_PotCommitted Call FORCE
 // One pair: call as a bluff-catcher only at a price vs non-passive players; never
 // stack off. [N "don't go broke with one pair"]
 WHEN f$HaveOnePair AND f$Opp_IsAggro AND f$DecentPrice Call FORCE
@@ -67,4 +92,7 @@ WHEN f$HaveOnePair AND f$TimingSaysWeak AND f$DecentPrice Call FORCE
 // SUPERSTITION (666 Card Oracle): the Beast favors -> CHASE the draw regardless of price. Inert when off.
 WHEN (f$HaveBigDraw OR f$HaveComboDraw) AND sb_beastfavor >= 0.80 RaiseBy f$BetPctTurn % FORCE
 WHEN (f$HaveBigDraw OR f$HaveComboDraw OR f$HaveWeakDraw) AND sb_beastfavor >= 0.50 Call FORCE
+// CHEAP CALL (12_aggressor): a small turn bet is worth calling with showdown value/draw - the
+// price beats their capped small-betting range, excluding a credible nut story. [Emrald]
+WHEN f$WorthCallingSmall Call FORCE
 WHEN Others Fold FORCE

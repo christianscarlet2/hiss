@@ -227,6 +227,10 @@
       var f = document.getElementById("hiss-frame");   // lazy-load the React table view on first view
       if (f && !f.src) f.src = "/table-display";
     }
+    if (name === "educate") {
+      var ef = document.getElementById("edu-frame");   // lazy-load the Educate page on first view
+      if (ef && !ef.src) ef.src = "/terminal/educate.html";
+    }
   }
   if (tabsEl) tabsEl.addEventListener("click", function (e) {
     var b = e.target && e.target.closest ? e.target.closest(".tab") : null;
@@ -394,6 +398,77 @@
       pair: "Everything — it's the hands that carry out whatever brain (OHF or NN) is steering." }
   ];
 
+  // ---- Live runtime KNOBS (interactive sliders -> /api/knob, 0..1, 0.5 = neutral) ----
+  var KNOBS = [
+    { id: "openrange", icon: "🃏", label: "Opening Range",
+      does: "Widens (toward 1) or tightens (toward 0) my PREFLOP opening range. Up = open the wide ~65% steal range from late position / the small blind; down = open only premium, MP-strength hands from every seat. 0.5 = the book default. Short stacks still revert to push/fold regardless.",
+      pair: "Strategy Style · Aggression Frequency (open wide + bet often = LAG) · Stack Depth." },
+    { id: "aggro", icon: "⚔️", label: "Aggression Frequency",
+      does: "How OFTEN I bet/raise as the aggressor — scales the c-bet & barrel frequency from ×0.55 (at 0, passive check-call) up to ×1.45 (at 1, relentless). 0.5 = neutral (today's behavior). Clamped so I never c-bet 100% (stays deceptive).",
+      pair: "C-bet Frequency (this multiplies it) · Bluff Frequency · Strategy Style (Power already runs hot)." },
+    { id: "bluff", icon: "🎭", label: "Bluff Frequency",
+      does: "How often I run a BLUFF — scales every dedicated bluff line (3-bet bluff, double & triple barrel, IP stabs) ×0.55…×1.45. Up = high bluff; down = value-only. Never manufactures fold equity that isn't there (stays 0 vs stations/fish/pot-committed). 0.5 = neutral.",
+      pair: "Aggression Frequency · Opponent type (foldy / nits over-fold) · Strategy Style." }
+  ];
+  var KNOB_LS = "hiss_knobs_v1";
+  var knobTouch = 0;   // ts of the last user interaction (suppress server-sync briefly so we don't fight a drag)
+
+  function readKnobLS() { try { return JSON.parse(localStorage.getItem(KNOB_LS) || "{}"); } catch (e) { return {}; } }
+  function writeKnobLS(o) { try { localStorage.setItem(KNOB_LS, JSON.stringify(o)); } catch (e) {} }
+  function knobsHtml() {
+    var h = '<div class="syn-knobs"><div class="syn-knobs-h">&#9881;&nbsp;Live Knobs &mdash; drag to retune the bot instantly (no rebuild). 0.5 = neutral. Saved in this browser &amp; re-applied to the bot when this tab opens.</div>';
+    for (var i = 0; i < KNOBS.length; i++) {
+      var k = KNOBS[i];
+      h += '<div class="knob-card">'
+        + '<div class="knob-top"><span class="syn-icon">' + k.icon + '</span>'
+        + '<span class="knob-label">' + escapeHtml(k.label) + '</span>'
+        + '<span class="knob-val" id="knobval-' + k.id + '">0.50</span></div>'
+        + '<input type="range" class="knob-slider" id="knob-' + k.id + '" min="0" max="100" value="50" />'
+        + '<div class="knob-scale"><span>0 &middot; min</span><span>0.5 &middot; neutral</span><span>1 &middot; max</span></div>'
+        + '<div class="syn-row"><span class="syn-k">does</span><span class="syn-v">' + escapeHtml(k.does) + '</span></div>'
+        + '<div class="syn-row"><span class="syn-k">pair&nbsp;with</span><span class="syn-v">' + escapeHtml(k.pair) + '</span></div>'
+        + '</div>';
+    }
+    return h + '</div>';
+  }
+  function setKnobUI(id, v) {
+    var s = document.getElementById("knob-" + id), l = document.getElementById("knobval-" + id);
+    if (s) s.value = Math.round(v * 100);
+    if (l) l.textContent = v.toFixed(2);
+  }
+  function postKnob(id, v) {
+    fetch("/api/knob?name=" + id + "&value=" + v.toFixed(3), { cache: "no-store" })
+      .then(function (r) { return r.json(); }).then(function () { setSynConn(true); })
+      .catch(function () { setSynConn(false); });
+  }
+  function bindKnobs() {
+    KNOBS.forEach(function (k) {
+      var s = document.getElementById("knob-" + k.id);
+      if (!s) return;
+      s.addEventListener("input", function () {
+        var v = parseInt(s.value, 10) / 100; knobTouch = Date.now();
+        var l = document.getElementById("knobval-" + k.id); if (l) l.textContent = v.toFixed(2);
+        var o = readKnobLS(); o[k.id] = v; writeKnobLS(o);
+        postKnob(k.id, v);
+      });
+    });
+  }
+  function loadKnobs() {
+    var o = readKnobLS();
+    KNOBS.forEach(function (k) {
+      var v = (o[k.id] !== undefined) ? o[k.id] : 0.5;
+      setKnobUI(k.id, v);
+      if (o[k.id] !== undefined) postKnob(k.id, v);   // re-apply the saved knob to the (maybe restarted) bot
+    });
+  }
+  function pollKnobs() {
+    if (Date.now() - knobTouch < 3000) return;        // don't fight an active drag / fresh change
+    fetch("/api/knob", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
+      setSynConn(true);
+      KNOBS.forEach(function (k) { if (j[k.id] !== undefined) setKnobUI(k.id, parseFloat(j[k.id])); });
+    }).catch(function () {});
+  }
+
   var synWrap = document.getElementById("syn-wrap");
   var synConn = document.getElementById("syn-conn");
   var synLive = {};
@@ -406,7 +481,7 @@
 
   function renderSynapse() {
     if (!synWrap) return;
-    var html = "";
+    var html = knobsHtml();
     for (var i = 0; i < SYNAPSE_DIALS.length; i++) {
       var d = SYNAPSE_DIALS[i];
       var lv = synLive[d.id] || "&mdash;";
@@ -420,6 +495,8 @@
         + '</div>';
     }
     synWrap.innerHTML = html;
+    bindKnobs();
+    loadKnobs();
   }
 
   function setSynVal(id, str) {
@@ -429,6 +506,7 @@
   }
 
   function pollSynapse() {
+    pollKnobs();   // reflect live knob values (e.g. a manic burst) back onto the sliders
     var symDials = SYNAPSE_DIALS.filter(function (d) { return d.live.kind === "symbol"; });
     if (symDials.length) {
       var names = symDials.map(function (d) { return d.live.name; }).join(",");

@@ -33,6 +33,29 @@ broadened station; flop get-it-in-when-committed + value-big-vs-station.
 
 NOT YET DEPLOYED — source tree only. Mirror + restart Hiss at an idle moment.
 
+### [CtM] DEEPENED + cross-street aggressor mechanics (2026-06-20, source tree, lint clean)
+
+The freeroll/low-stakes field is the bot's home game, so CtM is the highest-value book.
+Deepened from the shallow Tier-1 pass (did NOT duplicate the existing value-big-vs-station /
+station-typing / set-mine lines) and added the three Emrald-requested mechanics. New file
+`12_aggressor.ohf`. Lint/parse clean. NOT deployed — human builds + restarts.
+
+- **New file 12_aggressor.ohf** — `f$IAmAggressor`/`f$AggressorIsOpp`/`f$ActBeforeAggressor`
+  (cross-street initiative via the `aggressorchair`/`iamaggressor` engine symbols);
+  `f$ConservativeKnob`/`f$AggressorKnob` (0/1/2 rhythm dials); the `f$OppRepresents` (0-3)
+  read-the-line story engine + `f$OppStoryStrong`/`f$OppStoryCapped`/`f$OppMinLead`/
+  `f$OppCheckedPriorStreet`/`f$OppLineRaisedThisStreet`/`f$OppCheckedToMe`. [EM][CtM]
+- **f$CbetFreq tied to the knobs** (05_config) — fire more pressing IP (knob 2 → 0.78-0.88),
+  give up OOP vs an opp-aggressor in a sticky spot (knob → 0.30-0.45); f$Style base kept. [Emrald]
+- **New archetype f$Opp_IsSLP** (~24/6 semi-loose-passive) + bet-pattern reads
+  `f$Opp_MinBetLead` / `f$Opp_NutsyRaise`; SLP folded into f$Opp_PotCommitted (no-bluff). [CtM p38,216-217,232]
+- **Rhythm + story wired** into 50/60/70: check (don't lead) OOP vs the aggressor; respect a
+  credible nut line (fold one pair to a flop raise/check-raise, fold one pair+overpair to
+  turn/river raises = "the nuts"); attack a capped line (raise donk/min-leads IP, value-call
+  fish's missed-draw river bluffs); EXTRACTION/value-big extended to station+fish+SLP all streets. [CtM]
+- **Preflop** (40): flat (not 3-bet) into a nit's tight open; fold even QQ/JJ/AK to a nit/passive 3-bet. [CtM p96,107,109]
+- [Beating the Micros .docx] skimmed — same author/genre, fully subsumed by CtM's deeper text; no net-new dial.
+
 ---
 
 ## TIER 2 WAVE 1 — DONE (2026-06-15, deployed live + lint/parse clean)

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Hiss Terminal</title>
-    <link rel="stylesheet" href="/terminal/assets/terminal.css?v=6" />
+    <link rel="stylesheet" href="/terminal/assets/terminal.css?v=7" />
   </head>
   <body>
     <div id="app">
@@ -15,6 +15,7 @@
           <button type="button" class="tab" data-tab="ail">AIL</button>
           <button type="button" class="tab" data-tab="synapse"><span class="dna">&#129516;</span>&nbsp;Synapse&nbsp;Harmonizer</button>
           <button type="button" class="tab" data-tab="hiss"><span class="snake">&#128013;</span>&nbsp;Hiss</button>
+          <button type="button" class="tab" data-tab="educate"><span class="cap">&#127891;</span>&nbsp;Educate</button>
         </nav>
         <span class="status" id="status">connecting&hellip;</span>
       </header>
@@ -71,7 +72,12 @@
       <div class="tabview" id="tab-hiss" hidden>
         <iframe id="hiss-frame" class="hiss-frame" title="Hiss React Table View"></iframe>
       </div>
+
+      <!-- ============ EDUCATE TAB (how the bot & OHF work) ============ -->
+      <div class="tabview" id="tab-educate" hidden>
+        <iframe id="edu-frame" class="hiss-frame" title="Hiss - Educate"></iframe>
+      </div>
     </div>
-    <script src="/terminal/assets/terminal.js?v=6"></script>
+    <script src="/terminal/assets/terminal.js?v=7"></script>
   </body>
 </html>

@@ -1,0 +1,236 @@
+//*****************************************************************************
+//  12_aggressor - CROSS-STREET AGGRESSOR RHYTHM + "what is the opponent
+//  representing" inference.  [Emrald 2026-06-20]
+//
+//  Two engine symbols, REMEMBERED across the current + previous street, drive
+//  this whole file (added to the C++ engine + the lint whitelist):
+//     aggressorchair  chair 0-9 of the last raiser (-1 = none yet this hand)
+//     iamaggressor    1 if aggressorchair = userchair, else 0
+//
+//  The two ideas here are the micro-stakes spine made explicit:
+//   1) RHYTHM. When the OPPONENT is the aggressor and I act before him next
+//      street (out of position vs him), the +EV play is to LET HIM DO THE
+//      BETTING - check, call raises with good-but-not-monster hands, and tighten
+//      bluffs - rather than lead/bet into the player who has the initiative.
+//      When *I* am the aggressor, keep barreling good equity / fold-equity spots.
+//      [CtM p153-174 "give up when they fight back"; p166 "when you've shown all
+//      this aggression and still can't shake them, you are usually behind";
+//      p59 "the importance of position" - OOP you play the hand blind].
+//   2) STORY. The opponent's BETTING LINE represents a perceived range. At the
+//      micros the population is so face-up (passive, unbalanced) that the line
+//      itself tells you whether to ATTACK, call, or RESPECT. [EM "How to Read
+//      Hands" / "Playing the Player" - read the line, not the cards][CtM
+//      "perceived ranges" p132, "turn/river raises are the nuts" p216-217].
+//
+//  These dials are CONSUMED by 50_flop / 60_turn / 70_river / 05_config
+//  (f$CbetFreq). They are additive soft modifiers reconciled with the existing
+//  spine - they tighten/loosen at the margin, they do not double-fire the value
+//  or commitment lines.
+//*****************************************************************************
+
+//=============================================================================
+//  (1)  CROSS-STREET AGGRESSOR RHYTHM
+//=============================================================================
+
+##f$IAmAggressor##
+// I hold the betting initiative carried across streets (I made the last raise).
+iamaggressor
+
+##f$AggressorIsOpp##
+// An opponent holds the initiative (someone has raised this hand and it is not me).
+WHEN aggressorchair >= 0 AND NOT iamaggressor RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$ActBeforeAggressor##
+// I act before the aggressor on the next street, i.e. I am OUT OF POSITION vs the
+// player who holds the initiative. This is the "let THEM do the betting, call
+// raises with good hands" rhythm spot: betting into the aggressor OOP bloats the
+// pot blind and folds out everything I beat. [CtM p59 position][EM read-the-line]
+WHEN f$AggressorIsOpp AND NOT f$InPositionPost RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$ConservativeKnob##
+// 0/1/2 restraint dial. UP a LOT (2) when I am OOP vs an opponent-aggressor
+// (f$ActBeforeAggressor) - this is the highest-discipline rhythm spot (check &
+// call, don't lead, tighten bluffs); UP SOME (1) when an opponent merely holds
+// the initiative but I have position on him; 0 otherwise. [CtM "give up when they
+// fight back"][Tao ch.78 "the soft and yielding overcomes"]
+WHEN f$ActBeforeAggressor RETURN 2 FORCE
+WHEN f$AggressorIsOpp RETURN 1 FORCE
+WHEN Others RETURN 0 FORCE
+
+##f$AggressorKnob##
+// 0/1/2 pressure dial. UP a LOT (2) when I am the aggressor AND in position
+// (keep barreling - position + initiative is the whole edge); UP SOME (1) when I
+// am the aggressor out of position; 0 when I do not hold the initiative.
+// [CtM p56 "the importance of initiative"; p130 cbet ~75%]
+WHEN f$IAmAggressor AND f$InPositionPost RETURN 2 FORCE
+WHEN f$IAmAggressor RETURN 1 FORCE
+WHEN Others RETURN 0 FORCE
+
+//=============================================================================
+//  (2)  "WHAT IS THE OPPONENT REPRESENTING" - story / perceived-range inference
+//
+//  Scale (gates value / bluff / fold downstream):
+//    0  NO STORY      - checked to me / no aggression yet -> normal lines.
+//    1  CAPPED / WEAK  - a line that caps the range: a small donk/min-lead, a
+//       float (flat) line, or a STATION/FISH who bets (no real range - they bet
+//       any pair/draw). -> ATTACK: bluff-raise / float / thin value widened.
+//       [CtM p150 "donked into" raise wide; p210-211 "min/donk/probe bets are a
+//       dead giveaway they have nothing"; p162 float = hit but not huge].
+//    2  MERGED / STD   - one standard c-bet / single barrel. -> call good, fold
+//       air. The default postflop story. [CtM p131 cbetting; p153 after the cbet].
+//    3  STRONG / CREDIBLE - a credible nut-weighted line: a 3-bet+ preflop line,
+//       a check-raise, a TURN or RIVER raise/lead, a NIT/PASSIVE player firing,
+//       or a pot-committed villain on a scary/coordinated board. -> RESPECT:
+//       fold marginal, NO bluff-raise. [CtM p216 "turn raises are the nuts";
+//       p217 "river raises are ALWAYS the nuts"; p153 "passive players raising =
+//       strength"; p202 "facing aggression with an overpair - fold vs nits"]
+//=============================================================================
+
+##f$OppCheckedToMe##
+// No villain aggression on THIS street: it is checked to me (no bet to call and
+// no raise this round). The story is "0 - no story" foundation.
+WHEN AmountToCall = 0 AND Bets = 0 AND Raises = 0 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$OppMinLead##
+// A tiny donk/probe lead (<= ~30% pot) facing us: at the micros this caps the
+// villain hard - "they want to see where they are at"; it is a draw / weak pair /
+// air far more than a value bet. Treat as weakness to attack. [CtM p150,p210-211]
+WHEN AmountToCall > 0 AND AmountToCall * 3 <= PotSize RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$OppCheckedPriorStreet##
+// The opponent showed weakness earlier in the hand: there was no villain bet or
+// raise on a PREVIOUS street (flop checked through to us on the turn, or
+// flop+turn checked through on the river). A line that was passive then suddenly
+// bets is capped - a delayed stab, not a planned value line. [EM read-the-line]
+WHEN IsTurn AND NoVillainBetOrRaisedOnFlop RETURN true FORCE
+WHEN IsRiver AND NoVillainBetOrRaisedOnFlop AND NoVillainBetOrRaisedOnTurn RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$OppLineRaisedThisStreet##
+// The opponent RAISED us on this street (a check-raise or a raise of our bet).
+WHEN Raises >= 1 AND AmountToCall > 0 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$OppRepresents##
+// The opponent's betting-line story (0-3). Built bottom-up so the STRONGEST
+// credible signals win first.
+//
+// 3 = STRONG / CREDIBLE (respect, fold marginal, never bluff-raise):
+WHEN f$OppLineRaisedThisStreet AND (IsTurn OR IsRiver) RETURN 3 FORCE
+WHEN Raises >= 2 RETURN 3 FORCE
+WHEN f$OppLineRaisedThisStreet AND (f$Opp_IsNit OR f$Opp_IsPassive) RETURN 3 FORCE
+WHEN AmountToCall > 0 AND (f$Opp_IsNit OR f$Opp_IsPassive) AND NOT f$OppMinLead RETURN 3 FORCE
+WHEN f$Opp_PotCommitted AND (f$ScaryBoard OR f$BoardWet) AND AmountToCall > 0 RETURN 3 FORCE
+// 1 = CAPPED / WEAK (attack - widen bluff-raises / floats / thin value):
+WHEN f$OppMinLead RETURN 1 FORCE
+WHEN AmountToCall > 0 AND f$OppCheckedPriorStreet RETURN 1 FORCE
+WHEN AmountToCall > 0 AND (f$Opp_IsStation OR f$Opp_IsFish) AND NOT (IsTurn OR IsRiver) RETURN 1 FORCE
+// 0 = NO STORY (checked to me / nobody has done anything aggressive):
+WHEN f$OppCheckedToMe RETURN 0 FORCE
+// 2 = MERGED / STANDARD (a single, ordinary bet) - the default when facing a bet.
+WHEN Others RETURN 2 FORCE
+
+##f$OppStoryStrong##
+// Convenience gate: RESPECT the line (fold marginal hands, do not bluff-raise).
+WHEN f$OppRepresents >= 3 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$OppStoryCapped##
+// Convenience gate: ATTACK the line (widen bluff-raise / float / thin value).
+// Never "attack" a station/fish by bluffing them OFF a hand - the capped-attack
+// downstream is float / thin-VALUE there, never a bluff-raise. [CtM p176 don't
+// bluff the fish]
+WHEN f$OppRepresents = 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//=============================================================================
+//  (3)  RANGE CHART vs OUR HAND  -  "is anything in their range ahead of us?"
+//
+//  Emrald's rule: "if a hand is not in the range that would beat us, we are SAFE
+//  to proceed - bet, call, or check." OpenPPL cannot enumerate equity vs a custom
+//  combo range (prwin uses fixed assumptions), so this is a practical MADE-HAND
+//  vs REPRESENTED-VALUE-RANGE read: the opponent's line (f$OppRepresents) + the
+//  board texture imply the TOP of their value range; we then ask whether OUR made
+//  hand class sits above it. The literal 169-combo chart is visualised per-seat in
+//  the React table view (the range grid under the HUD). [EM read-the-line][CtM
+//  p132 perceived ranges; p202 fold the overpair to the nit; p216-217 raises=nuts]
+//=============================================================================
+
+##f$BeatenByOppRange##
+// TRUE when the opponent's represented (narrowed) value range contains hands that
+// BEAT our current made hand.
+// We hold the top of essentially any micro value range -> nothing beats us:
+WHEN f$HaveStrongMade RETURN false FORCE
+WHEN HaveSet OR HaveTwoPair OR HaveStraight OR HaveFlush OR HaveFullHouse OR HaveQuads OR HaveStraightFlush RETURN false FORCE
+// A capped / weak / no story can't credibly hold a hand that beats a real made hand:
+WHEN f$OppRepresents <= 1 RETURN false FORCE
+// A credible, nut-weighted line (turn/river raise, nit/passive firing, 3-bet line,
+// committed on a scary board) beats our one-pair-class holdings:
+WHEN f$OppStoryStrong RETURN true FORCE
+// One pair facing a standard merged bet on a wet/scary board: hands beat us:
+WHEN f$HaveOnePair AND f$OppRepresents >= 2 AND (f$ScaryBoard OR f$BoardWet) RETURN true FORCE
+// Otherwise (we hold a decent hand vs a merged range on a dry board) -> ahead:
+WHEN Others RETURN false FORCE
+
+##f$SafeVsOppRange##
+// [Emrald] TRUE = NOTHING in the opponent's represented range beats us -> SAFE to
+// PROCEED confidently (value-bet, call, or check for value/showdown). FALSE = their
+// range has us beat -> pot-control or fold the marginal stuff. This is the positive
+// face of f$BeatenByOppRange, used to GREEN-LIGHT thin value + bluff-catches.
+WHEN NOT f$BeatenByOppRange RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//=============================================================================
+//  (4)  FEELER / INFORMATION BETS + cheap bluff-catch  [Emrald]
+//  When I don't yet know where I stand, bet SMALL to (a) gather information - the
+//  villain's RESPONSE to the size feeds f$OppRepresents on the next street - and
+//  (b) control the pot. Size as LARGE as possible while STILL controlling it. On
+//  defence: a small bet into me is cheap to call with any showdown value, and a
+//  tiny (~1bb) bet is itself information (a capped/weak line, read by f$OppMinLead).
+//=============================================================================
+
+##f$SmallBet##
+// The bet facing us is cheap: <= ~1/3 pot (>= 3:1; need <= ~25% equity). Micro
+// small/min bets are weak and under-bluff-to-fold. [CtM p210-211][PMM pot odds]
+WHEN AmountToCall > 0 AND AmountToCall * 3 <= PotSize RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$WorthCallingSmall##
+// Even if I might be behind, a small bet is worth CALLING with any showdown value /
+// draw (cheap price vs a capped small bet) - unless the line is a credible nut story.
+// [Emrald "if the bet is small it may be worth calling"]
+WHEN f$SmallBet AND NOT f$OppStoryStrong AND (f$HaveOnePair OR HaveTopPair OR HaveOverPair OR HaveSet OR HaveTwoPair OR f$HaveBigDraw) RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$WhereAmIUnsure##
+// I hold a MARGINAL made hand (one-pair class) and I am neither clearly strong nor told to
+// respect a credible line -> the FEELER spot: a small controlled bet learns where I stand and
+// keeps the pot manageable, instead of checking blind or over-committing. This is decoupled
+// from whether they have bet yet: first-to-act it is a probe; the response is read next street
+// by f$OppRepresents. [Emrald feeler system][CtM pot control / sizing-for-info]
+WHEN f$HaveStrongMade OR HaveSet OR HaveTwoPair OR HaveStraight OR HaveFlush RETURN false FORCE
+WHEN f$OppStoryStrong RETURN false FORCE
+WHEN f$HaveOnePair OR HaveTopPair OR HaveOverPair RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$FeelerSize##
+// Information / pot-control bet %, "as LARGE as possible while still controlling the
+// pot": half-pot default (gets a read AND charges draws); ~1/3 on dry boards vs
+// stations (cheaper, they tell you anyway); ~1/4 multiway or very deep (pure
+// information, minimise risk). The villain's RESPONSE to this size is then read by
+// f$OppRepresents on the next street. [Emrald feeler system][CtM p150 sizing-for-info]
+WHEN nopponentsplaying > 2 RETURN 25 FORCE
+WHEN f$BoardParched AND (f$Opp_IsStation OR f$Opp_IsFish) RETURN 33 FORCE
+WHEN f$EffStack > 150 RETURN 33 FORCE
+WHEN Others RETURN 50 FORCE
+
+##f$FeelerBet##
+// Fire a feeler when I'm unsure where I am AND I can take a controlled stab with the
+// lead / position (NOT out of position into the aggressor - that's the check-call
+// rhythm of f$ActBeforeAggressor). [Emrald]
+WHEN f$WhereAmIUnsure AND NOT f$ActBeforeAggressor AND (f$InPositionPost OR f$IAmAggressor) RETURN true FORCE
+WHEN Others RETURN false FORCE

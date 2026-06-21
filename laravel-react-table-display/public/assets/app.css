@@ -582,6 +582,24 @@ body {
   color: #aab1b8;
 }
 
+/* ---- opponent range grid (under the HUD; collapsed by default) [Emrald] ---- */
+.rg-toggle {
+  font-size: 9px; color: #7d8a96; cursor: pointer; text-align: center;
+  margin-top: 2px; user-select: none; letter-spacing: .3px;
+}
+.rg-toggle:hover { color: #cdd6df; }
+.rg-toggle.open { color: #3df57a; }
+.range-wrap { margin-top: 2px; }
+.range-grid {
+  display: grid; grid-template-columns: repeat(13, 1fr); gap: 1px;
+  width: 100px; margin: 2px auto 0;
+}
+.rg-cell { width: 100%; aspect-ratio: 1 / 1; background: rgba(255, 255, 255, .07); border-radius: 1px; }
+.rg-cell.on { background: #2e7d32; }
+.rg-cell.on.pair { background: #4caf50; }
+.rg-cell.on.suited { background: #2e7d32; }
+.rg-cell.on.offsuit { background: #1f5d24; }
+
 /* ---- dealer button -------------------------------------------------------- */
 /* An angled chip, positioned (inline left/top %) on the felt beside the player's bet. */
 .dealer {

@@ -18,10 +18,14 @@ WHEN Others RETURN f$flop_vs_bet FORCE
 
 ##f$flop_nobet##
 // Value & protection with strong made hands (bigger on wet boards - see f$BetPctFlop).
-// Vs a calling station, size UP for value (pot/overbet) - they pay on their own hand. [CtM p147]
-// Never attack his strength by bluffing it - make money from it by value-betting big.
-// [SunTzu IV "first make yourself invincible"][48L L15 "crush your enemy totally"]
-WHEN f$HaveStrongMade AND f$Opp_IsStation AND explain_value_flop RaiseBy f$BetPctVsStation % FORCE
+// EXTRACTION is the heart of crushing the micros: "flop a set, hit the pot button" -
+// NEVER win a small pot with a big hand; fastplay (no slowplay below quads). Size UP for
+// value (pot / even overbet) vs ANY of the passive calling types - station, fish AND SLP -
+// they pay on their own hand strength and read a big bet as a bluff. Never attack their
+// strength by bluffing; make the money by value-betting BIG. [CtM p193 "extraction - the
+// heart of it all"; p147,149 value big vs stations; p169 barrel SLPs/fish; p211 "fish view
+// big bets as a bluff"][SunTzu IV "first make yourself invincible"][48L L15 "crush the weak"]
+WHEN f$HaveStrongMade AND (f$Opp_IsStation OR f$Opp_IsFish OR f$Opp_IsSLP) AND explain_value_flop RaiseBy f$BetPctVsStation % FORCE
 WHEN f$HaveStrongMade AND explain_value_flop RaiseBy f$BetPctFlop % FORCE
 // SUPERSTITION (666 Card Oracle): when the Beast favors, fire EVERY draw as a semibluff.
 // sb_beastfavor is 0 unless card_oracle.py --superstition is feeding the omen -> inert when off.
@@ -35,6 +39,13 @@ WHEN f$HaveBigDraw AND NOT f$Opp_IsStation RaiseBy f$BetPctFlop % FORCE
 // semibluffs (above) still fire; this governs the marginal one-pair / air spots in position so we
 // act on information, not ahead of it. [info before action; pot control; delayed decision]
 WHEN f$InPositionPost AND f$HeadsUpPot AND NOT f$WasPreflopRaiser AND NOT f$HaveStrongMade Check FORCE
+// RHYTHM (12_aggressor): when an opponent holds the initiative and I act BEFORE him
+// (out of position vs the aggressor), do NOT lead a marginal hand into him - CHECK and
+// let HIM do the betting, then call with the good-but-not-monster hands. Strong made
+// (value, above) and big/combo draws (semibluff, above) still fired; this governs the
+// one-pair / weak spots so I act on his information, not ahead of it. [CtM p59 OOP play
+// blind; p168 pot-control / check OOP][Tao ch.78 "the soft and yielding overcomes"]
+WHEN f$ActBeforeAggressor AND NOT f$HaveStrongMade AND NOT f$HaveBigDraw AND NOT f$HaveComboDraw Check FORCE
 // One pair: bet to protect on wet boards or for thin value vs a station; as the
 // pre-flop raiser take the small pot now; otherwise pot-control. [N p.125]
 WHEN f$HaveOnePair AND f$BoardWet RaiseBy f$BetPctFlop % FORCE
@@ -52,6 +63,12 @@ WHEN f$WasPreflopRaiser AND f$HeadsUpPot AND randomround < f$CbetFreq AND explai
 WHEN f$WasPreflopRaiser AND f$Opp_Foldy AND randomround < f$CbetFreq RaiseBy f$BetPctFlop % FORCE
 // In-position stab to set up a turn take-away with a weak draw. [N float doctrine]
 WHEN f$InPositionPost AND f$HeadsUpPot AND f$HaveWeakDraw AND randomround < 0.50 RaiseBy f$BetPctFlop % FORCE
+// FEELER (12_aggressor): rather than checking blind with a marginal made hand, fire a SMALL
+// controlled bet (f$FeelerSize - as large as possible while still controlling the pot) to gather
+// information and keep the pot manageable. Only IP or with the initiative (never OOP into the
+// aggressor - that stays a check above). The villain's response feeds f$OppRepresents next street.
+// [Emrald feeler/information-bet system]
+WHEN f$FeelerBet RaiseBy f$FeelerSize % FORCE
 // One pair that did not bet above (not wet / not vs a station / not the PFR): keep the
 // pot small and get to showdown cheaply - don't go broke with one pair. [N p.125]
 WHEN f$HaveOnePair AND explain_potcontrol Check FORCE
@@ -75,8 +92,21 @@ WHEN f$HaveComboDraw RaiseMax FORCE
 WHEN f$HaveBigDraw AND f$Style = 1 RaiseBy f$BetPctFlop % FORCE
 WHEN f$HaveBigDraw AND f$CheapDraw Call FORCE
 WHEN f$HaveBigDraw AND f$DecentPrice AND f$InPositionPost Call FORCE
+// STORY (12_aggressor / CtM): RESPECT a credible nut-weighted line. A flop raise
+// (especially a check-raise) from a passive/nit micro villain represents top pair
+// or better the large majority of the time; folding a bare one pair here is the
+// standard, NOT a leak. [CtM p153-155 "when you get raised on the flop fold the
+// majority, esp OOP - passive players raising = strength"; p202 facing aggression]
+WHEN f$HaveOnePair AND NOT f$Committed AND f$OppStoryStrong AND explain_fold_pre Fold FORCE
+WHEN f$HaveOnePair AND NOT f$Committed AND f$Opp_NutsyRaise Fold FORCE
 // Timing tell: a tanked bet is usually strength -> release a bare one pair. [Caro]
 WHEN f$HaveOnePair AND f$TimingSaysStrong AND explain_fold_tank Fold FORCE
+// ATTACK a capped/weak line (12_aggressor): a min/probe lead or a station/fish
+// "betting nothing" caps the range hard - RAISE wide IP for value/fold-equity
+// rather than just calling, especially with any equity. NOT vs a station/fish off
+// a hand (no fold equity) - f$OppStoryCapped already excludes the strong line.
+// [CtM p150 "donked into - raise liberally with a wide range, esp IP"; p220 raise good draws]
+WHEN f$InPositionPost AND f$HeadsUpPot AND f$OppStoryCapped AND (f$HaveOnePair OR f$HaveAnyDraw) AND NOT f$Opp_PotCommitted RaiseBy f$BetPctFlop % FORCE
 // Peel one pair at a reasonable price - but never go broke with it. [N p.125]
 WHEN f$HaveOnePair AND f$DecentPrice Call FORCE
 // Timing tell: a snap bet leans weak -> peel one pair a bit wider. [Caro]
@@ -90,4 +120,8 @@ WHEN f$InPositionPost AND f$HeadsUpPot AND f$TimingSaysWeak AND f$DecentPrice Ca
 // Strong omen semibluff-raises; lesser omen just calls. Inert when sb_beastfavor = 0 (off).
 WHEN (f$HaveBigDraw OR f$HaveComboDraw) AND sb_beastfavor >= 0.80 RaiseBy f$BetPctFlop % FORCE
 WHEN (f$HaveBigDraw OR f$HaveComboDraw OR f$HaveWeakDraw) AND sb_beastfavor >= 0.50 Call FORCE
+// CHEAP CALL (12_aggressor): a SMALL bet into me is worth calling with any showdown value or
+// draw - the price beats their capped small-betting range even if I might be behind. Excludes a
+// credible nut story (built into f$WorthCallingSmall). [Emrald "if the bet is small, call"]
+WHEN f$WorthCallingSmall Call FORCE
 WHEN Others Fold FORCE

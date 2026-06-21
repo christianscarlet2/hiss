@@ -109,7 +109,47 @@ WHEN Others RETURN false FORCE
 
 ##f$Opp_IsManiac##
 // Hyper-aggressive, no fold equity against him: trap & induce, never bluff. [CtM p41]
+// CtM stat profile: VPIP very high, PFR very high, AF very high, fold-to-cbet very low.
 WHEN f$Opp_Known AND f$Opp_VPIP > 45 AND f$Opp_PFR > 30 AND f$Opp_AF > 4 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_IsSLP##
+// SEMI-LOOSE-PASSIVE - BlackRain79's distinct micro archetype the model was
+// missing: a casual player who plays too many hands but passively (~24/6, low AF).
+// He calls too much and calls any draw, but is NOT the 40%+ pure fish. The play vs
+// him is the same family as the fish: VALUE-BET WIDE & relentlessly, do NOT bluff
+// (low fold equity), pot-control thin. Sits between f$Opp_IsLoose and f$Opp_IsFish:
+// looser/wider than the fish floor but with the same passive, station-like calling
+// pattern. [CtM p38 "SLPs - value bet frequently and with a fairly wide range";
+// p169 "barrel SLPs and fish for value"; p176 "don't bluff SLPs and fish"]
+WHEN f$Opp_IsFish RETURN false FORCE
+WHEN f$Opp_Known AND f$Opp_VPIP >= 20 AND f$Opp_VPIP <= 40 AND f$Opp_PFR < 10 AND f$Opp_AF < 1.5 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  MICRO-STAKES BET-PATTERN reads (BlackRain79's "fish psychology"). At the
+//  micros the population is so face-up that the SIZE/SHAPE of villain's bet leaks
+//  his strength directly - independent of his archetype. These feed f$OppRepresents
+//  (12_aggressor) and the street value/bluff gates.
+//-----------------------------------------------------------------------------
+
+##f$Opp_MinBetLead##
+// A min-ish lead/probe bet (<= ~1.5bb, or <= ~20% pot): "seeing where they're at."
+// A dead giveaway of a weak/capped range (draw, weak pair, air) and very often a
+// recreational player. Ignore it / treat as a check and bet our standard size; raise
+// it wide IP for value or as a semibluff. NEVER fold a real hand to it. [CtM p232
+// "min bets - just pretend they checked"; p150 donk; p210-211 probe bets]
+WHEN AmountToCall <= 0 RETURN false FORCE
+WHEN AmountToCall <= 1.5 RETURN true FORCE
+WHEN AmountToCall * 5 <= PotSize RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_NutsyRaise##
+// A TURN or RIVER raise (we bet, villain raised) - at the micros this is "always
+// the nuts": two pair or better. Fold one pair / overpairs a lot, never bluff-raise
+// back. Flop raises are NOT included (those can be draws/wide). [CtM p216 "turn
+// raises are usually the nuts"; p217 "river raises are ALWAYS the nuts"]
+WHEN (IsTurn OR IsRiver) AND Raises >= 1 AND AmountToCall > 0 RETURN true FORCE
 WHEN Others RETURN false FORCE
 
 ##f$Opp_PotCommitted##
@@ -121,6 +161,9 @@ WHEN Others RETURN false FORCE
 // on NOT f$Opp_PotCommitted. [SunTzu VII.36 "leave a golden bridge for a retreating army"]
 // [Tao ch.69 "no greater disaster than underestimating the enemy"]
 WHEN f$Opp_IsStation OR f$Opp_IsFish OR f$Opp_IsManiac RETURN true FORCE
+// SLPs call too much / have no fold equity vs a bluff, just like stations & fish -
+// suppress bluffs into them too (value-bet wide instead). [CtM p176 don't bluff SLPs]
+WHEN f$Opp_IsSLP RETURN true FORCE
 WHEN EffectiveMaxStacksizeOfActiveOpponents <= PotSize RETURN true FORCE
 WHEN Others RETURN false FORCE
 

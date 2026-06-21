@@ -18,16 +18,20 @@ WHEN Others RETURN f$river_vs_bet FORCE
 //-----------------------------------------------------------------------------
 
 ##f$river_nobet##
-// Value-bet made hands. Vs a calling station, size UP (pot/overbet) on the strong
-// made hands - they pay on their own hand - exactly as on the flop/turn, so the
-// value-big-vs-station plan stays coherent across all three streets. [CtM p147,149]
-WHEN f$HaveBigMade AND f$Opp_IsStation AND explain_value_river RaiseBy f$BetPctVsStation % FORCE
-WHEN (HaveSet OR HaveTwoPair) AND f$Opp_IsStation RaiseBy f$BetPctVsStation % FORCE
+// Value-bet made hands. Vs ANY passive calling type - station, fish, SLP - size UP
+// (pot/overbet) on the strong made hands: they pay on their own hand - exactly as on
+// the flop/turn, so the value-big plan stays coherent across all three streets. River
+// extraction: bet-bet-SHOVE the monsters, even overbet/jam tiny pots into a fish who
+// fired probing bets (they don't fold two pair+, they won't raise either). [CtM p147,149
+// value big; p193 extraction; p205 overbet-shove monsters into a probing fish]
+WHEN f$HaveBigMade AND (f$Opp_IsStation OR f$Opp_IsFish OR f$Opp_IsSLP) AND explain_value_river RaiseBy f$BetPctVsStation % FORCE
+WHEN (HaveSet OR HaveTwoPair) AND (f$Opp_IsStation OR f$Opp_IsFish OR f$Opp_IsSLP) RaiseBy f$BetPctVsStation % FORCE
 // Value-bet made hands; fuller vs non-passive.
 WHEN f$HaveBigMade AND explain_value_river RaiseBy f$BetPctRiver % FORCE
 WHEN (HaveSet OR HaveTwoPair) AND NOT f$Opp_IsPassive RaiseBy f$BetPctRiver % FORCE
-// Thin value with one pair vs a calling station. [N p.147]
-WHEN f$HaveOnePair AND f$Opp_IsStation RaiseBy f$BetPctRiver % FORCE
+// Thin value with one pair vs a calling station / SLP / fish - they hero-call worse
+// pairs and ace-high. Don't thin-value one pair vs a reg (won't call worse). [N p.147][CtM p186]
+WHEN f$HaveOnePair AND (f$Opp_IsStation OR f$Opp_IsSLP OR f$Opp_IsFish) RaiseBy f$BetPctRiver % FORCE
 // Power-style value-bets one pair heads-up vs a non-aggressive opponent. [B]
 WHEN f$HaveOnePair AND f$Style = 1 AND f$HeadsUpPot AND NOT f$Opp_IsAggro RaiseBy f$BetPctRiver % FORCE
 // Low-frequency triple-barrel bluff: only as the flop+turn aggressor, busted,
@@ -35,6 +39,9 @@ WHEN f$HaveOnePair AND f$Style = 1 AND f$HeadsUpPot AND NOT f$Opp_IsAggro RaiseB
 // cannot fold (no fold equity). [N low bluff freq][SunTzu VII.36 "golden bridge for a
 // retreating army"][Tao ch.9 "fill to the brim and it spills" -> keep the freq low]
 WHEN f$Opp_PotCommitted Check FORCE
+// RHYTHM (12_aggressor): never lead/bluff into the aggressor when out of position to
+// him - check and decide vs his bet. [CtM p166 give up OOP][Tao yielding]
+WHEN f$ActBeforeAggressor AND NOT f$HaveDecentMade Check FORCE
 WHEN f$WasPreflopRaiser AND BotRaisedOnTurn AND f$HeadsUpPot AND f$Opp_Foldy AND randomround < 0.22 RaiseBy f$BetPctRiver % FORCE
 WHEN Others Check FORCE
 
@@ -45,14 +52,31 @@ WHEN Others Check FORCE
 ##f$river_vs_bet##
 // Value-raise the near-nuts vs a non-passive bettor.
 WHEN f$HaveBigMade AND NOT f$Opp_IsPassive RaiseBy f$BetPctRiver % FORCE
-// Pay off with strong made hands (bluff-catch).
+// Pay off with strong made hands (bluff-catch) - but a RIVER RAISE is "always the
+// nuts" at the micros: if our cbet/bet got raised on the river, fold even a strong
+// one-pair / overpair unless it is a tiny fish min-raise. Set/two-pair+ still pay off.
+// [CtM p217 "river raises are ALWAYS the nuts - develop the discipline to fold"]
+WHEN f$Opp_NutsyRaise AND NOT (HaveSet OR HaveTwoPair OR f$HaveBigMade) AND NOT f$Opp_MinBetLead AND explain_fold_pre Fold FORCE
 WHEN f$HaveBigMade Call FORCE
 WHEN (HaveSet OR HaveTwoPair) Call FORCE
+// STORY (12_aggressor / CtM): RESPECT a credible nut-weighted river line - a nit /
+// passive player firing represents value ~9/10 times; fold the one-pair bluff-catchers
+// rather than make the "crying call." [CtM p188 "vs a nit calling is a bad idea"; p202]
+WHEN f$HaveOnePair AND f$OppStoryStrong AND NOT f$Opp_MinBetLead Fold FORCE
 // Timing tell: a tanked river bet is usually a value hand -> fold the bluff-catchers. [Caro]
 WHEN f$HaveOnePair AND f$TimingSaysStrong Fold FORCE
+// ATTACK a capped river line: fish & SLPs bluff their MISSED DRAWS small (~1/4 pot) -
+// value-call the top of our showdown range (one pair, or strong ace-high) vs that tiny
+// capped bet. Only at the small price; a reasonable (>=~1/2 pot) bet is value, fold it.
+// [CtM p180 "fish bluff missed draws for a small amount - call ace high"; p211]
+WHEN (f$HaveOnePair OR f$HaveMarginalMade) AND f$OppStoryCapped AND f$Opp_MinBetLead AND (f$Opp_IsFish OR f$Opp_IsSLP OR f$Opp_IsStation) Call FORCE
 // Bluff-catch one pair only vs bluffy players at a price; fold vs passive value. [N]
 WHEN f$HaveOnePair AND f$Opp_IsAggro AND f$DecentPrice AND explain_bluffcatch Call FORCE
 WHEN f$HaveOnePair AND NOT f$Opp_IsPassive AND f$CheapDraw Call FORCE
 // Timing tell: a snap river bet leans weak/bluffy -> bluff-catch one pair wider. [Caro]
 WHEN f$HaveOnePair AND f$TimingSaysWeak AND f$DecentPrice Call FORCE
+// CHEAP CALL (12_aggressor): any SMALL river bet is worth a bluff-catch with showdown value -
+// the price beats their capped small-betting range; excludes a credible nut story. Generalises
+// the fish-min-bet call above to any opponent who underbets the river. [Emrald]
+WHEN f$WorthCallingSmall Call FORCE
 WHEN Others Fold FORCE

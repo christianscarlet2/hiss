@@ -47,9 +47,28 @@ bool CSymbolEngineOpenAI::EvaluateSymbol(const CString name, double *result, boo
     COpenAiAdvisor::ConsultIfNoFit();
     return true;
   }
+  // Synapse-harmonizer runtime knobs (0..1, 0.5 = neutral), pushed live via /api/knob and read
+  // by the OHF (05_config f$OpenRangeKnob / f$AggroFreqMult / f$BluffFreqMult). The "openai_"
+  // namespace keeps them in the steering engine; they retune play with no rebuild. [Emrald]
+  if (name == "openai_knob_openrange") {
+    extern double g_knob_openrange;
+    if (result != NULL) *result = g_knob_openrange;
+    return true;
+  }
+  if (name == "openai_knob_aggro") {
+    extern double g_knob_aggro;
+    if (result != NULL) *result = g_knob_aggro;
+    return true;
+  }
+  if (name == "openai_knob_bluff") {
+    extern double g_knob_bluff;
+    if (result != NULL) *result = g_knob_bluff;
+    return true;
+  }
   return false;
 }
 
 CString CSymbolEngineOpenAI::SymbolsProvided() {
-  return "openai_paused openai_steer_anchor openai_action openai_autohijack openai_consult ";
+  return "openai_paused openai_steer_anchor openai_action openai_autohijack openai_consult "
+         "openai_knob_openrange openai_knob_aggro openai_knob_bluff ";
 }

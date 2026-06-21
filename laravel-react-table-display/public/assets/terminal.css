@@ -198,7 +198,9 @@ html, body {
 
 /* ---- Hiss tab (React Table View embedded) -------------------------------- */
 .tab .snake { color: #3df57a; filter: drop-shadow(0 0 3px rgba(61,245,122,.6)); }
+.tab .cap { color: #ffd166; filter: drop-shadow(0 0 3px rgba(255,209,102,.6)); }
 #tab-hiss { padding: 0; }
+#tab-educate { padding: 0; }
 .hiss-frame { flex: 1 1 auto; width: 100%; height: 100%; border: none; background: var(--bg); }
 
 /* ---- Synapse Harmonizer tab ---- */
@@ -226,3 +228,17 @@ html, body {
 .syn-k { flex: 0 0 60px; color: var(--accent); text-transform: uppercase; font-size: 10px; letter-spacing: .5px; padding-top: 1px; }
 .syn-v { flex: 1 1 auto; color: #b9c4cd; }
 .syn-v.mono { color: #9bc1ff; }
+
+/* ---- Live runtime knob sliders (full-width gold band atop the Synapse tab) ---- */
+.syn-knobs {
+  grid-column: 1 / -1;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 10px;
+  background: var(--bg-pane); border: 1px solid #6e5a16; border-radius: 8px; padding: 12px;
+}
+.syn-knobs-h { grid-column: 1 / -1; font-size: 11px; color: #ffd166; line-height: 1.45; }
+.knob-card { background: rgba(255,209,102,.05); border: 1px solid var(--border); border-radius: 7px; padding: 10px 12px; }
+.knob-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.knob-label { color: var(--fg); font-weight: bold; font-size: 13px; flex: 1 1 auto; }
+.knob-val { font-size: 13px; color: #ffd166; font-weight: bold; font-variant-numeric: tabular-nums; }
+.knob-slider { width: 100%; accent-color: #ffd166; cursor: pointer; }
+.knob-scale { display: flex; justify-content: space-between; font-size: 9px; color: #6b7d8c; margin-top: 2px; text-transform: uppercase; letter-spacing: .5px; }

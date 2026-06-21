@@ -120,6 +120,9 @@ AILS = [
     {"name": "hud", "label": "HUD Aggregator", "icon": "\U0001F4CA",
      "desc": "Aggregates per-opponent HUD stats (VPIP/PFR/AF) from hand history for the overlay + exploit reads.",
      "args": ["hud_aggregator.py", "--watch"], "logs": ["hud_aggregator*.log", "hud*.out.log"]},
+    {"name": "manic", "label": "Manic Burst", "icon": "\U0001F525",
+     "desc": "When a table is very passive (low opp AF), fires a short maniac burst (aggro/bluff/open knobs maxed + power style) to wake people up, then reverts to small ball after ~a song. Auto-discovers the live seated Hiss.",
+     "args": ["manic_burst.py"], "logs": ["manic_burst.log"]},
 ]
 AIL_BY_NAME = {a["name"]: a for a in AILS}
 

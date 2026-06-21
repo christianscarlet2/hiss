@@ -58,6 +58,9 @@ class CSymbolEngineHistory: public CVirtualSymbolEngine {
 	int didfold(int betround)			{ return _autoplayer_actions[betround][k_autoplayer_function_fold]; }
 	int didalli(int betround)			{ return _autoplayer_actions[betround][k_autoplayer_function_allin]; }
 	int prevaction()			    	{ return _prevaction; }
+	// [Emrald] cross-street aggressor memory: chair of the last raiser, carried across streets,
+	// reset on hand-reset (-1 = none yet). Exposed as the symbols aggressorchair / iamaggressor.
+	int aggressorchair()				{ return _aggressor_chair; }
  private:
 	void SetPrevaction(int autoplayer_action_code);
 	void CalculateHistory();

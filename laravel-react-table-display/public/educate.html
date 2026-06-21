@@ -1,0 +1,1034 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Educate &mdash; Understanding Hiss</title>
+<style>
+/* ============================================================
+   Palette borrowed from /terminal/assets/terminal.css so this
+   page feels native inside the Terminal iframe.
+   ============================================================ */
+:root{
+  --bg:#0a0e12;
+  --bg-pane:#0c1117;
+  --bg-label:#131b24;
+  --bg-sunken:#060a0d;
+  --border:#1d2730;
+  --fg:#c7d2da;          /* readable light body text */
+  --fg-strong:#e8eef2;
+  --fg-dim:#6b7d8c;
+  --snake:#3df57a;       /* green snake accent */
+  --snake-soft:rgba(61,245,122,.16);
+  --ghost:#ff6b6b;       /* red ghost (Jasper) accent */
+  --ghost-soft:rgba(255,107,107,.14);
+  --dna:#c77dff;         /* synapse purple */
+  --blue:#5f9bff;        /* symbol / data blue */
+  --amber:#ffae57;       /* warnings / knobs */
+  --mono:"Cascadia Code","Consolas","Lucida Console",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;background:var(--bg);color:var(--fg);}
+body{
+  font-family:var(--sans);
+  font-size:15px;
+  line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+img{max-width:100%;}
+a{color:var(--snake);text-decoration:none;}
+a:hover{text-decoration:underline;}
+
+/* ---------- layout ---------- */
+.wrap{display:flex;align-items:flex-start;gap:0;}
+nav.toc{
+  position:sticky;top:0;align-self:flex-start;
+  flex:0 0 220px;height:100vh;overflow-y:auto;
+  background:var(--bg-label);border-right:1px solid var(--border);
+  padding:14px 10px 40px;font-family:var(--mono);font-size:12px;
+}
+nav.toc .toc-brand{
+  color:var(--snake);font-weight:bold;letter-spacing:2px;font-size:13px;
+  display:flex;align-items:center;gap:6px;margin:0 4px 12px;
+}
+nav.toc a{
+  display:block;color:var(--fg-dim);padding:5px 8px;border-radius:5px;
+  border-left:2px solid transparent;margin-bottom:1px;line-height:1.3;
+}
+nav.toc a:hover{color:var(--fg);background:#0e151c;text-decoration:none;}
+nav.toc a.active{color:var(--snake);border-left-color:var(--snake);background:var(--snake-soft);}
+nav.toc .toc-sub{padding-left:18px;font-size:11px;}
+
+main{flex:1 1 auto;min-width:0;max-width:920px;margin:0 auto;padding:0 22px 80px;}
+
+section{padding-top:26px;margin-top:18px;border-top:1px solid var(--border);}
+section:first-of-type{border-top:none;}
+h1,h2,h3{color:var(--fg-strong);line-height:1.2;font-weight:650;}
+h2{font-size:23px;margin:6px 0 4px;}
+h2 .num{color:var(--snake);font-family:var(--mono);font-size:16px;margin-right:8px;}
+h3{font-size:17px;margin:22px 0 6px;color:var(--snake);}
+p{margin:10px 0;}
+.lead{font-size:16px;color:var(--fg-strong);}
+.dim{color:var(--fg-dim);}
+strong{color:var(--fg-strong);}
+em.term{font-style:normal;color:var(--snake);font-weight:600;}
+code,.k{font-family:var(--mono);background:#0e151c;border:1px solid var(--border);
+  border-radius:4px;padding:1px 5px;font-size:.88em;color:var(--blue);}
+code.fn{color:var(--snake);}
+ul,ol{margin:10px 0;padding-left:22px;}
+li{margin:5px 0;}
+
+/* ---------- hero ---------- */
+.hero{
+  position:relative;overflow:hidden;
+  background:radial-gradient(1100px 380px at 18% -40%,rgba(61,245,122,.10),transparent 60%),
+             radial-gradient(900px 340px at 95% -10%,rgba(255,107,107,.10),transparent 60%),
+             var(--bg-pane);
+  border:1px solid var(--border);border-radius:14px;
+  padding:26px 26px 24px;margin-top:18px;
+}
+.hero h1{font-size:32px;margin:0 0 4px;letter-spacing:.5px;}
+.hero h1 .sn{color:var(--snake);}
+.hero .tag{color:var(--fg-dim);font-family:var(--mono);font-size:13px;letter-spacing:1px;text-transform:uppercase;}
+.hero p{max-width:62ch;}
+
+/* legend / key */
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:16px;
+  font-family:var(--mono);font-size:12px;}
+.legend .item{display:flex;align-items:center;gap:7px;color:var(--fg-dim);}
+.dot{width:11px;height:11px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 6px currentColor;}
+
+/* ---------- cards / panels ---------- */
+.panel{background:var(--bg-pane);border:1px solid var(--border);border-radius:10px;
+  padding:14px 16px;margin:14px 0;}
+.panel.note{border-left:3px solid var(--snake);background:linear-gradient(90deg,var(--snake-soft),transparent 40%),var(--bg-pane);}
+.panel.warn{border-left:3px solid var(--amber);background:linear-gradient(90deg,rgba(255,174,87,.10),transparent 40%),var(--bg-pane);}
+.panel.ghost{border-left:3px solid var(--ghost);background:linear-gradient(90deg,var(--ghost-soft),transparent 40%),var(--bg-pane);}
+.panel h4{margin:0 0 6px;color:var(--fg-strong);font-size:14px;}
+.panel.note h4{color:var(--snake);}
+.panel.warn h4{color:var(--amber);}
+.panel.ghost h4{color:var(--ghost);}
+
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;}
+.feat{background:var(--bg-pane);border:1px solid var(--border);border-radius:10px;padding:13px 14px;}
+.feat:hover{border-color:#2a3a48;}
+.feat .ft-head{display:flex;align-items:center;gap:9px;margin-bottom:5px;}
+.feat .ico{flex:0 0 auto;}
+.feat .ft-name{font-weight:650;color:var(--fg-strong);font-size:14.5px;}
+.feat p{margin:5px 0 0;font-size:13.5px;color:var(--fg);}
+.feat .file{font-family:var(--mono);font-size:11px;color:var(--fg-dim);margin-top:7px;display:block;}
+
+/* ---------- code blocks ---------- */
+pre.code{background:var(--bg-sunken);border:1px solid var(--border);border-radius:8px;
+  padding:12px 14px;overflow-x:auto;font-family:var(--mono);font-size:12.5px;
+  line-height:1.5;color:var(--fg);white-space:pre;}
+pre.code .cm{color:var(--fg-dim);font-style:italic;}
+pre.code .kw{color:var(--ghost);font-weight:600;}
+pre.code .fn{color:var(--snake);}
+pre.code .sym{color:var(--blue);}
+pre.code .act{color:var(--amber);font-weight:600;}
+.annot{display:block;background:#0e151c;border:1px dashed var(--border);border-radius:8px;
+  padding:10px 12px;margin:8px 0;font-size:13px;}
+.annot b{color:var(--snake);}
+
+table.tbl{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px;}
+table.tbl th,table.tbl td{border:1px solid var(--border);padding:7px 9px;text-align:left;vertical-align:top;}
+table.tbl th{background:var(--bg-label);color:var(--fg-strong);font-weight:600;}
+table.tbl td code{font-size:.85em;}
+table.tbl tr:nth-child(even) td{background:#0b1116;}
+
+/* ---------- diagram shells ---------- */
+.diagram{background:var(--bg-pane);border:1px solid var(--border);border-radius:12px;
+  padding:14px;margin:16px 0;}
+.diagram .cap{display:flex;justify-content:space-between;align-items:center;gap:10px;
+  margin-bottom:6px;}
+.diagram .cap .ttl{font-family:var(--mono);font-size:12px;color:var(--fg-dim);
+  text-transform:uppercase;letter-spacing:1px;}
+.diagram svg{display:block;width:100%;height:auto;}
+.btn{background:#11202b;color:var(--snake);border:1px solid var(--border);border-radius:6px;
+  font-family:var(--mono);font-size:12px;padding:5px 12px;cursor:pointer;}
+.btn:hover{background:#16303f;border-color:var(--snake);}
+.btn.paused{color:var(--amber);border-color:#3a3020;}
+
+/* glossary */
+dl.gloss dt{color:var(--snake);font-family:var(--mono);font-weight:600;margin-top:12px;font-size:13.5px;}
+dl.gloss dd{margin:2px 0 0;padding-left:0;font-size:13.5px;}
+dl.gloss dd code{font-size:.85em;}
+
+footer{margin-top:34px;padding-top:18px;border-top:1px solid var(--border);
+  color:var(--fg-dim);font-size:12.5px;font-family:var(--mono);}
+footer .sn{color:var(--snake);}
+footer .gh{color:var(--ghost);}
+
+/* ---------- responsive ---------- */
+@media (max-width:760px){
+  nav.toc{display:none;}
+  main{padding:0 14px 70px;}
+  .hero h1{font-size:25px;}
+  h2{font-size:20px;}
+  body{font-size:14px;}
+}
+
+/* =========================================================
+   ANIMATIONS
+   ========================================================= */
+/* pulse travelling along the pipeline */
+@keyframes flowDash{to{stroke-dashoffset:-44;}}
+.flow-line{stroke:var(--border);stroke-width:2.5;}
+.flow-line.lit{stroke:var(--snake);stroke-dasharray:7 5;animation:flowDash 1s linear infinite;}
+.stage rect{transition:fill .25s ease,stroke .25s ease;}
+.stage.on rect{fill:#10241a;stroke:var(--snake);}
+.stage.on .stage-ico,.stage.on .stage-t{fill:var(--snake);}
+.stage-t{font-family:var(--mono);font-size:11px;fill:var(--fg-dim);}
+.stage-ico{fill:var(--fg-dim);}
+.pulse-dot{fill:var(--snake);filter:drop-shadow(0 0 5px var(--snake));}
+.paused-anim .flow-line.lit{animation-play-state:paused;}
+
+/* heartbeat ring */
+@keyframes beat{0%,100%{transform:scale(1);opacity:.9;}
+  14%{transform:scale(1.18);}28%{transform:scale(1);}42%{transform:scale(1.10);}56%{transform:scale(1);}}
+.hb-ring{transform-origin:center;animation:beat 1.4s ease-in-out infinite;}
+.paused-anim .hb-ring{animation-play-state:paused;}
+
+/* street walk highlight */
+.street{transition:all .3s ease;}
+.street rect{transition:fill .3s ease,stroke .3s ease;}
+.street.on rect{fill:#241016;stroke:var(--ghost);}
+.street.on .street-t{fill:var(--ghost-soft);}
+.street.on .street-t,.street.on .street-fn{fill:var(--ghost);}
+.street-t{font-family:var(--mono);font-size:12px;fill:var(--fg-dim);font-weight:600;}
+.street-fn{font-family:var(--mono);font-size:10.5px;fill:var(--fg-dim);}
+.street-card{transition:opacity .3s ease;}
+
+/* synapse twinkle */
+@keyframes twinkle{0%,100%{opacity:.25;}50%{opacity:1;}}
+.syn-edge{stroke:var(--dna);stroke-width:1.2;opacity:.3;}
+.syn-edge.live{animation:twinkle 2.6s ease-in-out infinite;}
+.paused-anim .syn-edge.live{animation:none;opacity:.3;}
+.syn-node{fill:#1a1426;stroke:var(--dna);}
+.syn-node-t{font-family:var(--mono);font-size:10px;fill:#d8c4f0;}
+.syn-core{fill:#241733;stroke:var(--dna);stroke-width:1.5;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ==================== TABLE OF CONTENTS ==================== -->
+<nav class="toc" id="toc">
+  <div class="toc-brand">&#128013; HISS &middot; EDUCATE</div>
+  <a href="#top">Overview &amp; legend</a>
+  <a href="#pipeline">A &middot; The heartbeat loop</a>
+  <a href="#brains">B &middot; The decision brains</a>
+  <a href="#ohf">C &middot; How the OHF works</a>
+  <a href="#ohf-openppl" class="toc-sub">OpenPPL concepts</a>
+  <a href="#ohf-streets" class="toc-sub">Street dispatch</a>
+  <a href="#ohf-knobs" class="toc-sub">Master knobs</a>
+  <a href="#ohf-aggressor" class="toc-sub">Aggressor &amp; story</a>
+  <a href="#ohf-feeler" class="toc-sub">Feeler bets</a>
+  <a href="#features">D &middot; Feature catalog</a>
+  <a href="#ail">E &middot; AIL &amp; daemons</a>
+  <a href="#glossary">F &middot; Glossary</a>
+</nav>
+
+<main>
+<!-- ==================== HERO ==================== -->
+<a id="top"></a>
+<header class="hero">
+  <div class="tag">A field guide to your poker bot</div>
+  <h1>Understanding <span class="sn">Hiss</span></h1>
+  <p class="lead">Hiss is a poker-playing robot &mdash; a heavily extended fork of
+  <strong>OpenHoldem</strong> that watches a poker table on screen, reads it with OCR,
+  thinks with a strategy written in <strong>OpenPPL</strong>, and clicks the buttons for you.</p>
+  <p>This page is your friendly tour of how the whole thing actually works, end to end:
+  the loop that beats once every fraction of a second, the strategy "brains" it can switch
+  between, the rulebook (the <em class="term">OHF</em>) that holds your distilled poker knowledge,
+  and the swarm of helper programs that watch, learn, and quietly make it better.
+  Everything below is drawn from the real code in this project &mdash; nothing invented.
+  We define each term the first time it appears.</p>
+
+  <div class="legend">
+    <span class="item"><span class="dot" style="color:var(--snake)"></span> green = the snake / strategy &amp; engine</span>
+    <span class="item"><span class="dot" style="color:var(--ghost)"></span> red = the ghost / decisions &amp; actions</span>
+    <span class="item"><span class="dot" style="color:var(--blue)"></span> blue = symbols &amp; data</span>
+    <span class="item"><span class="dot" style="color:var(--dna)"></span> purple = the synapse harmonizer</span>
+    <span class="item"><span class="dot" style="color:var(--amber)"></span> amber = knobs &amp; warnings</span>
+  </div>
+</header>
+
+<!-- ==================== A. PIPELINE ==================== -->
+<section id="pipeline">
+  <h2><span class="num">A</span>The big picture: one heartbeat</h2>
+  <p>Hiss runs a single repeating cycle called the <em class="term">heartbeat</em>. A background
+  thread (<code>CHeartbeatThread</code>) loops forever, pausing briefly between beats
+  (the <code>scrape_delay</code>, normally 300&nbsp;ms &mdash; allowed range 100&ndash;5000&nbsp;ms).
+  Each beat it runs one function, <code class="fn">ScrapeEvaluateAct()</code>, which walks the table
+  through these stages. Watch the green pulse travel through them:</p>
+
+  <div class="diagram" id="dg-pipeline">
+    <div class="cap">
+      <span class="ttl">The heartbeat pipeline &mdash; scrape &rarr; OCR &rarr; symbols &rarr; OHF &rarr; click &rarr; telemetry</span>
+      <button class="btn" id="pl-toggle" type="button">&#9208; Pause</button>
+    </div>
+    <!-- responsive SVG -->
+    <svg viewBox="0 0 940 250" role="img" aria-label="Animated heartbeat pipeline">
+      <!-- heartbeat source -->
+      <g transform="translate(56,118)">
+        <circle class="hb-ring" r="30" fill="none" stroke="var(--ghost)" stroke-width="2.5"/>
+        <circle r="20" fill="#1a0e10" stroke="var(--ghost)" stroke-width="1.5"/>
+        <path d="M-12,0 h5 l3,-9 l4,18 l4,-13 l3,4 h5" fill="none" stroke="var(--ghost)" stroke-width="2"/>
+        <text x="0" y="44" text-anchor="middle" class="stage-t" style="fill:var(--ghost)">heartbeat</text>
+      </g>
+
+      <!-- connecting line that the pulse rides -->
+      <line x1="92" y1="118" x2="884" y2="118" class="flow-line lit" id="pl-rail"/>
+
+      <!-- stages -->
+      <g class="stage" data-i="0" transform="translate(120,86)">
+        <rect width="118" height="64" rx="9" fill="var(--bg-sunken)" stroke="var(--border)"/>
+        <path class="stage-ico" transform="translate(14,16)" d="M0,2 h12 v3 h-12z M0,9 h20 v3 h-20z M0,16 h16 v3 h-16z"/>
+        <text x="59" y="44" text-anchor="middle" class="stage-t">1 &middot; scrape</text>
+        <text x="59" y="57" text-anchor="middle" class="stage-t" style="font-size:9px">grab screen</text>
+      </g>
+      <g class="stage" data-i="1" transform="translate(256,86)">
+        <rect width="118" height="64" rx="9" fill="var(--bg-sunken)" stroke="var(--border)"/>
+        <text x="59" y="30" text-anchor="middle" class="stage-ico" style="font-size:17px">&#128065;</text>
+        <text x="59" y="48" text-anchor="middle" class="stage-t">2 &middot; OCR</text>
+        <text x="59" y="60" text-anchor="middle" class="stage-t" style="font-size:9px">read text/cards</text>
+      </g>
+      <g class="stage" data-i="2" transform="translate(392,86)">
+        <rect width="118" height="64" rx="9" fill="var(--bg-sunken)" stroke="var(--border)"/>
+        <text x="59" y="30" text-anchor="middle" class="stage-ico" style="font-size:16px">&#931;</text>
+        <text x="59" y="48" text-anchor="middle" class="stage-t">3 &middot; symbols</text>
+        <text x="59" y="60" text-anchor="middle" class="stage-t" style="font-size:9px">engines compute</text>
+      </g>
+      <g class="stage" data-i="3" transform="translate(528,86)">
+        <rect width="118" height="64" rx="9" fill="var(--bg-sunken)" stroke="var(--border)"/>
+        <text x="59" y="30" text-anchor="middle" class="stage-ico" style="font-size:16px">&#9819;</text>
+        <text x="59" y="48" text-anchor="middle" class="stage-t">4 &middot; OHF</text>
+        <text x="59" y="60" text-anchor="middle" class="stage-t" style="font-size:9px">decide (my turn)</text>
+      </g>
+      <g class="stage" data-i="4" transform="translate(664,86)">
+        <rect width="118" height="64" rx="9" fill="var(--bg-sunken)" stroke="var(--border)"/>
+        <text x="59" y="30" text-anchor="middle" class="stage-ico" style="font-size:16px">&#128433;</text>
+        <text x="59" y="48" text-anchor="middle" class="stage-t">5 &middot; click</text>
+        <text x="59" y="60" text-anchor="middle" class="stage-t" style="font-size:9px">autoplayer</text>
+      </g>
+      <g class="stage" data-i="5" transform="translate(800,86)">
+        <rect width="118" height="64" rx="9" fill="var(--bg-sunken)" stroke="var(--border)"/>
+        <text x="59" y="30" text-anchor="middle" class="stage-ico" style="font-size:15px">&#128225;</text>
+        <text x="59" y="48" text-anchor="middle" class="stage-t">6 &middot; telemetry</text>
+        <text x="59" y="60" text-anchor="middle" class="stage-t" style="font-size:9px">log / replay</text>
+      </g>
+
+      <!-- the moving pulse -->
+      <circle class="pulse-dot" id="pl-dot" r="6" cx="120" cy="118"/>
+
+      <!-- caption row -->
+      <text x="470" y="210" text-anchor="middle" class="stage-t" id="pl-label" style="fill:var(--fg-strong);font-size:12px">click a stage or just watch the pulse</text>
+      <text x="470" y="232" text-anchor="middle" class="stage-t" id="pl-detail" style="font-size:10.5px">&nbsp;</text>
+    </svg>
+  </div>
+
+  <h3>What each stage really does</h3>
+  <ol>
+    <li><strong>1 &middot; Scrape.</strong> Hiss captures the bitmap of the poker window
+    (<code>CLazyScraper::DoScrape</code> &rarr; <code>CScraper</code>). It only re-reads the
+    regions it needs each beat (cards, bets, balances, pot, buttons, names) using the coordinates
+    in the active <em class="term">tablemap</em> &mdash; the per-site layout file that says
+    "the hero's first card is this rectangle." Tablemaps now live in the postgres <code>hiss</code> database.</li>
+
+    <li><strong>2 &middot; OCR.</strong> Optical Character Recognition turns the pixels into text
+    and card values. The heavy lifting (Tesseract) runs in <strong>separate worker processes</strong>
+    &mdash; you'll see one main <code>Hiss.exe</code> plus several <code>Hiss.exe --ocr-worker</code>
+    children (typically 6). The main process ships each changed region's pixels down a pipe to a free
+    worker and gets text back; unchanged regions are served from cache.
+    (<code>CScraper::PreOcrParallel</code>, <code>COcrWorker</code>, <code>CAutoOcr</code>.)</li>
+
+    <li><strong>3 &middot; Symbols.</strong> The <em class="term">symbol engines</em>
+    (<code>CEngineContainer::EvaluateAll</code>) convert the raw table read into the hundreds of
+    named values the strategy reasons about &mdash; things like <code>prwin</code> (your win
+    probability), <code>PotSize</code>, <code>nopponentsplaying</code>, <code>aggressorchair</code>,
+    and the made-hand flags (<code>HaveTopPair</code>, <code>HaveFlush</code>&hellip;). Equity
+    (<code>prwin</code>) is a Monte-Carlo simulation that runs on its own thread
+    (<code>CIteratorThread</code>, 20,000 iterations) so it never stalls the beat.</li>
+
+    <li><strong>4 &middot; OHF decision.</strong> This is the strategy. Crucially, the OHF is
+    <strong>not</strong> evaluated on every heartbeat &mdash; it is consulted only when it's actually
+    the bot's turn to act (<code>ismyturn</code>) <em>and</em> the read has settled into a
+    "final answer" (cards known, the <code>prwin</code> iterator finished, enough stable frames).
+    A once-per-turn latch makes sure it acts exactly once. See section C for what's inside.</li>
+
+    <li><strong>5 &middot; Click.</strong> The <em class="term">autoplayer</em>
+    (<code>CAutoplayer::DoAutoplayer</code>) translates the OHF's answer (Fold / Check / Call /
+    RaiseBy / RaiseTo / RaiseMax) into a real mouse click on the matching button. It figures out
+    which button is which by reading the button <em>labels</em> with OCR
+    (<code>CAutoplayerButton</code>). To keep two Hiss instances that share one mouse from clicking
+    at once, clicks are guarded by a named system mutex (<code>CMyMutex</code>).</li>
+
+    <li><strong>6 &middot; Telemetry.</strong> The same beat writes to a local postgres outbox
+    (frames, decisions, symbols, the full OHF trace). A shipper sends it to the replay server so you
+    can later <em>time-travel</em> through any hand and see exactly why Hiss did what it did.</li>
+  </ol>
+
+  <div class="panel note">
+    <h4>The key timing idea</h4>
+    <p>Stages 1&ndash;3 (and a scrape <em class="term">validator</em> that sanity-checks the read)
+    happen every single beat. Stages 4&ndash;5 &mdash; deciding and clicking &mdash; happen together,
+    once, only on your turn. So "the bot is always looking, but only speaks when spoken to."</p>
+  </div>
+</section>
+
+<!-- ==================== B. BRAINS ==================== -->
+<section id="brains">
+  <h2><span class="num">B</span>The decision brains &amp; how one is chosen</h2>
+  <p>Hiss has more than one way to decide. By default the strategy is the OHF rulebook, but you can
+  hand the wheel to a trained neural net, or let an audio-driven controller flip between them. Here is
+  the decision tree the bot follows each turn:</p>
+
+  <div class="diagram">
+    <div class="cap"><span class="ttl">Who decides this hand?</span></div>
+    <svg viewBox="0 0 920 360" role="img" aria-label="Decision-brain selection tree">
+      <defs>
+        <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L7,3 L0,6 z" fill="var(--fg-dim)"/>
+        </marker>
+      </defs>
+      <!-- root -->
+      <rect x="370" y="14" width="180" height="44" rx="9" fill="#10241a" stroke="var(--snake)"/>
+      <text x="460" y="34" text-anchor="middle" fill="var(--snake)" font-family="var(--mono)" font-size="13" font-weight="600">It's my turn</text>
+      <text x="460" y="50" text-anchor="middle" fill="var(--fg-dim)" font-family="var(--mono)" font-size="10">a brain must decide</text>
+
+      <!-- q1 game type -->
+      <line x1="460" y1="58" x2="460" y2="86" stroke="var(--fg-dim)" marker-end="url(#arr)"/>
+      <rect x="350" y="88" width="220" height="40" rx="9" fill="var(--bg-sunken)" stroke="var(--border)"/>
+      <text x="460" y="113" text-anchor="middle" fill="var(--fg-strong)" font-family="var(--mono)" font-size="12">Is it Omaha / PLO8?</text>
+
+      <!-- yes -> OHF omaha -->
+      <line x1="350" y1="108" x2="180" y2="150" stroke="var(--fg-dim)" marker-end="url(#arr)"/>
+      <text x="248" y="128" fill="var(--amber)" font-family="var(--mono)" font-size="11">yes</text>
+      <rect x="40" y="150" width="240" height="56" rx="9" fill="#10241a" stroke="var(--snake)"/>
+      <text x="160" y="172" text-anchor="middle" fill="var(--snake)" font-family="var(--mono)" font-size="12" font-weight="600">OHF (Omaha tree)</text>
+      <text x="160" y="190" text-anchor="middle" fill="var(--fg-dim)" font-family="var(--mono)" font-size="10">NN is Hold'em-only,</text>
+      <text x="160" y="202" text-anchor="middle" fill="var(--fg-dim)" font-family="var(--mono)" font-size="10">so always the rulebook</text>
+
+      <!-- no -> q2 -->
+      <line x1="510" y1="128" x2="560" y2="150" stroke="var(--fg-dim)" marker-end="url(#arr)"/>
+      <text x="520" y="146" fill="var(--amber)" font-family="var(--mono)" font-size="11">no (NLH)</text>
+      <rect x="470" y="150" width="220" height="40" rx="9" fill="var(--bg-sunken)" stroke="var(--border)"/>
+      <text x="580" y="175" text-anchor="middle" fill="var(--fg-strong)" font-family="var(--mono)" font-size="12">Which brain is engaged?</text>
+
+      <!-- branch: autoplayer OHF -->
+      <line x1="500" y1="190" x2="380" y2="236" stroke="var(--fg-dim)" marker-end="url(#arr)"/>
+      <rect x="250" y="238" width="200" height="64" rx="9" fill="#10241a" stroke="var(--snake)"/>
+      <text x="350" y="260" text-anchor="middle" fill="var(--snake)" font-family="var(--mono)" font-size="12" font-weight="600">Autoplayer = OHF</text>
+      <text x="350" y="277" text-anchor="middle" fill="var(--fg-dim)" font-family="var(--mono)" font-size="10">the default brain</text>
+      <text x="350" y="290" text-anchor="middle" fill="var(--fg-dim)" font-family="var(--mono)" font-size="10">(your strategy)</text>
+
+      <!-- branch: NN -->
+      <line x1="600" y1="190" x2="600" y2="236" stroke="var(--fg-dim)" marker-end="url(#arr)"/>
+      <rect x="475" y="238" width="200" height="64" rx="9" fill="#101a28" stroke="var(--blue)"/>
+      <text x="575" y="260" text-anchor="middle" fill="var(--blue)" font-family="var(--mono)" font-size="12" font-weight="600">&#129504; NN Driver</text>
+      <text x="575" y="277" text-anchor="middle" fill="var(--fg-dim)" font-family="var(--mono)" font-size="10">trained net forces</text>
+      <text x="575" y="290" text-anchor="middle" fill="var(--fg-dim)" font-family="var(--mono)" font-size="10">the action</text>
+
+      <!-- branch: ULTRA -->
+      <line x1="660" y1="190" x2="800" y2="236" stroke="var(--fg-dim)" marker-end="url(#arr)"/>
+      <rect x="700" y="238" width="200" height="64" rx="9" fill="#1e0f24" stroke="var(--dna)"/>
+      <text x="800" y="260" text-anchor="middle" fill="var(--dna)" font-family="var(--mono)" font-size="12" font-weight="600">&#9889; ULTRA</text>
+      <text x="800" y="277" text-anchor="middle" fill="var(--fg-dim)" font-family="var(--mono)" font-size="10">flips OHF&harr;NN by</text>
+      <text x="800" y="290" text-anchor="middle" fill="var(--fg-dim)" font-family="var(--mono)" font-size="10">system audio</text>
+
+      <text x="460" y="334" text-anchor="middle" fill="var(--fg-dim)" font-family="var(--mono)" font-size="10.5">NN Driver and the OHF autoplayer are mutually exclusive &mdash; only one drives at a time.</text>
+    </svg>
+  </div>
+
+  <div class="grid2">
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#9819;</span><span class="ft-name">OHF strategy (default)</span></div>
+      <p>Your hand-written rulebook, distilled from a shelf of poker books. It plays every game type and
+      is the only brain for Omaha/PLO8. This is the centerpiece &mdash; section C.</p>
+      <span class="file">.strategy_build/strategy/*.ohf</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--blue)">&#129504;</span><span class="ft-name">NN Driver</span></div>
+      <p>An external program lets the live bot play with a trained neural net &mdash; <strong>no rebuild</strong>.
+      It watches for your turn, reads the table state and ~86 symbols over HTTP, asks a remote NN service for
+      the action, then forces the click via <code>/api/action&amp;force=1</code>. It clamps raise sizes so they
+      are legal. Toggled by an in-Hiss button; turns the OHF autoplayer off while it runs.</p>
+      <span class="file">mcp/nn_driver.py</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--dna)">&#9889;</span><span class="ft-name">ULTRA meta-controller</span></div>
+      <p>"The machine's own sound decides which brain drives." It samples the Windows audio meter and randomly
+      (or on the music's beat) flips the bot between OHF and NN. NLH-only: it force-holds OHF on Omaha. The
+      &#9889; toolbar/React button launches it.</p>
+      <span class="file">mcp/ultra_mode.py</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--ghost)">&#128302;</span><span class="ft-name">666 Card Oracle (superstition)</span></div>
+      <p>A playful draw-odds diviner: it bends your next-card catch odds by how close the audio level resonates
+      with 666. By default it's <em>display/voice only</em>. With <code>--superstition</code> it feeds an omen
+      (<code>sb_beastfavor</code>) into the OHF so it chases draws harder when "the Beast favors." It never
+      changes your cards &mdash; only a small set of draw lines react to it.</p>
+      <span class="file">mcp/card_oracle.py</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--dna)">&#129516;</span><span class="ft-name">Synapse Harmonizer</span></div>
+      <p>Not a separate driver &mdash; a unifier. It joins every signal, knob, mode and output into one
+      node-and-synapse graph with a short "ghost read" per node, and feeds the NN's feature spec. It is how
+      you see all the moving parts as one organism. Section D.</p>
+      <span class="file">mcp/synapse_map.py</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--amber)">&#9889;</span><span class="ft-name">OpenAI steering (scaffold)</span></div>
+      <p>A console-driven override (<code>/hijack</code>, <code>/strategy</code>, <code>/goto</code>) exists at
+      the top of each OHF street, but it is <strong>disabled by default</strong> &mdash; a sentinel keeps the bot
+      on its own logic unless you explicitly enable the advisor.</p>
+      <span class="file">16_steering.ohf</span>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== C. THE OHF ==================== -->
+<section id="ohf">
+  <h2><span class="num">C</span>How the OHF works (the heart of Hiss)</h2>
+  <p>The <em class="term">OHF</em> is the OpenHoldem Formula file &mdash; the strategy. Your version ships as a
+  folder of segments under <code>.strategy_build/strategy/</code> that a build script concatenates into one
+  master file, <code>Release/ScarletBeast_PowerHoldem.ohf</code>. It is a complete No-Limit Hold'em strategy
+  distilled from two foundational texts &mdash; Negreanu's <em>Small Ball</em> and Brunson's <em>Power Poker</em>
+  &mdash; reconciled with a wider library (Harrington, "Crushing the Microstakes," and more) and a discipline
+  layer (Tao Te Ching, Sun Tzu) used as guiding citations.</p>
+
+  <h3 id="ohf-openppl">OpenPPL: the language</h3>
+  <p><em class="term">OpenPPL</em> (Open Poker Programming Language) is how the strategy is written. The whole
+  thing is just <strong>functions made of WHEN rules</strong>. A few ideas to hold onto:</p>
+  <ul>
+    <li><strong>Function blocks.</strong> Each function starts with a header like
+    <code>##f$preflop##</code> and contains a list of rules. Functions can call other functions
+    (<code>f$flop</code> calls <code>f$flop_nobet</code>), which is how the strategy is organized.</li>
+    <li><strong>WHEN &hellip; RETURN/action &hellip; FORCE.</strong> Each rule is one line:
+    a <em>condition</em>, then what to do if it's true. Actions are <code>Fold</code>, <code>Check</code>,
+    <code>Call</code>, <code>RaiseTo &lt;bb&gt;</code> (raise to a total size), <code>RaiseBy &lt;pct&gt;%</code>
+    (bet a fraction of the pot), or <code>RaiseMax</code> (jam all-in). <code>RETURN x</code> hands a value back
+    to whatever called the function.</li>
+    <li><strong>First match wins, top to bottom.</strong> The engine reads the rules in order and stops at the
+    first one whose condition is true. So <em>order is everything</em> &mdash; the strongest, most specific
+    cases go on top; <code>WHEN Others</code> is the catch-all fallback at the bottom.</li>
+    <li><strong>One rule = one physical line.</strong> A WHEN line cannot wrap. This is a real gotcha when
+    editing &mdash; the whole condition and action live on a single line.</li>
+    <li><strong>No "not-equal" operator.</strong> OpenPPL has no <code>!=</code>. You phrase the negative as
+    <code>NOT (a = b)</code> or restructure the rule.</li>
+    <li><strong>Symbols.</strong> Built-in named values you test against:
+    <code>prwin</code>, <code>PotSize</code>, <code>AmountToCall</code>, <code>nopponentsplaying</code>,
+    <code>HaveTopPair</code>, <code>InButton</code>, <code>Raises</code>, <code>aggressorchair</code>&hellip;</li>
+    <li><strong>Lists.</strong> Named hand ranges, e.g. <code>##listOpenBTN##</code> contains the button
+    open-raise hands. A rule like <code>WHEN InButton AND listOpenBTN &hellip;</code> is true when you're on
+    the button holding a hand in that list.</li>
+  </ul>
+
+  <p>Here is one real, annotated rule from the flop file so you can read the grammar:</p>
+  <pre class="code"><span class="kw">WHEN</span> <span class="fn">f$HaveStrongMade</span> <span class="kw">AND</span> (<span class="fn">f$Opp_IsStation</span> <span class="kw">OR</span> <span class="fn">f$Opp_IsFish</span>) <span class="kw">AND</span> <span class="sym">explain_value_flop</span> <span class="act">RaiseBy</span> <span class="fn">f$BetPctVsStation</span> % <span class="kw">FORCE</span></pre>
+  <div class="annot">
+    <b>Read it as:</b> "<b>WHEN</b> I have a strong made hand <b>AND</b> the opponent is a calling-station or a
+    fish &mdash; bet big for value (a pot-sized bet, <code class="fn">f$BetPctVsStation</code>)." The
+    <code>explain_value_flop</code> symbol at the tail prints a plain-English reason into the Decisions pane.
+    <code>FORCE</code> means this is a committed action, not advice.
+  </div>
+
+  <h3 id="ohf-streets">The street dispatch &mdash; a hand's journey</h3>
+  <p>A hand of poker has four betting rounds, called <em class="term">streets</em>: preflop, flop, turn, river.
+  The engine evaluates the matching top-level function for whichever street you're on. Each one first checks
+  for safety/overrides, then dispatches to a sub-function based on the situation. Press play to walk a hand
+  through and see which functions fire:</p>
+
+  <div class="diagram" id="dg-streets">
+    <div class="cap">
+      <span class="ttl">The street walk &mdash; which f$ function fires</span>
+      <button class="btn" id="st-toggle" type="button">&#9208; Pause</button>
+    </div>
+    <svg viewBox="0 0 920 270" role="img" aria-label="Animated street dispatch walk">
+      <!-- streets -->
+      <g class="street" data-i="0" transform="translate(20,30)">
+        <rect width="200" height="92" rx="10" fill="var(--bg-sunken)" stroke="var(--border)"/>
+        <text x="100" y="26" text-anchor="middle" class="street-t">PREFLOP</text>
+        <text x="100" y="46" text-anchor="middle" class="street-fn">f$preflop</text>
+        <text x="100" y="62" text-anchor="middle" class="street-fn">&rarr; open / 3-bet /</text>
+        <text x="100" y="76" text-anchor="middle" class="street-fn">flat / push-fold</text>
+        <!-- two hole cards -->
+        <g class="street-card">
+          <rect x="64" y="-18" width="30" height="40" rx="4" fill="#13202a" stroke="var(--ghost)"/>
+          <rect x="100" y="-18" width="30" height="40" rx="4" fill="#13202a" stroke="var(--ghost)"/>
+        </g>
+      </g>
+      <g class="street" data-i="1" transform="translate(252,30)">
+        <rect width="200" height="92" rx="10" fill="var(--bg-sunken)" stroke="var(--border)"/>
+        <text x="100" y="26" text-anchor="middle" class="street-t">FLOP</text>
+        <text x="100" y="46" text-anchor="middle" class="street-fn">f$flop</text>
+        <text x="100" y="62" text-anchor="middle" class="street-fn">&rarr; nobet: c-bet /</text>
+        <text x="100" y="76" text-anchor="middle" class="street-fn">vs bet: raise/call/fold</text>
+        <g class="street-card">
+          <rect x="50" y="-18" width="26" height="36" rx="4" fill="#10241a" stroke="var(--snake)"/>
+          <rect x="86" y="-18" width="26" height="36" rx="4" fill="#10241a" stroke="var(--snake)"/>
+          <rect x="122" y="-18" width="26" height="36" rx="4" fill="#10241a" stroke="var(--snake)"/>
+        </g>
+      </g>
+      <g class="street" data-i="2" transform="translate(484,30)">
+        <rect width="200" height="92" rx="10" fill="var(--bg-sunken)" stroke="var(--border)"/>
+        <text x="100" y="26" text-anchor="middle" class="street-t">TURN</text>
+        <text x="100" y="46" text-anchor="middle" class="street-fn">f$turn</text>
+        <text x="100" y="62" text-anchor="middle" class="street-fn">&rarr; double-barrel /</text>
+        <text x="100" y="76" text-anchor="middle" class="street-fn">pot-control / fold</text>
+        <g class="street-card">
+          <rect x="124" y="-18" width="26" height="36" rx="4" fill="#10241a" stroke="var(--snake)"/>
+        </g>
+      </g>
+      <g class="street" data-i="3" transform="translate(716,30)">
+        <rect width="184" height="92" rx="10" fill="var(--bg-sunken)" stroke="var(--border)"/>
+        <text x="92" y="26" text-anchor="middle" class="street-t">RIVER</text>
+        <text x="92" y="46" text-anchor="middle" class="street-fn">f$river</text>
+        <text x="92" y="62" text-anchor="middle" class="street-fn">&rarr; value-bet /</text>
+        <text x="92" y="76" text-anchor="middle" class="street-fn">bluff-catch / fold</text>
+        <g class="street-card">
+          <rect x="110" y="-18" width="26" height="36" rx="4" fill="#10241a" stroke="var(--snake)"/>
+        </g>
+      </g>
+
+      <!-- arrows -->
+      <g stroke="var(--fg-dim)" stroke-width="2" marker-end="url(#arr)">
+        <line x1="220" y1="76" x2="250" y2="76"/>
+        <line x1="452" y1="76" x2="482" y2="76"/>
+        <line x1="684" y1="76" x2="714" y2="76"/>
+      </g>
+
+      <!-- the safety header (shared) -->
+      <rect x="20" y="150" width="880" height="86" rx="10" fill="#0e151c" stroke="var(--border)"/>
+      <text x="36" y="172" class="street-t" style="fill:var(--fg-dim);font-size:11px">EVERY STREET, BEFORE ANYTHING:</text>
+      <text x="36" y="194" font-family="var(--mono)" font-size="11.5" fill="var(--fg)">1. scrape-safety gate &mdash; if the read is flagged bad and it's free, <tspan fill="var(--amber)">Check</tspan> (never auto-fold a possibly-real hand)</text>
+      <text x="36" y="213" font-family="var(--mono)" font-size="11.5" fill="var(--fg)">2. OpenAI hijack override &mdash; only if the (disabled-by-default) advisor returns a concrete action</text>
+      <text x="36" y="232" font-family="var(--mono)" font-size="11.5" fill="var(--fg)">3. game-type dispatch &mdash; <tspan fill="var(--snake)">WHEN isplo8 / WHEN isomaha</tspan> route to the Omaha trees; else Hold'em</text>
+    </svg>
+  </div>
+
+  <p>Inside each street the same shape repeats: a <code>_nobet</code> branch (nobody has bet to you &mdash;
+  do you value-bet, c-bet, semi-bluff, or check?) and a <code>_vs_bet</code> branch (someone bet &mdash; do you
+  raise, call, or fold?). Preflop instead dispatches by how many raises have happened: 0 raises &rarr;
+  <code>f$preflop_open</code>, 1 raise &rarr; <code>f$preflop_vs_raise</code>, 2+ &rarr;
+  <code>f$preflop_vs_3bet</code>, and very short stacks switch to <code>f$preflop_pushfold</code> (jam or fold).</p>
+
+  <h3 id="ohf-knobs">The master knobs</h3>
+  <p>A handful of functions act as dials that retune the whole profile. These are what you tweak to change the
+  bot's personality without rewriting rules:</p>
+  <table class="tbl">
+    <tr><th>Knob</th><th>What it does</th></tr>
+    <tr><td><code class="fn">f$Style</code></td><td>The single biggest dial. <strong>0 = Small Ball</strong> (Negreanu: small bets, ~2.5x opens, ~60% c-bets, pot control). <strong>1 = Power Poker</strong> (Brunson: aggressive, ~pot-sized bets, ~80% c-bets, fast draws). <strong>2 = Hybrid</strong> (default). The Terminal command <code>/strategy smallball|power|hybrid</code> retunes it live.</td></tr>
+    <tr><td><code class="fn">f$CbetFreq</code></td><td>How often Hiss continuation-bets with air as the preflop raiser. Tied to <code>f$Style</code> and modulated by the aggressor knobs (press harder in position, give up out of position vs an opponent who has the lead). Dialed <em>down</em> vs calling stations &mdash; bluffing a station just donates.</td></tr>
+    <tr><td><code class="fn">f$ConservativeKnob</code> / <code class="fn">f$AggressorKnob</code></td><td>0/1/2 restraint and pressure dials driven by who holds the betting initiative across streets (section below). They tighten or loosen at the margin &mdash; they never double-fire the value or commitment lines.</td></tr>
+    <tr><td><code class="fn">f$SafeVsOppRange</code></td><td>Your rule: "if nothing in the opponent's represented range beats us, we are safe to proceed." It green-lights thin value and bluff-catches. The flip side, <code>f$BeatenByOppRange</code>, folds the marginal stuff.</td></tr>
+    <tr><td><code class="fn">f$FeelerBet</code> / <code class="fn">f$FeelerSize</code></td><td>The information-gathering system &mdash; bet as large as you can while still controlling the pot, to learn where you stand. Detailed below.</td></tr>
+    <tr><td><code class="fn">f$SizeMult</code></td><td>A global bet-size multiplier = ICM chip value &times; stack-depth proportionality. Every open/iso/3-bet/4-bet and post-flop bet is scaled by it, so sizing shrinks near a tournament bubble and grows when stacks are deep.</td></tr>
+  </table>
+
+  <h3 id="ohf-aggressor">The inference layer: aggressor rhythm &amp; "what are they representing?"</h3>
+  <p>The file <code>12_aggressor.ohf</code> is where Hiss reasons about the <em>other</em> player. It rests on
+  two engine symbols that are remembered across streets:
+  <code>aggressorchair</code> (the seat of the last raiser, &minus;1 if none) and
+  <code>iamaggressor</code> (1 if that's you). From these it builds two ideas:</p>
+  <ul>
+    <li><strong>Rhythm.</strong> When an opponent holds the initiative and you act before them
+    (<code>f$ActBeforeAggressor</code>), the strong play is usually to <em>let them do the betting</em> &mdash;
+    check and call good hands rather than lead into the player who has the lead. When <em>you</em> have the
+    initiative and position, keep barreling. This is encoded as the conservative/aggressor knobs that retune
+    the c-bet frequency and the post-flop lines.</li>
+    <li><strong>Story.</strong> A villain's betting line implies a range. <code>f$OppRepresents</code> rates it
+    on a 0&ndash;3 scale:</li>
+  </ul>
+
+  <table class="tbl">
+    <tr><th>Score</th><th>The story</th><th>Response</th></tr>
+    <tr><td><strong>0</strong></td><td>No story &mdash; checked to you, no aggression yet.</td><td>Play normally.</td></tr>
+    <tr><td><strong>1</strong></td><td>Capped / weak &mdash; a tiny donk/min-lead, a float, or a station just betting anything.</td><td><span style="color:var(--snake)">Attack</span>: widen bluff-raises, floats, thin value.</td></tr>
+    <tr><td><strong>2</strong></td><td>Merged / standard &mdash; one ordinary continuation bet.</td><td>Call good, fold air. The default.</td></tr>
+    <tr><td><strong>3</strong></td><td>Strong / credible &mdash; a 3-bet line, a check-raise, a turn/river raise, or a nit/passive player firing.</td><td><span style="color:var(--ghost)">Respect</span>: fold marginal hands, no bluff-raise.</td></tr>
+  </table>
+
+  <p>On top of that sits the <strong>range read</strong> (<code>f$BeatenByOppRange</code> /
+  <code>f$SafeVsOppRange</code>). OpenPPL can't enumerate a custom combo range, so this is a practical
+  made-hand-vs-represented-value read: their line + the board texture imply the top of their value range, and it
+  asks whether your made hand sits above it. The literal 169-combo grid is what you see drawn per seat in the
+  React table view's range grid.</p>
+
+  <p>And the <strong>opponent archetypes</strong> (<code>10_opponents.ohf</code>) come from PokerTracker HUD
+  stats of the last raiser &mdash; VPIP, PFR, aggression factor, went-to-showdown &mdash; mapped to types like
+  <code>f$Opp_IsNit</code>, <code>f$Opp_IsStation</code>, <code>f$Opp_IsFish</code>, <code>f$Opp_IsLAG</code>.
+  The whole strategy then "plays the player, not just the cards": value big and never bluff a station, fold to a
+  nit's aggression, attack a foldy player.</p>
+
+  <h3 id="ohf-feeler">Feeler bets: betting to learn</h3>
+  <div class="panel ghost">
+    <h4>&#127919; The information bet</h4>
+    <p>Sometimes you genuinely don't know where you stand &mdash; a marginal made hand, an unclear line. Rather
+    than check blind or over-commit, Hiss fires a <strong>feeler bet</strong>: small enough to keep the pot
+    controlled, but as large as it can be while still doing so, because the villain's <em>response</em> to that
+    size feeds <code>f$OppRepresents</code> on the next street. <code>f$WhereAmIUnsure</code> spots the situation;
+    <code>f$FeelerBet</code> fires it only when you can take a controlled stab (in position or holding the lead,
+    never out of position into the aggressor); <code>f$FeelerSize</code> picks the size (half pot by default,
+    ~1/3 on dry boards vs stations, ~1/4 multiway or very deep). On defense, a tiny (~1bb) bet into you is
+    itself information &mdash; a capped/weak line read by <code>f$Opp_MinBetLead</code> &mdash; and cheap to call
+    with any showdown value.</p>
+  </div>
+
+  <p>This is the through-line of the whole strategy: gather information, respect credible strength, attack
+  weakness, and never go broke with one pair.</p>
+</section>
+
+<!-- ==================== D. FEATURE CATALOG ==================== -->
+<section id="features">
+  <h2><span class="num">D</span>Feature catalog</h2>
+  <p>Beyond the core loop and the OHF, Hiss has grown a lot of supporting machinery. Here's the inventory,
+  one short blurb each.</p>
+
+  <div class="grid2">
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#127922;</span><span class="ft-name">Game-type detection</span></div>
+      <p>NLH vs Omaha vs PLO8, resolved <strong>per hand number</strong> so it switches the instant you tab
+      tables. Scraped table names are unreliable, so the lobby-posted game type
+      (<code>set_table_game_info</code>) is authoritative; card count (4 vs 2) is the ground-truth fallback.</p>
+      <span class="file">CHandHistoryWriter.cpp</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#128100;</span><span class="ft-name">Aggressor memory</span></div>
+      <p>The engine remembers the last raiser's seat across streets (<code>aggressorchair</code>,
+      <code>iamaggressor</code>, reset each hand). This is what powers the rhythm and story inference in
+      <code>12_aggressor.ohf</code>.</p>
+      <span class="file">CSymbolEngineHistory.cpp</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--blue)">&#9707;</span><span class="ft-name">Range grid &amp; HUD</span></div>
+      <p>Over the live table, a click-through overlay draws per-seat HUD boxes (name, balance, and three stat
+      lines from PokerTracker). The React table view also shows the represented-range grid per seat.</p>
+      <span class="file">HudOverlayWindow.cpp</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--ghost)">&#128308;</span><span class="ft-name">RED decision overlay</span></div>
+      <p>When Hiss locks an action it paints it big, bold and red above your cards (FOLD/CHECK/CALL/RAISE/
+      ALL-IN) with the table name beneath, fading over ~10s. It persists as a memory so you can glance and see
+      what it just did.</p>
+      <span class="file">HudOverlayWindow.cpp</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#127942;</span><span class="ft-name">ICM &amp; lobby fetch</span></div>
+      <p>In tournaments the engine computes your dollar-equity for each line (<code>CSymbolEngineICM</code>) so
+      short-stack jams and calls are $-correct, not just chip-correct. A lobby fetch reads the payout/game info
+      page and posts it in. Sizing tightens near the bubble via <code>f$SizeMult</code>.</p>
+      <span class="file">05_config.ohf (f$ICM_*)</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--amber)">&#127908;</span><span class="ft-name">Voice feedback</span></div>
+      <p>Talk to the bot. Your mic is transcribed offline (faster-whisper), categorized, pinned to the live
+      hand, and stored. The improvement loop reads it first &mdash; losing-hand comments sorted to the top &mdash;
+      so your spoken notes actually shape the strategy.</p>
+      <span class="file">mcp/voice_feedback.py</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--blue)">&#128225;</span><span class="ft-name">Replay / telemetry</span></div>
+      <p>Every beat writes frames, decisions, symbols and the full OHF trace to a postgres outbox; a shipper
+      sends it to a LAN replay server. The replay UI lets you scrub any past hand and see the synced decision
+      tree, symbols, and hand history &mdash; the best way to debug <em>why</em>.</p>
+      <span class="file">mcp/hiss_shipper.py</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#128433;</span><span class="ft-name">Autoplayer &amp; All-In</span></div>
+      <p>The autoplayer maps a decision to a button by reading button labels with OCR. All-in is special on
+      phone tables that lack an All-In button: the keypad path now substitutes your full stack as the bet size,
+      fixing the old bug where jams silently folded.</p>
+      <span class="file">CAutoplayer.cpp</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#128190;</span><span class="ft-name">Tablemaps in postgres</span></div>
+      <p>The per-site layouts (region coordinates, button colors, betting-click config) live in the postgres
+      <code>hiss</code> database, loaded by a shared loader. Note: per-tablemap settings are keyed by name, so
+      renaming a map can orphan its config.</p>
+      <span class="file">CTablemapDB</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#128376;</span><span class="ft-name">Scrape validator</span></div>
+      <p>A per-beat sanity check (cards, pot conservation, stacks, bets) produces <code>validator_ok</code> and a
+      confidence score. The OHF's scrape-safety gate uses it to Check (never auto-fold) on a flagged bad frame.</p>
+      <span class="file">CSymbolEngineValidator.cpp</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#128421;</span><span class="ft-name">Browser Terminal tabs</span></div>
+      <p>The web Terminal (served by Hiss itself) has tabs: <strong>Terminal</strong> (4 panes + a command
+      prompt), <strong>AIL</strong> (daemon on/off switches + merged feed), <strong>Synapse Harmonizer</strong>,
+      and <strong>Hiss</strong> (the React table view). This Educate page lives as a new tab beside them.</p>
+      <span class="file">ChatTerminalServer.cpp</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--dna)">&#129516;</span><span class="ft-name">Synapse Harmonizer</span></div>
+      <p>Unifies every signal/knob/mode/output into one node+synapse graph with a per-node "ghost" inference and
+      a unified NN feature spec. Its <code>--watch</code> daemon writes <code>synapse_state</code> and per-hand
+      results to postgres.</p>
+      <span class="file">mcp/synapse_map.py</span>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== E. AIL ==================== -->
+<section id="ail">
+  <h2><span class="num">E</span>The Autonomous Improvement Loop &amp; its daemons</h2>
+  <p>The <em class="term">AIL</em> (Autonomous Improvement Loop) is a standing ~45-minute cycle that makes Hiss
+  better on its own. It is a Claude Code cron job following a playbook
+  (<code>Release/logs/AIL_PLAYBOOK.md</code>); each run makes one well-scoped improvement and writes a dated
+  entry into the journal. Several helper <em class="term">daemons</em> feed it &mdash; the AIL control server
+  (<code>mcp/ail_server.py</code>, port 7900) starts/stops them and is the backend for the browser's AIL tab.</p>
+
+  <div class="diagram">
+    <div class="cap"><span class="ttl">The synapse organism &mdash; signals feeding one mind</span></div>
+    <svg viewBox="0 0 920 250" role="img" aria-label="Animated synapse graph of the daemons">
+      <!-- edges -->
+      <g id="syn-edges"></g>
+      <!-- core -->
+      <circle class="syn-core" cx="460" cy="125" r="40"/>
+      <text x="460" y="120" text-anchor="middle" class="syn-node-t" style="font-size:12px;fill:var(--dna)">SYNAPSE</text>
+      <text x="460" y="136" text-anchor="middle" class="syn-node-t" style="font-size:9px">harmonizer</text>
+      <!-- nodes -->
+      <g id="syn-nodes"></g>
+    </svg>
+  </div>
+
+  <p>The loop runs in this order each cycle:</p>
+  <ol>
+    <li><strong>Voice feedback first.</strong> Read your spoken notes (<code>ail_feedback.py</code>),
+    losing-hand comments weighted to the top, correlated to the money result of the hand they react to.</li>
+    <li><strong>1b &middot; Harmonize the synapses.</strong> <code>synapse_map.py</code> recomputes the unified
+    graph + the NN feature spec.</li>
+    <li><strong>1c &middot; Observational learning.</strong> <code>observe_learn.py</code> turns game state +
+    HUD opponent stats into villain exploits and table reads (the <code>observations</code> table); it also
+    drives the HUD aggregator.</li>
+    <li><strong>2 &middot; Review.</strong> Inspect recent decisions live and in the replay system.</li>
+    <li><strong>3 &middot; One improvement.</strong> Edit the OHF (validate then reload), or rebuild the C++, or
+    fix a tablemap/setting &mdash; just one, well scoped.</li>
+    <li><strong>4 &middot; Verify, then 5 &middot; Journal.</strong> Confirm with evidence, then write the dated
+    entry referencing the voice-feedback ids acted on.</li>
+  </ol>
+
+  <h3>The daemon roster</h3>
+  <table class="tbl">
+    <tr><th>Daemon</th><th>What it does</th></tr>
+    <tr><td><code>synapse_map.py</code></td><td>Unifies signals/knobs/modes into the node graph; <code>--watch</code> writes <code>synapse_state</code> + <code>hand_results</code>.</td></tr>
+    <tr><td><code>observe_learn.py</code></td><td>While observing, synthesizes exploits/table-reads into the <code>observations</code> table; drives the HUD aggregator.</td></tr>
+    <tr><td><code>voice_feedback.py</code></td><td>Mic &rarr; faster-whisper &rarr; pin to the live hand &rarr; postgres <code>voice_feedback</code>.</td></tr>
+    <tr><td><code>hud_aggregator.py</code></td><td>Parses logged hands into verified per-player HUD stats (<code>hud_player_stats</code>) the overlay reads.</td></tr>
+    <tr><td><code>hiss_shipper.py</code></td><td>Ships the local telemetry outbox to the replay server (frames deduped, structured rows bulk-ingested).</td></tr>
+    <tr><td><code>poker_coach_hype.py</code></td><td>Lilith's voice: periodic hype + a pre-tournament prep speech; logs to the <code>coach_notes</code> panel.</td></tr>
+    <tr><td><code>nn_driver.py</code> / <code>ultra_mode.py</code> / <code>card_oracle.py</code></td><td>The alternate brains &amp; the omen feed (section B), launched by their in-Hiss toolbar buttons.</td></tr>
+    <tr><td><code>hiss_mcp_server.py</code></td><td>The bridge that lets Claude see and drive the bot &mdash; live HTTP, repo files, postgres, scrapes, screenshots (the MCP server).</td></tr>
+  </table>
+</section>
+
+<!-- ==================== F. GLOSSARY ==================== -->
+<section id="glossary">
+  <h2><span class="num">F</span>Glossary</h2>
+  <p>The terms a newcomer needs, in plain language.</p>
+  <dl class="gloss">
+    <dt>OHF</dt><dd>OpenHoldem Formula &mdash; the strategy file. Your distilled poker knowledge as code.</dd>
+    <dt>OpenPPL</dt><dd>The language the OHF is written in: functions of <code>WHEN &hellip; action &hellip; FORCE</code> rules, evaluated top-to-bottom, first match wins.</dd>
+    <dt>f$Name</dt><dd>A function you defined (e.g. <code class="fn">f$flop</code>, <code class="fn">f$Style</code>). The <code>f$</code> prefix marks it as a formula.</dd>
+    <dt>symbol</dt><dd>A built-in named value the engine computes, e.g. <code>prwin</code>, <code>PotSize</code>, <code>AmountToCall</code>.</dd>
+    <dt>list</dt><dd>A named set of starting hands (a range), e.g. <code>listOpenBTN</code>. A condition is true if your hand is in the list.</dd>
+    <dt>prwin</dt><dd>"Probability of winning" &mdash; your hand's equity, from a 20,000-iteration Monte-Carlo simulation on its own thread.</dd>
+    <dt>street</dt><dd>A betting round: preflop, flop, turn, river.</dd>
+    <dt>WHEN Others</dt><dd>The catch-all final rule of a function &mdash; the default when nothing above matched.</dd>
+    <dt>heartbeat</dt><dd>One pass of the main loop: scrape &rarr; OCR &rarr; symbols &rarr; (on your turn) decide &amp; click &rarr; log.</dd>
+    <dt>scrape / OCR</dt><dd>Scrape = capture the table pixels using the tablemap regions. OCR = read text/cards out of those pixels (Tesseract, in worker processes).</dd>
+    <dt>tablemap</dt><dd>The per-site layout: where each card, bet, button and label is, plus colors and click config. Stored in postgres.</dd>
+    <dt>autoplayer</dt><dd>The component that turns a decision into a real mouse click on the right button.</dd>
+    <dt>aggressorchair / iamaggressor</dt><dd>The seat of the last raiser (remembered across streets), and whether that's you.</dd>
+    <dt>VPIP / PFR / AF / WTSD</dt><dd>PokerTracker opponent stats: % of hands voluntarily played, % pre-flop raised, aggression factor, % went to showdown. They classify opponent types.</dd>
+    <dt>SPR</dt><dd>Stack-to-Pot Ratio &mdash; effective stack &divide; pot. Low SPR means you're committed; high SPR means keep the pot small.</dd>
+    <dt>M / M-zone</dt><dd>Harrington's M = your stack &divide; the cost of one orbit (blinds + antes). Smaller M &rarr; push-fold sooner. The zones are Green/Yellow/Orange/Red/Dead.</dd>
+    <dt>ICM</dt><dd>Independent Chip Model &mdash; converts tournament chips into real dollar-equity, so survival counts when payouts are top-heavy.</dd>
+    <dt>c-bet</dt><dd>Continuation bet &mdash; betting the flop because you raised pre-flop, whether or not you connected.</dd>
+    <dt>NN</dt><dd>Neural Network &mdash; the trained alternate brain that can play in place of the OHF.</dd>
+    <dt>AIL</dt><dd>Autonomous Improvement Loop &mdash; the ~45-min cycle that reads feedback and makes one improvement at a time.</dd>
+    <dt>HUD</dt><dd>Heads-Up Display &mdash; the live overlay of opponent stats over each seat.</dd>
+  </dl>
+</section>
+
+<footer>
+  <p><span class="sn">&#128013;</span> Generated from the live Hiss codebase &mdash; the OHF segments in
+  <code>.strategy_build/strategy/</code>, the C++ engine in <code>Hiss/</code>, and the daemons in
+  <code>mcp/</code>. If the code changes, this page may drift; treat it as a map, not the territory.
+  Built for Emrald by <span class="gh">Jasper</span>.</p>
+</footer>
+</main>
+</div>
+
+<script>
+/* ============================================================
+   1. Active-section highlighting in the TOC
+   ============================================================ */
+(function(){
+  var links = [].slice.call(document.querySelectorAll('nav.toc a'));
+  var map = {};
+  links.forEach(function(a){
+    var id = a.getAttribute('href').slice(1);
+    var el = document.getElementById(id);
+    if(el) map[id] = a;
+  });
+  var ids = Object.keys(map);
+  function onScroll(){
+    var best=null, bestTop=-1e9;
+    ids.forEach(function(id){
+      var r = document.getElementById(id).getBoundingClientRect();
+      if(r.top <= 120 && r.top > bestTop){ bestTop=r.top; best=id; }
+    });
+    links.forEach(function(a){a.classList.remove('active');});
+    if(best && map[best]) map[best].classList.add('active');
+  }
+  // scroll within main (page scrolls on window inside the iframe)
+  window.addEventListener('scroll', onScroll, {passive:true});
+  document.addEventListener('scroll', onScroll, {passive:true,capture:true});
+  onScroll();
+})();
+
+/* ============================================================
+   2. Heartbeat pipeline: a pulse that lights each stage in turn
+   ============================================================ */
+(function(){
+  var dg = document.getElementById('dg-pipeline');
+  var dot = document.getElementById('pl-dot');
+  var rail = document.getElementById('pl-rail');
+  var stages = [].slice.call(dg.querySelectorAll('.stage'));
+  var label = document.getElementById('pl-label');
+  var detail = document.getElementById('pl-detail');
+  var toggle = document.getElementById('pl-toggle');
+
+  var X = [120+59, 256+59, 392+59, 528+59, 664+59, 800+59]; // stage centers (group x + half width)
+  var info = [
+    ['1 · Scrape', 'Capture the table window; read only the regions the tablemap needs.'],
+    ['2 · OCR', 'Tesseract worker processes turn pixels into text & card values.'],
+    ['3 · Symbols', 'Engines compute prwin, PotSize, made-hand flags, aggressorchair…'],
+    ['4 · OHF', 'Only on your turn + a final answer: the strategy decides the action.'],
+    ['5 · Click', 'The autoplayer clicks the matching button (label-matched, mutex-guarded).'],
+    ['6 · Telemetry', 'Frames, decisions & the OHF trace logged → replay server.']
+  ];
+
+  var i=0, t=0, paused=false;
+  var DWELL = 46; // ticks per stage segment (~ smooth)
+  function setStage(idx){
+    stages.forEach(function(s,k){ s.classList.toggle('on', k===idx); });
+    label.textContent = info[idx][0];
+    detail.textContent = info[idx][1];
+  }
+  setStage(0);
+
+  function frame(){
+    if(!paused){
+      t++;
+      var seg = Math.min(i+1, X.length-1);
+      var from = X[i], to = X[seg];
+      var p = t/DWELL;
+      if(p>=1){
+        t=0; i=seg;
+        if(i>=X.length-1){ // loop back
+          // brief pause at telemetry then restart
+          i=0; setStage(0); dot.setAttribute('cx', X[0]);
+          requestAnimationFrame(frame); return;
+        }
+        setStage(i);
+      } else {
+        var cx = from + (to-from)*p;
+        dot.setAttribute('cx', cx);
+        if(p>0.5) setStage(seg);
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  toggle.addEventListener('click', function(){
+    paused=!paused;
+    dg.classList.toggle('paused-anim', paused);
+    toggle.innerHTML = paused ? '▶ Play' : '⏸ Pause';
+    toggle.classList.toggle('paused', paused);
+  });
+  stages.forEach(function(s,k){
+    s.style.cursor='pointer';
+    s.addEventListener('click', function(){ i=k; t=0; setStage(k); dot.setAttribute('cx',X[k]); });
+  });
+})();
+
+/* ============================================================
+   3. Street walk: highlight preflop -> flop -> turn -> river
+   ============================================================ */
+(function(){
+  var dg = document.getElementById('dg-streets');
+  var streets = [].slice.call(dg.querySelectorAll('.street'));
+  var toggle = document.getElementById('st-toggle');
+  var i=0, paused=false, timer=null;
+  function light(){
+    streets.forEach(function(s,k){ s.classList.toggle('on', k===i); });
+    i = (i+1) % streets.length;
+  }
+  light();
+  function start(){ timer = setInterval(light, 1500); }
+  start();
+  toggle.addEventListener('click', function(){
+    paused=!paused;
+    if(paused){ clearInterval(timer); } else { start(); }
+    toggle.innerHTML = paused ? '▶ Play' : '⏸ Pause';
+    toggle.classList.toggle('paused', paused);
+  });
+  streets.forEach(function(s,k){
+    s.style.cursor='pointer';
+    s.addEventListener('click', function(){
+      streets.forEach(function(x){x.classList.remove('on');});
+      s.classList.add('on'); i=(k+1)%streets.length;
+    });
+  });
+})();
+
+/* ============================================================
+   4. Synapse graph: build nodes around the core, twinkling edges
+   ============================================================ */
+(function(){
+  var nodesG = document.getElementById('syn-nodes');
+  var edgesG = document.getElementById('syn-edges');
+  if(!nodesG) return;
+  var cx=460, cy=125;
+  var labels = ['voice','observe','synapse→NN','hud','shipper','coach','nn','ultra','oracle'];
+  var n = labels.length;
+  var ns='http://www.w3.org/2000/svg';
+  labels.forEach(function(lab,k){
+    var ang = (-Math.PI/2) + (k/n)*Math.PI*2;
+    var rx = 380, ry = 92; // ellipse so it fits the wide viewbox
+    var x = cx + Math.cos(ang)*rx;
+    var y = cy + Math.sin(ang)*ry;
+
+    var line = document.createElementNS(ns,'line');
+    line.setAttribute('x1',cx); line.setAttribute('y1',cy);
+    line.setAttribute('x2',x);  line.setAttribute('y2',y);
+    line.setAttribute('class','syn-edge live');
+    line.style.animationDelay = (k*0.28)+'s';
+    edgesG.appendChild(line);
+
+    var w = Math.max(54, lab.length*7.2+18);
+    var g = document.createElementNS(ns,'g');
+    g.setAttribute('transform','translate('+(x - w/2)+','+(y-13)+')');
+    var rect = document.createElementNS(ns,'rect');
+    rect.setAttribute('width',w); rect.setAttribute('height',26);
+    rect.setAttribute('rx',7); rect.setAttribute('class','syn-node');
+    g.appendChild(rect);
+    var tx = document.createElementNS(ns,'text');
+    tx.setAttribute('x',w/2); tx.setAttribute('y',17);
+    tx.setAttribute('text-anchor','middle'); tx.setAttribute('class','syn-node-t');
+    tx.textContent = lab;
+    g.appendChild(tx);
+    nodesG.appendChild(g);
+  });
+})();
+</script>
+</body>
+</html>

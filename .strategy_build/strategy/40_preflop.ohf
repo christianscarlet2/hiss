@@ -43,6 +43,10 @@ WHEN Others RETURN f$preflop_open FORCE
 WHEN Calls >= 1 RETURN f$preflop_limped FORCE
 // Truly unopened: open-raise by position. Short stacks tighten to the MP range.
 WHEN f$ShortStack AND NOT listOpenMP Fold FORCE
+// OPENING-RANGE KNOB (tighten): when the Synapse open-range dial is turned DOWN, open only the
+// MP-strength range from every seat (drop the wide late/blind steals). BB still checks. Inert at
+// the neutral / wide settings. [Emrald open-range knob]
+WHEN f$OpenTightenHard AND NOT InBigBlind AND NOT listOpenMP AND explain_fold_pre Fold FORCE
 // Heads-up: the button/SB opens very wide at a minraise. [HUM][HUSNG]
 WHEN f$HeadsUpPot AND InSmallBlind AND listOpenHU AND explain_open RaiseTo f$Open_RaiseTo_HU FORCE
 // EXPLOIT (observationally learned -- observe_learn flagged nits like H1GHJACK / metared): confirmed
@@ -51,6 +55,11 @@ WHEN f$HeadsUpPot AND InSmallBlind AND listOpenHU AND explain_open RaiseTo f$Ope
 // widens healthy-stack steals; non-nit blinds fall through to the normal positional opens. [N p.30]
 WHEN (InButton OR InCutOff) AND f$BlindsAreNitty AND listStealNit AND explain_open RaiseTo f$Open_RaiseTo FORCE
 WHEN InSmallBlind AND f$BlindsAreNitty AND listStealNit AND explain_open RaiseTo f$Open_RaiseTo FORCE
+// OPENING-RANGE KNOB (widen): when the Synapse open-range dial is turned UP, open the wide ~65%
+// steal list from any late seat / the SB regardless of the blinds' tendency. Inert at neutral /
+// tight. [Emrald open-range knob]
+WHEN f$OpenWiden AND (InButton OR InCutOff OR InLatePosition) AND listStealNit AND explain_open RaiseTo f$Open_RaiseTo FORCE
+WHEN f$OpenWiden AND InSmallBlind AND listStealNit AND explain_open RaiseTo f$Open_RaiseTo FORCE
 // 6-max: tighter early/middle than the full-ring-shared lists. [RF][V6]
 WHEN f$Is6Max AND InEarlyPosition AND listOpenEP6 RaiseTo f$Open_RaiseTo FORCE
 WHEN f$Is6Max AND InMiddlePosition AND listOpenMP6 RaiseTo f$Open_RaiseTo FORCE
@@ -83,6 +92,12 @@ WHEN explain_fold_pre Fold FORCE
 ##f$preflop_vs_raise##
 // Vs a player who 3-bets light, just FLAT the premiums and outplay him. [N p.22]
 WHEN list3betValue AND f$Opp_ThreeBetsLight AND listCall3bet Call FORCE
+// CtM: vs a NIT'S open, FLAT the big pairs / big aces (in position or at a price)
+// instead of 3-betting. A nit's opening range is so tight it crushes JJ/AK, so bloating
+// the pot only folds out everything we beat and gets it in behind. Flat and set-mine /
+// outplay rather than 3-bet into his nut-weighted range. [CtM p96 "vs a nit opening EP,
+// calling is often best with big aces/pairs"; p106 "a nit opens EP -> flat call"]
+WHEN list3betValue AND f$Opp_IsNit AND (f$InPositionPre OR f$DecentPrice) AND listCall3bet Call FORCE
 // 3-bet for value.
 WHEN list3betValue AND explain_3bet_value RaiseTo f$ThreeBet_RaiseTo FORCE
 // SQUEEZE: a raise WITH cold-caller(s) in front -> 3-bet to isolate with a value range.
@@ -111,6 +126,12 @@ WHEN explain_fold_pre Fold FORCE
 WHEN list4betValue RaiseTo f$FourBet_RaiseTo FORCE
 // Power-poker: also 4-bet QQ/AK for value vs a 3-bet. [B]
 WHEN f$Style == 1 AND list4betValuePower RaiseTo f$FourBet_RaiseTo FORCE
+// CtM: at full-ring micros, a 3-bet from a NIT or a PASSIVE player is nut-weighted -
+// fold even QQ/JJ/AK a lot (they don't 3-bet light). We have already 4-bet AA/KK above,
+// so this folds the next tier down rather than flatting it into a crushing range. The
+// general-opponent IP flat below is preserved for the wider/unknown 3-bettors. [CtM p107
+// "you should be folding a lot when 3bet, esp OOP"; p109 "fold QQ/JJ/AK to a 4bet/nit"]
+WHEN NOT list4betValue AND (f$Opp_IsNit OR f$Opp_IsPassive) AND explain_fold_pre Fold FORCE
 // Flat the 3-bet in position (or cheaply) and outplay post-flop. [N p.28]
 WHEN listCall3bet AND f$InPositionPre Call FORCE
 WHEN listCall3bet AND f$DecentPrice Call FORCE

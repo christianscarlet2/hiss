@@ -21,6 +21,7 @@
 #include "CSymbolEngineChipAmounts.h"
 #include "CSymbolEngineTableLimits.h"
 #include "CSymbolEngineUserchair.h"
+#include "CSymbolEngineRaisers.h"
 #include "CSymbolEngineChecksBetsFolds.h"
 #include "..\CTablemap\CTablemap.h"
 #include "FloatingPoint_Comparisions.h"
@@ -100,6 +101,7 @@ void CSymbolEngineHistory::UpdateOnHandreset() {
 	write_log(Preferences()->debug_symbolengine(),
 		"[SymbolEngineHistory] Update on handreset\n");
 	_prevaction = k_prevaction_undefined;
+	_aggressor_chair = -1;   // [Emrald] reset the cross-street aggressor memory each hand
 	// Element 0 is unused
 	for (int i = 0; i<(kNumberOfBetrounds + 1); ++i) {
 		_nplayersround[i] = 0;
@@ -225,6 +227,13 @@ void CSymbolEngineHistory::CalculateHistory() {
 		p_engine_container->EvaluateSymbol(k_hist_sym_strings[i], &result);
 		_hist_sym[i][betround] = result;
 	}
+	// [Emrald] CROSS-STREET AGGRESSOR MEMORY: capture the current last-raiser and CARRY it across
+	// streets (only overwrite when there IS a raiser this round), so it remembers the aggressor from
+	// the current street or the previous ones. Reset to -1 on hand-reset.
+	if (p_engine_container->symbol_engine_raisers() != NULL) {
+		int rc = p_engine_container->symbol_engine_raisers()->raischair();
+		if (rc >= 0 && rc < kMaxNumberOfPlayers) _aggressor_chair = rc;
+	}
 
 	if (_nplayersround[BETROUND] == 0) {
 		_nplayersround[BETROUND] =
@@ -266,6 +275,17 @@ double CSymbolEngineHistory::HistorySymbol(const CString sym, const int round) {
 
 bool CSymbolEngineHistory::EvaluateSymbol(const CString name, double *result, bool log /* = false */) {
 	FAST_EXIT_ON_OPENPPL_SYMBOLS(name);
+	// [Emrald] cross-street aggressor memory symbols.
+	if (memcmp(name, "aggressorchair", 14) == 0 && strlen(name) == 14) {
+		*result = _aggressor_chair;
+		return true;
+	}
+	if (memcmp(name, "iamaggressor", 12) == 0 && strlen(name) == 12) {
+		int uc = (p_engine_container->symbol_engine_userchair() != NULL)
+			? p_engine_container->symbol_engine_userchair()->userchair() : -1;
+		*result = (_aggressor_chair >= 0 && _aggressor_chair == uc) ? 1.0 : 0.0;
+		return true;
+	}
 	if (memcmp(name, "did", 3) == 0) {
 		if (memcmp(name, "didchec", 7) == 0 && strlen(name) == 7) {
 			*result = didchec(p_betround_calculator->betround());
@@ -397,7 +417,7 @@ bool CSymbolEngineHistory::DidFoldThisHand() {
 
 CString CSymbolEngineHistory::SymbolsProvided() {
 	CString list = "didchec didcall didrais didbetsize didfold didalli "
-		"nplayersround nbetsround prevaction ";
+		"nplayersround nbetsround prevaction aggressorchair iamaggressor ";
 	list += RangeOfSymbols("didchecround%i", kBetroundPreflop, kBetroundRiver);
 	list += RangeOfSymbols("didcallround%i", kBetroundPreflop, kBetroundRiver);
 	list += RangeOfSymbols("didraisround%i", kBetroundPreflop, kBetroundRiver);

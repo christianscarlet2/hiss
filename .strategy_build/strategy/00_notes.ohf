@@ -70,6 +70,16 @@
 //    [CtM] Crushing the Microstakes (Williams) - exploit weak/passive fields:
 //          value BIG vs stations (f$BetPctVsStation), broadened station typing,
 //          never bluff the fish on any street.
+//          DEEPENED 2026-06-20 (the freeroll/low-stakes field is our home game, so
+//          this is the highest-value book): added the missing SLP archetype
+//          (f$Opp_IsSLP, ~24/6) + the bet-pattern reads f$Opp_MinBetLead /
+//          f$Opp_NutsyRaise ("turn/river raises are the nuts", "min/probe bets are
+//          weak"); EXTRACTION/fastplay value-big extended to station+fish+SLP on all
+//          three streets; "give up when they fight back" wired as the f$OppRepresents
+//          respect-fold (fold one pair/overpair to a credible nut line, fold to
+//          turn/river raises); fish bluff missed draws -> capped river value-call;
+//          vs a nit/passive 3-bet fold even QQ/JJ/AK, flat (not 3-bet) into a nit's
+//          tight open. See 12_aggressor.ohf + 40/50/60/70 [CtM p.NN] cites.
 //    [PMM] Poker Math That Matters (Gaines) / [MoH] Math of Hold'em (Moshman) -
 //          exact pot odds (f$RequiredEquity), fold-equity / MDF, the 15x set-mine
 //          rule (f$SetMineOK, tighter than the old 10% f$WithinSpecRisk).
@@ -82,6 +92,10 @@
 //    [EM]  Ed Miller "Playing the Player" / "How to Read Hands" / [TN] Tri Nguyen
 //          "Poker Blueprint" - stat-based opponent typing: the new TAG/LAG/fish/
 //          maniac archetypes in 10_opponents (fixes IsAggro firing on AF alone).
+//          ALSO (2026-06-20) the READ-THE-LINE story engine f$OppRepresents
+//          (12_aggressor): infer the opponent's perceived range from his BETTING
+//          LINE (checked-to / capped / merged / strong) and gate value/bluff/fold
+//          on it - Miller's "play the player, read the line not the cards."
 //
 //  ---------------------------------------------------------------------------
 //  TIER-2 WAVE-1 LIBRARY EXPANSION (2026-06-15) - cash/MTT/SNG/HU technique. 18
@@ -161,9 +175,12 @@
 //  f$betsize into the table's chip amount.
 //
 //  This file is SEGMENTED across several .ohf files for maintainability
-//  (00_notes, 05_config, 10_opponents, 20_lists, 30_classify, 40_preflop,
-//   50_flop, 60_turn, 70_river, 80_betsize, 90_table). They share one f$
-//   namespace. They are either concatenated into one master .ohf, or dropped
+//  (00_notes, 05_config, 10_opponents, 12_aggressor, 15_explain, 16_steering,
+//   20_lists, 30_classify, 40_preflop, 50_flop, 60_turn, 70_river, 90_table).
+//   12_aggressor = cross-street aggressor rhythm (f$IAmAggressor/f$AggressorIsOpp/
+//   f$ActBeforeAggressor + the f$ConservativeKnob/f$AggressorKnob dials, which also
+//   modulate f$CbetFreq) + the f$OppRepresents read-the-line story engine. They
+//   share one f$ namespace. They are either concatenated into one master .ohf, or dropped
 //   into Hiss's bot_logic\Strategy\ folder and auto-loaded (see release notes).
 //
 //  TUNE the STYLE dial and the thresholds in 05_config to taste.
