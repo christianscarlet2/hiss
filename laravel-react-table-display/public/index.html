@@ -8,6 +8,30 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Red "intriguing" loader shown the instant the React table view opens (before the bundle loads),
+         removed with a fade once React paints into #root. Covers the WebView2 + browser boot. [Emrald] -->
+    <div id="hiss-loader" aria-label="loading">
+      <div class="hl-ring"></div>
+      <div class="hl-core"></div>
+      <div class="hl-text">HISS</div>
+    </div>
+    <style>
+      html,body{margin:0;background:#070304}
+      #hiss-loader{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;
+        flex-direction:column;background:radial-gradient(circle at 50% 45%,#1a0608 0%,#070304 70%,#000 100%);
+        transition:opacity .45s ease}
+      #hiss-loader.hl-gone{opacity:0;pointer-events:none}
+      #hiss-loader .hl-ring{position:absolute;width:120px;height:120px;border-radius:50%;
+        border:3px solid rgba(224,70,85,.14);border-top-color:#e04655;border-right-color:#ff2740;
+        animation:hl-spin .9s linear infinite;box-shadow:0 0 26px rgba(255,39,64,.45),inset 0 0 18px rgba(255,39,64,.22)}
+      #hiss-loader .hl-core{width:46px;height:46px;border-radius:50%;background:radial-gradient(circle,#ff3b4d,#b3071a);
+        box-shadow:0 0 30px 6px rgba(255,40,64,.6);animation:hl-pulse 1.15s ease-in-out infinite}
+      #hiss-loader .hl-text{margin-top:32px;font:800 15px/1 system-ui,Segoe UI,sans-serif;letter-spacing:.55em;
+        color:#ff5566;text-shadow:0 0 14px rgba(255,40,64,.85);animation:hl-flicker 2.4s ease-in-out infinite;padding-left:.55em}
+      @keyframes hl-spin{to{transform:rotate(360deg)}}
+      @keyframes hl-pulse{0%,100%{transform:scale(.82);opacity:.85}50%{transform:scale(1.12);opacity:1}}
+      @keyframes hl-flicker{0%,100%{opacity:.55}45%{opacity:1}55%{opacity:.72}}
+    </style>
     <!-- Game-type indicator (NLH / PLO / PLO8). Self-contained overlay; reads the cheap, stable
          isomaha/isplo8/ispl symbols (ispl is set whenever the table is detected Omaha, so the badge
          stays correct between hands when isomaha hasn't latched yet). No React-bundle dependency. -->
@@ -72,5 +96,20 @@
     <script src="/table-display/assets/react.production.min.js"></script>
     <script src="/table-display/assets/react-dom.production.min.js"></script>
     <script src="/table-display/assets/app.js?v=33"></script>
+    <script>
+      // Remove the red loader once React has painted into #root (with an 8s safety so it never traps). [Emrald]
+      (function(){
+        var L=document.getElementById('hiss-loader'); if(!L) return;
+        var root=document.getElementById('root');
+        function gone(){ if(!L) return; L.classList.add('hl-gone');
+          setTimeout(function(){ if(L&&L.parentNode) L.parentNode.removeChild(L); },600); L=null; }
+        function check(){ if(root && root.childElementCount>0){ gone(); return true; } return false; }
+        if(!check()){
+          var obs=new MutationObserver(function(){ if(check()&&obs){ obs.disconnect(); } });
+          try{ obs.observe(root,{childList:true,subtree:true}); }catch(e){}
+          setTimeout(gone,8000);
+        }
+      })();
+    </script>
   </body>
 </html>

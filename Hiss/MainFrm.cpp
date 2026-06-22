@@ -334,6 +334,7 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct) {
 	// ChatGPT-style terminal companion window
 	p_chat_terminal = new CChatTerminalWindow();
 	p_chat_terminal->Create(this);
+	p_chat_terminal->ShowWindow(SW_HIDE);   // hidden at startup; summon it from the terminal toolbar/menu [Emrald]
 	ChatTerminalAppend(kChatTerminalContext, "OpenHoldem terminal attached. Drag it left or right of the main window to choose the side.");
 	p_chat_terminal_server = new CChatTerminalServer();
 	if (!p_chat_terminal_server->Start()) {

@@ -274,19 +274,14 @@ void COpenHoldemApp::FinishInitialization() {
 	// Show each instance (no auto-minimize for secondary instances) and restore its
 	// own last size/position from the DB, so multiple instances open where they last
 	// closed.
-	m_pMainWnd->ShowWindow(SW_SHOW);
-	m_pMainWnd->UpdateWindow();
-	// Restore this instance's saved window size/position (per-instance, shared DB).
-	((CMainFrame *)m_pMainWnd)->RestoreWindowPlacementFromDb();
-	// call DragAcceptFiles only if there's a suffix
-	// In an SDI app, this should occur after ProcessShellCommand
-	// Enable drag/drop open
+	// Hide the main Hiss window COMPLETELY at startup -- a hidden window shows neither on screen NOR in the
+	// taskbar. The React table view (its own top-level window with its own taskbar icon) is the primary UI
+	// now; its scarlet "restore" toolbar icon un-hides this main window on demand. [Emrald: hide main window
+	// from view + taskbar; restore it from the React table view]
+	((CMainFrame *)m_pMainWnd)->RestoreWindowPlacementFromDb();   // set saved placement now, while hidden
+	m_pMainWnd->ShowWindow(SW_HIDE);
+	// Enable drag/drop open (after ProcessShellCommand, per MFC SDI guidance).
 	m_pMainWnd->DragAcceptFiles();
-	// Bring main window to front
-	m_pMainWnd->SetWindowPos(&CWnd::wndTop, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
-	m_pMainWnd->SetActiveWindow();
-	m_pMainWnd->SetFocus();
-	m_pMainWnd->SetForegroundWindow();
 }
 
 int COpenHoldemApp::ExitInstance() {

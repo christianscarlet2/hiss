@@ -32,6 +32,9 @@ static const int kNumMenuTops = sizeof(kMenuTops) / sizeof(kMenuTops[0]);
 // Toolbar buttons mirrored from the IDR_MAINFRAME toolbar (-1 = separator). Each non-
 // separator entry draws a Segoe MDL2 Assets glyph and forwards its command to the main frame.
 struct SToolItem { int command; const wchar_t *glyph; bool scarlet; };
+// Custom React-table-view tool commands (NOT main-frame commands -> intercepted in ForwardCommand). [Emrald]
+static const int kCmdReactOpenBrowser = 0xBEEF01;   // open the table view in the default web browser
+static const int kCmdReactRestoreMain = 0xBEEF02;   // un-hide / restore the (normally hidden) main Hiss window
 static const SToolItem kToolItems[] = {
 	{ ID_FILE_NEW,                     L"\xE7C3", false },  // page
 	{ ID_FILE_OPEN,                    L"\xE838", false },  // folder open
@@ -47,6 +50,9 @@ static const SToolItem kToolItems[] = {
 	{ ID_MAIN_TOOLBAR_MANUALMODE,      L"\xE815", false },  // touch pointer
 	{ -1, L"", false },
 	{ ID_MAIN_TOOLBAR_HELP,            L"\xE897", true  },  // help (scarlet flair)
+	{ -1, L"", false },
+	{ kCmdReactOpenBrowser,            L"\xE774", false },  // globe -> open this table view in the web browser
+	{ kCmdReactRestoreMain,            L"\xE737", true  },  // window -> restore the hidden main Hiss window (scarlet)
 };
 static const int kNumToolItems = sizeof(kToolItems) / sizeof(kToolItems[0]);
 static const int kToolButtonWidth = 30;
@@ -250,17 +256,19 @@ void CReactTableWindow::ResizeBrowser(void)
 
 void CReactTableWindow::AttachToOwner(void)
 {
-	if (_owner == NULL || !::IsWindow(_owner->GetSafeHwnd()) || !::IsWindow(GetSafeHwnd())) {
+	// FULLY INDEPENDENT of the (now hidden) main Hiss window: do NOT dock/snap to it. The React table view
+	// is the primary window now, so just centre it on the primary work area. [Emrald: remove snapping completely]
+	if (!::IsWindow(GetSafeHwnd())) {
 		return;
 	}
-
-	CRect owner_rect, rect;
-	_owner->GetWindowRect(&owner_rect);
+	CRect rect;
 	GetWindowRect(&rect);
-	// Dock to the owner's right side (aligned tops) so it sticks to the side.
-	const int gap = 8;
-	int x = owner_rect.right + gap;
-	int y = owner_rect.top;
+	RECT wa = { 0 };
+	::SystemParametersInfo(SPI_GETWORKAREA, 0, &wa, 0);
+	int x = wa.left + ((wa.right - wa.left) - rect.Width()) / 2;
+	int y = wa.top + ((wa.bottom - wa.top) - rect.Height()) / 2;
+	if (x < wa.left) x = wa.left;
+	if (y < wa.top) y = wa.top;
 	SetWindowPos(NULL, x, y, rect.Width(), rect.Height(), SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
@@ -773,6 +781,23 @@ void CReactTableWindow::OpenTopMenu(int index)
 void CReactTableWindow::ForwardCommand(unsigned int command_id)
 {
 	if (command_id == 0) {
+		return;
+	}
+	// Custom React-table-view tool icons -- handled HERE, not forwarded to the main frame. [Emrald]
+	if (command_id == (unsigned int)kCmdReactOpenBrowser) {
+		// Open the TABBED terminal page in the default browser, defaulting to the Hiss tab (the React table
+		// view) via the URL-hash tab persistence (#hiss). [Emrald: browser icon -> tabbed terminal @ Hiss]
+		CString url; url.Format("http://127.0.0.1:%u/terminal#hiss", _port);
+		::ShellExecute(NULL, _T("open"), url, NULL, NULL, SW_SHOWNORMAL);
+		return;
+	}
+	if (command_id == (unsigned int)kCmdReactRestoreMain) {
+		if (_owner != NULL && ::IsWindow(_owner->GetSafeHwnd())) {
+			HWND h = _owner->GetSafeHwnd();
+			::ShowWindow(h, SW_SHOW);                 // un-hide the main Hiss window
+			::SetWindowPos(h, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+			::SetForegroundWindow(h);
+		}
 		return;
 	}
 	if (_owner != NULL && ::IsWindow(_owner->GetSafeHwnd())) {
