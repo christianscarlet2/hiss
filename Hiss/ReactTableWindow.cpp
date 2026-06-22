@@ -122,10 +122,13 @@ BOOL CReactTableWindow::Create(CWnd *owner, unsigned short port)
 		CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW,
 		AfxGetApp()->LoadStandardCursor(IDC_ARROW),
 		(HBRUSH)(COLOR_WINDOW + 1),
-		::LoadIcon(NULL, IDI_APPLICATION));
+		AfxGetApp()->LoadIcon(IDI_ICON1));   // the Hiss icon -> a real icon on its own taskbar entry [Emrald]
 
 	BOOL created = CWnd::CreateEx(
-		WS_EX_TOOLWINDOW,
+		// WS_EX_APPWINDOW: force a SEPARATE taskbar button (its own entry in the running-programs list),
+		// fully independent of the Hiss main window. (WS_EX_TOOLWINDOW had been HIDING the taskbar button,
+		// which is why the React table view had no icon of its own.) [Emrald: own taskbar icon + detach]
+		WS_EX_APPWINDOW,
 		class_name,
 		"Hiss:",
 		// Keep WS_OVERLAPPEDWINDOW (incl. WS_CAPTION) so snap/restore/resize and the DWM
@@ -264,8 +267,9 @@ void CReactTableWindow::AttachToOwner(void)
 void CReactTableWindow::OnMoving(UINT fwSide, LPRECT pRect)
 {
 	CWnd::OnMoving(fwSide, pRect);
-	// Detachable, snaps to the owner's side / a screen edge when dragged near.
-	_docked = (Hiss_SnapMovingRect(pRect, _owner, 8) != 0);
+	// Fully detached from the Hiss main window: NO snapping to the owner OR screen edges -- the React
+	// table view moves freely as its own independent top-level window. [Emrald: detach completely, no snapping]
+	_docked = false;
 }
 
 void CReactTableWindow::OnSysCommand(UINT nID, LPARAM lParam)

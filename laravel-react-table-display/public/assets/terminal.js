@@ -211,6 +211,9 @@
   var activeTab = "terminal";
   function showTab(name) {
     activeTab = name;
+    // Reflect the active tab in the URL hash (#ail, #synapse, ...) so a refresh -- manual (F5) OR the
+    // 5-min auto-refresh -- comes back to THIS tab. replaceState avoids polluting history. [Emrald]
+    try { if (location.hash.slice(1) !== name) history.replaceState(null, "", "#" + name); } catch (e) {}
     var btns = tabsEl.querySelectorAll(".tab");
     for (var i = 0; i < btns.length; i++) {
       btns[i].classList.toggle("active", btns[i].getAttribute("data-tab") === name);
@@ -236,6 +239,17 @@
     var b = e.target && e.target.closest ? e.target.closest(".tab") : null;
     if (b) showTab(b.getAttribute("data-tab"));
   });
+
+  // On load, open the tab named in the URL hash so a refresh (manual OR the auto-refresh below) returns to
+  // the SAME tab; default to the Terminal tab. [Emrald: pound-tag in the URL -> auto-open that tab on refresh]
+  (function () {
+    var h = (location.hash || "").replace(/^#/, "");
+    var ok = h && tabsEl && tabsEl.querySelector('.tab[data-tab="' + h + '"]');
+    showTab(ok ? h : "terminal");
+  })();
+  // Self-refresh every 5 minutes to release accumulated browser memory; the hash above preserves the active
+  // tab so it returns exactly where you were. Works the same on a manual F5. [Emrald: refresh to clear memory]
+  setInterval(function () { try { location.reload(); } catch (e) {} }, 5 * 60 * 1000);
 
   // ---- AIL control server (cross-origin to :7900 on the same host) -----------
   var AIL_BASE = location.protocol + "//" + location.hostname + ":7900";
