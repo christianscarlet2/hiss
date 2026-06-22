@@ -28,14 +28,23 @@ PORT    = int(os.environ.get("REPLAYER_CTRL_PORT", "8089"))
 PLAY_MS = int(os.environ.get("REPLAYER_PLAY_MS", "600"))
 
 
-def replay_get(path, raw=False):
-    req = urllib.request.Request(REPLAY_BASE + path, headers={"Host": REPLAY_HOST})
+def replay_get(path, raw=False, base=None, host=None):
+    # base/host let each caller choose WHICH replay store to read from:
+    #   - server UI (swiftsnake):  base=http://192.168.1.39  host=hiss.scarletbeast.com
+    #   - local UI  (BEAST :8090): base=http://127.0.0.1:8090 host="" (no Host override)
+    # host=None  -> use the legacy default (REPLAY_HOST); host=""  -> send no Host header.
+    base = base or REPLAY_BASE
+    headers = {}
+    use_host = REPLAY_HOST if host is None else host
+    if use_host:
+        headers["Host"] = use_host
+    req = urllib.request.Request(base + path, headers=headers)
     with urllib.request.urlopen(req, timeout=15) as r:
         data = r.read()
     return data if raw else json.loads(data.decode("utf-8", errors="replace"))
 
 
-def hand_to_bmp(hand, dest_dir):
+def hand_to_bmp(hand, dest_dir, base=None, host=None):
     """Fetch hand's PNG frames -> frame??????.bmp in dest_dir. Returns frame count."""
     from PIL import Image
     os.makedirs(dest_dir, exist_ok=True)
@@ -43,14 +52,15 @@ def hand_to_bmp(hand, dest_dir):
         if old.startswith("frame") and old.endswith(".bmp"):
             try: os.remove(os.path.join(dest_dir, old))
             except Exception: pass
-    frames = replay_get("/api/frames/%s" % urllib.request.quote(str(hand)))
+    frames = replay_get("/api/frames/%s" % urllib.request.quote(str(hand)), base=base, host=host)
     idx = 0
     for f in frames:
         ts = f.get("ts_ms")
         if ts is None:
             continue
         try:
-            png = replay_get("/api/img/%s/%d" % (urllib.request.quote(str(hand)), int(ts)), raw=True)
+            png = replay_get("/api/img/%s/%d" % (urllib.request.quote(str(hand)), int(ts)),
+                             raw=True, base=base, host=host)
             Image.open(io.BytesIO(png)).convert("RGB").save(
                 os.path.join(dest_dir, "frame%06d.bmp" % idx), "BMP")
             idx += 1
@@ -59,7 +69,7 @@ def hand_to_bmp(hand, dest_dir):
     return idx
 
 
-_state = {"playing": False, "hand": None, "seq": 0, "stop": False}
+_state = {"playing": False, "hand": None, "seq": 0, "stop": False, "src": None}
 
 
 def ensure_replayer():
@@ -99,18 +109,18 @@ def wait_done(seq, timeout=180):
     return True   # timeout -> advance anyway
 
 
-def hands_by_time():
-    return sorted(replay_get("/api/hands"), key=lambda h: h.get("start_ts", 0))
+def hands_by_time(base=None, host=None):
+    return sorted(replay_get("/api/hands", base=base, host=host), key=lambda h: h.get("start_ts", 0))
 
 
-def play_loop(start_hand):
+def play_loop(start_hand, base=None, host=None):
     ensure_replayer()
     cur = str(start_hand)
     while not _state["stop"]:
         _state["hand"] = cur
         folder = os.path.join(REPLAYER_DIR, "hand_%s" % cur)
         try:
-            n = hand_to_bmp(cur, folder)
+            n = hand_to_bmp(cur, folder, base=base, host=host)
         except Exception:
             n = 0
         if n > 0:
@@ -120,7 +130,7 @@ def play_loop(start_hand):
             break
         # advance to the next hand NEWER in time than the one just played
         try:
-            hs = hands_by_time()
+            hs = hands_by_time(base=base, host=host)
         except Exception:
             hs = []
         cur_ts = next((h.get("start_ts", 0) for h in hs if str(h.get("handnumber")) == cur), None)
@@ -138,7 +148,7 @@ def play_loop(start_hand):
         while not _state["stop"] and waited < 600:
             time.sleep(2); waited += 2
             try:
-                hs = hands_by_time()
+                hs = hands_by_time(base=base, host=host)
             except Exception:
                 continue
             if cur_ts is not None:
@@ -178,10 +188,16 @@ class H(BaseHTTPRequestHandler):
             hand = (q.get("hand") or [""])[0]
             if not hand:
                 return self._json({"error": "hand required"}, 400)
+            # Which replay store to pull frames from. Each UI passes its own so the LOCAL
+            # (:8090) and SERVER (swiftsnake) advanced-replay views both drive replayer.exe
+            # from the SAME frames they display. Absent -> legacy swiftsnake default.
+            src  = (q.get("src")  or [None])[0]
+            host = (q.get("host") or [None])[0]   # "" -> no Host header; absent -> default
             _state["stop"] = True; time.sleep(0.6)      # stop any prior loop
             _state["stop"] = False; _state["playing"] = True
-            threading.Thread(target=play_loop, args=(hand,), daemon=True).start()
-            return self._json({"ok": True, "playing": hand})
+            _state["src"] = src or REPLAY_BASE
+            threading.Thread(target=play_loop, args=(hand, src, host), daemon=True).start()
+            return self._json({"ok": True, "playing": hand, "src": _state["src"]})
         if u.path == "/stop":
             _state["stop"] = True; _state["playing"] = False
             write_control("STOP")
