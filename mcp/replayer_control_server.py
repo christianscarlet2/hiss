@@ -209,5 +209,12 @@ class H(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     os.makedirs(REPLAYER_DIR, exist_ok=True)
-    print("replayer control server on :%d  control=%s" % (PORT, CONTROL))
+    # Seed the control sequence from wall-clock time so it ALWAYS exceeds any seq a surviving
+    # replayer.exe has already acted on (replayer ignores seq <= its last g_play_seq). Without
+    # this, restarting this server reset seq to 1 while a long-lived replayer sat at e.g. 63, so
+    # every Play was silently ignored (nothing played). Also drop the stale handshake file.
+    _state["seq"] = int(time.time())
+    try: os.remove(STATUS)
+    except OSError: pass
+    print("replayer control server on :%d  control=%s  seq0=%d" % (PORT, CONTROL, _state["seq"]))
     HTTPServer(("0.0.0.0", PORT), H).serve_forever()
