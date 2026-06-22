@@ -50,6 +50,26 @@ function fnum(v){return (v===1||v==='1'||v===1.0)? <span className="f1">{v}</spa
 const VCOLOR={praise:'#3fb950',criticism:'#f85149',instruction:'#58a6ff',question:'#d29922',note:'#8b949e'};
 const voiceColor=(c)=>VCOLOR[c]||'#8b949e';
 
+// Double-buffered frame image: load each new src OFF-SCREEN and only swap the VISIBLE <img>
+// once it has fully decoded, so playback never flashes the black background between frames.
+// (The old code used <img key={src}>, which forced React to remount a blank <img> every frame ->
+// a black flash while each PNG loaded = the flicker.) On a load error we keep the last good frame
+// instead of blanking. [Emrald: kill advanced-replay flicker]
+function ReplayImage({src}){
+  const [shown,setShown]=useState(src);
+  const want=useRef(src);
+  useEffect(()=>{
+    want.current=src;
+    if(!src){ setShown(''); return; }
+    const im=new Image();
+    im.onload=()=>{ if(want.current===src) setShown(src); };
+    im.src=src;
+    if(im.complete && im.naturalWidth) setShown(src);   // already cached -> swap immediately
+  },[src]);
+  if(!shown) return <span className="empty">no frame</span>;
+  return <img src={shown} alt="frame"/>;
+}
+
 function App(){
   const [hands,setHands]=useState([]);
   const [hand,setHand]=useState(null);
@@ -81,6 +101,12 @@ function App(){
     timer.current=setTimeout(()=>setIdx(i=>Math.min(frames.length-1,i+1)),dt);
     return ()=>clearTimeout(timer.current);
   },[playing,idx,frames,inReplayer]);
+
+  // Warm the cache for the next frame(s) so the double-buffered swap is instant (no flicker mid-play).
+  useEffect(()=>{ if(!hand||!frames.length) return;
+    for(let k=1;k<=2;k++){ const nx=frames[idx+k]; if(!nx) break;
+      const im=new Image(); im.src='/api/img/'+encodeURIComponent(hand)+'/'+nx.ts_ms; }
+  },[hand,frames,idx]);
 
   // Play button: in-browser toggle, OR (when "Play in Replayer.exe" is checked) drive the
   // desktop replayer.exe via the control server -- it plays this hand, then each newer hand, until Stop.
@@ -124,7 +150,7 @@ function App(){
 
     <div className="wrap">
       <div className="frame">
-        <div className="frameimg">{imgSrc ? <img key={imgSrc} src={imgSrc} alt="frame" onError={e=>{e.currentTarget.style.display='none';}}/> : <span className="empty">no frame</span>}</div>
+        <div className="frameimg"><ReplayImage src={imgSrc}/></div>
         {voice.length>0 && <div style={{position:'relative',height:13,margin:'8px 2px 0'}} title="voice feedback markers — click a tick to jump">
           {voice.map((v,i)=>{ const left=Math.max(0,Math.min(100,(v.ts_ms-t0)/vspan*100));
             return <div key={'vm'+i} onClick={()=>jumpToTs(v.ts_ms)}
