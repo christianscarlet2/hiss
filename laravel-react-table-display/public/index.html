@@ -104,6 +104,35 @@
         upd(); setInterval(upd,700);
       })();
     </script>
+    <!-- Replayer playback indicator (top-right). Polls the replayer control server (:8089) /status:
+         glows RED with the hand number while replayer.exe is playing back, dim grey when off. So you
+         always know whether the desktop replayer is running. Self-contained; the control server is
+         CORS-open. [Emrald: show replayer on/off in the table view] -->
+    <div id="ind-replayer" title="Desktop replayer.exe playback (control server :8089)"
+         style="position:fixed;top:8px;right:8px;z-index:99999;padding:3px 11px;border-radius:7px;
+                font:700 13px system-ui,Segoe UI,sans-serif;color:#7a8a80;background:#1c1c20;
+                border:1px solid rgba(255,255,255,.18);box-shadow:0 1px 4px rgba(0,0,0,.45);
+                user-select:none;transition:all .2s">&#9679; REPLAYER OFF</div>
+    <script>
+      (function(){
+        var el=document.getElementById('ind-replayer');
+        var CTRL='http://192.168.1.137:8089';   // replayer control server on BEAST (LAN-reachable)
+        function on(txt){ el.textContent=txt;
+          el.style.background='#2a0b10'; el.style.color='#ff5566';
+          el.style.borderColor='rgba(255,40,64,.6)'; el.style.boxShadow='0 0 10px rgba(255,40,64,.6)'; }
+        function off(txt,col){ el.textContent=txt;
+          el.style.background='#1c1c20'; el.style.color=col||'#7a8a80';
+          el.style.borderColor='rgba(255,255,255,.16)'; el.style.boxShadow='0 1px 4px rgba(0,0,0,.45)'; }
+        function upd(){
+          fetch(CTRL+'/status',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
+            if(!el) return;
+            if(d && d.playing){ on('▶ REPLAYER'+(d.hand?(' · '+d.hand):' ON')); }
+            else { off('● REPLAYER OFF'); }
+          }).catch(function(){ if(el) off('● REPLAYER —','#555'); });  // control server down -> unknown
+        }
+        upd(); setInterval(upd,1500);
+      })();
+    </script>
     <script src="/table-display/assets/react.production.min.js"></script>
     <script src="/table-display/assets/react-dom.production.min.js"></script>
     <script src="/table-display/assets/app.js?v=33"></script>
