@@ -88,6 +88,7 @@ static void SetButtonIconFromExe(HWND button, const char *exe_path) {
 #define IDC_OPEN_SCRCPY_A17 1017
 #define IDC_OPEN_REPLAYER_BUTTON 1018
 #define IDC_OPEN_ADVREPLAY_BUTTON 1019
+#define IDC_OPEN_ADVREPLAY_LOCAL_BUTTON 1020
 
 #define TIMER_WINDOW_MONITOR 2001
 
@@ -99,6 +100,9 @@ static const char kWindowClassName[] = "HissDeveloperToolbar";
 static const char kAppTitle[] = "Developer Toolbar";
 static const char kScrcpyPath[] = "C:\\www\\scrcpy-win64-v4.0\\scrcpy.exe";
 static const char kMdViewerPath[] = "C:\\www\\mdviewer\\dist\\MarkdownViewer.exe";
+// Local "advanced replayer": the BEAST all-frames replay server (beast_replay.bat -> :8090).
+static const char kBeastReplayBat[] = "C:\\www\\openholdembot_old\\mcp\\beast_replay.bat";
+static const char kBeastReplayUrl[] = "http://127.0.0.1:8090/";
 static const char kPlansDir[] = "C:\\Users\\scarl\\.claude\\plans";
 static HWND g_main_window = NULL;
 static HWND g_width_edit = NULL;
@@ -116,6 +120,7 @@ static HWND g_open_learner_button = NULL;
 static HWND g_open_mdviewer_button = NULL;
 static HWND g_open_replayer_button = NULL;
 static HWND g_open_advreplay_button = NULL;
+static HWND g_open_advreplay_local_button = NULL;
 static HWND g_rec_scrcpy_button = NULL;
 static HWND g_close_all_button = NULL;
 static HWND g_build_progress = NULL;
@@ -1112,6 +1117,31 @@ static void OpenExternalExecutable(const char *exe_path, const char *display_nam
   }
 }
 
+// Start the LOCAL "advanced replayer" (the BEAST all-frames replay server) and open its UI.
+// Launches beast_replay.bat minimized (it sets PGPASSWORD, cd's to the repo, and serves :8090),
+// waits briefly so the server can bind the port, then opens the browser at the local URL.
+// Clicking again while it's already running just spawns a console that harmlessly fails to bind
+// the in-use port; the original server keeps serving and the browser still loads.
+static void StartAndOpenLocalAdvancedReplayer() {
+  if (!FileExists(kBeastReplayBat)) {
+    char message[512] = {0};
+    sprintf_s(message, "Advanced replay server launcher was not found:\r\n%s", kBeastReplayBat);
+    MessageBox(g_main_window, message, kAppTitle, MB_OK | MB_ICONWARNING | MB_TOPMOST);
+    return;
+  }
+  SetStatusText("Starting local advanced replayer on :8090...");
+  HINSTANCE started = ShellExecute(g_main_window, "open", kBeastReplayBat, NULL,
+    ParentDirectory(kBeastReplayBat).c_str(), SW_MINIMIZE);
+  if ((INT_PTR)started <= 32) {
+    MessageBox(g_main_window, "Could not start the local advanced replay server.", kAppTitle,
+      MB_OK | MB_ICONERROR | MB_TOPMOST);
+    return;
+  }
+  Sleep(1500);  // let the server bind :8090 before the browser hits it
+  ShellExecute(g_main_window, "open", kBeastReplayUrl, NULL, NULL, SW_SHOWNORMAL);
+  SetStatusText("Local advanced replayer: " "http://127.0.0.1:8090/");
+}
+
 // Find the most-recently-modified *.md in a directory (non-recursive).
 static std::string FindLatestMarkdown(const std::string &directory) {
   std::string latest_path;
@@ -1503,9 +1533,14 @@ static void CreateChildControls(HWND hwnd) {
     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
     16, 226, 104, 28, hwnd, (HMENU)IDC_OPEN_REPLAYER_BUTTON, g_instance, NULL);
 
-  g_open_advreplay_button = CreateWindow("BUTTON", "Advanced Replayer",
+  g_open_advreplay_button = CreateWindow("BUTTON", "Advanced Replayer (Web)",
     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
     126, 226, 220, 28, hwnd, (HMENU)IDC_OPEN_ADVREPLAY_BUTTON, g_instance, NULL);
+
+  // Starts the LOCAL all-frames replay server (beast_replay.bat -> :8090) and opens its UI.
+  g_open_advreplay_local_button = CreateWindow("BUTTON", "Advanced Replayer (Local)",
+    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+    16, 262, 330, 28, hwnd, (HMENU)IDC_OPEN_ADVREPLAY_LOCAL_BUTTON, g_instance, NULL);
 
   // App icons on the launch buttons.
   SetButtonIcon(g_open_openholdem_button, kSnakeIcoPath);   // Hiss
@@ -1515,21 +1550,22 @@ static void CreateChildControls(HWND hwnd) {
   SetButtonIconFromExe(g_open_mdviewer_button, kMdViewerPath); // MD Viewer's own icon
   SetButtonIcon(g_open_replayer_button,  kReplayerIcoPath); // Replayer (green felt + red play)
   SetButtonIcon(g_open_advreplay_button, kReplayerIcoPath); // Advanced Replayer (web UI)
+  SetButtonIcon(g_open_advreplay_local_button, kReplayerIcoPath); // Advanced Replayer (local server)
 
   g_build_progress = CreateWindowEx(0, PROGRESS_CLASS, "",
     WS_CHILD | WS_VISIBLE,
-    16, 266, 330, 18, hwnd, (HMENU)IDC_BUILD_PROGRESS, g_instance, NULL);
+    16, 302, 330, 18, hwnd, (HMENU)IDC_BUILD_PROGRESS, g_instance, NULL);
   SendMessage(g_build_progress, PBM_SETRANGE, 0, MAKELPARAM(0, 100));
   SendMessage(g_build_progress, PBM_SETPOS, 0, 0);
 
   g_alert_text = CreateWindow("STATIC", "",
     WS_CHILD | SS_CENTER,
-    16, 302, 330, 36, hwnd, (HMENU)IDC_ALERT_TEXT, g_instance, NULL);
+    16, 338, 330, 36, hwnd, (HMENU)IDC_ALERT_TEXT, g_instance, NULL);
   ShowWindow(g_alert_text, SW_HIDE);
 
   g_status_text = CreateWindow("STATIC", "Enter size, then click Pick Window.",
     WS_CHILD | WS_VISIBLE,
-    16, 346, 340, 54, hwnd, (HMENU)IDC_STATUS_TEXT, g_instance, NULL);
+    16, 382, 340, 54, hwnd, (HMENU)IDC_STATUS_TEXT, g_instance, NULL);
   LoadDefaultTablemapSize();
 }
 
@@ -1588,6 +1624,10 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARA
     if (LOWORD(wparam) == IDC_OPEN_ADVREPLAY_BUTTON) {
       ShellExecute(g_main_window, "open", "http://192.168.1.39/replay.html",
         NULL, NULL, SW_SHOWNORMAL);
+      return 0;
+    }
+    if (LOWORD(wparam) == IDC_OPEN_ADVREPLAY_LOCAL_BUTTON) {
+      StartAndOpenLocalAdvancedReplayer();
       return 0;
     }
     if (LOWORD(wparam) == IDC_CLOSE_ALL_BUTTON) {
@@ -1701,7 +1741,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show_command) {
 
   HWND hwnd = CreateWindowEx(WS_EX_TOPMOST, kWindowClassName, kAppTitle,
     WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-    CW_USEDEFAULT, CW_USEDEFAULT, 380, 457,
+    CW_USEDEFAULT, CW_USEDEFAULT, 380, 497,
     NULL, NULL, instance, NULL);
   if (hwnd == NULL) {
     return 1;
