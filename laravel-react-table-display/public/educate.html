@@ -209,6 +209,25 @@ footer .gh{color:var(--ghost);}
 .syn-node{fill:#1a1426;stroke:var(--dna);}
 .syn-node-t{font-family:var(--mono);font-size:10px;fill:#d8c4f0;}
 .syn-core{fill:#241733;stroke:var(--dna);stroke-width:1.5;}
+
+/* ---------- "why the OHF is supreme": poker-concept constellation + frequency mixer ---------- */
+.spoke{stroke:var(--border);stroke-width:1.4;opacity:.35;}
+.spoke.live{animation:twinkle 3s ease-in-out infinite;stroke:var(--snake);opacity:.55;}
+.paused-anim .spoke.live{animation:none;opacity:.35;}
+.cnode{fill:#0f1a14;stroke:var(--snake);stroke-width:1.2;}
+.cnode-t{font-family:var(--mono);font-size:11px;fill:var(--snake);}
+.cnode-s{font-family:var(--mono);font-size:8.5px;fill:var(--fg-dim);}
+.cdecide{fill:#241016;stroke:var(--ghost);stroke-width:1.8;filter:drop-shadow(0 0 8px rgba(229,72,90,.4));}
+.cdecide-t{font-family:var(--mono);font-size:13px;fill:var(--ghost);font-weight:700;}
+@keyframes grow{from{transform:scaleY(0);}to{transform:scaleY(1);}}
+.freq-bar{transform-origin:center bottom;animation:grow 1s ease-out both;}
+.freq-bar.b2{animation-delay:.15s;}.freq-bar.b3{animation-delay:.3s;}.freq-bar.b4{animation-delay:.45s;}
+.paused-anim .freq-bar{animation:none;}
+.freq-t{font-family:var(--mono);font-size:10px;fill:var(--fg-dim);}
+.freq-v{font-family:var(--mono);font-size:11px;fill:var(--amber);font-weight:600;}
+@keyframes dieflip{0%,100%{transform:rotate(-6deg);}50%{transform:rotate(6deg);}}
+.die{animation:dieflip 3.4s ease-in-out infinite;transform-origin:center;}
+.paused-anim .die{animation-play-state:paused;}
 </style>
 </head>
 <body>
@@ -226,7 +245,13 @@ footer .gh{color:var(--ghost);}
   <a href="#ohf-knobs" class="toc-sub">Master knobs</a>
   <a href="#ohf-aggressor" class="toc-sub">Aggressor &amp; story</a>
   <a href="#ohf-feeler" class="toc-sub">Feeler bets</a>
+  <a href="#ohf-supreme">C+ &middot; Why the OHF is supreme</a>
+  <a href="#ohf-balance" class="toc-sub">Balance, visualized</a>
   <a href="#features">D &middot; Feature catalog</a>
+  <a href="#feat-brain" class="toc-sub">The brain &amp; its layers</a>
+  <a href="#feat-coach" class="toc-sub">Live coaching</a>
+  <a href="#feat-train" class="toc-sub">Training &amp; the fleet</a>
+  <a href="#feat-ux" class="toc-sub">The desktop experience</a>
   <a href="#ail">E &middot; AIL &amp; daemons</a>
   <a href="#glossary">F &middot; Glossary</a>
 </nav>
@@ -682,6 +707,143 @@ footer .gh{color:var(--ghost);}
   weakness, and never go broke with one pair.</p>
 </section>
 
+<!-- ==================== C+. WHY THE OHF IS SUPREME ==================== -->
+<section id="ohf-supreme">
+  <h2><span class="num">C+</span>Why the OHF is supreme &mdash; the poker mind inside</h2>
+  <p>A naive bot plays its <em>cards</em>: &ldquo;I have top pair &rarr; bet.&rdquo; The OHF plays
+  <strong>poker</strong>. Every action is the fold-down of a whole constellation of ideas &mdash; ranges,
+  position, price, tournament life, your opponent&rsquo;s tendencies, your own balance &mdash; into one clean
+  decision. It is, quite literally, decades of published poker wisdom (Negreanu&rsquo;s small ball, Brunson&rsquo;s
+  power poker, Ivey&rsquo;s reads, Harrington&rsquo;s M, the ICM math, even Sun&nbsp;Tzu&rsquo;s formlessness)
+  compiled into branching, balanced, exploit-aware logic that runs in a fraction of a second, every hand.</p>
+
+  <div class="diagram" data-anim>
+    <div class="cap"><span class="ttl">Eight ideas &rarr; one decision</span><button class="btn" data-pause>&#10074;&#10074; pause</button></div>
+    <svg viewBox="0 0 600 350" role="img" aria-label="Poker concepts feeding one decision">
+      <g>
+        <line class="spoke live" x1="300" y1="175" x2="300" y2="44" style="animation-delay:0s"/>
+        <line class="spoke live" x1="300" y1="175" x2="398" y2="84" style="animation-delay:.35s"/>
+        <line class="spoke live" x1="300" y1="175" x2="436" y2="175" style="animation-delay:.7s"/>
+        <line class="spoke live" x1="300" y1="175" x2="398" y2="266" style="animation-delay:1.05s"/>
+        <line class="spoke live" x1="300" y1="175" x2="300" y2="306" style="animation-delay:1.4s"/>
+        <line class="spoke live" x1="300" y1="175" x2="202" y2="266" style="animation-delay:1.75s"/>
+        <line class="spoke live" x1="300" y1="175" x2="164" y2="175" style="animation-delay:2.1s"/>
+        <line class="spoke live" x1="300" y1="175" x2="202" y2="84" style="animation-delay:2.45s"/>
+      </g>
+      <g transform="translate(300,175)"><circle class="cdecide" r="40"/>
+        <text class="cdecide-t" text-anchor="middle" y="-3">ONE</text>
+        <text class="cdecide-t" text-anchor="middle" y="13" style="font-size:11px">DECISION</text></g>
+      <g transform="translate(300,44)"><ellipse class="cnode" rx="58" ry="20"/>
+        <text class="cnode-t" text-anchor="middle" y="-2">Ranges</text><text class="cnode-s" text-anchor="middle" y="11">not hands</text></g>
+      <g transform="translate(398,84)"><ellipse class="cnode" rx="58" ry="20"/>
+        <text class="cnode-t" text-anchor="middle" y="-2">Position</text><text class="cnode-s" text-anchor="middle" y="11">IP vs OOP</text></g>
+      <g transform="translate(436,175)"><ellipse class="cnode" rx="58" ry="20"/>
+        <text class="cnode-t" text-anchor="middle" y="-2">Price</text><text class="cnode-s" text-anchor="middle" y="11">pot &amp; implied odds</text></g>
+      <g transform="translate(398,266)"><ellipse class="cnode" rx="58" ry="20"/>
+        <text class="cnode-t" text-anchor="middle" y="-2">ICM</text><text class="cnode-s" text-anchor="middle" y="11">$ not chips</text></g>
+      <g transform="translate(300,306)"><ellipse class="cnode" rx="58" ry="20"/>
+        <text class="cnode-t" text-anchor="middle" y="-2">Balance</text><text class="cnode-s" text-anchor="middle" y="11">never face-up</text></g>
+      <g transform="translate(202,266)"><ellipse class="cnode" rx="58" ry="20"/>
+        <text class="cnode-t" text-anchor="middle" y="-2">Exploits</text><text class="cnode-s" text-anchor="middle" y="11">station&middot;foldy&middot;tilt</text></g>
+      <g transform="translate(164,175)"><ellipse class="cnode" rx="58" ry="20"/>
+        <text class="cnode-t" text-anchor="middle" y="-2">Aggression</text><text class="cnode-s" text-anchor="middle" y="11">with a plan</text></g>
+      <g transform="translate(202,84)"><ellipse class="cnode" rx="58" ry="20"/>
+        <text class="cnode-t" text-anchor="middle" y="-2">Trap &amp; control</text><text class="cnode-s" text-anchor="middle" y="11">monsters &amp; one pair</text></g>
+    </svg>
+  </div>
+
+  <div class="grid2">
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--blue)">&#9707;</span><span class="ft-name">Ranges, not hands</span></div>
+      <p>The OHF never asks &ldquo;what do <em>I</em> have&rdquo; in isolation &mdash; it opens, isolates and
+      three-bets off <strong>positional range lists</strong> (<code>listOpenEP/MP/LP</code>, <code>list3betValue</code>,
+      <code>listSetMine</code>&hellip;), and reads the villain as a range via the HUD + represented-range grid.
+      Thinking in ranges is the single biggest gap between a winning player and a calling station.</p>
+      <span class="file">20_lists.ohf</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#9817;</span><span class="ft-name">Position is power</span></div>
+      <p>In position it checks back to gather information, fires controlled feelers, and applies pressure; out of
+      position into the aggressor it tightens and lets <em>them</em> bet. <code>f$InPositionPost</code>,
+      <code>f$ActBeforeAggressor</code> and the rhythm lines mean every street respects who acts last.</p>
+      <span class="file">12_aggressor.ohf</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--amber)">&#127922;</span><span class="ft-name">Price: pot &amp; implied odds</span></div>
+      <p>It calls when the math says call. <code>f$SmallBet</code> (&le;&#8531; pot &rarr; 3:1) green-lights cheap
+      draws and the new <strong>fishing</strong> line (peel any draw to improve); <code>f$SetMineOK</code> gates
+      set-mining and the speculative limps by effective-stack depth &mdash; implied odds done right.</p>
+      <span class="file">50_flop.ohf (f$SmallBet)</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#127942;</span><span class="ft-name">Tournament life (ICM)</span></div>
+      <p>Chips aren&rsquo;t money. A Malmuth-Harville model turns stacks into <strong>$ equity</strong> so jams and
+      calls are dollar-correct, sizing tightens near the bubble (<code>f$SizeMult</code>), and short stacks ladder
+      while big stacks bully. The live ICM coach voices your M, big blinds and pay-jump pressure.</p>
+      <span class="file">05_config.ohf (f$ICM_*)</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--snake)">&#127922;</span><span class="ft-name">Balance &amp; deception</span></div>
+      <p>The deadliest trait: it is <strong>never face-up</strong>. Frequencies are mixed with
+      <code>randomround</code> so the same spot isn&rsquo;t always the same play &mdash; iso-raises vary 2/3/4/5bb,
+      draws semi-bluff only ~58%, monsters slow-play ~30%, limpers get over-limped ~9%. Uniform value/bluff
+      sizing hides hand strength. Formlessness, by design.</p>
+      <span class="file">05_config.ohf · randomround</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--ghost)">&#129504;</span><span class="ft-name">Exploits over GTO</span></div>
+      <p>Against the micros, <em>exploitation</em> prints more than balance. The introspection layer classifies
+      each villain &mdash; value-bet stations/fish <strong>bigger</strong> (they pay on their own hand), bluff the
+      foldy ones, peel vs a tilting/over-firing player, and fold to the rock who wakes up. The read steers the line.</p>
+      <span class="file">11_introspection.ohf</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#128293;</span><span class="ft-name">Aggression with a plan</span></div>
+      <p>It bets to make better hands fold and worse hands call &mdash; c-bets by board texture and foldiness,
+      double-barrels with a story, and applies <strong>extra pressure to short stacks</strong> who can&rsquo;t call
+      light. But aggression always carries a plan: a feeler asks a question, a barrel tells a coherent story.</p>
+      <span class="file">12_aggressor.ohf</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--snake)">&#127183;</span><span class="ft-name">Trap monsters, fold one pair</span></div>
+      <p>Two sides of discipline. With a true monster it sometimes <strong>slow-plays</strong> (a memory flag
+      carries the trap across streets, inducing bluffs); with a weak made hand &mdash; the new <strong>ace-rag</strong>
+      line &mdash; it pot-controls, calls little bets, folds to big ones. It <em>never goes broke with one pair</em>.</p>
+      <span class="file">me_st_slowplay / me_st_acerag</span>
+    </div>
+  </div>
+
+  <h3 id="ohf-balance">Balance, visualized &mdash; the dealer&rsquo;s-choice mixer</h3>
+  <p>When limpers are in and Hiss decides to isolate, it doesn&rsquo;t always slam the big punish. It rolls
+  <code>randomround</code> and picks a size &mdash; so over many hands an observer sees a <em>distribution</em>, never
+  a tell. The same mixing governs how often it semi-bluffs a draw, slow-plays a monster, or over-limps behind.</p>
+  <div class="diagram" data-anim>
+    <div class="cap"><span class="ttl">Iso-raise sizing &mdash; f$Iso_RaiseTo</span><button class="btn" data-pause>&#10074;&#10074; pause</button></div>
+    <svg viewBox="0 0 600 220" role="img" aria-label="Iso-raise sizing frequency distribution">
+      <g class="die" transform="translate(48,40)"><rect x="-22" y="-22" width="44" height="44" rx="8" fill="#1a1426" stroke="var(--dna)"/>
+        <circle cx="-9" cy="-9" r="3" fill="var(--dna)"/><circle cx="9" cy="9" r="3" fill="var(--dna)"/><circle cx="0" cy="0" r="3" fill="var(--dna)"/></g>
+      <text class="freq-t" x="48" y="80" text-anchor="middle">randomround</text>
+      <line x1="120" y1="185" x2="560" y2="185" stroke="var(--border)"/>
+      <g transform="translate(170,185)"><rect class="freq-bar b1" x="-32" y="-42" width="64" height="42" rx="4" fill="#241016" stroke="var(--ghost)"/>
+        <text class="freq-v" x="0" y="-50" text-anchor="middle">12%</text><text class="freq-t" x="0" y="18" text-anchor="middle">~2bb min</text><text class="freq-t" x="0" y="31" text-anchor="middle">trap / cheap</text></g>
+      <g transform="translate(290,185)"><rect class="freq-bar b2" x="-32" y="-88" width="64" height="88" rx="4" fill="#10241a" stroke="var(--snake)"/>
+        <text class="freq-v" x="0" y="-96" text-anchor="middle">25%</text><text class="freq-t" x="0" y="18" text-anchor="middle">~3bb</text></g>
+      <g transform="translate(410,185)"><rect class="freq-bar b3" x="-32" y="-99" width="64" height="99" rx="4" fill="#10241a" stroke="var(--snake)"/>
+        <text class="freq-v" x="0" y="-107" text-anchor="middle">28%</text><text class="freq-t" x="0" y="18" text-anchor="middle">~4bb</text></g>
+      <g transform="translate(530,185)"><rect class="freq-bar b4" x="-32" y="-124" width="64" height="124" rx="4" fill="#241016" stroke="var(--ghost)"/>
+        <text class="freq-v" x="0" y="-132" text-anchor="middle">35%</text><text class="freq-t" x="0" y="18" text-anchor="middle">~5bb punish</text></g>
+    </svg>
+  </div>
+
+  <div class="panel note">
+    <h4>&#9819; The bottom line</h4>
+    <p>A hand-strength bot is solvable in an afternoon. The OHF is supreme because it plays the way the
+    best humans do &mdash; it <strong>ranges, prices, exploits, balances, and respects tournament life</strong>,
+    keeps a plan across streets via memory, and self-tunes through the brain&rsquo;s knobs &mdash; while never
+    telegraphing, never spewing a stack, and never going broke with one pair.</p>
+  </div>
+</section>
+
 <!-- ==================== D. FEATURE CATALOG ==================== -->
 <section id="features">
   <h2><span class="num">D</span>Feature catalog</h2>
@@ -772,6 +934,255 @@ footer .gh{color:var(--ghost);}
       <span class="file">mcp/synapse_map.py</span>
     </div>
   </div>
+
+  <!-- ---- D.1 the brain &amp; its layers ---- -->
+  <h3 id="feat-brain">The brain &amp; its layers</h3>
+  <p>The OHF is the <em>reflexes</em>; the <strong>brain</strong> is the slower, thinking layer that watches the
+  table and bends those reflexes. It runs as a service (<code>hiss-brain.service</code> on the LAN box, with a
+  Local/Server toggle), reads the game state plus HUD reads, picks a <em>style branch</em>, and turns three live
+  knobs &mdash; plus a dash of deliberate <em>mischief</em> and a pinch of <em>omen</em>. Nothing here is faked:
+  every arrow below is a real signal flowing to a real decision.</p>
+
+  <div class="diagram" data-anim>
+    <div class="cap"><span class="ttl">How the brain bends the reflexes</span><button class="btn" data-pause>&#10074;&#10074; pause</button></div>
+    <svg viewBox="0 0 920 240" role="img" aria-label="Brain layers flow">
+      <defs><marker id="bar" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+        <path d="M0,0 L7,3.5 L0,7 Z" fill="#3df57a"/></marker></defs>
+      <!-- connectors -->
+      <g fill="none" stroke="var(--snake)" stroke-width="1.6" marker-end="url(#bar)">
+        <line class="spoke live" x1="162" y1="80"  x2="226" y2="120" style="animation-delay:0s"/>
+        <line class="spoke live" x1="162" y1="162" x2="226" y2="142" style="animation-delay:.3s"/>
+        <line class="spoke live" x1="372" y1="131" x2="436" y2="131" style="animation-delay:.6s"/>
+        <line class="spoke live" x1="382" y1="44"  x2="500" y2="110" style="animation-delay:.9s"/>
+        <line class="spoke live" x1="584" y1="120" x2="646" y2="96"  style="animation-delay:1.2s"/>
+        <line class="spoke live" x1="584" y1="142" x2="646" y2="182" style="animation-delay:1.5s"/>
+        <line class="spoke live" x1="784" y1="96"  x2="804" y2="120" style="animation-delay:1.8s"/>
+        <line class="spoke live" x1="784" y1="182" x2="804" y2="142" style="animation-delay:2.1s"/>
+      </g>
+      <g font-family="Consolas,monospace" font-size="11" text-anchor="middle">
+        <g><rect x="42" y="60" width="120" height="40" rx="6" fill="var(--bg-pane)" stroke="var(--blue)"/>
+          <text x="102" y="84" fill="var(--blue)">game state</text></g>
+        <g><rect x="42" y="142" width="120" height="40" rx="6" fill="var(--bg-pane)" stroke="var(--blue)"/>
+          <text x="102" y="166" fill="var(--blue)">HUD reads</text></g>
+        <g><rect x="250" y="22" width="132" height="36" rx="6" fill="var(--bg-pane)" stroke="var(--amber)"/>
+          <text x="316" y="44" fill="var(--amber)">omen / astrology</text></g>
+        <g><rect x="228" y="109" width="144" height="44" rx="6" fill="#10241a" stroke="var(--snake)"/>
+          <text x="300" y="129" fill="var(--snake)">OBSERVER</text><text x="300" y="144" fill="var(--fg-dim)" font-size="9">reads the table</text></g>
+        <g><rect x="436" y="109" width="148" height="44" rx="6" fill="#10241a" stroke="var(--snake)"/>
+          <text x="510" y="129" fill="var(--snake)">STRATEGY BRANCH</text><text x="510" y="144" fill="var(--fg-dim)" font-size="9">smallball&middot;power&middot;hybrid</text></g>
+        <g><rect x="646" y="74" width="138" height="40" rx="6" fill="var(--bg-pane)" stroke="var(--dna)"/>
+          <text x="715" y="92" fill="#d8c4f0">knobs</text><text x="715" y="106" fill="var(--fg-dim)" font-size="9">openrange&middot;aggro&middot;bluff</text></g>
+        <g><rect x="646" y="162" width="138" height="40" rx="6" fill="var(--bg-pane)" stroke="var(--ghost)"/>
+          <text x="715" y="180" fill="var(--ghost)">mischief</text><text x="715" y="194" fill="var(--fg-dim)" font-size="9">odd, off-tree plays</text></g>
+        <g><rect x="804" y="109" width="100" height="44" rx="6" fill="#241016" stroke="var(--ghost)"/>
+          <text x="854" y="129" fill="var(--ghost)">DECISION</text><text x="854" y="144" fill="var(--fg-dim)" font-size="9">OHF / NN</text></g>
+      </g>
+    </svg>
+  </div>
+
+  <div class="grid2">
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--snake)">&#129504;</span><span class="ft-name">Server brain</span></div>
+      <p>The thinking layer runs as a service on the LAN box and feeds the engine over <code>/decide</code>; a
+      React <strong>Local/Server</strong> toggle picks where it thinks. The Linux port now feeds it <em>real</em>
+      engine symbols (aggressor, game type, the brain map) &mdash; no stubs &mdash; so it reasons on live truth.</p>
+      <span class="file">hiss-brain.service</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#128270;</span><span class="ft-name">Introspection look-ahead</span></div>
+      <p>The instant a new hand starts <em>and</em> your hole cards are known, the advisor looks ahead &mdash;
+      pulls the per-opponent model (rhythm, exploits, timing, range) and pre-loads a read into the brain so the
+      first decision already carries a plan, not a cold start.</p>
+      <span class="file">mcp/decision_advisor.py</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--snake)">&#128064;</span><span class="ft-name">Observer layer</span></div>
+      <p>While merely watching, it still learns &mdash; synthesizing game state + HUD opponent stats + hand
+      results into villain exploits, table reads and a session trend. Those notes become the brain&rsquo;s starting
+      assumptions when you sit in.</p>
+      <span class="file">mcp/observe_learn.py</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--ghost)">&#127917;</span><span class="ft-name">Mischief layer</span></div>
+      <p>A deliberate sprinkle of off-tree plays &mdash; the odd over-bet, a strange flat, an &ldquo;at par&rdquo;
+      bet &mdash; so the bot is never a clean machine to model. It is bounded and logged, a controlled chaos that
+      buys un-exploitability.</p>
+      <span class="file">brain (mischief)</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--amber)">&#10024;</span><span class="ft-name">Omen / astrology</span></div>
+      <p>A whisper of &ldquo;energy in the air&rdquo;: the system-audio resonance and number-omens nudge a knob a
+      hair. It never overrides sound poker &mdash; it just tints the mix, the way a human runs a little hotter or
+      cooler on feel.</p>
+      <span class="file">brain (omen)</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--dna)">&#129518;</span><span class="ft-name">NN Driver</span></div>
+      <p>A toggle (toolbar + table view, one per instance) hands the wheel to the trained neural net: it reads
+      table state &rarr; symbols &rarr; the NN service &rarr; forces the action &mdash; <em>no rebuild</em>. Raises
+      are clamped sanely (open &ge;2bb, re-raise &ge; last increment, else fall back to call/check).</p>
+      <span class="file">mcp/nn_driver.py</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--dna)">&#9889;</span><span class="ft-name">ULTRA mode</span></div>
+      <p>An audio-driven meta-controller (&#9889; toolbar) that flips the bot between OHF and NN using the
+      system-audio average &mdash; a living mix of reflexes and learned play that shifts with the room.</p>
+      <span class="file">mcp/ultra_mode.py</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#128302;</span><span class="ft-name">666 Card Oracle</span></div>
+      <p>A draw predictor that bends next-card catch odds by system-audio resonance with 666, sharpened during the
+      NN phase of ULTRA. Display and voice only &mdash; a bit of theatre, never wired to the actual play.</p>
+      <span class="file">mcp/card_oracle.py</span>
+    </div>
+  </div>
+
+  <!-- ---- D.2 live coaching ---- -->
+  <h3 id="feat-coach">Live coaching &mdash; Lilith&rsquo;s voice</h3>
+  <p>Three daemons watch the live hand and speak to you through <strong>Lilith</strong> (<code>lilith.exe</code>).
+  They mute everything but scrcpy + ACR, say their piece, and un-mute. ElevenLabs is the premium voice; when its
+  credits run dry it now falls back automatically to the <strong>free built-in Windows voice</strong> so Lilith
+  always speaks. Toggle all three from the browser&rsquo;s AIL tab; they start at Hiss launch if enabled.</p>
+  <div class="grid2">
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--amber)">&#128226;</span><span class="ft-name">Poker coach (hype)</span></div>
+      <p>The play-by-play companion &mdash; reads the spot, hypes good lines, flags the leaks, and keeps the energy
+      up at the table. Wired into the AIL tab for global on/off.</p>
+      <span class="file">poker_coach_hype daemon</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#127942;</span><span class="ft-name">ICM coach</span></div>
+      <p>In tournaments it voices your chip-value reality &mdash; M, big blinds, pay-jump pressure, when to tighten
+      and when to bully &mdash; so the human at the wheel feels the ICM the engine is already computing.</p>
+      <span class="file">mcp/icm_chip_daemon.py</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--ghost)">&#129704;</span><span class="ft-name">Tilt detector</span></div>
+      <p>Watches the rhythm of results and your reactions for tilt signatures and gently calls it out before it
+      costs a stack &mdash; the calm voice that says &ldquo;slow down a hand.&rdquo;</p>
+      <span class="file">mcp/tilt_detector_daemon.py</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#128483;</span><span class="ft-name">Free-voice fallback</span></div>
+      <p>Lilith no longer goes silent on a billing error. On any ElevenLabs failure (401 / no credits / offline)
+      <code>speak()</code> drops to the offline Windows <code>System.Speech</code> voice &mdash; female-hinted,
+      windowless &mdash; so coaching keeps talking for free.</p>
+      <span class="file">mcp/lilith_tts.py (sapi_tts)</span>
+    </div>
+  </div>
+
+  <!-- ---- D.3 training &amp; the fleet ---- -->
+  <h3 id="feat-train">Training &amp; the fleet</h3>
+  <p>The bot doesn&rsquo;t just play &mdash; it <em>trains a student</em>. A fleet of bots on the demo poker server
+  generates self-play data with deliberately varied styles, a neural net learns from it, and the champion is
+  measured live against the OHF master. The goal: the student beats the teacher.</p>
+  <div class="grid2">
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#127922;</span><span class="ft-name">Train randomizer</span></div>
+      <p>Per hand, each fleet bot randomizes its <strong>style</strong> (smallball / power / hybrid) and its
+      synapse <strong>knobs</strong> &mdash; so the self-play data spans the whole strategy space instead of one
+      fixed line. A warden status-poll shows whether it&rsquo;s running.</p>
+      <span class="file">train_randomize.py</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--dna)">&#9878;</span><span class="ft-name">NN vs OHF fleet split</span></div>
+      <p>On the server the fleet runs <strong>half NN-driver, half OHF</strong> &mdash; the student and the master
+      playing side by side, so every session is a measured showdown (bb/100) of learned play against the
+      hand-crafted strategy.</p>
+      <span class="file">BotBrain.php</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--dna)">&#128293;</span><span class="ft-name">PPO self-play</span></div>
+      <p>The live edge: an on-policy PPO champion trained on the fleet&rsquo;s self-play, with bet-size buckets
+      (so it can size, not just call/jam) and a feature set kept in lock-step with the engine. It is deployed live
+      and climbing toward beating the OHF.</p>
+      <span class="file">hiss_rl pipeline</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#129518;</span><span class="ft-name">Deep CFR (parked)</span></div>
+      <p>A research track: six-max counterfactual-regret on GPU, distilled into a policy net (SD-CFR). The
+      plumbing works; it&rsquo;s parked until a converged CFR net exists. The PPO champion carries the torch
+      meanwhile.</p>
+      <span class="file">~/deepcfr</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--snake)">&#128279;</span><span class="ft-name">Hiss &harr; Linux coupling</span></div>
+      <p>A Claude hook keeps the Windows engine and the Linux port in lock-step: any C++ <em>or OHF</em> change
+      flags the coupling, and a validated OHF auto-syncs the master to the Linux box (with the Omaha stubs
+      appended and a parse-check) &mdash; the SageMaker data generator never drifts.</p>
+      <span class="file">scripts/hiss_linux_couple_hook.py</span>
+    </div>
+  </div>
+
+  <!-- ---- D.4 the desktop experience ---- -->
+  <h3 id="feat-ux">The desktop experience</h3>
+  <p>The table view is now the <strong>star of the show</strong>, not a side panel. It stands on its own and the
+  engine hides behind it &mdash; with a few hard-won fixes underneath so clicks land where they should and a hung
+  read can&rsquo;t fold your stack.</p>
+  <div class="grid2">
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--ghost)">&#128421;</span><span class="ft-name">React view as the app</span></div>
+      <p>The table view has its own taskbar button and icon, fully detached from the engine window (no snapping,
+      no docking). The main Hiss window is hidden from view <em>and</em> taskbar; a restore icon brings it back when
+      you need it.</p>
+      <span class="file">ReactTableWindow.cpp</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--ghost)">&#127765;</span><span class="ft-name">The red loader</span></div>
+      <p>While the view spins up, a styled Scarlet&nbsp;Beast loader holds the screen &mdash; dual counter-spinning
+      rings, a pulsing spade core, cycling poker/AI lines &mdash; and only fades once the port is up <em>and</em>
+      the entire table view has rendered with real data.</p>
+      <span class="file">index.html (hiss-loader)</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#128377;</span><span class="ft-name">Terminal launcher</span></div>
+      <p>The browser icon opens the full tabbed Terminal (defaulting to the Hiss tab), not just the bare table
+      view. The Terminal self-refreshes every 5&nbsp;min to release memory and returns to the same tab via a
+      <code>#hash</code>; the table view refreshes every 10&nbsp;min.</p>
+      <span class="file">terminal.js</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#128433;</span><span class="ft-name">Click-through overlays</span></div>
+      <p>The HUD and the RED decision overlay are <code>WS_EX_TRANSPARENT</code> &mdash; even when the big red
+      verdict goes opaque, mouse clicks pass straight through to scrcpy so neither you nor the autoplayer ever
+      fights the overlay for the table.</p>
+      <span class="file">HudOverlayWindow.cpp</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--ghost)">&#127786;</span><span class="ft-name">Manic burst</span></div>
+      <p>A button that cranks the knobs to maniac on a passive table for a randomized <strong>6&ndash;9 minutes</strong>,
+      then announces and <em>switches itself off</em> (the indicator returns to off) and reverts to small ball &mdash;
+      a timed gear, never a stuck one.</p>
+      <span class="file">mcp/manic_burst.py</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#128302;</span><span class="ft-name">Superstition liveness</span></div>
+      <p>The superstition indicator now polls real process state: if the helper exits, the engine clears the
+      engaged flag and writes the mode back &mdash; so the light always tells the truth instead of latching on.</p>
+      <span class="file">CHeartbeatThread.cpp</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--amber)">&#128290;</span><span class="ft-name">Blind-misread guard</span></div>
+      <p>A symbol-level safety net: if the big blind reads 11 or 111 while the small blind is 0.5, it&rsquo;s a
+      known OCR slip &mdash; the guesser rewrites it to 1 so a phantom 100&times; depth can never make push/fold
+      dump a premium (the AK-fold bug, killed).</p>
+      <span class="file">CBlindGuesser.cpp</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico">&#128274;</span><span class="ft-name">Steadier clicking</span></div>
+      <p>Two-successive-clicks now waits out a cooldown before re-firing (no accidental limp&rarr;raise
+      double-tap), and a shared postgres click-lock keeps two instances on one mouse from clicking at the same
+      instant.</p>
+      <span class="file">CTwoSuccessiveClicks.cpp</span>
+    </div>
+    <div class="feat">
+      <div class="ft-head"><span class="ico" style="color:var(--blue)">&#128247;</span><span class="ft-name">Event-driven replay</span></div>
+      <p>The Advanced Replay now captures a frame only when something changes &mdash; the active player, hand
+      number, street or game type &mdash; not every beat. Frames are keyed by hand/street/seat with detected
+      hole cards, and the picker has a search field for hole cards and hand number.</p>
+      <span class="file">CScraper.cpp (SaveHeartbeatFrame)</span>
+    </div>
+  </div>
 </section>
 
 <!-- ==================== E. AIL ==================== -->
@@ -853,6 +1264,18 @@ footer .gh{color:var(--ghost);}
     <dt>NN</dt><dd>Neural Network &mdash; the trained alternate brain that can play in place of the OHF.</dd>
     <dt>AIL</dt><dd>Autonomous Improvement Loop &mdash; the ~45-min cycle that reads feedback and makes one improvement at a time.</dd>
     <dt>HUD</dt><dd>Heads-Up Display &mdash; the live overlay of opponent stats over each seat.</dd>
+    <dt>randomround</dt><dd>A stable 0&ndash;1 random number (one per betting round) the OHF rolls to <em>mix frequencies</em> &mdash; how it varies sizings and lines so it&rsquo;s never predictable.</dd>
+    <dt>balanced / face-up</dt><dd>&ldquo;Face-up&rdquo; means your bet size or line reveals your hand. A <strong>balanced</strong> strategy uses the same sizes for value and bluffs so opponents can&rsquo;t read you. The OHF mixes on purpose.</dd>
+    <dt>memory symbol</dt><dd>A flag the OHF stores (<code>me_st_&hellip;</code>) and recalls (<code>me_re_&hellip;</code>) on later streets &mdash; how it remembers &ldquo;I&rsquo;m slow-playing this&rdquo; or &ldquo;I&rsquo;m playing ace-rag passively&rdquo; across a hand.</dd>
+    <dt>knobs</dt><dd>Three live 0&ndash;1 dials the brain turns &mdash; open-range, aggression, bluff frequency &mdash; that scale the OHF&rsquo;s behavior without a rebuild.</dd>
+    <dt>mischief</dt><dd>A bounded sprinkle of deliberately off-tree plays the brain injects so the bot can&rsquo;t be cleanly modeled &mdash; controlled chaos for un-exploitability.</dd>
+    <dt>set-mining</dt><dd>Calling a small raise with a pocket pair hoping to flop a set (three of a kind) &mdash; correct only with deep enough <em>implied odds</em>.</dd>
+    <dt>implied odds</dt><dd>The money you expect to win on <em>later</em> streets if you hit, beyond the current pot odds &mdash; what makes cheap draws and speculative limps profitable.</dd>
+    <dt>semi-bluff</dt><dd>Betting/raising a draw that isn&rsquo;t best yet but can improve &mdash; you can win by making them fold <em>or</em> by hitting.</dd>
+    <dt>fold equity</dt><dd>The value of the chance an opponent folds to your bet &mdash; highest against short stacks and foldy players, which is when the OHF applies pressure.</dd>
+    <dt>slow-play / trap</dt><dd>Under-representing a monster (checking/just calling) to induce bluffs and keep weak hands in &mdash; the OHF does it a fraction of the time, remembered via a memory symbol.</dd>
+    <dt>NN Driver / ULTRA</dt><dd>The NN Driver hands the live wheel to the trained neural net (no rebuild); ULTRA flips between OHF and NN by the room&rsquo;s audio energy.</dd>
+    <dt>PPO</dt><dd>Proximal Policy Optimization &mdash; the reinforcement-learning method training the live neural-net champion on the fleet&rsquo;s self-play.</dd>
   </dl>
 </section>
 
@@ -1027,6 +1450,22 @@ footer .gh{color:var(--ghost);}
     tx.textContent = lab;
     g.appendChild(tx);
     nodesG.appendChild(g);
+  });
+})();
+
+/* ============================================================
+   5. Generic pause: any [data-pause] button toggles .paused-anim
+      on its own .diagram (the constellation, the freq mixer, the
+      brain-flow -- pure-CSS animations, no per-diagram script).
+   ============================================================ */
+(function(){
+  [].slice.call(document.querySelectorAll('[data-pause]')).forEach(function(btn){
+    var dg = btn.closest('.diagram'); if(!dg) return;
+    btn.addEventListener('click', function(){
+      var paused = dg.classList.toggle('paused-anim');
+      btn.innerHTML = paused ? '▶ play' : '❚❚ pause';
+      btn.classList.toggle('paused', paused);
+    });
   });
 })();
 </script>
