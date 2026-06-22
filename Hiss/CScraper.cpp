@@ -34,6 +34,7 @@ using namespace std;
 #include "CSymbolEngineCasino.h"
 #include "CSymbolEngineDebug.h"
 #include "CSymbolEngineHistory.h"
+#include "CSymbolEngineGameType.h"
 #include "CSymbolEngineIsOmaha.h"
 #include "CSymbolEngineMTTInfo.h"
 #include "CSymbolEngineUserchair.h"
@@ -163,6 +164,33 @@ static CString SanitizeRegionFilename(CString name) {
 // in-process thread pool (g_ocr_pool) only does blocking pipe I/O, one I/O thread
 // per worker. This keeps thread-unsafe Tesseract/leptonica out of Hiss's heap.
 static ParallelWorkerPool g_ocr_pool;
+
+#include <memory>
+// Shared state for ONE parallel-OCR batch. Held by std::shared_ptr and captured BY VALUE in every job, so it
+// OUTLIVES the submitting frame. Two crash classes this kills (both seen as 0xc0000005 in WorkerLoop->job()):
+//   1) lifetime: if WaitForSingleObject(done) TIMES OUT and the submitting frame returns, a still-running
+//      worker used to dereference the now-destroyed CRITICAL_SECTIONs / counters. Now each job holds a
+//      shared_ptr, so the batch (CS, event, counter) lives until the LAST job finishes.
+//   2) cross-thread cache race: workers write ONLY this batch-local `results` map (guarded by rcs); the shared
+//      _ocr_cache is then touched ONLY by the scrape thread (clear/skip/merge/eval), so a late job can never
+//      race the next frame's _ocr_cache.clear()/insert. [Emrald: fix recurring OCR-pool crash]
+struct OcrBatch {
+  CRITICAL_SECTION rcs, ecs;             // rcs guards `results`; ecs guards the worker-pipe free-list
+  std::vector<HANDLE> avail;             // free worker pipes
+  std::map<CString, CString> results;    // worker-written OCR results (merged into _ocr_cache after the wait)
+  HANDLE done;
+  volatile LONG remaining;
+  OcrBatch() : done(NULL), remaining(0) {
+    InitializeCriticalSection(&rcs);
+    InitializeCriticalSection(&ecs);
+    done = CreateEvent(NULL, TRUE, FALSE, NULL);
+  }
+  ~OcrBatch() {
+    DeleteCriticalSection(&rcs);
+    DeleteCriticalSection(&ecs);
+    if (done != NULL) CloseHandle(done);
+  }
+};
 static int g_ocr_pool_size = 0;
 static COcrWorkerPool g_ocr_worker_pool;
 
@@ -578,21 +606,18 @@ void CScraper::PreOcrParallel() {
 	// reads the text back. The I/O thread only blocks on the pipe -- no in-process
 	// Tesseract, so no heap corruption can reach Hiss. A pipe failure yields ""
 	// (the region then keeps its previous value via change-detection next frame).
-	CRITICAL_SECTION rcs, ecs;
-	InitializeCriticalSection(&rcs);
-	InitializeCriticalSection(&ecs);
-	std::vector<HANDLE> avail = worker_pipes;
-	std::map<CString, CString> *cache = &_ocr_cache;
-	HANDLE done = CreateEvent(NULL, TRUE, FALSE, NULL);
-	volatile LONG remaining = (LONG)regs.size();
+	std::shared_ptr<OcrBatch> batch = std::make_shared<OcrBatch>();
+	batch->avail = worker_pipes;
+	batch->remaining = (LONG)regs.size();
 	for (size_t i = 0; i < regs.size(); ++i) {
 		Mat mat = mats[i];
 		CString name = regs[i]->second.name;
-		g_ocr_pool.Submit([mat, name, &rcs, &ecs, &avail, &remaining, done, cache]() {
+		std::shared_ptr<OcrBatch> b = batch;   // a copy per job keeps the batch alive past a submitter timeout
+		g_ocr_pool.Submit([mat, name, b]() {
 			HANDLE pipe = NULL;
-			EnterCriticalSection(&ecs);
-			if (!avail.empty()) { pipe = avail.back(); avail.pop_back(); }
-			LeaveCriticalSection(&ecs);
+			EnterCriticalSection(&b->ecs);
+			if (!b->avail.empty()) { pipe = b->avail.back(); b->avail.pop_back(); }
+			LeaveCriticalSection(&b->ecs);
 			CString r;
 			if (pipe != NULL) {
 				CStringA name_a(name);
@@ -601,20 +626,28 @@ void CScraper::PreOcrParallel() {
 					r = "";   // pipe failure -> no result this frame
 				}
 			}
-			EnterCriticalSection(&ecs);
-			if (pipe != NULL) avail.push_back(pipe);
-			LeaveCriticalSection(&ecs);
-			EnterCriticalSection(&rcs);
-			(*cache)[name] = r;
-			LeaveCriticalSection(&rcs);
-			if (InterlockedDecrement(&remaining) == 0) SetEvent(done);
+			EnterCriticalSection(&b->ecs);
+			if (pipe != NULL) b->avail.push_back(pipe);
+			LeaveCriticalSection(&b->ecs);
+			EnterCriticalSection(&b->rcs);
+			b->results[name] = r;            // batch-local, NOT the shared _ocr_cache (no cross-thread race)
+			LeaveCriticalSection(&b->rcs);
+			if (InterlockedDecrement(&b->remaining) == 0) SetEvent(b->done);
 		});
 	}
-	WaitForSingleObject(done, 5000);   // cap the parallel-OCR wait at 5s (was 30s) so a stuck worker can't
-	                                   // stall the heartbeat for half a minute. [Phase-2 scraper perf]
-	CloseHandle(done);
-	DeleteCriticalSection(&rcs);
-	DeleteCriticalSection(&ecs);
+	WaitForSingleObject(batch->done, 5000);   // cap the parallel-OCR wait at 5s so a stuck worker can't stall
+	                                          // the heartbeat ~30s. Timeout is SAFE now: late jobs keep `b`
+	                                          // alive + write only batch->results, never freed memory. [crash fix]
+	// Merge whatever finished into the shared cache. This runs ONLY on the scrape thread, so _ocr_cache is
+	// never touched concurrently by a worker (workers wrote batch->results). Late (post-timeout) jobs keep
+	// filling batch->results harmlessly; their regions just keep last frame's value via change-detection.
+	EnterCriticalSection(&batch->rcs);
+	for (std::map<CString, CString>::const_iterator it = batch->results.begin(); it != batch->results.end(); ++it) {
+		_ocr_cache[it->first] = it->second;
+	}
+	LeaveCriticalSection(&batch->rcs);
+	// No manual CloseHandle/DeleteCriticalSection -- ~OcrBatch runs when the last shared_ptr (here + any
+	// still-running job) releases. That is the whole point of the lifetime fix.
 
 	// Remember this frame's freshly recognised text so the next frame can reuse it
 	// for any region that didn't change (see the skip check above).
@@ -2088,30 +2121,62 @@ void CScraper::SaveHeartbeatFrame() {
 		PruneFramesOlderThan(ms - 600000ULL);   // 10 minutes
 	}
 
-	// Replay logging: copy this frame as top-down BGRA and hand it to the background writer
-	// (PNG encode + hiss_log_frames row happen off this thread). Cheap memcpy here only.
+	// Advanced Replay (EVENT-DRIVEN): only ship a frame when something MEANINGFUL changed -- a seat's active
+	// flag flips (the turn moves / someone acts), it's our turn, we just acted (active moves off us), the
+	// hand number changes, or the game type changes. A cheap state signature gates the (expensive) capture,
+	// so we ship ~10-50x fewer frames and each is easy to key. [Emrald: only screenshot on
+	// p{N}active/ismyturn/after-acting/hand/gametype switch; key by active-player+hand+street]
 	if (p_log_writer != NULL && p_log_writer->Enabled()) {
-		BITMAP bm = {0};
-		if (GetObject(_entire_window_cur, sizeof(bm), &bm) && bm.bmWidth > 0 && bm.bmHeight > 0) {
-			int w = bm.bmWidth, h = bm.bmHeight;
-			std::vector<BYTE> buf((size_t)w * h * 4);
-			BITMAPINFO bi = {0};
-			bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-			bi.bmiHeader.biWidth = w;
-			bi.bmiHeader.biHeight = -h;                 // top-down for cv::imwrite
-			bi.bmiHeader.biPlanes = 1;
-			bi.bmiHeader.biBitCount = 32;
-			bi.bmiHeader.biCompression = BI_RGB;
-			HDC hdc = GetDC(NULL);
-			if (hdc != NULL) {
-				if (GetDIBits(hdc, _entire_window_cur, 0, h, buf.data(), &bi, DIB_RGB_COLORS)) {
-					CString hand = (p_handreset_detector != NULL)
-						? p_handreset_detector->GetHandNumber() : CString("");
-					int br = (p_betround_calculator != NULL) ? p_betround_calculator->betround() : 0;
-					p_log_writer->LogFrame(buf.data(), w, h, (long long)ms,
-						CStringA(hand).GetString(), br);
+		CString hand = (p_handreset_detector != NULL) ? p_handreset_detector->GetHandNumber() : CString("");
+		int br = (p_betround_calculator != NULL) ? p_betround_calculator->betround() : 0;
+		int nch = (p_tablemap != NULL) ? p_tablemap->nchairs() : 0;
+		CString active_mask; int active_seat = -1;
+		for (int i = 0; i < nch && i < kMaxNumberOfPlayers; ++i) {
+			bool a = (p_table_state != NULL && p_table_state->Player(i) != NULL && p_table_state->Player(i)->active());
+			active_mask += a ? '1' : '0';
+			if (a && active_seat < 0) active_seat = i;
+		}
+		bool myturn = (p_engine_container != NULL && p_engine_container->symbol_engine_autoplayer() != NULL
+			&& p_engine_container->symbol_engine_autoplayer()->ismyturn());
+		int gt = (p_engine_container != NULL && p_engine_container->symbol_engine_gametype() != NULL)
+			? p_engine_container->symbol_engine_gametype()->gametype() : 0;
+		bool omaha = (p_engine_container != NULL && p_engine_container->symbol_engine_isomaha() != NULL
+			&& p_engine_container->symbol_engine_isomaha()->isomaha());
+		int hero = (p_engine_container != NULL && p_engine_container->symbol_engine_userchair() != NULL)
+			? p_engine_container->symbol_engine_userchair()->userchair() : -1;
+		if (myturn && hero >= 0) active_seat = hero;   // key our own decision frames on us
+		CString sig;
+		sig.Format("%s|%d|%s|%d|%d|%d", hand.GetString(), br, active_mask.GetString(), myturn ? 1 : 0, gt, omaha ? 1 : 0);
+		if (sig != _last_capture_sig) {
+			_last_capture_sig = sig;
+			// Hero hole cards (KNOWN cards only -> "better detection": never log a BACK/garbage placeholder)
+			// for the replay dropdown + hole-card search.
+			CString hole;
+			if (hero >= 0 && p_table_state != NULL && p_table_state->Player(hero) != NULL) {
+				for (int ci = 0; ci < 4; ++ci) {
+					Card *hc = p_table_state->Player(hero)->hole_cards(ci);
+					if (hc != NULL && hc->IsKnownCard()) hole += hc->ToString();
 				}
-				ReleaseDC(NULL, hdc);
+			}
+			BITMAP bm = {0};
+			if (GetObject(_entire_window_cur, sizeof(bm), &bm) && bm.bmWidth > 0 && bm.bmHeight > 0) {
+				int w = bm.bmWidth, h = bm.bmHeight;
+				std::vector<BYTE> buf((size_t)w * h * 4);
+				BITMAPINFO bi = {0};
+				bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+				bi.bmiHeader.biWidth = w;
+				bi.bmiHeader.biHeight = -h;                 // top-down for cv::imwrite
+				bi.bmiHeader.biPlanes = 1;
+				bi.bmiHeader.biBitCount = 32;
+				bi.bmiHeader.biCompression = BI_RGB;
+				HDC hdc = GetDC(NULL);
+				if (hdc != NULL) {
+					if (GetDIBits(hdc, _entire_window_cur, 0, h, buf.data(), &bi, DIB_RGB_COLORS)) {
+						p_log_writer->LogFrame(buf.data(), w, h, (long long)ms,
+							CStringA(hand).GetString(), br, active_seat, CStringA(hole).GetString());
+					}
+					ReleaseDC(NULL, hdc);
+				}
 			}
 		}
 	}

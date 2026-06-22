@@ -133,20 +133,22 @@ void CLogWriter::HandleFrame(void *conn, const FrameJob &f) {
 	CString hex; hex.Format("%016llx", hh);
 	bool changed = (hex != _last_frame_hash);
 	_last_frame_hash = hex;
-	// Encode PNG (bits are top-down BGRA from GetDIBits).
+	// Encode PNG (bits are top-down BGRA from GetDIBits). Filename is KEYED by street + active-seat (+ ts
+	// for uniqueness within the same key) so a frame is trivially identifiable on disk: e.g. s2_seat3_<ts>.png
+	// = flop, seat 3 to act. [Emrald: key files on active-player + hand + street]
 	CString dir = ReplayBaseDir() + "\\" + f.hand;
 	SHCreateDirectoryExA(NULL, CStringA(dir).GetString(), NULL);
-	CString png; png.Format("%s\\%lld.png", dir.GetString(), f.ts);
+	CString png; png.Format("%s\\s%d_seat%d_%lld.png", dir.GetString(), f.betround, f.active_seat, f.ts);
 	try {
 		cv::Mat m(f.h, f.w, CV_8UC4, (void *)f.bits.data());
 		std::vector<int> params; params.push_back(cv::IMWRITE_PNG_COMPRESSION); params.push_back(3);
 		cv::imwrite(CStringA(png).GetString(), m, params);
 	} catch (...) { return; }
 	CString sql;
-	sql.Format("INSERT INTO hiss_log_frames(ts_ms,handnumber,betround,png_path,sha256,changed)"
-		" VALUES (%lld,'%s',%d,'%s','%s',%s)",
+	sql.Format("INSERT INTO hiss_log_frames(ts_ms,handnumber,betround,png_path,sha256,changed,active_seat,hole)"
+		" VALUES (%lld,'%s',%d,'%s','%s',%s,%d,'%s')",
 		f.ts, EscLit(f.hand).GetString(), f.betround, EscLit(png).GetString(),
-		hex.GetString(), changed ? "true" : "false");
+		hex.GetString(), changed ? "true" : "false", f.active_seat, EscLit(f.hole).GetString());
 	Exec(conn, sql);
 	RotateLocalIfNewHand(conn, f.hand);
 }
@@ -228,9 +230,10 @@ void CLogWriter::Run() {
 // Enqueue API (cheap; runs on the heartbeat / decision / flush thread)
 // ---------------------------------------------------------------------------
 void CLogWriter::LogFrame(const void *bgra, int width, int height,
-		long long ts_ms, const char *handnumber, int betround) {
+		long long ts_ms, const char *handnumber, int betround, int active_seat, const char *hole) {
 	if (!_enabled || bgra == NULL || width <= 0 || height <= 0) return;
 	FrameJob f; f.ts = ts_ms; f.hand = handnumber ? handnumber : ""; f.betround = betround;
+	f.active_seat = active_seat; f.hole = hole ? hole : "";
 	f.w = width; f.h = height;
 	size_t bytes = (size_t)width * height * 4;
 	f.bits.resize(bytes);

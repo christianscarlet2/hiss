@@ -90,10 +90,14 @@ BOOL CHudOverlayWindow::Create(CWnd *owner) {
 		AfxGetApp()->LoadStandardCursor(IDC_ARROW),
 		NULL,   // no background brush -- we paint everything
 		NULL);
-	// Borderless popup; layered (colour-key transparency), topmost, no taskbar,
-	// never activated (so clicking a box doesn't steal focus from scrcpy).
+	// Borderless popup; layered (colour-key transparency), topmost, no taskbar, never activated.
+	// WS_EX_TRANSPARENT makes the WHOLE overlay hit-test-transparent: every click passes straight through
+	// to the table / scrcpy mirror beneath -- ALWAYS, even where the HUD or the RED decision is drawn SOLID
+	// (the hero-name box stopped being click-through when the decision forced it opaque). This also stops the
+	// overlay from ever eating the bot's OWN autoplayer button clicks. The overlay is now purely visual.
+	// [Emrald: HUD + RED DECISION must be click-through so clicks reach scrcpy]
 	BOOL created = CreateEx(
-		WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
+		WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
 		class_name, _T("HissHUD"),
 		WS_POPUP,
 		0, 0, 100, 100,

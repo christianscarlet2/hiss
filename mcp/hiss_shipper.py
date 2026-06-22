@@ -60,7 +60,7 @@ STREAMS = {
     "symbols":   ["ts_ms", "handnumber", "betround", "name", "value"],
     "debug":     ["ts_ms", "handnumber", "category", "line"],
 }
-FRAME_COLS = ["ts_ms", "handnumber", "betround", "png_path", "sha256", "changed"]
+FRAME_COLS = ["ts_ms", "handnumber", "betround", "png_path", "sha256", "changed", "active_seat", "hole"]
 
 # voice_feedback is its own table (written directly by voice_feedback.py, not a hiss_log_* outbox),
 # so it ships via a dedicated drain. Columns mirror the server's `voice` ingest stream / `voice` table.

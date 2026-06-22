@@ -35,8 +35,11 @@ public:
 
 	// --- Enqueue API (called from the heartbeat / decision / flush; cheap) -------------
 	// Copies the BGRA frame buffer; the worker encodes the PNG + inserts the row.
+	// active_seat = the chair whose turn it is (or hero when it's our turn), hole = hero's hole cards.
+	// Both are persisted so the Advanced Replay can KEY frames by active-player + hand + street and
+	// list/search by hole card + hand number. [Emrald]
 	void LogFrame(const void *bgra, int width, int height,
-		long long ts_ms, const char *handnumber, int betround);
+		long long ts_ms, const char *handnumber, int betround, int active_seat, const char *hole);
 	void LogScrape(long long ts_ms, const char *handnumber, int betround,
 		const char *region, const char *text, bool is_crop);
 	void LogSymbol(long long ts_ms, const char *handnumber, int betround,
@@ -50,6 +53,7 @@ public:
 private:
 	struct FrameJob {
 		long long ts; CString hand; int betround; int w; int h; std::vector<BYTE> bits;
+		int active_seat; CString hole;
 	};
 	static UINT __cdecl ThreadProc(LPVOID param);
 	void Run();

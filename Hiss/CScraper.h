@@ -147,6 +147,8 @@ class CScraper : public CSpaceOptimizedGlobalObject {
   int total_region_counter;
   int identical_region_counter;
   int _frame_prune_counter;   // throttles the 10-min frame-history prune scan
+  CString _last_capture_sig;  // Advanced Replay: hand|street|active-mask|ismyturn|gametype of the last CAPTURED
+                              // frame -> only ship a new replay frame when this changes (event-driven). [Emrald]
   std::map<CString, CString> _claude_region_values;   // Claude-transform region values
   CCritSec _claude_critsec;
  public:

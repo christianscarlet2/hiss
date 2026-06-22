@@ -34,6 +34,11 @@ public:
 public:
 	void Guess(double *sblind, double *bblind, double *bbet, double *ante);
 private:
+	void GuessRaw(double *sblind, double *bblind, double *bbet, double *ante);
+	// OCR hack [Emrald]: with sb==0.5 the bb is 1.0, but the BB region sometimes OCR's as "11"/"111"
+	// (lost/extra decimal) -> ~10-100x depth misread -> bot misplays push/fold + folds premiums. Rewrite
+	// it to 1.0 at the symbol level. Applied to whatever Guess() ends up with, on every return path.
+	void FixOcrMisreadBlinds(double *sblind, double *bblind, double *bbet);
 	void GetFirstBlindDataFromScraper(double *sblind, double *bblind, double *bbet, double *ante);
 	void GetFirstBlindDataFromBetsAtTheTable(double *sblind, double *bblind, double *bbet, double *ante);
 private:

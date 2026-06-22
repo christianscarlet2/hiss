@@ -32,8 +32,28 @@ CBlindGuesser::CBlindGuesser() {
 CBlindGuesser::~CBlindGuesser() {
 }
 
-// All parameters are out-parameters only
+// All parameters are out-parameters only. Public entry: guess, then apply the symbol-level OCR correction
+// on WHATEVER value any internal path produced (so every early return is covered).
 void CBlindGuesser::Guess(double *sblind, double *bblind, double *bbet, double *ante) {
+  GuessRaw(sblind, bblind, bbet, ante);
+  FixOcrMisreadBlinds(sblind, bblind, bbet);
+}
+
+// OCR hack [Emrald]: with sb==0.5 the bb is 1.0, but the BB region sometimes OCR's as "11" or "111"
+// (lost/extra decimal). That inflates read depth ~10-100x, so the bot misreads push/fold and folds
+// premiums (this is what was folding AK). Rewrite bb to 1.0 at the symbol level -- NOT an OCR retrain.
+// Gated on sb==0.5 so it can never touch a legitimate blind level.
+void CBlindGuesser::FixOcrMisreadBlinds(double *sblind, double *bblind, double *bbet) {
+  if (sblind == NULL || bblind == NULL) return;
+  if (fabs(*sblind - 0.5) < 0.01 && (fabs(*bblind - 11.0) < 0.5 || fabs(*bblind - 111.0) < 0.5)) {
+    write_log(Preferences()->debug_table_limits(),
+      "[CBlindGuesser] OCR fix: sb=0.5 with bb=%.2f -> rewriting bb to 1.0 [Emrald]\n", *bblind);
+    *bblind = 1.0;
+    if (bbet != NULL && (fabs(*bbet - 11.0) < 0.5 || fabs(*bbet - 111.0) < 0.5 || *bbet <= 0.0)) *bbet = 1.0;
+  }
+}
+
+void CBlindGuesser::GuessRaw(double *sblind, double *bblind, double *bbet, double *ante) {
   // table_game_info override: if Claude has parsed the blinds from the table image and
   // posted them (/api/table-game-info), use those AUTHORITATIVE values and skip guessing.
   // This is how a big-blind-denominated table (stacks shown in BB) gets the correct unit
