@@ -25,7 +25,7 @@ WHEN Others RETURN f$turn_vs_bet FORCE
 // SLOW-PLAY CONTINUE (Emrald): if we flagged a slow-play on the flop (me_re_slowplay = 1) and it's STILL
 // checked to us with the monster intact, check the turn once more to keep the trap baited. The river then
 // value-bets normally; if they bet the turn instead, we fall through to the lines below and spring it. [Emrald]
-WHEN me_re_slowplay = 1 AND f$HaveBigMade RETURN Check FORCE
+WHEN me_re_slowplay = 1 AND (f$HaveBigMade OR HaveSet) RETURN Check FORCE
 WHEN f$HaveStrongMade AND (f$Opp_IsStation OR f$Opp_IsFish OR f$Opp_IsSLP) RaiseBy f$BetPctVsStation % FORCE
 WHEN f$HaveStrongMade RaiseBy f$BetPctTurn % FORCE
 // SUPERSTITION (666 Card Oracle): the Beast favors -> fire EVERY draw as a semibluff. Inert when off.

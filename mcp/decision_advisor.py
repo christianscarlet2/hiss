@@ -279,9 +279,12 @@ def main():
     cached = None        # last advice -> re-pushed so the knobs never decay mid-decision
     while True:
         now = time.time()
-        st = get(base, "/api/symbols?names=ismyturn,handnumber,betround")
+        st = get(base, "/api/symbols?names=ismyturn,betround")
         my = synapse_map.num(st.get("ismyturn"))
-        key = (st.get("handnumber"), st.get("betround"))
+        # handnumber is NOT an OHF symbol (querying it via /api/symbols logged "Unknown identifier:
+        # handnumber" against the formula) -> read it from /api/table-state, where it actually lives. [Emrald]
+        hn = (get(base, "/api/table-state") or {}).get("handnumber")
+        key = (hn, st.get("betround"))
         try:
             if my and my > 0:
                 if key != last_key:
