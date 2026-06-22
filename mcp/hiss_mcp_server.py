@@ -386,14 +386,51 @@ def call_tool(name, args):
         DETACHED = 0x00000008 | 0x00000200   # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
         subprocess.Popen([exe], cwd=RELEASE, close_fds=True,
                          creationflags=DETACHED if os.name == "nt" else 0)
-        return [{"type": "text", "text": "Launched Hiss.exe (cwd=Release). Give it a few seconds to bind its terminal port, then call hiss_status."}]
+        # LIFECYCLE COUPLING: the AIL control server + the brain (synapse) live and die WITH Hiss. Bring up
+        # ail_server (windowless) and engage the brain for this instance's terminal port. [Emrald]
+        coupled = []
+        if ensure_ail_server():
+            coupled.append("ail_server")
+            port = 0
+            for _ in range(20):          # wait for Hiss to bind its terminal port
+                time.sleep(0.5)
+                port = hiss_port() or 0
+                if port:
+                    break
+            if port:
+                try:
+                    ail_get("/brain?port=%d&on=1" % port)   # starts synapse + the brain daemons
+                    coupled.append("brain(synapse) :%d" % port)
+                except Exception:
+                    pass
+        return [{"type": "text", "text": "Launched Hiss.exe (cwd=Release). Coupled: %s. Give it a few seconds, then hiss_status."
+                 % (", ".join(coupled) or "none (ail_server unreachable)")}]
     if name == "stop_hiss":
         if os.name != "nt":
             return [{"type": "text", "text": "stop_hiss is Windows-only."}]
+        # LIFECYCLE COUPLING: disengage the brain + stop the AIL control server, then kill Hiss. (ail_get is
+        # NOT used here so we never auto-start ail_server just to stop it.) [Emrald]
+        notes = []
+        try:
+            port = hiss_port() or 0
+            if port:
+                urllib.request.urlopen(_ail_url("/brain?port=%d&on=0" % port), timeout=3).read()
+                notes.append("brain disengaged")
+        except Exception:
+            pass
         proc = subprocess.run(["taskkill", "/IM", "Hiss.exe", "/F"],
                               capture_output=True, text=True)
         out = (proc.stdout or "") + (proc.stderr or "")
-        return [{"type": "text", "text": out.strip() or "taskkill issued."}]
+        try:   # stop the AIL control server (it re-adopts its daemons on the next start_hiss)
+            ps = ("Get-CimInstance Win32_Process -Filter \"Name='python.exe' or Name='pythonw.exe'\" | "
+                  "Where-Object { $_.CommandLine -like '*ail_server.py*' } | "
+                  "ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force } catch {} }")
+            subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                           capture_output=True, creationflags=0x08000000)
+            notes.append("ail_server stopped")
+        except Exception:
+            pass
+        return [{"type": "text", "text": (out.strip() or "taskkill issued.") + " | " + ", ".join(notes)}]
     if name == "replay_screenshot":
         try:
             hiss_get("/api/dump-scrapes")
