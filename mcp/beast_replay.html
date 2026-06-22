@@ -41,6 +41,10 @@ const {useState,useEffect,useRef,useCallback}=React;
 const api=(p)=>fetch(p).then(r=>r.json());
 const nyc=(ms)=>{ try{ return new Date(+ms).toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true}); }catch(e){ return ''; } };
 const CTRL='http://192.168.1.137:8089';  // replayer control server on the Windows bot box (BEAST)
+// Tell the control server to pull frames from THIS (local, all-frames) store, not swiftsnake, so
+// "Play in Replayer.exe" plays exactly the frames shown here. 127.0.0.1 is reachable by the control
+// server (it runs on BEAST too); host empty -> no Host override for the plain :8090 server. [Emrald]
+const SRC='&src='+encodeURIComponent('http://127.0.0.1:8090')+'&host=';
 const SUIT={s:'♠',h:'♥',d:'♦',c:'♣'};   // ♠ ♥ ♦ ♣
 const cards=(s)=>{ if(!s) return ''; var t=String(s).replace(/[^2-9TJQKAcdhs]/g,''); var out=[]; for(var i=0;i+1<t.length;i+=2){ var su=t[i+1].toLowerCase(); if(SUIT[su]) out.push(t[i].toUpperCase()+SUIT[su]); } return out.join(' '); };
 
@@ -112,7 +116,7 @@ function App(){
   // desktop replayer.exe via the control server -- it plays this hand, then each newer hand, until Stop.
   const onPlayClick=()=>{
     if(inReplayer){
-      if(!playing){ fetch(CTRL+'/play?hand='+encodeURIComponent(hand)).catch(()=>{}); setPlaying(true); }
+      if(!playing){ fetch(CTRL+'/play?hand='+encodeURIComponent(hand)+SRC).catch(()=>{}); setPlaying(true); }
       else { fetch(CTRL+'/stop').catch(()=>{}); setPlaying(false); }
     } else { setPlaying(p=>!p); }
   };

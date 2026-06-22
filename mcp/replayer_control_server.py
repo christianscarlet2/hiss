@@ -203,7 +203,7 @@ class H(BaseHTTPRequestHandler):
             write_control("STOP")
             return self._json({"ok": True, "stopped": True})
         if u.path == "/status":
-            return self._json({"playing": _state["playing"], "hand": _state["hand"]})
+            return self._json({"playing": _state["playing"], "hand": _state["hand"], "src": _state["src"]})
         return self._json({"error": "unknown"}, 404)
 
 
