@@ -261,6 +261,21 @@ static void ApplySuperstitionEngage(bool want_on) {
   }
 }
 
+// Keep g_superstition_engaged HONEST: if the 666 Card Oracle process exited on its own (crash / closed /
+// out of audio), clear the engaged flag so /api/superstition + the React table-view + Synapse-tab indicators
+// reflect the REAL state instead of staying stuck ON. Called every heartbeat. [Emrald: superstition
+// indicator must poll/reflect its actual state]
+static void SyncSuperstitionLiveness() {
+  if (!g_superstition_engaged || g_superstition_proc == NULL) return;
+  if (WaitForSingleObject((HANDLE)g_superstition_proc, 0) == WAIT_OBJECT_0) {
+    CloseHandle((HANDLE)g_superstition_proc);
+    g_superstition_proc = NULL;
+    g_superstition_engaged = false;
+    WriteModeReg("SuperstitionEngaged", 0);
+    write_log(k_always_log_basic_information, "[SUPERSTITION] oracle process exited -> engaged=false (indicator synced)\n");
+  }
+}
+
 CHeartbeatThread	 *p_heartbeat_thread = NULL;
 CRITICAL_SECTION	 CHeartbeatThread::cs_update_in_progress;
 long int			     CHeartbeatThread::_heartbeat_counter = 0;
@@ -450,6 +465,7 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
     g_mcp_superstition_request = -1;
     ApplySuperstitionEngage(superstition_on);
   }
+  SyncSuperstitionLiveness();   // clear the engaged flag if the oracle died, so the indicator stays honest [Emrald]
   if (g_mcp_action_request >= 0 && p_casino_interface != NULL) {
     bool my_turn = (p_engine_container->symbol_engine_autoplayer() != NULL
                     && p_engine_container->symbol_engine_autoplayer()->ismyturn());

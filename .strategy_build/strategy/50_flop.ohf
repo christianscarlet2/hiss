@@ -31,6 +31,10 @@ WHEN Others RETURN f$flop_vs_bet FORCE
 // memory flag (me_st_slowplay_1 stores 1 + returns 1, only when every prior condition holds) so the later
 // streets keep the trap on. [Emrald: slow-play nut/strong hands via a memory symbol]
 WHEN (f$HaveBigMade OR HaveSet) AND f$InPositionPost AND f$HeadsUpPot AND NOT f$Opp_IsStation AND NOT f$Opp_IsFish AND randomhand < 0.30 AND me_st_slowplay_1 RETURN Check FORCE
+// ACE-RAG PASSIVE (Emrald): we limped a weak ace and CAUGHT one (top pair, weak kicker). Do NOT bet/raise
+// it -- pot-control. Only the big-hand lines below (two pair / set / big draw = lots of outs) get to bet.
+// [Emrald: catch an ace -> don't raise; only raise w/ lots of outs or two pair]
+WHEN me_re_acerag = 1 AND HaveTopPair AND NOT f$HaveBigDraw AND NOT f$HaveComboDraw RETURN Check FORCE
 WHEN f$HaveStrongMade AND (f$Opp_IsStation OR f$Opp_IsFish OR f$Opp_IsSLP) AND explain_value_flop RaiseBy f$BetPctVsStation % FORCE
 WHEN f$HaveStrongMade AND explain_value_flop RaiseBy f$BetPctFlop % FORCE
 // SUPERSTITION (666 Card Oracle): when the Beast favors, fire EVERY draw as a semibluff.
@@ -38,7 +42,10 @@ WHEN f$HaveStrongMade AND explain_value_flop RaiseBy f$BetPctFlop % FORCE
 WHEN (f$HaveWeakDraw OR f$HaveBigDraw OR f$HaveComboDraw) AND sb_beastfavor >= 0.66 RaiseBy f$BetPctFlop % FORCE
 // Semi-bluff strong & combo draws - two ways to win. [B D6]
 WHEN f$HaveComboDraw AND explain_semibluff RaiseBy f$BetPctFlop % FORCE
-WHEN f$HaveBigDraw AND NOT f$Opp_IsStation RaiseBy f$BetPctFlop % FORCE
+// DRAW MIX (Emrald): a bare big draw (4 to a straight/flush) doesn't ALWAYS want to raise -- ~58% semi-bluff,
+// else just take the free card / call at a price below. Keeps us from blasting every draw face-up.
+// [Emrald: four to a straight/flush with outs -- not always a raise]
+WHEN f$HaveBigDraw AND NOT f$Opp_IsStation AND randomround < 0.58 RaiseBy f$BetPctFlop % FORCE
 // RHYTHM (Emrald 2026-06-20): in position as the flat-caller (NOT the pre-flop raiser), the play is
 // usually to CHECK BACK to the raiser - take the free card and see the turn / their next action to
 // gather information before committing. Strong made hands (value, above) and big/combo-draw
@@ -67,6 +74,10 @@ WHEN f$WasPreflopRaiser AND f$Opp_IsStation Check FORCE
 WHEN f$WasPreflopRaiser AND f$BoardHighCardSticky Check FORCE
 WHEN f$WasPreflopRaiser AND f$HeadsUpPot AND randomround < f$CbetFreq AND explain_cbet RaiseBy f$BetPctFlop % FORCE
 WHEN f$WasPreflopRaiser AND f$Opp_Foldy AND randomround < f$CbetFreq RaiseBy f$BetPctFlop % FORCE
+// SHORT-STACK PRESSURE (Emrald): vs a SHORT-STACKED opponent who is likely on air (foldy), apply MORE
+// pressure than a normal c-bet -- a short stack can't call light, so a bet folds them right out of the
+// hand. Higher frequency, heads-up. [Emrald: pressure little stacks when they likely have nothing]
+WHEN f$ShortStack AND f$Opp_Foldy AND f$HeadsUpPot AND randomround < 0.70 RaiseBy f$BetPctFlop % FORCE
 // In-position stab to set up a turn take-away with a weak draw. [N float doctrine]
 WHEN f$InPositionPost AND f$HeadsUpPot AND f$HaveWeakDraw AND randomround < 0.50 RaiseBy f$BetPctFlop % FORCE
 // FEELER (12_aggressor): rather than checking blind with a marginal made hand, fire a SMALL
@@ -88,6 +99,11 @@ WHEN Others Check FORCE
 // Value-raise the big made hands (charge draws; build the pot). [B R5.5]
 WHEN f$HaveBigMade RaiseBy f$BetPctFlop % FORCE
 WHEN HaveSet OR HaveTwoPair RaiseBy f$BetPctFlop % FORCE
+// ACE-RAG PASSIVE vs a bet (Emrald): top pair / weak kicker -> CALL only a little bet (cheap to improve or
+// reach showdown), FOLD to anything bigger. Two pair+/sets already raised above; a big draw (lots of outs)
+// falls through to the draw lines. [Emrald: call little bets to improve / get to showdown cheaply]
+WHEN me_re_acerag = 1 AND HaveTopPair AND NOT f$HaveBigDraw AND NOT f$HaveComboDraw AND f$SmallBet RETURN Call FORCE
+WHEN me_re_acerag = 1 AND HaveTopPair AND NOT f$HaveBigDraw AND NOT f$HaveComboDraw RETURN Fold FORCE
 // Low SPR (committed): get top pair / overpair all-in rather than pot-controlling.
 // This is the LOW-SPR branch of "don't go broke with one pair" - at high SPR the
 // peel/pot-control lines below still apply (NOT f$Committed). [SSNL SPR sidebar]
@@ -98,6 +114,10 @@ WHEN f$HaveComboDraw RaiseMax FORCE
 WHEN f$HaveBigDraw AND f$Style = 1 RaiseBy f$BetPctFlop % FORCE
 WHEN f$HaveBigDraw AND f$CheapDraw Call FORCE
 WHEN f$HaveBigDraw AND f$DecentPrice AND f$InPositionPost Call FORCE
+// FISHING (Emrald): when the price is RIGHT and LOW (a small bet, <=1/3 pot / >=3:1) and we hold ANY draw
+// -- weak ones too, not just the big draws above -- a cheap flat call to see if we improve beats folding.
+// Implied-odds speculation; f$SmallBet keeps it to genuinely cheap spots. [Emrald: flat call cheap to improve]
+WHEN f$SmallBet AND f$HaveAnyDraw Call FORCE
 // INTROSPECTION (exploit precedence, confident read only): vs a villain who OVER-FOLDS / gives up the
 // lead, raise our one pair / draw to push him off it; vs a STEAMING / sticky-firing villain, PEEL our
 // one pair rather than fold (he is bluffing the flop far more than his story suggests).

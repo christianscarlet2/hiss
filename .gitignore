@@ -30,7 +30,8 @@ Documentation/OpenHoldem_Manual.chm
 Documentation/Chapters/titlepage/images/Temp
 Documentation/Chapters/titlepage/original_images
 OpenHoldem/Release - Optimized
-Release
+Release/*
+!Release/*.ohf
 Release - Optimized
 scintilla/bin
 \.vs/OpenHoldem/v14/.suo

@@ -31,6 +31,20 @@ def main():
     if not fp:
         return
     low = fp.replace("\\", "/").lower()
+    # OHF strategy change -> remind to run the validator, which regenerates the master AND auto-copies it to
+    # hiss-linux on swiftsnake (build_and_lint.py calls scripts/sync_ohf_to_hisslinux.sh). [Emrald: OHF->hiss-server]
+    if low.endswith(".ohf") and ("/strategy/" in low or "/release/" in low or "/.strategy_build/" in low):
+        emit("OHF CHANGED (%s): run the OHF validator (validate_ohf / build_and_lint.py) to regenerate the "
+             "master AND auto-copy it to hiss-linux on swiftsnake, keeping the headless self-play strategy in "
+             "lockstep with the live bot for PPO/CFR. [Emrald: OHF -> hiss-server sync]" % os.path.basename(fp))
+        try:
+            os.makedirs(os.path.dirname(PENDING), exist_ok=True)
+            with open(PENDING, "a", encoding="utf-8") as f:
+                f.write("- [ ] %s  OHF %s edited -> validate_ohf (auto-syncs master to hiss-linux)\n"
+                        % (time.strftime("%Y-%m-%d %H:%M"), os.path.basename(fp)))
+        except Exception:
+            pass
+        return
     if "/hiss/" not in low or not low.endswith((".cpp", ".h")):
         return                                  # only Windows Hiss engine source
     base = os.path.basename(fp.replace("\\", "/"))

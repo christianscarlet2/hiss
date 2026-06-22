@@ -16,6 +16,16 @@ AA  KK  QQ  JJ
 // Small/medium pairs we flat to flop a set (never reraise pre). [N p.21][B p.481]
 22 33 44 55 66 77 88 99 TT
 
+##listSmallSuitedConnectors##
+// Small suited connectors -- cheap, high-implied-value hands that flop big draws/two-pair+ multiway.
+// Limp these in behind limpers whenever the depth gives implied odds. [Emrald: limp small SCs when you can]
+98s 87s 76s 65s 54s 43s 32s
+
+##listAceRag##
+// Weak (offsuit) aces -- "ace rag". Limp them in cheaply; if we catch an ace we play passive pot-control
+// (don't raise top pair / weak kicker), call little bets, get to a cheap showdown. [Emrald: limp ace rag]
+A9o A8o A7o A6o A5o A4o A3o A2o
+
 //-----------------------------------------------------------------------------
 //  Open-raise ranges (first in), widening by position.
 //-----------------------------------------------------------------------------

@@ -1,0 +1,2599 @@
+##f$notes##
+//*****************************************************************************
+//
+//  ScarletBeast - POWER HOLD'EM   (OpenPPL, No-Limit Texas Hold'em)
+//  ===========================================================================
+//
+//  A complete NLHE strategy distilled from TWO source texts:
+//
+//    [N]  Daniel Negreanu - "Small Ball"   (Power Hold'em Strategy, 2008)
+//    [B]  Doyle Brunson   - "Power Poker"   (Super System, NLHE section)
+//
+//  The two philosophies are deliberately blended and made selectable through a
+//  single STYLE dial (see 05_config / f$Style):
+//
+//    Style 0  SMALL BALL  [N] - small bets (2.5x opens, ~60% c-bets), wide but
+//             positional, pot control, never stack off without the near-nuts,
+//             "don't go broke with one pair", low river-bluff frequency.
+//    Style 1  POWER POKER [B] - aggressive, ~pot-sized bets, c-bet ~90% as the
+//             pre-flop raiser, semi-bluff strong draws all-in, lead big hands
+//             into the raiser, "bet with an out".
+//    Style 2  HYBRID (default) - small-ball sizing/discipline with Brunson's
+//             draw aggression and high c-bet frequency.
+//
+//  Both authors agree on the engine of the strategy and that agreement is the
+//  spine of this profile:
+//    * Position is power - play more, and more aggressively, in position. [N,B]
+//    * Speculative hands (suited connectors, small pairs, suited aces) win the
+//      big pots; play them cheaply to flop a monster.                     [N,B]
+//    * Be the aggressor; pick up the many small uncontested pots.         [N,B]
+//    * Play the OPPONENT'S hand, not just your own - so this profile is
+//      opponent-aware via the PokerTracker HUD stats (see 10_opponents).  [N,B]
+//    * Mix it up / stay unpredictable - balanced frequencies via randomround. [N,B]
+//
+//  THIRD SOURCE - the mental/discipline layer:
+//    [T]  Larry W. Phillips - "The TAO of Poker" (285 rules, 2003)
+//  TAO is a discipline + low-limit text; its rules are incorporated as follows:
+//    * TIGHT SELECTION / PATIENCE - "see how many hands you can fold; make each hand
+//      prove it is good." Reflected in the by-position open lists (20_lists) + the
+//      fold-heavy default of every street. Discipline must hold "until the end." [T R10,R11]
+//    * BET YOUR PREMIUMS - "start with premium hands; when you get them, bet them."
+//      Reflected in list3betValue/list4betValue + the raise branches.            [T R3]
+//    * VALUE OVER BLUFF IN LOW-LIMIT - the freeroll field calls too much, so bluffing
+//      donates. f$CbetFreq dialed down (05_config), c-bet air CHECKED vs a station
+//      (50_flop f$Opp_IsStation), 3-bet bluffs gated on a foldy/loose opp only.   [T R188-190, Ch.6]
+//    * FOLD WHEN BEAT / DON'T PAY OFF - "if you're beat, fold; forget the idea they're
+//      bluffing." Reflected in pot-control + bluff-catch discipline, and the river
+//      never-bluff-a-station / fold-to-strength lines.                            [T Ch.3,R28]
+//    * RESPECT THE CONFIDENT BAD PLAYER - don't bluff-catch light vs a maniac. [T R189]
+//    * STAY UNPREDICTABLE - mix frequencies (randomround) rather than play face-up. [T R191]
+//  The mental-game rules (tilt, calm, losing, luck, slumps, trusting your read) live in
+//  the Lilith poker-coach (mcp/poker_coach_hype.py) - that is where TAO mostly applies.
+//
+//  ---------------------------------------------------------------------------
+//  TIER-1 LIBRARY EXPANSION (2026-06-15) - the relevant NLHE subset of the
+//  PokerBooks library, distilled and reconciled into the dials above. Each new
+//  source carries a citation tag used inline in 05_config / 20_lists / 10_opponents:
+//
+//    [HoH] Harrington on Hold'em I-II (Harrington & Robertie); [HoH2] = Vol-II page
+//          cites - the M-ratio / inflection-point endgame. Drives f$M / f$Mzone and
+//          the antes-aware push/fold + short-stack triggers. "First-in vigorish" as M falls.
+//    [KE]  Kill Everyone / [KP] Kill Phil (Nelson, Rodman, Streib, Heston) -
+//          CSI stages, equilibrium (Nash) push/fold, ICM bubble factor. Drives
+//          the bubble-tightened ICM call gate and the move-in-or-fold short game.
+//    [SSNL] Small Stakes No-Limit Hold'em (Miller/Mehta/Flynn) - SPR & COMMITMENT.
+//          Drives f$SPR / f$Committed: the low-SPR branch of "don't go broke with
+//          one pair" (at low SPR you SHOULD stack off top pair / overpair).
+//    [ToP] Theory of Poker / [SM] Hold'em for Advanced Players (Sklansky/Malmuth)
+//          - Fundamental Theorem, semi-bluff math, the Gap Concept, optimal bluff
+//          frequency. Confirms the listCallOpen < listOpen* gap and the semibluff lines.
+//    [CtM] Crushing the Microstakes (Williams) - exploit weak/passive fields:
+//          value BIG vs stations (f$BetPctVsStation), broadened station typing,
+//          never bluff the fish on any street.
+//          DEEPENED 2026-06-20 (the freeroll/low-stakes field is our home game, so
+//          this is the highest-value book): added the missing SLP archetype
+//          (f$Opp_IsSLP, ~24/6) + the bet-pattern reads f$Opp_MinBetLead /
+//          f$Opp_NutsyRaise ("turn/river raises are the nuts", "min/probe bets are
+//          weak"); EXTRACTION/fastplay value-big extended to station+fish+SLP on all
+//          three streets; "give up when they fight back" wired as the f$OppRepresents
+//          respect-fold (fold one pair/overpair to a credible nut line, fold to
+//          turn/river raises); fish bluff missed draws -> capped river value-call;
+//          vs a nit/passive 3-bet fold even QQ/JJ/AK, flat (not 3-bet) into a nit's
+//          tight open. See 12_aggressor.ohf + 40/50/60/70 [CtM p.NN] cites.
+//    [PMM] Poker Math That Matters (Gaines) / [MoH] Math of Hold'em (Moshman) -
+//          exact pot odds (f$RequiredEquity), fold-equity / MDF, the 15x set-mine
+//          rule (f$SetMineOK, tighter than the old 10% f$WithinSpecRisk).
+//    [SNG] SNG Blueprint / Moshman SNG / [SoS] Shaw "Secrets of Sit'n'gos" - stage
+//          & bubble play. Drives f$Stage / f$NearBubble / f$BubbleTighten + the
+//          listCallShove/listCallShoveBubble split and f$HeadsUpTourney. ([SoS] is
+//          cited inline as its own tag where Shaw's bubble/HU calls are specific.)
+//    [V6]  "How to Beat 6-Max Cash" (Vosti) - 6-max range widths; drives f$Is6Max
+//          and the listOpenEP6 / listOpenMP6 6-max open branch (with [RF]).
+//    [EM]  Ed Miller "Playing the Player" / "How to Read Hands" / [TN] Tri Nguyen
+//          "Poker Blueprint" - stat-based opponent typing: the new TAG/LAG/fish/
+//          maniac archetypes in 10_opponents (fixes IsAggro firing on AF alone).
+//          ALSO (2026-06-20) the READ-THE-LINE story engine f$OppRepresents
+//          (12_aggressor): infer the opponent's perceived range from his BETTING
+//          LINE (checked-to / capped / merged / strong) and gate value/bluff/fold
+//          on it - Miller's "play the player, read the line not the cards."
+//
+//  ---------------------------------------------------------------------------
+//  TIER-2 WAVE-1 LIBRARY EXPANSION (2026-06-15) - cash/MTT/SNG/HU technique. 18
+//  books, deployed live, lint/parse clean (full legend + per-book deltas in
+//  BOOKS_PROGRESS.md). These tags are also bundled at the head of the Tier-2 dials
+//  in 05_config; registered here so EVERY inline tag resolves from this file:
+//
+//    [PNL] Flynn/Mehta/Miller "Professional No-Limit Hold'em" - the hand-class-aware
+//          SPR/commitment bands (f$Committed; corrected the Tier-1 flat SSNL version).
+//    [HC]  Harrington on Cash Games - deeper-stack value/commitment & the donk/min-bet
+//          read; the tighter ~25x set-mine floor vs a nit (f$SetMineOK).
+//    [RE]  Bertok/Nelson "The Raiser's Edge" - re-steal/3-bet-jam band (f$ReshoveSpot,
+//          listReshove) and the <=15bb all-in zone.
+//    [JL]  Jonathan Little "Secrets of Pro Tournament Poker" - the same re-steal band.
+//    [ASH] Danny Ashman "Secrets of Short-handed NL" - short-handed barreling.
+//    [EG]  Seidman "Easy Game" / [ER] Nguyen "NL Workbook: Exploiting Regulars" (the
+//          [W] workbook) / [LTBR] "Let There Be Range" (Nguyen/CTS) - the double-barrel
+//          gate (f$DoubleBarrel) and opponent-typed 3-bet-bluff freq (f$ThreeBetBluffFreq).
+//    [DFR] "Dynamic Full Ring Poker" (Splitsuit) - full-ring tightening / the c-bet cap.
+//    [RF]  Ryan Fees 6-max NL guide - the 6-max EP/MP open widths (with [V6]).
+//    [HUM] Moshman "Heads-Up No-Limit" / [HUSNG] Mersenneary HUSNG guide - the HU open/
+//          defend widths (listOpenHU/listDefendHU) and HU open size (f$Open_RaiseTo_HU).
+//    [SNF] Snyder "Tournament Formula" / [SYS] "Systematic SNG" / [NSS] Shaw "Secrets of
+//          Non-Standard SNGs" - structure-speed & DON/satellite survival (specified, mostly
+//          DEFERRED to backlog; cited where a live dial leans on them, e.g. the all-in zone).
+//
+//  ---------------------------------------------------------------------------
+//  TIER-2 WAVE-2 LIBRARY EXPANSION (2026-06-15) - MTT decision-logs, Gordon's
+//  combinatoric NLHE, and the strategic-restraint / opponent-exploitation
+//  philosophy layer. Most of the ~30 books mined this wave were FIXED-LIMIT or
+//  pure-intro and fully subsumed (see BOOKS_PROGRESS.md); the net-new deltas are:
+//
+//    [WPT1/WPT2] Turner/Lynch/Fleet "Winning Poker Tournaments One Hand at a
+//          Time" v1/v2 - hand-by-hand MTT logs. NET-NEW: (1) the SB opens BIGGER
+//          (~3x) because it plays the whole hand OOP -> SB branch in f$OpenBase;
+//          (2) set-mining "is out of the question at THIS stage" once stacks are
+//          shallow / squeeze-risk is high -> f$SetMineOK now stage-gated (f$Stage).
+//    [GG]  Phil Gordon "Little Gold Book" - modern HUD/combinatoric NLHE. NET-NEW:
+//          (1) board HIGH-CARD texture for c-bet bluffs - K/A/Q-high dry flops miss
+//          a flat-caller's range (bluff), J/T-high dry flops HIT it (don't); low
+//          disconnected "parched" boards barrel relentlessly -> f$BoardHighCardFoldy
+//          / f$BoardParched (30_classify) gating the air c-bet (50_flop);
+//          (2) turn bet-sizing geometry TurnBet=(EffStack-PotSize)/3 to set up a
+//          clean pot-sized river jam -> f$TurnBetGeo (05_config, available symbol).
+//    [Tao] Tao Te Ching (Lao Tzu) - wu-wei / water / yielding: the strategic-
+//          RESTRAINT layer. Reinforces (as citations) the dialed-DOWN bluff freqs
+//          (over-bluffing is forcing), don't-go-broke pot-control, and adapt-to-
+//          depth/opponent. Mental-game rules route to Lilith, not here.
+//    [SunTzu] Sun Tzu "Art of War" - know-enemy-and-self, deception, attack-
+//          weakness/avoid-strength, win-without-fighting, terrain=position, "leave
+//          a golden bridge for a retreating army". The OPPONENT-EXPLOITATION layer;
+//          almost all already implemented. NET-NEW: "do not press a desperate foe"
+//          -> f$Opp_PotCommitted (10_opponents) gating bluffs vs a cornered low-M
+//          villain who cannot fold. Cited across 05_config/10_opponents/50-70.
+//    [48L]/[Prince] Greene "48 Laws of Power" / Machiavelli "The Prince" - a
+//          power-realism gloss on TAG poker (control info, crush the weak, ration
+//          aggression, stay unpredictable). Every machine-observable principle is
+//          ALREADY a live dial; added as CITATION REINFORCEMENT only, no behavior
+//          change. Interpersonal/statecraft laws are out of scope (Lilith coach).
+//    [LGY] Largay "NL: A Complete Course" - intro NLHE; every concept already
+//          encoded (implied/reverse-implied odds, value-sizing, player typing,
+//          game selection). NO new dial. [CNL] Cloutier/McEvoy, [AOW] Apostolico
+//          "Art of War" poker, [HCC] Gaines "Hole Card Confessions", [ANL]/[EoP]/
+//          [IPP]/[8M]/[PPM]/[PMVT]/[MC]/[NW]/[PKR] - mined, deltas either already
+//          present or unimplementable (range/combinatoric/multi-hand-memory); the
+//          backlog items are logged in LIMITATIONS.md.
+//
+//  Concepts the OHF/Hiss engine cannot express (per-opponent bubble factor, true
+//  Nash/ICM solver, node-by-node range narrowing, multi-street line planning,
+//  size-bucketed fold stats, real lobby payout curve, opponent steal-frequency
+//  HUD stats, 4-bet-bluff range, open-size-relative 3-bet sizing, "shortest stack
+//  yet to act" reshove-aware opening) are tracked as engine work in LIMITATIONS.md.
+//  Remaining on-target books are queued in BOOKS_PROGRESS.md.
+//
+//  Bet amounts are expressed as RaiseTo <big blinds> (pre-flop) or
+//  RaiseBy <pct> % (post-flop pot-fractions). Hiss converts the resulting
+//  f$betsize into the table's chip amount.
+//
+//  This file is SEGMENTED across several .ohf files for maintainability
+//  (00_notes, 05_config, 10_opponents, 12_aggressor, 15_explain, 16_steering,
+//   20_lists, 30_classify, 40_preflop, 50_flop, 60_turn, 70_river, 90_table).
+//   12_aggressor = cross-street aggressor rhythm (f$IAmAggressor/f$AggressorIsOpp/
+//   f$ActBeforeAggressor + the f$ConservativeKnob/f$AggressorKnob dials, which also
+//   modulate f$CbetFreq) + the f$OppRepresents read-the-line story engine. They
+//   share one f$ namespace. They are either concatenated into one master .ohf, or dropped
+//   into Hiss's bot_logic\Strategy\ folder and auto-loaded (see release notes).
+//
+//  TUNE the STYLE dial and the thresholds in 05_config to taste.
+//
+//*****************************************************************************
+
+//=============================================================================
+//  prwin (Monte-Carlo equity) configuration
+//=============================================================================
+
+##f$prwin_number_of_iterations##
+20000
+
+##f$prwin_number_of_opponents##
+// Simulate against the opponents still contesting the pot.
+WHEN Others RETURN nopponentsplaying FORCE
+
+//*****************************************************************************
+//  05_config - the STYLE dial and all tunable thresholds.
+//  Edit the single RETURN line in f$Style to switch playing styles.
+//*****************************************************************************
+
+##f$Style##
+// 0 = Small Ball [N]   1 = Power Poker [B]   2 = Hybrid (default)
+// Runtime steering: the Terminal command "/strategy smallball|power|hybrid" sets
+// openai_steer_anchor (11/12/13) and retunes the whole profile live. [steering]
+WHEN openai_steer_anchor == 11 RETURN 0 FORCE
+WHEN openai_steer_anchor == 12 RETURN 1 FORCE
+WHEN openai_steer_anchor == 13 RETURN 2 FORCE
+WHEN Others RETURN 2 FORCE
+
+//-----------------------------------------------------------------------------
+//  RUNTIME SYNAPSE-HARMONIZER KNOBS [Emrald 2026-06-21]
+//  Three live 0..1 dials pushed from the Synapse Harmonizer tab via /api/knob
+//  (engine symbols openai_knob_openrange / openai_knob_aggro / openai_knob_bluff;
+//  DEFAULT 0.5 = NEUTRAL = today's behavior). No rebuild to retune - turn the dial.
+//    openrange  1 = open MANY more hands  ...  0 = open far fewer (tight)
+//    aggro      1 = bet/raise much more often  ...  0 = passive (check/call)
+//    bluff      1 = bluff much more often  ...  0 = bluff almost never (value-only)
+//  openrange retunes the preflop open tree (40_preflop); aggro scales f$CbetFreq;
+//  bluff scales every dedicated bluff frequency (3-bet bluff, barrels, stabs).
+//-----------------------------------------------------------------------------
+
+##f$OpenRangeKnob##
+// The OBSERVER branch's open-range target takes the wheel when a branch is live (obsbranch>=1, fresh-
+// gated to 0 by the engine when the brain is quiet); else the human/synapse openrange knob.
+WHEN obsbranch >= 1 RETURN obsbranch_openrange FORCE
+WHEN Others RETURN openai_knob_openrange FORCE
+
+##f$OpenWiden##
+// Knob turned UP past neutral -> open the wide ~65% steal range from late / the SB.
+WHEN f$OpenRangeKnob >= 0.62 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$OpenTightenHard##
+// Knob turned DOWN past neutral -> open only the MP-strength range from every seat.
+WHEN f$OpenRangeKnob <= 0.30 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$AggroFreqMult##
+// Multiplies the c-bet / aggression FREQUENCY. 0.5 (neutral) -> 1.0x; 0 -> 0.55x
+// (passive); 1 -> 1.45x (relentless). Clamped to <= 0.95 downstream in f$CbetFreq.
+// INTROSPECTION (fires only on a CONFIDENT read; base knob logic unchanged otherwise): press
+// relentlessly vs a villain who over-folds / gives up the lead / is steaming.
+WHEN f$Exploit_Overfold OR f$Exploit_GivesUp OR f$Exploit_Tilt RETURN 1.35 FORCE
+WHEN obsbranch >= 1 RETURN 0.55 + obsbranch_aggro * 0.9 FORCE
+WHEN Others RETURN 0.55 + openai_knob_aggro * 0.9 FORCE
+
+##f$BluffFreqMult##
+// Multiplies every dedicated BLUFF frequency (3-bet bluff, double / triple barrel, stabs).
+// 0.5 (neutral) -> 1.0x; 0 -> 0.55x (value-only); 1 -> 1.45x (high bluff).
+// INTROSPECTION takes PRECEDENCE (fires only on a confident read): NEVER bluff a villain who won't
+// fold (station / sticky bettor / steamer); CRANK bluffs vs one who over-folds; otherwise the base
+// bluff knob is unchanged.
+WHEN f$Exploit_NeverFolds OR f$Exploit_KeepsFiring OR f$Exploit_Tilt RETURN 0.2 FORCE
+WHEN f$Exploit_Overfold OR f$Exploit_GivesUp OR f$Exploit_Folds3Bet RETURN 1.4 FORCE
+WHEN obsbranch >= 1 RETURN 0.55 + obsbranch_bluff * 0.9 FORCE
+WHEN Others RETURN 0.55 + openai_knob_bluff * 0.9 FORCE
+
+//-----------------------------------------------------------------------------
+//  Stack-depth regime (in big blinds).  Small ball requires depth; once short,
+//  both authors revert to a tight raise/limp-or-push game. [N pp.33-34][B S8.3]
+//  YIELD AND FLOW to the depth: the stiff/unyielding plan dies, the soft/adaptive
+//  one lives. [Tao ch.76 "the stiff and unyielding is the disciple of death; the
+//  soft and yielding, of life"][Tao ch.78 "water overcomes the hard"][SunTzu X
+//  "terrain" -> depth & position dictate the line][Prince "adapt to the times"].
+//-----------------------------------------------------------------------------
+
+##f$EffStack##
+// Effective stack in big blinds (capped at the largest opponent we can lose to).
+WHEN EffectiveMaxStacksizeOfActiveOpponents < StackSize RETURN EffectiveMaxStacksizeOfActiveOpponents FORCE
+WHEN Others RETURN StackSize FORCE
+
+##f$DeepStack##
+// Above ~60bb: full small-ball / speculative play is profitable.
+WHEN f$EffStack >= 60 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$ShortStack##
+// Below ~25bb: stop limping speculative hands, tighten, prefer raise-or-fold.
+// Also true in the Orange M-zone or worse (M<=10) for ante tables. [HoH2 p131-138]
+WHEN f$Mzone <= 2 RETURN true FORCE
+WHEN f$EffStack <= 25 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$PushFoldStack##
+// Push/fold (jam, don't min-raise) at <= 15bb. Raised 10 -> 13 -> 15: HUMAN FEEDBACK
+// (learner_decisions #42: liked jamming QJs at 12.5bb instead of min-raising) [N p.34], then
+// the SNG/HU canon's "all-in zone" is <=15bb [NSS p106][RE p2375].
+// Antes-aware: also jam in the Red/Dead M-zone (M<=5), which with live antes can be
+// reached at a higher bb-count than 15. Additive - never removes the 15bb behavior. [HoH2 p140]
+// This 15bb ceiling is the system-wide push/fold boundary: it hands off cleanly to f$ReshoveSpot
+// (the 15<EffStack<=25 re-steal band) at exactly 15bb, with no gap or overlap.
+WHEN f$Mzone <= 1 RETURN true FORCE
+WHEN f$EffStack <= 15 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  Position helpers (relative to the field still to act / the raiser).
+//  Position is power - the terrain that decides the battle; play more, and more
+//  aggressively, in position. [SunTzu X "the general who knows the ground will
+//  conquer"][48L L35/L48 "control the field, stay formless"].
+//-----------------------------------------------------------------------------
+
+##f$InPositionPre##
+// We are last (or near-last) to act before the flop.
+WHEN InButton OR InCutOff RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$InPositionPost##
+// We are last (or near-last) to act after the flop.
+WHEN InButton OR InCutOff RETURN true FORCE
+WHEN HandIsHeadsup AND NOT InSmallBlind RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$HeadsUpPot##
+// Exactly one opponent left contesting this pot.
+WHEN nopponentsplaying <= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  Pre-flop sizing (RaiseTo, in big blinds).  Both authors raise BIGGER over
+//  limpers (isolation) - we add 1bb per limper. [N p.24][B]
+//-----------------------------------------------------------------------------
+
+##f$OpenBase##
+// Standard first-in open size.
+// SB opens BIGGER (~3x): it plays the WHOLE hand out of position, so deny a cheap
+// flop / size up to discourage the BB flat. Only when not in the push/fold band
+// (there we jam, not min-raise) and not heads-up (the HU SB has its own size,
+// f$Open_RaiseTo_HU). [WPT1 "I ALWAYS raise to 3x the BB from the SB"]
+WHEN InSmallBlind AND NOT f$PushFoldStack AND NOT f$HeadsUpPot RETURN 3.0 FORCE
+WHEN f$Style = 1 RETURN 3.5 FORCE
+WHEN f$Style = 0 RETURN 2.5 FORCE
+WHEN Others RETURN 2.5 FORCE
+
+##f$Open_RaiseTo##
+// Add one big blind for each limper we are isolating. Scaled by f$ICM_SizeMult (ICM chip value).
+WHEN Others RETURN (f$OpenBase + Calls) * f$SizeMult FORCE
+
+##f$Iso_RaiseTo##
+// PUNISH limpers (1bb bettors): iso-raise over the limp, +1bb per extra limper. But DON'T always slam
+// the big ~5bb punish -- mix the size with randomround so we're not face-up: ~12% a ~2bb min-raise
+// (cheap iso / trap), ~25% 3bb, ~28% 4bb, ~35% the full 5bb. Stays balanced + harder to read.
+// [Emrald: don't always 5-bet limpers -- vary 2/3/4/5bb]
+WHEN randomround < 0.12 RETURN (1 + Calls) * f$SizeMult FORCE
+WHEN randomround < 0.37 RETURN (2 + Calls) * f$SizeMult FORCE
+WHEN randomround < 0.65 RETURN (3 + Calls) * f$SizeMult FORCE
+WHEN Others RETURN (4 + Calls) * f$SizeMult FORCE
+
+##f$ThreeBet_RaiseTo##
+// 3-bet sizing (to N big blinds). Larger out of position. [N pp.26-27]
+WHEN f$Style = 1 RETURN 13 * f$SizeMult FORCE
+WHEN f$InPositionPre RETURN 9 * f$SizeMult FORCE
+WHEN Others RETURN 11 * f$SizeMult FORCE
+
+##f$FourBet_RaiseTo##
+// 4-bet for value vs a 3-bet.
+WHEN f$Style = 1 RETURN 26 * f$SizeMult FORCE
+WHEN Others RETURN 22 * f$SizeMult FORCE
+
+//-----------------------------------------------------------------------------
+//  Post-flop bet sizing (as a percentage of the pot).  Same size for value and
+//  for bluffs - never telegraph. [N p.37-38][B "reasonable bet"]
+//  Wet (draw-heavy) boards get a larger bet to charge draws. [N p.231 analog]
+//  Uniform value=bluff sizing + randomized frequencies = formlessness/deception:
+//  the villain cannot read our hand from our size. [SunTzu I.18 "all warfare is based
+//  on deception"][SunTzu VI "be so subtle you are formless"][48L L4 "always say less
+//  than necessary"][Prince/IPP "consistent bet-sizing hides information"].
+//-----------------------------------------------------------------------------
+
+##f$BetPctFlop##
+WHEN f$Style = 1 RETURN 85 * f$SizeMult FORCE
+WHEN f$Style = 0 AND (FlushPossible OR StraightPossible) RETURN 66 * f$SizeMult FORCE
+WHEN f$Style = 0 RETURN 55 * f$SizeMult FORCE
+WHEN (FlushPossible OR StraightPossible) RETURN 75 * f$SizeMult FORCE
+WHEN Others RETURN 60 * f$SizeMult FORCE
+
+##f$BetPctTurn##
+WHEN f$Style = 1 RETURN 90 * f$SizeMult FORCE
+WHEN f$Style = 0 RETURN 60 * f$SizeMult FORCE
+WHEN Others RETURN 70 * f$SizeMult FORCE
+
+##f$BetPctRiver##
+WHEN f$Style = 1 RETURN 90 * f$SizeMult FORCE
+WHEN f$Style = 0 RETURN 55 * f$SizeMult FORCE
+WHEN Others RETURN 66 * f$SizeMult FORCE
+
+##f$TurnBetGeo##
+// Turn bet-sizing GEOMETRY (in big blinds, NOT a pot-%): size the turn bet so the
+// river is auto-set to a clean pot-sized shove. TurnBet = (EffStack - PotSize)/3.
+// Available as a value-betting turn size when stacks are ~<=2x pot; wiring it into
+// the turn value line (RaiseBy <amount> vs RaiseBy <pct>%) is deferred to the
+// harmonization pass (mixing amount/pct on one street is awkward). [GG turn geometry]
+WHEN PotSize >= f$EffStack RETURN 0 FORCE
+WHEN Others RETURN (f$EffStack - PotSize) / 3 FORCE
+
+##f$BetPctVsStation##
+// VALUE size vs a calling station. Counter-intuitively BIGGER, not smaller: a station
+// pays off on its own hand strength and reads a big bet as a bluff. Bet ~pot with a
+// strong made hand for max value; even overbet on "bingo" boards. [CtM p147,149]
+WHEN Others RETURN 100 FORCE
+
+##f$CbetFreqBase##
+// How often we fire a continuation bet with air as the pre-flop raiser. [B ~90%][N ~60%]
+// [T] TAO of Poker (Phillips) Ch.6 & Ch.14: in loose low-limit fields (our freerolls)
+// bluffing into calling stations just donates -- "you still have to win once in a while."
+// So the hybrid air c-bet is dialed DOWN (0.72 -> 0.60): bluff less, value-bet more. (The
+// bot already CHECKS air vs an identified station in 50_flop -- f$Opp_IsStation Check.)
+// Heads-up: c-bet ~80% of missed flops (tiny pots, villain whiffs too) UNLESS a station.
+// [HUM p49][HUSNG p11]. Power c-bet capped 0.90 -> 0.80 (the >80% over-bluff leak). [DFR p127]
+// PHILOSOPHY: the dialed-DOWN bluff frequency is restraint, not timidity - over-bluffing
+// is forcing. [Tao ch.9 "fill a cup to its brim and it spills"][Tao ch.24 "he who strides
+// cannot keep pace"][48L L16 "use absence to increase respect" - don't over-bluff].
+//
+// AGGRESSOR-KNOB MODULATION [Emrald 2026-06-20]: the cross-street rhythm (12_aggressor)
+// retunes the air-c-bet frequency. f$AggressorKnob is the PFR=aggressor by definition
+// on the flop, so it reads 2 in position / 1 OOP whenever we c-bet; f$ConservativeKnob
+// reads >0 only when an OPPONENT is the carried aggressor (i.e. we are NOT the flop PFR,
+// so the air-c-bet branches below cannot fire then anyway) - it is wired here for the
+// post-flop streets that also call f$CbetFreq (turn float / stab) where we may NOT hold
+// the lead. Net effect: fire MORE when pressing in position (knob 2), LESS / give up when
+// out of position vs an opp-aggressor in a sticky spot. The f$Style base is preserved.
+// [CtM p130 cbet ~75% as the aggressor; p153 give up when they fight back]
+WHEN f$ConservativeKnob >= 2 RETURN 0.30 FORCE
+WHEN f$ConservativeKnob = 1 RETURN 0.45 FORCE
+WHEN f$AggressorKnob >= 2 AND f$HeadsUpPot AND NOT f$Opp_IsStation RETURN 0.88 FORCE
+WHEN f$AggressorKnob >= 2 RETURN 0.78 FORCE
+WHEN f$HeadsUpPot AND NOT f$Opp_IsStation RETURN 0.80 FORCE
+WHEN f$Style = 1 RETURN 0.80 FORCE
+WHEN f$Style = 0 RETURN 0.60 FORCE
+WHEN Others RETURN 0.60 FORCE
+
+##f$CbetFreq##
+// The c-bet frequency actually used by the street files.
+// DIRECT OVERRIDE [Emrald]: the C-bet Frequency knob (Synapse tab) wins when set -- openai_knob_cbet
+// = -1 means AUTO (compute below); 0..1 forces exactly that c-bet frequency.
+// AUTO = the book/style/rhythm base (f$CbetFreqBase) scaled by the runtime AGGRESSION knob
+// (f$AggroFreqMult), clamped so we never c-bet 100% (stays deceptive). Knob neutral (0.5) -> x1.0.
+WHEN openai_knob_cbet >= 0 RETURN openai_knob_cbet FORCE
+WHEN f$CbetFreqBase * f$AggroFreqMult >= 0.95 RETURN 0.95 FORCE
+WHEN Others RETURN f$CbetFreqBase * f$AggroFreqMult FORCE
+
+//-----------------------------------------------------------------------------
+//  Draw / pot-odds thresholds.
+//-----------------------------------------------------------------------------
+
+##f$CheapDraw##
+// The price to continue is small relative to the pot (<= ~25%): call draws.
+WHEN AmountToCall * 4 <= PotSize RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$DecentPrice##
+// A reasonable price to continue (<= ~33% of pot).
+WHEN AmountToCall * 3 <= PotSize RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$WithinSpecRisk##
+// We risk no more than ~10% of our stack on a speculative "bust 'em" call
+// (suited connectors / steal equity vs a raise). [N pp.29-30][B S8.6]
+// NOTE: this is a COMMITMENT-threshold (10% of stack), NOT the set-mine implied-odds
+// test - for pure set-mining use f$SetMineOK below. [SSNL commitment-threshold]
+WHEN AmountToCall * 10 <= f$EffStack RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//=============================================================================
+//  TIER-1 BOOK EXPANSION (2026-06-15) - dials distilled from the wider NLHE
+//  library and reconciled with the [N]/[B]/[T] spine. New source tags:
+//    [HoH] Harrington on Hold'em I-II   [KE] Kill Everyone / [KP] Kill Phil
+//    [SSNL] Small Stakes No-Limit (Miller/Mehta/Flynn)   [ToP] Theory of Poker
+//    [SM] Hold'em for Advanced Players  [CtM] Crushing the Microstakes
+//    [PMM] Poker Math That Matters      [MoH] Math of Hold'em
+//    [SNG] SNG Blueprint / Moshman / Shaw   [EM] Ed Miller / [TN] Tri Nguyen
+//  UNITS: PotSize / StackSize / AmountToCall / f$EffStack are all in BIG BLINDS
+//  (OpenPPL divides each by bblind). So SPR = EffStack/PotSize directly; M is a
+//  dimensionless ratio. bblind/sblind/ante are the raw chip denominators.
+//=============================================================================
+
+//-----------------------------------------------------------------------------
+//  M-ratio (Magriel/Harrington) - the antes-aware depth measure. M = stack /
+//  cost-of-one-orbit (SB+BB+all antes). With antes live, M is materially smaller
+//  than the raw bb-depth, so push/fold should kick in earlier. [HoH2 p124-131]
+//-----------------------------------------------------------------------------
+
+##f$AnteTotal##
+// Total antes posted per orbit, in CHIPS (per-player ante * players dealt).
+// 0 when there are no antes; degrades M gracefully to a blinds-only ratio.
+// tgi_ante comes from table_game_info (set via the lobby / set_table_game_info).
+WHEN Others RETURN tgi_ante * nplayersdealt FORCE
+
+##f$M##
+// Harrington M = effective stack / cost per round. f$EffStack is in bb, so
+// (f$EffStack * bblind) is chips; divide by the chip cost of one orbit. Ratio.
+WHEN (bblind + sblind + f$AnteTotal) <= 0 RETURN 999 FORCE
+WHEN Others RETURN (f$EffStack * bblind) / (bblind + sblind + f$AnteTotal) FORCE
+
+##f$Mzone##
+// 4=Green(M>20) 3=Yellow(10-20) 2=Orange(6-10) 1=Red(1-5) 0=Dead(<1). [HoH2 p128-131]
+WHEN f$M > 20 RETURN 4 FORCE
+WHEN f$M >= 10 RETURN 3 FORCE
+WHEN f$M >= 6  RETURN 2 FORCE
+WHEN f$M >= 1  RETURN 1 FORCE
+WHEN Others    RETURN 0 FORCE
+
+//-----------------------------------------------------------------------------
+//  SPR (stack-to-pot ratio) & commitment. Refines the spine's "don't go broke
+//  with one pair" into the HIGH-SPR case: at LOW SPR you SHOULD stack off top
+//  pair / overpair. [SSNL SPR sidebar]
+//  "Don't go broke with one pair" = knowing when to stop. [Tao ch.44 "know when to
+//  stop and you will avoid danger"][48L L35 "master the art of timing"][Prince
+//  "virtu/fortuna" -> seize the +EV get-it-in, cap the variance off it].
+//-----------------------------------------------------------------------------
+
+##f$SPR##
+// Effective remaining stack / current pot (both already in bb).
+WHEN PotSize <= 0 RETURN 999 FORCE
+WHEN Others RETURN f$EffStack / PotSize FORCE
+
+##f$Committed##
+// Low SPR => stack off top-pair/overpair. Hand-class-specific SPR bands from [PNL p182-186]
+// (the source text of the SPR/commitment framework, refining the Tier-1 SSNL approximation):
+// overpairs commit at a higher SPR than top pair; aggro opp & wet boards raise the band,
+// tight/passive opp lowers it. Multiway (>2): never auto-commit one pair - SPR is measured
+// vs the shortest covering stack only. Gate the get-it-in line on this; gate the
+// "never go broke with one pair" pot-control on NOT f$Committed. [PNL p182-186][SSNL]
+WHEN nopponentsplaying > 2 RETURN false FORCE
+WHEN f$SPR <= 1 RETURN true FORCE
+WHEN HaveOverPair AND f$Opp_IsAggro AND f$SPR <= 10 RETURN true FORCE
+WHEN HaveOverPair AND f$BoardWet AND f$SPR <= 8 RETURN true FORCE
+WHEN HaveOverPair AND f$Opp_IsPassive AND f$SPR <= 4 RETURN true FORCE
+WHEN HaveOverPair AND f$SPR <= 6 RETURN true FORCE
+WHEN HaveTopPair AND f$Opp_IsAggro AND f$SPR <= 7 RETURN true FORCE
+WHEN HaveTopPair AND f$BoardWet AND f$SPR <= 6 RETURN true FORCE
+WHEN HaveTopPair AND f$Opp_IsPassive AND f$SPR <= 2 RETURN true FORCE
+WHEN HaveTopPair AND f$SPR <= 4 RETURN true FORCE
+WHEN f$SPR <= 3 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  Exact pot-odds & set-mining implied-odds (replaces the coarse K-bucket
+//  helpers for the cases that want precision). [PMM p59-63][MoH][SSNL p143]
+//-----------------------------------------------------------------------------
+
+##f$RequiredEquity##
+// Win% needed to call = call / (pot-before-our-call + call). Compare vs prwin.
+WHEN (PotSize + AmountToCall) <= 0 RETURN 1 FORCE
+WHEN Others RETURN AmountToCall / (PotSize + AmountToCall) FORCE
+
+##f$SetMineOK##
+// Set-mine a small pair only with enough effective stack behind for real implied odds.
+// Tiered: loose/station pay off (15x ok); regs/foldy need more (~22x); full-ring deeper
+// than 6-max (20x vs 15x); never vs a nit. [CtM p122 15x][PMM 15x][DFR p41 20x FR][HC p148 ~25x tight]
+//
+// MTT MID/LATE-STAGE GUARD: in a TOURNAMENT, once we are out of the early stage
+// (f$Stage>=1: short, 6-max-deep, bubble or ITM) OR the effective stack is shallow
+// (<=30bb), the 10-to-1 implied odds set-mining needs simply are not there - the pot
+// can't grow enough and squeeze-risk behind is high. Require a much deeper ~25x, else
+// fold. CASH is unchanged (tgi_players_remaining is 0/unknown off-tournament, so this
+// guard never fires). [WPT2 "set-mining is out of the question at THIS stage"]
+WHEN f$Opp_IsNit RETURN false FORCE
+WHEN tgi_players_remaining >= 2 AND (f$Stage >= 1 OR f$EffStack <= 30) AND AmountToCall * 25 > f$EffStack RETURN false FORCE
+WHEN (f$Opp_IsStation OR f$Opp_IsFish OR f$Opp_IsLoose) AND AmountToCall * 15 <= f$EffStack RETURN true FORCE
+WHEN (f$Opp_IsTAG OR f$Opp_Foldy) AND AmountToCall * 22 <= f$EffStack RETURN true FORCE
+WHEN f$Is6Max AND AmountToCall * 15 <= f$EffStack RETURN true FORCE
+WHEN AmountToCall * 20 <= f$EffStack RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  Table size. The open lists are full-ring/8-max shapes; 6-max wants the EP/MP
+//  seats to play wider. [V6 charts]
+//-----------------------------------------------------------------------------
+
+##f$Is6Max##
+WHEN nplayersdealt <= 6 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  Tournament STAGE & bubble pressure. Scales the ICM get-it-in margin: tighter
+//  near the bubble, looser in the money / heads-up. [SNG][KE p120-126]
+//  NOTE: these depend on a REAL lobby payout curve (f$PaidPlaces). The current
+//  f$icm_prizeX is a placeholder where all 8 places "pay", so f$NearBubble stays
+//  false and f$BubbleTighten stays 1.0 (= today's behavior) until the real payout
+//  table is scraped (lobby_fetch -> settings.lobby_info). Structurally ready.
+//-----------------------------------------------------------------------------
+
+##f$PaidPlaces##
+// Number of paid finishing positions = count of nonzero prizes in the curve.
+WHEN f$icm_prize8 > 0 RETURN 8 FORCE
+WHEN f$icm_prize7 > 0 RETURN 7 FORCE
+WHEN f$icm_prize6 > 0 RETURN 6 FORCE
+WHEN f$icm_prize5 > 0 RETURN 5 FORCE
+WHEN f$icm_prize4 > 0 RETURN 4 FORCE
+WHEN f$icm_prize3 > 0 RETURN 3 FORCE
+WHEN f$icm_prize2 > 0 RETURN 2 FORCE
+WHEN Others RETURN 1 FORCE
+
+##f$NearBubble##
+// One elimination from the money. Uses tgi_players_remaining (tournament-wide
+// players left, from the lobby) - 0/unknown for cash, so this stays false there.
+WHEN tgi_players_remaining = f$PaidPlaces + 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$InMoney##
+WHEN tgi_players_remaining <= f$PaidPlaces AND tgi_players_remaining >= 2 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$HeadsUpTourney##
+// Two players left in the tournament: ICM is off, chips become linear money. [SoS p94]
+WHEN tgi_players_remaining = 2 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Stage##
+// 0 early  1 middle  2 bubble  3 ITM/HU
+WHEN f$HeadsUpTourney OR f$InMoney RETURN 3 FORCE
+WHEN f$NearBubble RETURN 2 FORCE
+WHEN f$ShortStack OR nplayersdealt <= 6 RETURN 1 FORCE
+WHEN Others RETURN 0 FORCE
+
+##f$BubbleTighten##
+// Required $-equity edge over folding when getting it in. >1 = need more, near
+// the bubble; <1 = gamble looser in the money. [SNG][KE p120]
+WHEN f$Stage = 2 RETURN 1.06 FORCE
+WHEN f$Stage = 3 RETURN 0.97 FORCE
+WHEN Others RETURN 1.00 FORCE
+
+//=============================================================================
+//  TIER-2 WAVE-1 dials (cash/MTT/SNG/HU library). Engine-native symbols only.
+//    [PNL][HC][EG][ER][LTBR][ASH][JL][RE][SNF][W][SYS][NSS][HUM][HUSNG][DFR][RF]
+//=============================================================================
+
+##f$Open_RaiseTo_HU##
+// Heads-up button/SB open size: minraise when short, 2.5bb deeper. [HUM p51][HUSNG p37]
+WHEN f$EffStack <= 25 RETURN 2 FORCE
+WHEN Others RETURN 2.5 FORCE
+
+##f$ReshoveSpot##
+// 3-bet-JAM over a single open in the ~16-25bb band - the fold-equity re-steal the
+// push/fold tree misses (too deep to open-jam, too short to flat-and-play). Fires only
+// over exactly one raise, in/near position or the blinds, vs a wide opener. [JL p1161][RE p2280]
+// Win the pot uncontested - subdue the enemy without fighting. [SunTzu III.2 "supreme
+// excellence is to subdue the enemy without fighting"][48L L28 "enter action with boldness"].
+// NOT f$PushFoldStack makes the band genuinely DISJOINT from push/fold: on an ante table
+// the Red-zone M<=5 trigger can push the jam regime above 15bb, so the raw 15<EffStack<=25
+// window would otherwise overlap it. The push/fold tree (open-jam, ICM call) owns that case;
+// this re-steal owns only the truly-deeper 16-25bb spots. Honors the "no gap or overlap"
+// handoff invariant in the dial itself, not just by f$preflop dispatch order. [HoH2 p140]
+WHEN f$PushFoldStack RETURN false FORCE
+WHEN Raises = 1 AND f$EffStack > 15 AND f$EffStack <= 25 AND (f$Opp_IsLoose OR f$Opp_IsAggro) AND (InButton OR InCutOff OR InSmallBlind OR InBigBlind) AND listReshove RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$DoubleBarrel##
+// Fire a 2nd barrel as the flop aggressor: vs reg/foldy types (NEVER stations/fish),
+// heads-up, on a scary or dry board that missed villain's peeling range; suppress when
+// way behind on a wet board. The turn is an under-bet street. [EG p52][ER p8][LTBR p14][ASH p61]
+// Never barrel a POT-COMMITTED / cornered villain (no fold equity). [SunTzu VII.36 "leave a
+// golden bridge for a retreating army"][SunTzu IV "do not attack his strength" vs station/fish]
+WHEN f$Opp_PotCommitted RETURN false FORCE
+WHEN f$Opp_IsStation OR f$Opp_IsFish RETURN false FORCE
+WHEN NOT (f$WasPreflopRaiser AND BotRaisedOnFlop AND f$HeadsUpPot) RETURN false FORCE
+WHEN StraightPossible AND prwin < 0.50 RETURN false FORCE
+WHEN (f$ScaryBoard OR f$BoardDry) AND f$Opp_Foldy RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$ThreeBetBluffFreqBase##
+// Frequency cap for 3-bet bluffs by opponent type: bluff foldy/nits often (they over-fold),
+// never stations/fish or light-3-bettors (no fold equity / they fight back). [ER p7][LTBR p11]
+// [SunTzu VI.30 "attack where he is unprepared, undefended" -> attack fold equity (foldy/nit
+// high)][SunTzu IV "first make yourself invincible; do not attack his strength" -> 0 vs
+// stations/fish, value-bet that instead][Prince "feared > loved" -> exploit the foldy image].
+// Never bluff a POT-COMMITTED / cornered villain who cannot fold (no fold equity). [SunTzu
+// VII.36 "leave a golden bridge for a retreating army"][Tao ch.69 "no greater disaster than
+// underestimating the enemy"].
+WHEN f$Opp_PotCommitted RETURN 0 FORCE
+WHEN f$Opp_IsStation OR f$Opp_IsFish RETURN 0 FORCE
+WHEN f$Opp_ThreeBetsLight RETURN 0 FORCE
+WHEN f$Opp_IsNit RETURN 0.70 FORCE
+WHEN f$Opp_Foldy RETURN 0.55 FORCE
+WHEN Others RETURN 0.30 FORCE
+
+##f$ThreeBetBluffFreq##
+// The 3-bet-bluff frequency used by 40_preflop = the opponent-typed base scaled by the runtime
+// BLUFF knob (f$BluffFreqMult). Capped at 0.90 so we never 3-bet-bluff a foldy type 100%. Vs
+// stations/fish/light-3bettors/pot-committed the base is already 0 -> stays 0 (knob can't create
+// fold equity that isn't there). Knob neutral -> unchanged. [Emrald bluff knob]
+WHEN f$ThreeBetBluffFreqBase * f$BluffFreqMult >= 0.90 RETURN 0.90 FORCE
+WHEN Others RETURN f$ThreeBetBluffFreqBase * f$BluffFreqMult FORCE
+
+##f$DoubleBarrelFreq##
+// Turn double-barrel bluff frequency (base 0.62) scaled by the runtime BLUFF knob. [Emrald]
+WHEN 0.62 * f$BluffFreqMult >= 0.95 RETURN 0.95 FORCE
+WHEN Others RETURN 0.62 * f$BluffFreqMult FORCE
+
+##f$TripleBarrelFreq##
+// River triple-barrel bluff frequency (base 0.22, kept deliberately LOW) scaled by the BLUFF knob.
+WHEN 0.22 * f$BluffFreqMult >= 0.60 RETURN 0.60 FORCE
+WHEN Others RETURN 0.22 * f$BluffFreqMult FORCE
+
+##f$FloatStabFreq##
+// In-position flop stab/float frequency (base 0.50) scaled by the BLUFF knob.
+WHEN 0.50 * f$BluffFreqMult >= 0.90 RETURN 0.90 FORCE
+WHEN Others RETURN 0.50 * f$BluffFreqMult FORCE
+
+##f$FloatTurnFreq##
+// Float-the-turn take-away frequency (base 0.70) scaled by the BLUFF knob.
+WHEN 0.70 * f$BluffFreqMult >= 0.95 RETURN 0.95 FORCE
+WHEN Others RETURN 0.70 * f$BluffFreqMult FORCE
+
+//-----------------------------------------------------------------------------
+//  Bet-timing tells.  Hiss measures how long each chair dwells on its to-act
+//  highlight (pNactive rect1) and exposes lastraiseractiontime = the seconds the
+//  player we must react to took on his bet/raise. Classic Caro/Negreanu reads:
+//  a SNAP (instant) bet leans weak/automatic; a long TANK then a bet leans strong.
+//  Reads are noisy, so they are used only as soft modifiers, only heads-up, only
+//  when a reading exists. Set f$UseTimingTells = 0 to disable entirely.
+//-----------------------------------------------------------------------------
+
+##f$UseTimingTells##
+WHEN Others RETURN 1 FORCE
+
+##f$SnapSeconds##
+// At or below this, the bet was effectively instant.
+WHEN Others RETURN 1.5 FORCE
+
+##f$TankSeconds##
+// At or above this, the player tanked before betting.
+WHEN Others RETURN 6 FORCE
+
+##f$TimingKnown##
+// A sane, fresh reading exists for the player we are reacting to.
+WHEN f$UseTimingTells = 0 RETURN false FORCE
+WHEN lastraiseractiontime > 0 AND lastraiseractiontime < 90 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$TimingSaysWeak##
+// Snap bet/raise, heads-up: lean toward it being weak/automatic. (Caro: a fast
+// bet is often a weak bet.) Continue/bluff-catch a touch wider against it.
+WHEN f$TimingKnown AND f$HeadsUpPot AND lastraiseractiontime <= f$SnapSeconds RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$TimingSaysStrong##
+// Long tank then a bet/raise, heads-up: lean toward genuine strength. Fold the
+// marginal hands we would otherwise pay off; do not bluff-raise into it.
+WHEN f$TimingKnown AND f$HeadsUpPot AND lastraiseractiontime >= f$TankSeconds RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  ICM (Independent Chip Model).  The engine's CSymbolEngineICM computes our
+//  TOURNAMENT-$ equity for each line (icm_fold / icm_callwin / icm_calllose)
+//  from the live table stacks + the payout structure below. We use it for the
+//  short-stack get-it-in decision so calls/jams are $-correct, not just chip-EV
+//  (survival has value when the payouts are top-heavy). [tournament]
+//
+//  f$icm_prizeX = fraction of the prize pool paid for finishing Xth AT THE TABLE
+//  (a final-table approximation). Sum must = 1.00. This is a standard top-heavy
+//  8-max curve; replace with the real lobby payout table once scraped.
+//-----------------------------------------------------------------------------
+
+##f$icm_prize1##
+WHEN Others RETURN 0.300 FORCE
+##f$icm_prize2##
+WHEN Others RETURN 0.220 FORCE
+##f$icm_prize3##
+WHEN Others RETURN 0.160 FORCE
+##f$icm_prize4##
+WHEN Others RETURN 0.120 FORCE
+##f$icm_prize5##
+WHEN Others RETURN 0.085 FORCE
+##f$icm_prize6##
+WHEN Others RETURN 0.060 FORCE
+##f$icm_prize7##
+WHEN Others RETURN 0.035 FORCE
+##f$icm_prize8##
+WHEN Others RETURN 0.020 FORCE
+
+##f$ICM_CallEV##
+// Tournament-$ EV of CALLING an all-in = P(win)*equity-if-win + P(lose)*equity-if-lose.
+// (Ties are rare in an all-in and folded into the win/lose split.) icm_callwin /
+// icm_calllose are the ICM equities of the resulting stacks from CSymbolEngineICM.
+WHEN Others RETURN prwin * icm_callwin + (1 - prwin) * icm_calllose FORCE
+
+##f$ICM_CallShove##
+// CASH GAME: ICM is meaningless (a chip = its cash value), and evaluating icm_* makes the engine's
+// prize-sum validator pop "Incorrect f$icm_prizeX-functions ... 0.000" (prizes are 0 in cash). Return
+// false FIRST so icm_* is never touched in cash; cash get-it-in falls to the chip-EV listCallShove floor.
+WHEN NOT istournament RETURN false FORCE
+// Is getting it in $-correct? Call/jam when the ICM EV of calling beats folding,
+// scaled by the bubble factor: near the bubble we need a real edge (survival has
+// value); in the money / heads-up we gamble looser. f$BubbleTighten is 1.0 until a
+// real payout curve is scraped, so this matches today's behavior. [SNG][KE p120]
+WHEN f$HeadsUpTourney AND f$ICM_CallEV >= icm_fold RETURN true FORCE
+WHEN f$ICM_CallEV >= icm_fold * f$BubbleTighten RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  ICM bet-SIZING multiplier. Scales every OHF open/iso/3bet/4bet (RaiseTo) and
+//  post-flop bet (RaiseBy %) by the ICM CHIP VALUE: in a tournament the chips you
+//  can LOSE are worth more than the chips you can WIN (concave ICM curve), most
+//  acutely near/in the money -> bet a touch SMALLER to risk fewer of your dear
+//  chips while still applying fold pressure. Far from the money / in CASH a chip
+//  ~ its face value -> full size (1.0). Lobby-fed: f$Stage uses tgi_players_remaining
+//  + the payout curve, so this sharpens automatically as the field shrinks. Returns
+//  1.0 (no change) for cash, freerolls, and early/middle play, so it is inert until
+//  a real money tournament reaches the bubble. Jams (push/fold all-in) are sized by
+//  the autoplayer's RaiseMax, not these functions, so survival jams are untouched.
+//  [Emrald: "the betsizes in OHF bets should be relative to the ICM CHIP VALUE"]
+##f$ICM_SizeMult##
+WHEN NOT istournament RETURN 1.000 FORCE
+WHEN f$HeadsUpTourney RETURN 1.000 FORCE
+WHEN f$Stage = 2 RETURN 0.80 FORCE
+WHEN f$Stage = 3 RETURN 0.90 FORCE
+WHEN Others RETURN 1.000 FORCE
+
+//-----------------------------------------------------------------------------
+//  STACK-DEPTH-PROPORTIONAL sizing (leverage). A fixed bb bet is nothing to a very deep stack and
+//  everything to a short one [Emrald], so scale every bet/raise to the EFFECTIVE stack depth (f$EffStack,
+//  in bb -- the stack actually at risk this hand, capped at the opponent). DEEP -> size UP so bets keep
+//  fold equity and build pots worth the deep stacks; SHORT -> the push/fold tree owns commitment (jam),
+//  so don't scale there. Capped at 1.5x so it never balloons. This is bet sizing relative to stack depth
+//  (SPR / leverage / effective-stack-proportional sizing).
+##f$DepthSizeMult##
+WHEN f$EffStack <= 25 RETURN 1.00 FORCE
+WHEN f$EffStack >= 250 RETURN 1.50 FORCE
+WHEN f$EffStack >= 150 RETURN 1.35 FORCE
+WHEN f$EffStack >= 100 RETURN 1.20 FORCE
+WHEN f$EffStack >= 60 RETURN 1.10 FORCE
+WHEN Others RETURN 1.00 FORCE
+
+//  Combined bet-size multiplier applied to every OHF open/iso/3bet/4bet (RaiseTo) and post-flop bet
+//  (RaiseBy %): ICM chip value x stack-depth proportionality.
+##f$SizeMult##
+WHEN Others RETURN f$ICM_SizeMult * f$DepthSizeMult FORCE
+
+//*****************************************************************************
+//  10_opponents - opponent model from the PokerTracker HUD stats.
+//  Both books insist you "play the opponent's hand, not your own" [N P1][B P7.1]
+//  and that you adjust to player TYPE (tight/loose/station/aggressive). A bot
+//  cannot read physical tells or table image, but it CAN read aggregated stats,
+//  so this is our machine-observable substitute. Stats describe the LAST RAISER
+//  (the player we must react to) and default to neutral when the sample is thin.
+//
+//  PHILOSOPHY: opponent typing + own M/stack/SPR awareness (05_config) IS the
+//  oldest maxim of the craft. [SunTzu III.18 "know the enemy and know yourself,
+//  and in a hundred battles you will never be in peril"][Prince "adapt to the
+//  times" -> the whole archetype set + the depth/M regimes][48L L15 "crush your
+//  enemy totally" -> value-big vs the weak (f$BetPctVsStation)].
+//*****************************************************************************
+
+##f$Opp_Hands##
+pt_hands_raischair
+
+##f$Opp_Known##
+// Trust a read only with a meaningful sample.
+WHEN f$Opp_Hands >= 30 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_VPIP##
+WHEN f$Opp_Known RETURN pt_vpip_raischair FORCE
+WHEN Others RETURN 25 FORCE
+
+##f$Opp_PFR##
+WHEN f$Opp_Known RETURN pt_pfr_raischair FORCE
+WHEN Others RETURN 18 FORCE
+
+##f$Opp_AF##
+WHEN f$Opp_Known RETURN pt_flop_af_raischair FORCE
+WHEN Others RETURN 2 FORCE
+
+##f$Opp_WTSD##
+WHEN f$Opp_Known RETURN pt_wtsd_raischair FORCE
+WHEN Others RETURN 28 FORCE
+
+//-----------------------------------------------------------------------------
+//  Player archetypes -> map to the books' adjustments.
+//-----------------------------------------------------------------------------
+
+##f$Opp_IsNit##
+// Tight: their raises mean strength -> respect them; 3-bet-bluff/steal more. [N p.30][B B9.5]
+WHEN f$Opp_Known AND f$Opp_VPIP < 17 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_IsLoose##
+// Wide opener -> isolate / value 3-bet wider. [N p.19]
+WHEN f$Opp_Known AND f$Opp_VPIP > 32 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_IsStation##
+// Calls down too much -> value-bet thin & BIG, NEVER bluff. [N p.158][B B9.3]
+// Broadened to catch the canonical passive fish (very high VPIP, very low PFR,
+// low aggression) even before WTSD has a sample. [CtM p40][TN p15][EM]
+WHEN f$Opp_Known AND f$Opp_WTSD > 34 RETURN true FORCE
+WHEN f$Opp_Known AND f$Opp_AF < 1.0 AND f$Opp_VPIP > 40 RETURN true FORCE
+WHEN f$Opp_Known AND f$Opp_VPIP > 35 AND f$Opp_PFR < 10 RETURN true FORCE
+WHEN f$Opp_Known AND f$Opp_AF < 1.5 AND f$Opp_VPIP > 32 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_IsPassive##
+// Low aggression -> their bets/raises mean a real hand. [N]
+WHEN f$Opp_Known AND f$Opp_AF < 1.3 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_IsAggro##
+// High aggression / will barrel & bluff -> induce, trap, bluff-catch wider. [N p.53]
+WHEN f$Opp_Known AND f$Opp_AF > 3.0 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_ThreeBetsLight##
+// Reraises light (3-bets far more than he value-opens) -> just call, don't 3-bet
+// into him; flat JJ/QQ/AK and outplay post-flop. [N p.22]
+WHEN f$Opp_Known AND (f$Opp_PFR - f$Opp_VPIP) > -4 AND f$Opp_PFR > 22 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_Foldy##
+// Folds a lot pre/post -> our c-bets and steals print money. [B R1.2]
+WHEN f$Opp_IsNit RETURN true FORCE
+WHEN f$Opp_Known AND f$Opp_WTSD < 24 AND f$Opp_VPIP < 22 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  Additional archetypes from the wider library. The originals lumped these in:
+//  f$Opp_IsAggro fired on AF alone (a TIGHT-aggressive nit counts), which is the
+//  wrong read for a LAG. These split the population out cleanly. [EM PtP][TN][CtM]
+//-----------------------------------------------------------------------------
+
+##f$Opp_IsFish##
+// Pure recreational: very loose + very passive. Value-bet relentlessly & big,
+// keep pots small pre (flat premiums, don't 3-bet), never bluff. [CtM p40][EM HRH]
+WHEN f$Opp_Known AND f$Opp_VPIP > 40 AND f$Opp_PFR < 8 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_IsTAG##
+// Tight-aggressive REG: opens then bet-folds; floats/raises print vs his c-bets,
+// but pay off his committing bets. The original model had no TAG branch. [EM PtP p274]
+WHEN f$Opp_Known AND f$Opp_VPIP >= 18 AND f$Opp_VPIP <= 26 AND (f$Opp_VPIP - f$Opp_PFR) < 6 AND f$Opp_AF >= 2 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_IsLAG##
+// Loose-AND-aggressive: 3-bets & barrels wide. Deny info (call down, don't raise
+// to "find out"); widen our own calling/3-bet ranges. [EM PtP p677]
+WHEN f$Opp_Known AND f$Opp_VPIP > 28 AND f$Opp_PFR > 20 AND f$Opp_AF > 2.5 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_IsManiac##
+// Hyper-aggressive, no fold equity against him: trap & induce, never bluff. [CtM p41]
+// CtM stat profile: VPIP very high, PFR very high, AF very high, fold-to-cbet very low.
+WHEN f$Opp_Known AND f$Opp_VPIP > 45 AND f$Opp_PFR > 30 AND f$Opp_AF > 4 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_IsSLP##
+// SEMI-LOOSE-PASSIVE - BlackRain79's distinct micro archetype the model was
+// missing: a casual player who plays too many hands but passively (~24/6, low AF).
+// He calls too much and calls any draw, but is NOT the 40%+ pure fish. The play vs
+// him is the same family as the fish: VALUE-BET WIDE & relentlessly, do NOT bluff
+// (low fold equity), pot-control thin. Sits between f$Opp_IsLoose and f$Opp_IsFish:
+// looser/wider than the fish floor but with the same passive, station-like calling
+// pattern. [CtM p38 "SLPs - value bet frequently and with a fairly wide range";
+// p169 "barrel SLPs and fish for value"; p176 "don't bluff SLPs and fish"]
+WHEN f$Opp_IsFish RETURN false FORCE
+WHEN f$Opp_Known AND f$Opp_VPIP >= 20 AND f$Opp_VPIP <= 40 AND f$Opp_PFR < 10 AND f$Opp_AF < 1.5 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  MICRO-STAKES BET-PATTERN reads (BlackRain79's "fish psychology"). At the
+//  micros the population is so face-up that the SIZE/SHAPE of villain's bet leaks
+//  his strength directly - independent of his archetype. These feed f$OppRepresents
+//  (12_aggressor) and the street value/bluff gates.
+//-----------------------------------------------------------------------------
+
+##f$Opp_MinBetLead##
+// A min-ish lead/probe bet (<= ~1.5bb, or <= ~20% pot): "seeing where they're at."
+// A dead giveaway of a weak/capped range (draw, weak pair, air) and very often a
+// recreational player. Ignore it / treat as a check and bet our standard size; raise
+// it wide IP for value or as a semibluff. NEVER fold a real hand to it. [CtM p232
+// "min bets - just pretend they checked"; p150 donk; p210-211 probe bets]
+WHEN AmountToCall <= 0 RETURN false FORCE
+WHEN AmountToCall <= 1.5 RETURN true FORCE
+WHEN AmountToCall * 5 <= PotSize RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_NutsyRaise##
+// A TURN or RIVER raise (we bet, villain raised) - at the micros this is "always
+// the nuts": two pair or better. Fold one pair / overpairs a lot, never bluff-raise
+// back. Flop raises are NOT included (those can be draws/wide). [CtM p216 "turn
+// raises are usually the nuts"; p217 "river raises are ALWAYS the nuts"]
+WHEN (IsTurn OR IsRiver) AND Raises >= 1 AND AmountToCall > 0 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Opp_PotCommitted##
+// "Do not press a desperate foe" - a villain who CANNOT fold has no fold equity to
+// attack, so do not bluff him; value-bet or check instead. The station/fish/maniac
+// cases are already bluff-suppressed elsewhere; the NET-NEW piece is the cornered
+// SHORT-STACK opponent - an all-in-bound low-M player is pot-committed to anything he
+// continues with. Gate bluffs (f$DoubleBarrel, the river triple-barrel, f$ThreeBetBluffFreq)
+// on NOT f$Opp_PotCommitted. [SunTzu VII.36 "leave a golden bridge for a retreating army"]
+// [Tao ch.69 "no greater disaster than underestimating the enemy"]
+WHEN f$Opp_IsStation OR f$Opp_IsFish OR f$Opp_IsManiac RETURN true FORCE
+// SLPs call too much / have no fold equity vs a bluff, just like stations & fish -
+// suppress bluffs into them too (value-bet wide instead). [CtM p176 don't bluff SLPs]
+WHEN f$Opp_IsSLP RETURN true FORCE
+WHEN EffectiveMaxStacksizeOfActiveOpponents <= PotSize RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  BLIND-STEAL exploit: the player typing above describes the RAISER (raischair),
+//  which is useless when WE are the one open-stealing (there is no raiser yet). To
+//  steal correctly we must read the BLINDS we are attacking. PokerTracker exposes
+//  positional stats, so read the SB / BB directly. Confirmed nits in the blinds fold
+//  to opens far too often -> open WIDER (listStealNit). [N p.30 "attack the weak-tight"]
+//  Observationally learned: observe_learn flagged H1GHJACK / metared as nits.
+//-----------------------------------------------------------------------------
+
+##f$BB_Nit##
+// DISABLED 2026-06-20: positional PT symbols pt_vpip_bigblind / pt_hands_bigblind are NOT valid in this
+// engine (the only valid positional forms end in a recognized "...chair" suffix that translates to a
+// numeric chair, e.g. pt_vpip_bigblindchair) and the bad form pops an "Invalid PokerTracker-symbol"
+// modal on EVERY evaluation. Inert for now -> f$BlindsAreNitty=false -> normal positional opens.
+// TODO: re-enable with a VERIFIED symbol (pt_vpip_bigblindchair) or an /api-pushed blind-nit signal.
+WHEN Others RETURN false FORCE
+
+##f$SB_Nit##
+WHEN Others RETURN false FORCE
+
+##f$BlindsAreNitty##
+// From the SB it is heads-up vs the BB, so only the BB matters. From CO/BTN both blinds
+// are behind us, so require BOTH foldy (a loose SB would punish an any-two steal).
+WHEN InSmallBlind RETURN f$BB_Nit FORCE
+WHEN (InButton OR InCutOff) AND f$BB_Nit AND f$SB_Nit RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//*****************************************************************************
+//  11_introspection - the INTUITION layer.
+//
+//  Harmonizes HUD + per-opponent INTROSPECTION (rhythm / exploits / timing /
+//  range, gametype-separated) + the live Claude decision advisor into a single
+//  read the strategy decides FROM. The decision files (50/60/70/40/05/12) route
+//  through f$Intuition_* / f$Exploit_* below; the raw symbols are just inputs.
+//
+//  Native engine symbols (defined in the rebuilt binary):
+//    intro_* / exploit_*  -> CSymbolEngineOpponentIntrospection (opponent_profile,
+//                            built by mcp/introspect_aggregator.py; gametype-matched)
+//    openai_knob_advice_*  -> mcp/decision_advisor.py via /api/knob (fresh-only)
+//  Villain for "facing a bet" spots = raischair (the current aggressor). The
+//  multiplexer resolves intro_contfreq_raischair -> intro_contfreqN automatically.
+//*****************************************************************************
+
+// ============================ introspection answers ========================
+##f$Intro_Known##
+// enough of a sample on THIS villain in THIS gametype to trust the read
+WHEN intro_known_raischair >= 1 AND intro_simN_raischair >= 12 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Intro_WillKeepFiring##
+// "should I raise him, or will he just fire again?" rhythm 0..1 (-1 unknown)
+WHEN f$Intro_Known AND intro_contfreq_raischair >= 0 RETURN intro_contfreq_raischair FORCE
+WHEN Others RETURN -1 FORCE
+
+##f$Intro_FastTell##
+// "he bet quickly - does he have it when he bets fast?"  P(strong|fast) 0..1 (-1 unknown)
+WHEN intro_fasttell_raischair >= 0 RETURN intro_fasttell_raischair FORCE
+WHEN Others RETURN -1 FORCE
+
+##f$Intro_Tilt##
+// current EMOTION/steam: how far his recent rhythm has deviated from his baseline (0..1; 0 = on his game)
+WHEN f$Intro_Known AND intro_tilt_raischair >= 0 RETURN intro_tilt_raischair FORCE
+WHEN Others RETURN 0 FORCE
+
+// ============================ exploit flags (actionable) ===================
+##f$Exploit_Overfold##
+WHEN f$Intro_Known AND exploit_overfold_raischair >= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_GivesUp##
+WHEN f$Intro_Known AND exploit_givesup_raischair >= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_KeepsFiring##
+WHEN f$Intro_Known AND exploit_keepsfiring_raischair >= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_NeverFolds##
+WHEN f$Intro_Known AND exploit_neverfolds_raischair >= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_Folds3Bet##
+WHEN f$Intro_Known AND exploit_folds3bet_raischair >= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_FastWeak##
+WHEN exploit_fastweak_raischair >= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_FastStrong##
+WHEN exploit_faststrong_raischair >= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_Honest##
+WHEN f$Intro_Known AND exploit_honest_raischair >= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Exploit_Tilt##
+// villain is STEAMING (off his baseline) -> stop bluffing him, value-bet bigger, bluff-catch wider;
+// he'll spew if we just let him. The single highest-EV exploit when it fires.
+WHEN f$Intro_Known AND exploit_tilting_raischair >= 1 RETURN true FORCE
+WHEN f$Intro_Tilt >= 0.35 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+// ============================ table read: DONK-FEST ========================
+// A donk-heavy table (3+ fish / stations / loose-passive seated) -> get in CHEAP preflop and value-bet
+// HEAVY postflop when we connect; they pay off, so stack up. (intro_donkfest is a table-level symbol.)
+##f$Table_DonkFest##
+WHEN intro_donkfest >= 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+// ============================ card / range guess ===========================
+// 0 = capped / bluffy .. 1 = nutted. Profile prior (engine) refined by the live line. -1 unknown.
+##f$Range_VillainStrength##
+WHEN intro_rangestrength_raischair < 0 RETURN -1 FORCE
+WHEN f$OppMinLead RETURN intro_rangestrength_raischair * 0.5 FORCE
+WHEN (IsTurn OR IsRiver) AND Raises >= 1 RETURN intro_rangestrength_raischair * 0.5 + 0.5 FORCE
+WHEN f$Exploit_FastWeak RETURN intro_rangestrength_raischair * 0.6 FORCE
+WHEN f$Exploit_FastStrong RETURN intro_rangestrength_raischair * 0.6 + 0.4 FORCE
+WHEN Others RETURN intro_rangestrength_raischair FORCE
+
+// ============================ live advisor channels ========================
+// fresh-only in the engine (decay to 0 / -1 when the advisor is quiet)
+##f$Advice_Conf##
+WHEN Others RETURN openai_knob_advice_conf FORCE
+##f$Advice_Raise##
+WHEN Others RETURN openai_knob_advice_raise FORCE
+##f$Advice_Bluff##
+WHEN Others RETURN openai_knob_advice_bluff FORCE
+##f$Advice_Value##
+WHEN Others RETURN openai_knob_advice_value FORCE
+##f$Advice_Fold##
+WHEN Others RETURN openai_knob_advice_fold FORCE
+##f$Advice_Persona##
+WHEN Others RETURN openai_knob_advice_persona FORCE
+
+// ============================ bot counter-persona ==========================
+// The BOT adopts whatever archetype best exploits THIS villain (1 nit..6 maniac; -1 normal).
+// Advisor override first, else infer the nightmare matchup from the villain's exploit profile.
+##f$BotPersona##
+WHEN f$Advice_Persona >= 0 RETURN f$Advice_Persona FORCE
+WHEN f$Exploit_NeverFolds RETURN 2 FORCE                              // station/fish -> tight VALUE (tag)
+WHEN f$Exploit_Overfold OR f$Exploit_Folds3Bet RETURN 6 FORCE        // folds too much -> MANIAC pressure
+WHEN f$Exploit_KeepsFiring RETURN 4 FORCE                            // chronic bettor -> STATION, snap him off
+WHEN Others RETURN -1 FORCE
+
+// ============================ INTUITION (the spine) ========================
+// One harmonized read. Decisions are made FROM these, not from the raw inputs.
+
+##f$Intuition_VillainStrength##
+// unified estimate of the villain's range/holding strength now (0..1; -1 unknown)
+WHEN f$Range_VillainStrength >= 0 RETURN f$Range_VillainStrength FORCE
+WHEN Others RETURN -1 FORCE
+
+##f$Intuition_Confidence##
+// how much to trust the intuition (0..1): advisor confidence, else introspection sample weight
+WHEN f$Advice_Conf > 0 RETURN f$Advice_Conf FORCE
+WHEN f$Intro_Known RETURN 0.6 FORCE
+WHEN Others RETURN 0.2 FORCE
+
+##f$Intuition_Aggression##
+// how aggressive WE should be (0.5 neutral): style knob + advisor raise/bluff lean (weighted by
+// advisor confidence) + a push toward attacking foldable villains / restraint vs sticky ones.
+WHEN f$Exploit_NeverFolds AND f$Range_VillainStrength >= 0.6 RETURN 0.2 FORCE
+WHEN f$Exploit_Tilt RETURN 0.72 FORCE
+WHEN f$Exploit_Overfold OR f$Exploit_GivesUp RETURN 0.75 + f$Advice_Raise * f$Advice_Conf * 0.2 FORCE
+WHEN Others RETURN 0.5 + (openai_knob_aggro - 0.5) * 0.5 + f$Advice_Raise * f$Advice_Conf * 0.3 + f$Advice_Bluff * f$Advice_Conf * 0.2 FORCE
+
+##f$Intuition_Exploit##
+// the dominant exploit to act on: 1 barrel/bluff, 2 value-only, 3 bluff-catch/don't-bluff,
+// 4 attack-fast-bet, 5 respect (fast=strong/honest), 0 none.
+WHEN f$Exploit_Tilt RETURN 2 FORCE
+WHEN f$Exploit_NeverFolds RETURN 2 FORCE
+WHEN f$Exploit_KeepsFiring RETURN 3 FORCE
+WHEN f$Exploit_FastStrong OR f$Exploit_Honest RETURN 5 FORCE
+WHEN f$Exploit_Overfold OR f$Exploit_GivesUp OR f$Exploit_Folds3Bet RETURN 1 FORCE
+WHEN f$Exploit_FastWeak RETURN 4 FORCE
+WHEN Others RETURN 0 FORCE
+
+##f$Intuition_ShowOfForce##
+// We're ATTACHED to the chips (considerable investment / committed) AND a big bet or jam is the best
+// way to WIN the pot now -- fold equity vs this villain + denial make the show of force +EV.
+WHEN (f$Committed OR PotSize >= 12 * bblind) AND (f$Exploit_Overfold OR f$Exploit_Folds3Bet OR intro_foldpress_raischair > 0.5) RETURN true FORCE
+WHEN (f$Committed OR PotSize >= 12 * bblind) AND f$Range_VillainStrength >= 0 AND f$Range_VillainStrength < 0.4 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+// ============================ OBSERVER STRATEGY GOTO (Phase 2) =====================================
+// obsbranch (1..7, set by observer_strategy.py via /api/knob, engine-fresh-gated to 0 when the brain is
+// quiet) is the table-wide PLAN selector. Its aggro/bluff/openrange targets already STEER the OHF
+// frequencies (f$AggroFreqMult / f$BluffFreqMult / f$OpenRangeKnob in 05_config) -- VALUE_STATION pushes
+// obsbranch_bluff low so we stop bluffing the station, ATTACK_FOLDERS pushes aggro high. f$ObsStrategy
+// is the GOTO dispatch hook (today a -1 fall-through -> no forced-action / action-constant pitfalls).
+##f$ObsBranch##
+WHEN Others RETURN obsbranch FORCE
+
+##f$ObsStrategy##
+WHEN Others RETURN -1 FORCE
+
+// ============================ BRAIN-ACTION soft pre-empt (Phase 2) =================================
+// The synapse current_decided_action, pushed as brain_action_kind (1 fold / 2 check / 3 call / 4 raise)
+// + brain_action_conf + brain_action_size_bb. f$BrainAction maps it to a concrete action; the street
+// dispatchers gate it on conf >= 0.60 so a stale / low-confidence push never steers. DISABLED by default
+// -- the Python pushes brain_action only when explicitly enabled, exactly like the openai_action hijack.
+##f$BrainAction##
+WHEN brain_action_kind = 4 RETURN brain_action_size_bb FORCE
+WHEN brain_action_kind = 3 Call FORCE
+WHEN brain_action_kind = 2 Check FORCE
+WHEN brain_action_kind = 1 Fold FORCE
+WHEN Others RETURN -1 FORCE
+
+//*****************************************************************************
+//  12_aggressor - CROSS-STREET AGGRESSOR RHYTHM + "what is the opponent
+//  representing" inference.  [Emrald 2026-06-20]
+//
+//  Two engine symbols, REMEMBERED across the current + previous street, drive
+//  this whole file (added to the C++ engine + the lint whitelist):
+//     aggressorchair  chair 0-9 of the last raiser (-1 = none yet this hand)
+//     iamaggressor    1 if aggressorchair = userchair, else 0
+//
+//  The two ideas here are the micro-stakes spine made explicit:
+//   1) RHYTHM. When the OPPONENT is the aggressor and I act before him next
+//      street (out of position vs him), the +EV play is to LET HIM DO THE
+//      BETTING - check, call raises with good-but-not-monster hands, and tighten
+//      bluffs - rather than lead/bet into the player who has the initiative.
+//      When *I* am the aggressor, keep barreling good equity / fold-equity spots.
+//      [CtM p153-174 "give up when they fight back"; p166 "when you've shown all
+//      this aggression and still can't shake them, you are usually behind";
+//      p59 "the importance of position" - OOP you play the hand blind].
+//   2) STORY. The opponent's BETTING LINE represents a perceived range. At the
+//      micros the population is so face-up (passive, unbalanced) that the line
+//      itself tells you whether to ATTACK, call, or RESPECT. [EM "How to Read
+//      Hands" / "Playing the Player" - read the line, not the cards][CtM
+//      "perceived ranges" p132, "turn/river raises are the nuts" p216-217].
+//
+//  These dials are CONSUMED by 50_flop / 60_turn / 70_river / 05_config
+//  (f$CbetFreq). They are additive soft modifiers reconciled with the existing
+//  spine - they tighten/loosen at the margin, they do not double-fire the value
+//  or commitment lines.
+//*****************************************************************************
+
+//=============================================================================
+//  (1)  CROSS-STREET AGGRESSOR RHYTHM
+//=============================================================================
+
+##f$IAmAggressor##
+// I hold the betting initiative carried across streets (I made the last raise).
+iamaggressor
+
+##f$AggressorIsOpp##
+// An opponent holds the initiative (someone has raised this hand and it is not me).
+WHEN aggressorchair >= 0 AND NOT iamaggressor RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$ActBeforeAggressor##
+// I act before the aggressor on the next street, i.e. I am OUT OF POSITION vs the
+// player who holds the initiative. This is the "let THEM do the betting, call
+// raises with good hands" rhythm spot: betting into the aggressor OOP bloats the
+// pot blind and folds out everything I beat. [CtM p59 position][EM read-the-line]
+WHEN f$AggressorIsOpp AND NOT f$InPositionPost RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$ConservativeKnob##
+// 0/1/2 restraint dial. UP a LOT (2) when I am OOP vs an opponent-aggressor
+// (f$ActBeforeAggressor) - this is the highest-discipline rhythm spot (check &
+// call, don't lead, tighten bluffs); UP SOME (1) when an opponent merely holds
+// the initiative but I have position on him; 0 otherwise. [CtM "give up when they
+// fight back"][Tao ch.78 "the soft and yielding overcomes"]
+WHEN f$ActBeforeAggressor RETURN 2 FORCE
+WHEN f$AggressorIsOpp RETURN 1 FORCE
+WHEN Others RETURN 0 FORCE
+
+##f$AggressorKnob##
+// 0/1/2 pressure dial. UP a LOT (2) when I am the aggressor AND in position
+// (keep barreling - position + initiative is the whole edge); UP SOME (1) when I
+// am the aggressor out of position; 0 when I do not hold the initiative.
+// [CtM p56 "the importance of initiative"; p130 cbet ~75%]
+WHEN f$IAmAggressor AND f$InPositionPost RETURN 2 FORCE
+WHEN f$IAmAggressor RETURN 1 FORCE
+WHEN Others RETURN 0 FORCE
+
+//=============================================================================
+//  (2)  "WHAT IS THE OPPONENT REPRESENTING" - story / perceived-range inference
+//
+//  Scale (gates value / bluff / fold downstream):
+//    0  NO STORY      - checked to me / no aggression yet -> normal lines.
+//    1  CAPPED / WEAK  - a line that caps the range: a small donk/min-lead, a
+//       float (flat) line, or a STATION/FISH who bets (no real range - they bet
+//       any pair/draw). -> ATTACK: bluff-raise / float / thin value widened.
+//       [CtM p150 "donked into" raise wide; p210-211 "min/donk/probe bets are a
+//       dead giveaway they have nothing"; p162 float = hit but not huge].
+//    2  MERGED / STD   - one standard c-bet / single barrel. -> call good, fold
+//       air. The default postflop story. [CtM p131 cbetting; p153 after the cbet].
+//    3  STRONG / CREDIBLE - a credible nut-weighted line: a 3-bet+ preflop line,
+//       a check-raise, a TURN or RIVER raise/lead, a NIT/PASSIVE player firing,
+//       or a pot-committed villain on a scary/coordinated board. -> RESPECT:
+//       fold marginal, NO bluff-raise. [CtM p216 "turn raises are the nuts";
+//       p217 "river raises are ALWAYS the nuts"; p153 "passive players raising =
+//       strength"; p202 "facing aggression with an overpair - fold vs nits"]
+//=============================================================================
+
+##f$OppCheckedToMe##
+// No villain aggression on THIS street: it is checked to me (no bet to call and
+// no raise this round). The story is "0 - no story" foundation.
+WHEN AmountToCall = 0 AND Bets = 0 AND Raises = 0 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$OppMinLead##
+// A tiny donk/probe lead (<= ~30% pot) facing us: at the micros this caps the
+// villain hard - "they want to see where they are at"; it is a draw / weak pair /
+// air far more than a value bet. Treat as weakness to attack. [CtM p150,p210-211]
+WHEN AmountToCall > 0 AND AmountToCall * 3 <= PotSize RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$OppCheckedPriorStreet##
+// The opponent showed weakness earlier in the hand: there was no villain bet or
+// raise on a PREVIOUS street (flop checked through to us on the turn, or
+// flop+turn checked through on the river). A line that was passive then suddenly
+// bets is capped - a delayed stab, not a planned value line. [EM read-the-line]
+WHEN IsTurn AND NoVillainBetOrRaisedOnFlop RETURN true FORCE
+WHEN IsRiver AND NoVillainBetOrRaisedOnFlop AND NoVillainBetOrRaisedOnTurn RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$OppLineRaisedThisStreet##
+// The opponent RAISED us on this street (a check-raise or a raise of our bet).
+WHEN Raises >= 1 AND AmountToCall > 0 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$OppRepresents##
+// The opponent's betting-line story (0-3). Built bottom-up so the STRONGEST
+// credible signals win first.
+//
+// 3 = STRONG / CREDIBLE (respect, fold marginal, never bluff-raise):
+WHEN f$OppLineRaisedThisStreet AND (IsTurn OR IsRiver) RETURN 3 FORCE
+WHEN Raises >= 2 RETURN 3 FORCE
+WHEN f$OppLineRaisedThisStreet AND (f$Opp_IsNit OR f$Opp_IsPassive) RETURN 3 FORCE
+WHEN AmountToCall > 0 AND (f$Opp_IsNit OR f$Opp_IsPassive) AND NOT f$OppMinLead RETURN 3 FORCE
+WHEN f$Opp_PotCommitted AND (f$ScaryBoard OR f$BoardWet) AND AmountToCall > 0 RETURN 3 FORCE
+// 1 = CAPPED / WEAK (attack - widen bluff-raises / floats / thin value):
+WHEN f$OppMinLead RETURN 1 FORCE
+WHEN AmountToCall > 0 AND f$OppCheckedPriorStreet RETURN 1 FORCE
+WHEN AmountToCall > 0 AND (f$Opp_IsStation OR f$Opp_IsFish) AND NOT (IsTurn OR IsRiver) RETURN 1 FORCE
+// 0 = NO STORY (checked to me / nobody has done anything aggressive):
+WHEN f$OppCheckedToMe RETURN 0 FORCE
+// 2 = MERGED / STANDARD (a single, ordinary bet) - the default when facing a bet.
+WHEN Others RETURN 2 FORCE
+
+##f$OppStoryStrong##
+// Convenience gate: RESPECT the line (fold marginal hands, do not bluff-raise).
+WHEN f$OppRepresents >= 3 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$OppStoryCapped##
+// Convenience gate: ATTACK the line (widen bluff-raise / float / thin value).
+// Never "attack" a station/fish by bluffing them OFF a hand - the capped-attack
+// downstream is float / thin-VALUE there, never a bluff-raise. [CtM p176 don't
+// bluff the fish]
+WHEN f$OppRepresents = 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//=============================================================================
+//  (3)  RANGE CHART vs OUR HAND  -  "is anything in their range ahead of us?"
+//
+//  Emrald's rule: "if a hand is not in the range that would beat us, we are SAFE
+//  to proceed - bet, call, or check." OpenPPL cannot enumerate equity vs a custom
+//  combo range (prwin uses fixed assumptions), so this is a practical MADE-HAND
+//  vs REPRESENTED-VALUE-RANGE read: the opponent's line (f$OppRepresents) + the
+//  board texture imply the TOP of their value range; we then ask whether OUR made
+//  hand class sits above it. The literal 169-combo chart is visualised per-seat in
+//  the React table view (the range grid under the HUD). [EM read-the-line][CtM
+//  p132 perceived ranges; p202 fold the overpair to the nit; p216-217 raises=nuts]
+//=============================================================================
+
+##f$BeatenByOppRange##
+// TRUE when the opponent's represented (narrowed) value range contains hands that
+// BEAT our current made hand.
+// We hold the top of essentially any micro value range -> nothing beats us:
+WHEN f$HaveStrongMade RETURN false FORCE
+WHEN HaveSet OR HaveTwoPair OR HaveStraight OR HaveFlush OR HaveFullHouse OR HaveQuads OR HaveStraightFlush RETURN false FORCE
+// A capped / weak / no story can't credibly hold a hand that beats a real made hand:
+WHEN f$OppRepresents <= 1 RETURN false FORCE
+// A credible, nut-weighted line (turn/river raise, nit/passive firing, 3-bet line,
+// committed on a scary board) beats our one-pair-class holdings:
+WHEN f$OppStoryStrong RETURN true FORCE
+// One pair facing a standard merged bet on a wet/scary board: hands beat us:
+WHEN f$HaveOnePair AND f$OppRepresents >= 2 AND (f$ScaryBoard OR f$BoardWet) RETURN true FORCE
+// Otherwise (we hold a decent hand vs a merged range on a dry board) -> ahead:
+WHEN Others RETURN false FORCE
+
+##f$SafeVsOppRange##
+// [Emrald] TRUE = NOTHING in the opponent's represented range beats us -> SAFE to
+// PROCEED confidently (value-bet, call, or check for value/showdown). FALSE = their
+// range has us beat -> pot-control or fold the marginal stuff. This is the positive
+// face of f$BeatenByOppRange, used to GREEN-LIGHT thin value + bluff-catches.
+WHEN NOT f$BeatenByOppRange RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//=============================================================================
+//  (4)  FEELER / INFORMATION BETS + cheap bluff-catch  [Emrald]
+//  When I don't yet know where I stand, bet SMALL to (a) gather information - the
+//  villain's RESPONSE to the size feeds f$OppRepresents on the next street - and
+//  (b) control the pot. Size as LARGE as possible while STILL controlling it. On
+//  defence: a small bet into me is cheap to call with any showdown value, and a
+//  tiny (~1bb) bet is itself information (a capped/weak line, read by f$OppMinLead).
+//=============================================================================
+
+##f$SmallBet##
+// The bet facing us is cheap: <= ~1/3 pot (>= 3:1; need <= ~25% equity). Micro
+// small/min bets are weak and under-bluff-to-fold. [CtM p210-211][PMM pot odds]
+WHEN AmountToCall > 0 AND AmountToCall * 3 <= PotSize RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$WorthCallingSmall##
+// Even if I might be behind, a small bet is worth CALLING with any showdown value /
+// draw (cheap price vs a capped small bet) - unless the line is a credible nut story.
+// [Emrald "if the bet is small it may be worth calling"]
+WHEN f$SmallBet AND NOT f$OppStoryStrong AND (f$HaveOnePair OR HaveTopPair OR HaveOverPair OR HaveSet OR HaveTwoPair OR f$HaveBigDraw) RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$WhereAmIUnsure##
+// I hold a MARGINAL made hand (one-pair class) and I am neither clearly strong nor told to
+// respect a credible line -> the FEELER spot: a small controlled bet learns where I stand and
+// keeps the pot manageable, instead of checking blind or over-committing. This is decoupled
+// from whether they have bet yet: first-to-act it is a probe; the response is read next street
+// by f$OppRepresents. [Emrald feeler system][CtM pot control / sizing-for-info]
+WHEN f$HaveStrongMade OR HaveSet OR HaveTwoPair OR HaveStraight OR HaveFlush RETURN false FORCE
+WHEN f$OppStoryStrong RETURN false FORCE
+WHEN f$HaveOnePair OR HaveTopPair OR HaveOverPair RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$FeelerSize##
+// Information / pot-control bet %, "as LARGE as possible while still controlling the
+// pot": half-pot default (gets a read AND charges draws); ~1/3 on dry boards vs
+// stations (cheaper, they tell you anyway); ~1/4 multiway or very deep (pure
+// information, minimise risk). The villain's RESPONSE to this size is then read by
+// f$OppRepresents on the next street. [Emrald feeler system][CtM p150 sizing-for-info]
+WHEN nopponentsplaying > 2 RETURN 25 FORCE
+WHEN f$BoardParched AND (f$Opp_IsStation OR f$Opp_IsFish) RETURN 33 FORCE
+WHEN f$EffStack > 150 RETURN 33 FORCE
+WHEN Others RETURN 50 FORCE
+
+##f$FeelerBet##
+// Fire a feeler when I'm unsure where I am AND I can take a controlled stab with the
+// lead / position (NOT out of position into the aggressor - that's the check-call
+// rhythm of f$ActBeforeAggressor). [Emrald]
+WHEN f$WhereAmIUnsure AND NOT f$ActBeforeAggressor AND (f$InPositionPost OR f$IAmAggressor) RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//*****************************************************************************
+//  13_streetplan - the STREET-STRATEGY FORMER (multi-street planning).
+//
+//  Forms ONE line that applies across streets instead of deciding each street in
+//  isolation -- "flat the flop, then represent the flush & barrel a scare card",
+//  "check-raise then keep barreling", "value three streets", "pot-control". It
+//  considers BUCKETS of the villain's exploit pathways (via the f$Exploit_* reads)
+//  and is driven by the harmonized INTUITION (11_introspection). The intuition
+//  inputs are stable across streets, so the plan holds. Codes match brain_state:
+//    1 pot_control  2 value_three_streets  3 flat_then_bluff_scare
+//    4 check_raise_barrel  5 delayed_cbet  6 give_up  7 show_of_force  0 none
+//  The richer plan former is the live advisor (decision_advisor.py); this is the
+//  always-on OHF fallback the deep-rewire (50/60/70) executes toward.
+//*****************************************************************************
+
+##f$Plan##
+WHEN f$Intuition_ShowOfForce RETURN 7 FORCE
+WHEN f$HaveStrongMade AND NOT f$Exploit_KeepsFiring RETURN 2 FORCE
+WHEN f$HaveBigDraw AND FlushPossible RETURN 3 FORCE
+WHEN f$Exploit_Overfold OR f$Exploit_GivesUp OR f$Exploit_FastWeak RETURN 4 FORCE
+WHEN f$Exploit_Tilt RETURN 2 FORCE
+WHEN f$Exploit_KeepsFiring RETURN 1 FORCE
+WHEN f$Exploit_NeverFolds AND NOT f$HaveStrongMade RETURN 6 FORCE
+WHEN Others RETURN 0 FORCE
+
+##f$Plan_IsShowOfForce##
+WHEN f$Plan = 7 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Plan_IsValueTriple##
+WHEN f$Plan = 2 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Plan_IsBluffScare##
+// flat / cheap now, then represent the flush (or a scare card) and barrel on a later street
+WHEN f$Plan = 3 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Plan_IsCheckRaiseBarrel##
+WHEN f$Plan = 4 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Plan_IsPotControl##
+WHEN f$Plan = 1 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$Plan_IsGiveUp##
+WHEN f$Plan = 6 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+// The ismyturn loop asks: is THIS street's pathway already in the plan + considered?
+##f$Plan_PathwayConsidered##
+WHEN f$Plan = 0 RETURN false FORCE
+WHEN f$Plan_IsBluffScare AND (IsTurn OR IsRiver) AND FlushPossible RETURN true FORCE
+WHEN f$Plan_IsValueTriple RETURN true FORCE
+WHEN f$Plan_IsCheckRaiseBarrel RETURN true FORCE
+WHEN f$Plan_IsShowOfForce RETURN true FORCE
+WHEN f$Plan_IsPotControl AND AmountToCall > 0 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//*****************************************************************************
+//  15_explain - human-readable, variable-filled decision explanations (VERBOSE).
+//
+//  Each f$expl_<tag> holds its explanation TEMPLATE on a "//~" comment line
+//  (the parser ignores comments, so any {placeholders}, %, $ etc. are safe).
+//  The function body is a trivial "0" that is never used: the explain engine
+//  reads the template from the "//~" comment, substitutes {tokens} with live
+//  values, and prints the result to the Decisions pane when the matching
+//  explain_<tag> symbol is reached at the TAIL of a WHEN condition, e.g.
+//
+//      WHEN f$HaveOnePair AND f$TimingSaysStrong AND explain_fold_tank Fold FORCE
+//
+//  {tokens} may be any symbol or f$function. Emission is de-duplicated and is
+//  suppressed during parsing. Verbose = full spot (stack/pot/opp/equity) + the
+//  REASONING in plain English, so the Decisions pane reads like a coach talking.
+//*****************************************************************************
+
+##f$expl_open##
+//~ OPEN-RAISE to {f$Open_RaiseTo}bb. First in from my {f$Style}-style positional range, {nopponentsplaying} left to act, effective {f$EffStack}bb, ~{tgi_players_remaining} players left. Taking the initiative and the dead money rather than limping; if 3-bet I have a plan. [conf {validator_confidence}]
+0
+
+##f$expl_iso##
+//~ ISO-RAISE to {f$Iso_RaiseTo}bb over {Calls} limper(s). Punishing the limp - they entered weak/passive, so I size up to play a bigger pot in position with the better hand and deny them a cheap flop. Eff {f$EffStack}bb, pot building to {PotSize}bb.
+0
+
+##f$expl_3bet_value##
+//~ 3-BET to {f$ThreeBet_RaiseTo}bb FOR VALUE. Premium vs a single open (opener VPIP {f$Opp_VPIP}, PFR {f$Opp_PFR}, AF {f$Opp_AF}). I want money in now while ahead of his opening range; building a pot I expect to win. Eff {f$EffStack}bb.
+0
+
+##f$expl_3bet_bluff##
+//~ 3-BET BLUFF to {f$ThreeBet_RaiseTo}bb, in position vs a foldy/loose opener (VPIP {f$Opp_VPIP}, PFR {f$Opp_PFR}). Ace-blocker / playable suited, mixed frequency. He opens too wide and folds too much to pressure, so I attack; if called I have equity and position. Eff {f$EffStack}bb.
+0
+
+##f$expl_call_setmine##
+//~ CALL to SET-MINE. Risking {AmountToCall}bb of my {f$EffStack}bb with a small/medium pair for the implied odds (enough stack behind to get paid - ~15x+ vs an open, or <=~10% of stack vs a 3-bet) - I am hunting a flopped set to stack him; folding everything else. Pot {PotSize}bb, ~{tgi_players_remaining} left.
+0
+
+##f$expl_flat_ip##
+//~ FLAT IN POSITION. Calling {AmountToCall}bb with a hand that plays well postflop (suited broadway / connector / pair) rather than 3-betting - keeping his range wide and his bluffs in, then outplaying him after the flop with position. Pot {PotSize}bb, eff {f$EffStack}bb.
+0
+
+##f$expl_bbdefend##
+//~ DEFEND BIG BLIND. Getting a price ({AmountToCall}bb into {PotSize}bb) closing the action, so I call wide to realize equity rather than fold my big-blind investment. Will play fit-or-fold flops in a bloated-enough pot. Eff {f$EffStack}bb.
+0
+
+##f$expl_pushfold##
+//~ PUSH/FOLD MODE. Effective {f$EffStack}bb (<=~15, or M<=5) - too short to play postflop, so it is shove-or-fold. Jamming a position-scaled near-Nash range to maximize fold equity + pick up {PotSize}bb of blinds/antes. Survival = chips; a timely jam beats blinding out. ~{tgi_players_remaining} left.
+0
+
+##f$expl_jam##
+//~ ALL-IN JAM for {f$EffStack}bb. Short-stack first-in shove from my position range - fold equity is the whole point; folding strong hands here is the leak that blinds you out. Picking up {PotSize}bb dead money now. ~{tgi_players_remaining} left.
+0
+
+##f$expl_callshove##
+//~ CALL THE SHOVE. Getting it in for {f$EffStack}bb vs a single all-in, far enough from the money that it is chip-EV - my hand crushes his shoving range and I have the equity + price. Not folding a strong holding short. Pot {PotSize}bb.
+0
+
+##f$expl_cbet##
+//~ C-BET ~{f$BetPctFlop}% pot ({PotSize}bb). I raised pre and keep the lead on a board that misses his range more than mine, vs a foldy/heads-up opp (VPIP {f$Opp_VPIP}, AF {f$Opp_AF}); my equity {prwin}. Denying his free cards and taking it down often right here.
+0
+
+##f$expl_value_flop##
+//~ VALUE BET ~{f$BetPctFlop}% pot ({PotSize}bb). Strong made hand, equity {prwin} - I size up to charge his draws and worse pairs, building the pot while I am ahead. He pays or folds equity; either is good. vs VPIP {f$Opp_VPIP}.
+0
+
+##f$expl_semibluff##
+//~ SEMI-BLUFF ~{f$BetPctFlop}% pot ({PotSize}bb). Big/combo draw - two ways to win: he folds now, or I hit. Equity {prwin}. Betting (not checking) so I can win it without showdown AND get paid when I improve. Eff {f$EffStack}bb.
+0
+
+##f$expl_fold_tank##
+//~ FOLD one pair. The raiser TANKED {lastraiseractiontime}s (>= {f$TankSeconds}s) before betting - a long think here screams strength/value, not a bluff. One pair is not worth {AmountToCall}bb into {PotSize}bb against that. Disciplined laydown; don't go broke with one pair.
+0
+
+##f$expl_float_snap##
+//~ FLOAT / CALL one pair. The raiser SNAP-bet in {lastraiseractiontime}s (<= {f$SnapSeconds}s) - an instant bet is often a c-bet or weak stab, not a thinking value bet. Calling {AmountToCall}bb into {PotSize}bb to take it away on a later street; equity {prwin}.
+0
+
+##f$expl_potcontrol##
+//~ CHECK for POT CONTROL. One pair, decent but not great - keeping the pot small (don't stack off with one pair) and getting to showdown cheaply rather than bloating it. Pot {PotSize}bb, eff {f$EffStack}bb, equity {prwin}.
+0
+
+##f$expl_value_river##
+//~ RIVER VALUE ~{f$BetPctRiver}% pot ({PotSize}bb). Strong made hand at showdown, equity {prwin} - last chance to get value, so I bet a size a worse hand can still call, vs VPIP {f$Opp_VPIP} / AF {f$Opp_AF}. Thin-but-ahead.
+0
+
+##f$expl_bluffcatch##
+//~ BLUFF-CATCH. Calling {AmountToCall}bb into {PotSize}bb vs an aggressive/snap bettor (AF {f$Opp_AF}, VPIP {f$Opp_VPIP}). My hand only beats bluffs, but his range here is bluff-heavy enough and the price is right; a fold over-folds to aggression.
+0
+
+##f$expl_fold_pre##
+//~ FOLD preflop. Hand is below my range for this spot (position / action / {f$EffStack}bb depth) - no cheap entry, facing aggression, or out of position. Folding now saves chips for a better spot; patience early is a weapon. ~{tgi_players_remaining} left.
+0
+
+//*****************************************************************************
+//  16_steering - runtime steering + OpenAI hijack hooks  (advisor DISABLED by
+//  default; these are inert until HKCU\Software\ScarletBeast\OpenAiEnabled=1).
+//
+//  ANCHORS - named entry points the Terminal console can steer to. Each major
+//  decision function is tagged with a "// @anchor: <name> (id N)" comment and the
+//  ids are mapped in COpenAiAdvisor::AnchorIdFromName():
+//      1 preflop   2 flop   3 turn   4 river
+//     11 smallball 12 power 13 hybrid   (these retune f$Style live)
+//
+//  CONSOLE COMMANDS (type into the Terminal prompt or the browser prompt):
+//     /stop                 pause (sets openai_paused = 1)
+//     /play                 resume
+//     /strategy smallball|power|hybrid   retune the profile live (via f$Style)
+//     /goto <anchor>        set openai_steer_anchor
+//     /hijack [why]         send state+context+chat+decisions to OpenAI
+//     /improve <text>       propose an .ohf edit (written to Strategy\proposed\)
+//
+//  SYMBOLS (provided by CSymbolEngineOpenAI):
+//     openai_paused        1 while /stop is active
+//     openai_steer_anchor  the steered anchor id (0 = none)
+//     openai_action        OpenAI's recommended action, or a no-opinion sentinel
+//     openai_autohijack    1 if auto-hijack-on-no-fit is enabled
+//     openai_consult       TRIGGER (true) -> consults OpenAI on a no-fit spot
+//
+//  The openai_action override is already wired at the top of f$preflop / f$flop /
+//  f$turn / f$river: when the advisor returns a concrete raise size it is taken,
+//  otherwise (the default, disabled) the sentinel keeps the bot on its own logic.
+//*****************************************************************************
+
+##f$Paused##
+// Convenience mirror of the /stop state for use in your own gating if desired.
+WHEN openai_paused RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$NoHeuristicFit##
+// Mark a spot the hand-coded strategy does not cover well. Edit this to taste;
+// when true (and auto-hijack is enabled) f$ConsultOpenAI will ask for help.
+// Example heuristics for "weird, low-confidence" spots:
+WHEN BotsActionsOnThisRound > 2 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$ConsultOpenAI##
+// Call this where you want an auto-consult on no-fit spots, e.g. add
+//   WHEN f$NoHeuristicFit AND f$ConsultOpenAI Check FORCE
+// near a fallback. openai_consult fires the (disabled-by-default) advisor and
+// returns true; we then Check as a safe default. Inert while the advisor is off.
+WHEN openai_consult RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//*****************************************************************************
+//  20_lists - hand ranges (synthesis of [N] and [B]).
+//  Shared ground: both love SUITED CONNECTORS and SMALL PAIRS (flop a monster,
+//  win a big pot) [N pp.15-16][B p.487]; Brunson adds "ace/king + any suited =
+//  two shots" [B p.508]; Negreanu adds wide late-position steals [N listOpenBTN].
+//*****************************************************************************
+
+##listPremium##
+// Get-it-in-pre tier.
+AA  KK  QQ  AKs  AKo
+
+##listBigPair##
+AA  KK  QQ  JJ
+
+##listSetMine##
+// Small/medium pairs we flat to flop a set (never reraise pre). [N p.21][B p.481]
+22 33 44 55 66 77 88 99 TT
+
+##listSmallSuitedConnectors##
+// Small suited connectors -- cheap, high-implied-value hands that flop big draws/two-pair+ multiway.
+// Limp these in behind limpers whenever the depth gives implied odds. [Emrald: limp small SCs when you can]
+98s 87s 76s 65s 54s 43s 32s
+
+##listAceRag##
+// Weak (offsuit) aces -- "ace rag". Limp them in cheaply; if we catch an ace we play passive pot-control
+// (don't raise top pair / weak kicker), call little bets, get to a cheap showdown. [Emrald: limp ace rag]
+A9o A8o A7o A6o A5o A4o A3o A2o
+
+//-----------------------------------------------------------------------------
+//  Open-raise ranges (first in), widening by position.
+//-----------------------------------------------------------------------------
+
+##listOpenEP##
+// Early position (~16%): pairs, suited broadways, the better suited connectors.
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+ATs AJs AQs AKs KTs KJs KQs QTs QJs JTs T9s 98s 87s 76s
+AJo AQo AKo KQo
+
+##listOpenMP##
+// Middle position (~22%): add suited aces, more suited gappers/connectors.
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+K9s KTs KJs KQs Q9s QTs QJs J9s JTs T8s T9s 97s 98s 87s 76s 65s 54s
+ATo AJo AQo AKo KJo KQo
+
+##listOpenLP##
+// Cutoff / late (~32%): all suited aces, suited kings, more connectors & gappers.
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+K5s K6s K7s K8s K9s KTs KJs KQs Q8s Q9s QTs QJs J8s J9s JTs T7s T8s T9s 96s 97s 98s 86s 87s 75s 76s 65s 54s 43s
+A8o A9o ATo AJo AQo AKo K9o KTo KJo KQo Q9o QTo QJo J9o JTo T9o
+
+##listOpenBTN##
+// Button (~48%, very wide). Position + "any two" pressure. [N][B p.509]
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+K2s K3s K4s K5s K6s K7s K8s K9s KTs KJs KQs
+Q4s Q5s Q6s Q7s Q8s Q9s QTs QJs J6s J7s J8s J9s JTs T6s T7s T8s T9s 95s 96s 97s 98s 85s 86s 87s 74s 75s 76s 64s 65s 53s 54s 43s
+A2o A3o A4o A5o A6o A7o A8o A9o ATo AJo AQo AKo K7o K8o K9o KTo KJo KQo Q8o Q9o QTo QJo J8o J9o JTo T8o T9o 98o 87o
+
+##listOpenSB##
+// Small blind, folded to us: late-position width but a touch more cautious OOP.
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+K6s K7s K8s K9s KTs KJs KQs Q8s Q9s QTs QJs J8s J9s JTs T7s T8s T9s 96s 97s 98s 86s 87s 75s 76s 65s 54s
+A7o A8o A9o ATo AJo AQo AKo K9o KTo KJo KQo Q9o QTo QJo J9o JTo T9o
+
+##listStealNit##
+// EXPLOIT range (~65%): used ONLY to open-steal into confirmed nitty blinds (f$BlindsAreNitty) from a
+// steal position. Nits over-fold the blinds, so we widen toward any-two: all pairs, ALL suited, every
+// offsuit ace/king, most offsuit broadways, and the offsuit connectors. [N "attack the weak-tight"]
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+K2s K3s K4s K5s K6s K7s K8s K9s KTs KJs KQs
+Q2s Q3s Q4s Q5s Q6s Q7s Q8s Q9s QTs QJs
+J2s J3s J4s J5s J6s J7s J8s J9s JTs
+T2s T3s T4s T5s T6s T7s T8s T9s
+92s 93s 94s 95s 96s 97s 98s 82s 83s 84s 85s 86s 87s 72s 73s 74s 75s 76s 62s 63s 64s 65s 52s 53s 54s 42s 43s 32s
+A2o A3o A4o A5o A6o A7o A8o A9o ATo AJo AQo AKo
+K2o K3o K4o K5o K6o K7o K8o K9o KTo KJo KQo
+Q5o Q6o Q7o Q8o Q9o QTo QJo J7o J8o J9o JTo T7o T8o T9o 98o 87o 76o 65o 54o
+
+//-----------------------------------------------------------------------------
+//  Push/fold JAM ranges (effective stack <= ~15bb, the f$PushFoldStack ceiling).
+//  Near-Nash, position-scaled.
+//  At these depths strong broadways (KJ/QJ/KT/QT/JT) and any ace/pair are SHOVES,
+//  not folds - folding them is the leak that blinds a short stack out. [Nash push]
+//-----------------------------------------------------------------------------
+
+##listJamLP##
+// Button / cutoff / late / SB first-in: very wide (~55-60%).
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+K2s K3s K4s K5s K6s K7s K8s K9s KTs KJs KQs
+Q2s Q3s Q4s Q5s Q6s Q7s Q8s Q9s QTs QJs
+J5s J6s J7s J8s J9s JTs T6s T7s T8s T9s 95s 96s 97s 98s 85s 86s 87s 75s 76s 64s 65s 54s 43s
+A2o A3o A4o A5o A6o A7o A8o A9o ATo AJo AQo AKo
+K5o K6o K7o K8o K9o KTo KJo KQo Q7o Q8o Q9o QTo QJo J7o J8o J9o JTo T7o T8o T9o 97o 98o 87o
+
+##listJamMP##
+// Middle position first-in (~35%).
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+K7s K8s K9s KTs KJs KQs Q8s Q9s QTs QJs J8s J9s JTs T8s T9s 97s 98s 87s 76s 65s
+A5o A7o A8o A9o ATo AJo AQo AKo K9o KTo KJo KQo Q9o QTo QJo J9o JTo T9o
+
+##listJamEP##
+// Early position first-in (~22%).
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A8s A9s ATs AJs AQs AKs
+K9s KTs KJs KQs QTs QJs JTs T9s 98s
+A9o ATo AJo AQo AKo KJo KQo
+
+##listCallShove##
+// Call / get-it-in vs a SINGLE shove at a short stack (the ~<=15bb push/fold band), far from the money.
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+K8s K9s KTs KJs KQs Q9s QTs QJs J9s JTs T9s 98s
+A7o A8o A9o ATo AJo AQo AKo K9o KTo KJo KQo QTo QJo JTo
+
+##listCallShoveBubble##
+// Calling a shove ON THE BUBBLE: drastically tighter (~top 8-11%), survival has $-value.
+// Selected when f$Stage = 2 (needs the real payout curve to fire). [SoS p.61][SNG]
+TT JJ QQ KK AA
+ATs AJs AQs AKs KQs
+AJo AQo AKo
+
+##listReshove##
+// ~16-25bb 3-bet-JAM over a single wide opener (fold-equity re-steal). [RE p2280][JL p1170]
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+KTs KJs KQs QJs JTs
+A8o A9o ATo AJo AQo AKo KJo KQo
+
+//-----------------------------------------------------------------------------
+//  HEADS-UP ranges (2-handed pot). SB/button is the aggressor; BB defends WIDE
+//  by flatting. [HUM p49-59][HUSNG p11-29]
+//-----------------------------------------------------------------------------
+
+##listOpenHU##
+// HU button/SB first-in: ~86%, fold only the trashiest offsuit junk. [HUSNG p11][HUM p49]
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+K2s K3s K4s K5s K6s K7s K8s K9s KTs KJs KQs
+Q2s Q3s Q4s Q5s Q6s Q7s Q8s Q9s QTs QJs
+J2s J3s J4s J5s J6s J7s J8s J9s JTs
+T2s T3s T4s T5s T6s T7s T8s T9s
+92s 93s 94s 95s 96s 97s 98s
+82s 83s 84s 85s 86s 87s
+72s 73s 74s 75s 76s
+62s 63s 64s 65s
+52s 53s 54s
+42s 43s
+32s
+A2o A3o A4o A5o A6o A7o A8o A9o ATo AJo AQo AKo
+K2o K3o K4o K5o K6o K7o K8o K9o KTo KJo KQo
+Q4o Q5o Q6o Q7o Q8o Q9o QTo QJo
+J6o J7o J8o J9o JTo
+T6o T7o T8o T9o
+96o 97o 98o
+86o 87o
+75o 76o
+65o
+
+##listDefendHU##
+// BB defend (flat) vs a single SB open HU: ~58%, never over-fold. [HUSNG p27]
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A2s A3s A4s A5s A6s A7s A8s A9s ATs AJs AQs AKs
+K2s K3s K4s K5s K6s K7s K8s K9s KTs KJs KQs
+Q4s Q5s Q6s Q7s Q8s Q9s QTs QJs
+J6s J7s J8s J9s JTs
+T6s T7s T8s T9s
+95s 96s 97s 98s
+85s 86s 87s
+74s 75s 76s
+64s 65s
+53s 54s
+43s
+A2o A3o A4o A5o A6o A7o A8o A9o ATo AJo AQo AKo
+K3o K4o K5o K6o K7o K8o K9o KTo KJo KQo
+Q7o Q8o Q9o QTo QJo
+J7o J8o J9o JTo
+T7o T8o T9o
+97o 98o
+87o
+76o
+
+//-----------------------------------------------------------------------------
+//  6-MAX opens (tighter EP/MP than the full-ring-shared lists). Selected on
+//  f$Is6Max. CO/BTN/SB already match 6-max width, so only EP/MP branch. [RF][V6][DFR]
+//-----------------------------------------------------------------------------
+
+##listOpenEP6##
+// 6-max UTG open (~13%). [RF p5][V6 UTG~12%]
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+ATs AJs AQs AKs KJs KQs QJs JTs T9s 98s
+AJo AQo AKo KQo
+
+##listOpenMP6##
+// 6-max MP/HJ open (~15%). [RF p6]
+22 33 44 55 66 77 88 99 TT JJ QQ KK AA
+A9s ATs AJs AQs AKs KTs KJs KQs QTs QJs JTs T9s 98s 87s
+ATo AJo AQo AKo KJo KQo
+
+//-----------------------------------------------------------------------------
+//  Facing aggression.
+//-----------------------------------------------------------------------------
+
+##list3betValue##
+// 3-bet for value vs an open.
+AA KK QQ JJ AKs AKo AQs
+
+##listSqueeze##
+// SQUEEZE value range: a raise + cold-caller(s) in front. Wider than a heads-up 3-bet
+// because the dead money + multiway-OOP misery of flatting make isolating with strong
+// broadways correct (AJo-type hands play badly multiway out of position). [N p.26]
+AA KK QQ JJ TT AKs AKo AQs AQo AJs AJo ATs KQs KQo
+
+##list3betBluff##
+// 3-bet bluff candidates: ace blockers + playable suited hands. [N p.17,26]
+A5s A4s A3s A2s K9s KTs KJs Q9s QJs J9s JTs T8s T9s 76s 65s
+
+##listCallOpen##
+// Flat an open (set-mine + suited playables, mostly in position). [N p.21][B]
+// Small-ball: get in cheap with broadway offsuit suckers (KJo/KTo/ATo) IN POSITION
+// and outplay postflop, rather than folding them pre. [user feedback, freeroll]
+22 33 44 55 66 77 88 99 TT
+ATs AJs AQs KTs KJs KQs QTs QJs JTs T9s 98s 87s 76s 65s
+ATo AJo AQo KQo KJo KTo
+
+##listCall3bet##
+// Flat a 3-bet (in position) to outplay rather than 4-bet-or-fold. [N p.22]
+QQ JJ TT AKo AQs AJs KQs
+
+##list4betValue##
+// 4-bet for value vs a 3-bet.
+AA KK AKs
+
+##list4betValuePower##
+// Brunson power-style adds QQ / A-K to the value 4-bet. [B]
+AA KK QQ AKs AKo
+
+##listTroubleOffsuit##
+// Brunson "trouble hands" - offsuit big cards: playable but fold to a raise. [B p.505]
+AQo AJo ATo KQo KJo KTo QJo QTo JTo
+
+//*****************************************************************************
+//  30_classify - made-hand / draw / board-texture classification.
+//  Wraps the built-in Have* and board symbols into the concepts the two
+//  strategies reason about.
+//*****************************************************************************
+
+//-----------------------------------------------------------------------------
+//  Made-hand tiers
+//-----------------------------------------------------------------------------
+
+##f$HaveBigMade##
+// Straight or better - the hands you commit with. [N "near-nuts"][B set+]
+WHEN HaveStraight OR HaveFlush OR HaveFullHouse OR HaveQuads RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$HaveStrongMade##
+// Two pair / set / big made, or a clean overpair-top-pair on a dry board.
+WHEN HaveSet OR HaveTwoPair OR f$HaveBigMade RETURN true FORCE
+WHEN (HaveOverPair OR HaveTopPair) AND NOT FlushPossible AND NOT StraightPossible RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$HaveOnePair##
+// The classic trap class: one pair, however big. "Don't go broke with one pair." [N p.125]
+WHEN HaveOverPair OR HaveTopPair RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$HaveDecentMade##
+WHEN HaveOverPair OR HaveTopPair OR HaveTwoPair OR HaveSet OR f$HaveBigMade RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$HaveMarginalMade##
+// Weak pair / second pair / bottom pair - showdown value, not betting value.
+WHEN f$HaveDecentMade RETURN false FORCE
+WHEN HavePair OR HaveBottomPair RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  Draws
+//-----------------------------------------------------------------------------
+
+##f$HaveBigDraw##
+// The draws Brunson plays FAST (semi-bluff / shove). [B D6.1-D6.2]
+WHEN HaveNutFlushDraw OR HaveFlushDraw OR HaveOpenEndedStraightDraw RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$HaveComboDraw##
+// Pair+draw or two draws - "two ways to win", get it in. [B D6.6]
+WHEN f$HaveBigDraw AND (HavePair OR HaveInsideStraightDraw) RETURN true FORCE
+WHEN HaveFlushDraw AND HaveOpenEndedStraightDraw RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$HaveWeakDraw##
+WHEN HaveInsideStraightDraw OR HaveBackdoorFlushDraw RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$HaveAnyDraw##
+WHEN f$HaveBigDraw OR f$HaveWeakDraw RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  Board texture
+//-----------------------------------------------------------------------------
+
+##f$BoardWet##
+// Draw-heavy / coordinated: charge draws, slow down marginal hands.
+WHEN FlushPossible OR StraightPossible OR FlushDrawPossible RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$BoardDry##
+// Hit-or-miss board: your pair is likely still good; cheap to give a free card. [N p.63]
+WHEN NOT FlushPossible AND NOT StraightPossible AND NOT FlushDrawPossible RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$ScaryBoard##
+// Brunson "frightening flop": someone surely connected - don't bluff into it. [B R5.3]
+WHEN FlushPossible OR StraightOnBoard OR MoreThanOneStraightPossibleOnFlop RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  HIGH-CARD board texture for c-bet bluffs (Gordon's combinatoric read). The
+//  existing wet/dry/scary symbols are DRAW-based and blind to the board's HIGH
+//  card. A flat-caller's range is loaded with broadways: a K/A/Q-high DRY flop
+//  MISSES that range (few of those cards remain) -> great bluff-c-bet card; a
+//  J/T-high DRY flop HITS it hard -> do NOT bluff-c-bet. [GG "Continuation-Bets
+//  for Bluffs", "Low/Paired/Monotone Boards", "Parched Boards"]
+//  HighestRankOnFlop is the numeric top board rank (Queen=12, King=13, Ace=14).
+//-----------------------------------------------------------------------------
+
+##f$BoardHighCardFoldy##
+// Dry board whose HIGH card is Q+ (>=12): few Q/K/A combos left in a caller's
+// flat range, so an air c-bet picks it up. Boost/keep the bluff-c-bet here.
+WHEN f$BoardDry AND HighestRankOnFlop >= 12 RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$BoardHighCardSticky##
+// Dry board topped by a Jack or Ten (HighestRankOnFlop 10 or 11): HITS a flat
+// caller's broadway-heavy range - do NOT fire an air c-bet here. (Q+ excluded.)
+// Defined as the dry-board residue of the other two textures: a dry flop is exactly
+// one of Foldy (Q+), Parched (<=9, no ace), or Sticky (J/T-high) - so this wires
+// f$BoardHighCardFoldy + f$BoardParched into the live c-bet path (50_flop) instead of
+// duplicating the rank thresholds. Behaviour-identical to "HighestRankOnFlop 10-11".
+WHEN f$BoardDry AND NOT f$BoardHighCardFoldy AND NOT f$BoardParched RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+##f$BoardParched##
+// Low, rainbow, disconnected "parched" flop (e.g. 7-4-2 / 9-6-3 / 8-5-4): top card
+// 9 or below AND dry. Misses everyone - barrel the whole range relentlessly; only
+// slow/fold when an Ace turns (handled on the turn via AcePresentOnTurn). [GG]
+WHEN f$BoardDry AND HighestRankOnFlop <= 9 AND NOT AcePresentOnFlop RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//-----------------------------------------------------------------------------
+//  Initiative
+//-----------------------------------------------------------------------------
+
+##f$WasPreflopRaiser##
+WHEN BotRaisedBeforeFlop RETURN true FORCE
+WHEN Others RETURN false FORCE
+
+//*****************************************************************************
+//  40_preflop - the pre-flop decision tree.
+//
+//  Dispatch by the number of raises this round:
+//    Raises == 0  -> unopened or limped pot  (open / iso-raise / over-limp)
+//    Raises == 1  -> facing a single open    (3-bet value/bluff / flat / fold)
+//    Raises >= 2  -> facing a 3-bet+          (4-bet value / call IP / fold)
+//  Very short stacks switch to a push/fold game. [N p.34][B S8.3]
+//*****************************************************************************
+
+##f$preflop##
+// SLOW-PLAY MEMORY RESET (Emrald): clear the per-hand slow-play flag at the start of each hand (memory
+// persists across hands in this build). me_st_slowplay_0 stores 0 and returns 0, so "0 < 0" is ALWAYS
+// false -> this never fires / never changes the action; it only resets the flag. [slow-play memory symbol]
+WHEN me_st_slowplay_0 < 0 RETURN Fold FORCE
+// ACE-RAG MEMORY RESET (Emrald): same trick -- clear the per-hand ace-rag passive-line flag each hand (stores
+// 0, returns 0, "0 < 0" is always false -> never fires, only resets). [Emrald: ace-rag memory symbol]
+WHEN me_st_acerag_0 < 0 RETURN Fold FORCE
+// SCRAPE SAFETY GATE: if the validator flags a HARD scrape error (impossible cards,
+// chips that don't conserve, a bad/negative pot), do NOT commit chips on garbage data.
+// Check when it's free, otherwise fold. Complements the C++ CSymbolEngineValidator.
+// Scrape safety gate: on a hard-flagged mis-scrape, CHECK if it's free. We deliberately
+// do NOT auto-fold here -- folding a made hand on a transient bad frame is worse than the
+// mis-scrape (it folded a made straight once). Facing a bet, fall through to normal logic.
+WHEN validator_ok = 0 AND AmountToCall = 0 Check FORCE
+// POT-COMMITTED DUST: once we've put >= 2bb in this round and our remaining stack can no longer
+// cover the call (so calling is itself all-in), NEVER fold the committed chips -- jam the sliver.
+// The pot odds on our last chips are astronomical; folding them is pure loss. This is the
+// 14bb-shove-then-fold-0.21bb leak on hand 2763842893. Placed above every dispatch (incl. the
+// push/fold fold lines) so it pre-empts them. Uses only stock symbols (no rebuild). [Emrald]
+WHEN currentbet >= 2 * bblind AND balance <= AmountToCall AND balance > 0 RaiseMax FORCE
+// BRAIN-ACTION soft pre-empt (Phase 2): the synapse current_decided_action, conf-gated. DISABLED by
+// default (the Python only pushes brain_action when enabled, so brain_action_kind is stale=0 and this
+// never fires); when enabled it lets a CONFIDENT brain decision drive the commit. [Emrald]
+WHEN brain_action_kind >= 1 AND brain_action_conf >= 0.60 RETURN f$BrainAction FORCE
+// @anchor: preflop (id 1)
+// OpenAI hijack override: when the advisor is enabled and returns a concrete
+// raise size, take it. Disabled -> openai_action is the kOpenAiNoOpinion sentinel
+// (<= -1000), so this never fires and play is unchanged. [steering]
+WHEN openai_action > -1000 RETURN openai_action FORCE
+// OBSERVER GOTO (Phase 2): the observer branch's forced line, never over push/fold ICM. f$ObsStrategy is
+// -1 today (the branch steers via the obsbranch_* knobs in f$AggroFreqMult/etc.), so this is an inert,
+// wired hook; per-branch FORCED lines drop into f$ObsStrategy in 11_introspection later. [Emrald]
+WHEN f$ObsStrategy >= 0 AND f$PushFoldStack = 0 RETURN f$ObsStrategy FORCE
+// GAME-TYPE DISPATCH: route Omaha / Omaha-Hi-Lo to their own trees (Strategy\Omaha\ & \Omaha8\). isplo8
+// implies isomaha, so test it first. Falls through to the Hold'em logic below when neither is set. This
+// was present in bot_logic/Strategy/40_preflop.ohf but MISSING from the generated master, so the master's
+// f$preflop (which wins at load) never dispatched -> PLO/PLO8 ran the Hold'em preflop tree on 2 of 4
+// cards and never raised. [Emrald: "I dont see PLO or PLO8 raising at all" -- 2026-06-20]
+WHEN isplo8 RETURN f$preflop_plo8 FORCE
+WHEN isomaha RETURN f$preflop_omaha FORCE
+WHEN f$PushFoldStack RETURN f$preflop_pushfold FORCE
+// 16-25bb fold-equity 3-bet-jam over a single open (re-steal band). [JL][RE]
+WHEN f$ReshoveSpot AND explain_jam RaiseMax FORCE
+WHEN Raises >= 2 RETURN f$preflop_vs_3bet FORCE
+WHEN Raises == 1 RETURN f$preflop_vs_raise FORCE
+WHEN Others RETURN f$preflop_open FORCE
+
+//-----------------------------------------------------------------------------
+//  Unopened / limped pots
+//-----------------------------------------------------------------------------
+
+##f$preflop_open##
+WHEN Calls >= 1 RETURN f$preflop_limped FORCE
+// Truly unopened: open-raise by position. Short stacks tighten to the MP range.
+WHEN f$ShortStack AND NOT listOpenMP Fold FORCE
+// OPENING-RANGE KNOB (tighten): when the Synapse open-range dial is turned DOWN, open only the
+// MP-strength range from every seat (drop the wide late/blind steals). BB still checks. Inert at
+// the neutral / wide settings. [Emrald open-range knob]
+WHEN f$OpenTightenHard AND NOT InBigBlind AND NOT listOpenMP AND explain_fold_pre Fold FORCE
+// Heads-up: the button/SB opens very wide at a minraise. [HUM][HUSNG]
+WHEN f$HeadsUpPot AND InSmallBlind AND listOpenHU AND explain_open RaiseTo f$Open_RaiseTo_HU FORCE
+// EXPLOIT (observationally learned -- observe_learn flagged nits like H1GHJACK / metared): confirmed
+// nitty blinds (f$BlindsAreNitty, via pt_*_smallblind/bigblind) over-fold to opens, so open MUCH wider
+// from the steal seats (listStealNit ~65%). Short stacks already folded their junk above, so this only
+// widens healthy-stack steals; non-nit blinds fall through to the normal positional opens. [N p.30]
+WHEN (InButton OR InCutOff) AND f$BlindsAreNitty AND listStealNit AND explain_open RaiseTo f$Open_RaiseTo FORCE
+WHEN InSmallBlind AND f$BlindsAreNitty AND listStealNit AND explain_open RaiseTo f$Open_RaiseTo FORCE
+// OPENING-RANGE KNOB (widen): when the Synapse open-range dial is turned UP, open the wide ~65%
+// steal list from any late seat / the SB regardless of the blinds' tendency. Inert at neutral /
+// tight. [Emrald open-range knob]
+WHEN f$OpenWiden AND (InButton OR InCutOff OR InLatePosition) AND listStealNit AND explain_open RaiseTo f$Open_RaiseTo FORCE
+WHEN f$OpenWiden AND InSmallBlind AND listStealNit AND explain_open RaiseTo f$Open_RaiseTo FORCE
+// 6-max: tighter early/middle than the full-ring-shared lists. [RF][V6]
+WHEN f$Is6Max AND InEarlyPosition AND listOpenEP6 RaiseTo f$Open_RaiseTo FORCE
+WHEN f$Is6Max AND InMiddlePosition AND listOpenMP6 RaiseTo f$Open_RaiseTo FORCE
+WHEN InEarlyPosition AND listOpenEP RaiseTo f$Open_RaiseTo FORCE
+WHEN InMiddlePosition AND listOpenMP RaiseTo f$Open_RaiseTo FORCE
+WHEN (InLatePosition OR InCutOff) AND listOpenLP RaiseTo f$Open_RaiseTo FORCE
+WHEN InButton AND listOpenBTN AND explain_open RaiseTo f$Open_RaiseTo FORCE
+WHEN InSmallBlind AND listOpenSB RaiseTo f$Open_RaiseTo FORCE
+WHEN InBigBlind Check FORCE
+WHEN explain_fold_pre Fold FORCE
+
+##f$preflop_limped##
+// Limpers (1bb bettors) in front: PUNISH the limp with a ~5bb iso-raise (f$Iso_RaiseTo,
+// +1bb per extra limper) using the positional OPEN ranges -- this RAISES KJ/broadway-type
+// hands (e.g. KdJd) instead of flatting them. Speculative hands set-mine cheaply; trash
+// folds. [N p.24][B]
+// OVER-LIMP (Emrald): occasionally just LIMP behind the limpers instead of always iso-raising -- balances
+// our limped range and buys a cheap multiway flop to stack them when we connect. Speculative set-mine hands
+// at LOW frequency (~9%) so we still mostly punish. [Emrald: sometimes limp in with the limpers, not often]
+WHEN listSetMine AND randomround < 0.09 Call FORCE
+// Small suited connectors: limp them in behind the limpers WHENEVER the depth gives implied odds (they flop
+// big draws / two-pair+ multiway and are cheap to see a flop with). [Emrald: limp small SCs when you can]
+WHEN listSmallSuitedConnectors AND f$SetMineOK Call FORCE
+// ACE-RAG: limp weak aces in cheaply (when the depth gives implied odds) instead of iso-raising, and SET the
+// ace-rag memory flag so the flop knows to play the passive pot-control line. [Emrald: limp ace rag when you can]
+WHEN listAceRag AND f$SetMineOK AND me_st_acerag_1 Call FORCE
+WHEN (listBigPair OR list3betValue) AND explain_iso RaiseTo f$Iso_RaiseTo FORCE
+WHEN InEarlyPosition AND listOpenEP AND explain_iso RaiseTo f$Iso_RaiseTo FORCE
+WHEN InMiddlePosition AND listOpenMP AND explain_iso RaiseTo f$Iso_RaiseTo FORCE
+WHEN (InLatePosition OR InCutOff OR InButton) AND listOpenLP AND explain_iso RaiseTo f$Iso_RaiseTo FORCE
+WHEN InSmallBlind AND listOpenMP AND explain_iso RaiseTo f$Iso_RaiseTo FORCE
+WHEN f$DeepStack AND listSetMine Call FORCE
+WHEN InBigBlind Check FORCE
+WHEN explain_fold_pre Fold FORCE
+
+//-----------------------------------------------------------------------------
+//  Facing a single open raise
+//-----------------------------------------------------------------------------
+
+##f$preflop_vs_raise##
+// Vs a player who 3-bets light, just FLAT the premiums and outplay him. [N p.22]
+WHEN list3betValue AND f$Opp_ThreeBetsLight AND listCall3bet Call FORCE
+// CtM: vs a NIT'S open, FLAT the big pairs / big aces (in position or at a price)
+// instead of 3-betting. A nit's opening range is so tight it crushes JJ/AK, so bloating
+// the pot only folds out everything we beat and gets it in behind. Flat and set-mine /
+// outplay rather than 3-bet into his nut-weighted range. [CtM p96 "vs a nit opening EP,
+// calling is often best with big aces/pairs"; p106 "a nit opens EP -> flat call"]
+WHEN list3betValue AND f$Opp_IsNit AND (f$InPositionPre OR f$DecentPrice) AND listCall3bet Call FORCE
+// 3-bet for value.
+WHEN list3betValue AND explain_3bet_value RaiseTo f$ThreeBet_RaiseTo FORCE
+// SQUEEZE: a raise WITH cold-caller(s) in front -> 3-bet to isolate with a value range.
+// Flatting OOP in the blinds doesn't even close the action (BB acts behind the SB), so a
+// strong broadway like AJo must squeeze rather than fold/flat multiway. [N p.26]
+WHEN Calls >= 1 AND listSqueeze AND explain_3bet_value RaiseTo f$ThreeBet_RaiseTo FORCE
+// 3-bet bluff in position at an opponent-typed frequency (f$ThreeBetBluffFreq returns 0
+// vs stations/light-3bettors, high vs nits/foldy). [ER p7][LTBR p11][N p.26]
+WHEN list3betBluff AND f$InPositionPre AND randomround < f$ThreeBetBluffFreq RaiseTo f$ThreeBet_RaiseTo FORCE
+// Heads-up big-blind defence: flat WIDE vs a single SB open (don't over-fold). [HUSNG p27]
+WHEN InBigBlind AND f$HeadsUpPot AND listDefendHU AND explain_bbdefend Call FORCE
+// Flat to set-mine / play suited hands, in position or getting a price.
+WHEN listCallOpen AND f$InPositionPre AND explain_flat_ip Call FORCE
+WHEN listSetMine AND f$DeepStack AND f$SetMineOK AND explain_call_setmine Call FORCE
+// Big-blind defence: defend a price with playable hands.
+WHEN InBigBlind AND listCallOpen AND explain_bbdefend Call FORCE
+WHEN InBigBlind AND f$DecentPrice AND listOpenLP Call FORCE
+WHEN explain_fold_pre Fold FORCE
+
+//-----------------------------------------------------------------------------
+//  Facing a 3-bet or more (we usually opened)
+//-----------------------------------------------------------------------------
+
+##f$preflop_vs_3bet##
+// 4-bet for value.
+WHEN list4betValue RaiseTo f$FourBet_RaiseTo FORCE
+// Power-poker: also 4-bet QQ/AK for value vs a 3-bet. [B]
+WHEN f$Style == 1 AND list4betValuePower RaiseTo f$FourBet_RaiseTo FORCE
+// CtM: at full-ring micros, a 3-bet from a NIT or a PASSIVE player is nut-weighted -
+// fold even QQ/JJ/AK a lot (they don't 3-bet light). We have already 4-bet AA/KK above,
+// so this folds the next tier down rather than flatting it into a crushing range. The
+// general-opponent IP flat below is preserved for the wider/unknown 3-bettors. [CtM p107
+// "you should be folding a lot when 3bet, esp OOP"; p109 "fold QQ/JJ/AK to a 4bet/nit"]
+WHEN NOT list4betValue AND (f$Opp_IsNit OR f$Opp_IsPassive) AND explain_fold_pre Fold FORCE
+// Flat the 3-bet in position (or cheaply) and outplay post-flop. [N p.28]
+WHEN listCall3bet AND f$InPositionPre Call FORCE
+WHEN listCall3bet AND f$DecentPrice Call FORCE
+// Deep speculative set-mine vs a 3-bet only when it risks <= ~10% of stack. [N p.29-30]
+WHEN listSetMine AND f$DeepStack AND f$WithinSpecRisk AND explain_call_setmine Call FORCE
+WHEN explain_fold_pre Fold FORCE
+
+//-----------------------------------------------------------------------------
+//  Push / fold (effective stack <= ~15bb, or M<=5) - see f$PushFoldStack
+//-----------------------------------------------------------------------------
+
+##f$preflop_pushfold##
+// Facing a 3-bet+ (multiway / lots in): tighten to the get-it-in tier.
+WHEN Raises >= 2 AND (listBigPair OR list3betValue) AND explain_jam RaiseMax FORCE
+WHEN Raises >= 2 AND explain_fold_pre Fold FORCE
+// Facing a SINGLE raise/shove: get it in by ICM. Premiums never fold; otherwise call/
+// re-jam when the ICM model says getting it in is $-correct (f$ICM_CallShove), with the
+// wide chip-EV list as a floor so we still jam the standard get-it-in tier when ICM is
+// borderline. Re-jam over a non-allin raise; calls an allin. [ICM + N p.34]
+WHEN Raises == 1 AND list3betValue AND explain_callshove RaiseMax FORCE
+WHEN Raises == 1 AND f$ICM_CallShove AND explain_callshove RaiseMax FORCE
+// ON THE BUBBLE (f$Stage = 2): survival has $-value, so the call-shove boundary tightens to
+// the ~top-10% listCallShoveBubble and the wide chip-EV floor is SUPPRESSED (it must not
+// re-widen past the ICM-tightened gate above). Inert until a real payout curve is scraped
+// (f$NearBubble -> f$Stage 2 stays false today), exactly like f$BubbleTighten. [SoS p61][SNG]
+WHEN Raises == 1 AND f$Stage = 2 AND listCallShoveBubble AND explain_callshove RaiseMax FORCE
+WHEN Raises == 1 AND f$Stage = 2 AND explain_fold_pre Fold FORCE
+WHEN Raises == 1 AND listCallShove AND explain_callshove RaiseMax FORCE
+WHEN Raises == 1 AND explain_fold_pre Fold FORCE
+// First in: jam a near-Nash, position-scaled range (very wide late). Folding strong
+// broadways at <=15bb is the leak that blinds you out.
+WHEN (InButton OR InCutOff OR InLatePosition OR InSmallBlind) AND listJamLP AND explain_pushfold RaiseMax FORCE
+WHEN InMiddlePosition AND listJamMP AND explain_jam RaiseMax FORCE
+WHEN InEarlyPosition AND listJamEP AND explain_jam RaiseMax FORCE
+WHEN InBigBlind Check FORCE
+WHEN explain_fold_pre Fold FORCE
+
+//*****************************************************************************
+//  50_flop - flop play.  "The flop is practically the whole game." [B R5.1]
+//  Dispatch by whether there is a bet to us.
+//*****************************************************************************
+
+##f$flop##
+// @anchor: flop (id 2)
+// Scrape safety gate: CHECK if free on a hard-flagged mis-scrape; do NOT auto-fold
+// (folding a made hand on a transient bad frame is worse). Facing a bet, fall through.
+WHEN validator_ok = 0 AND AmountToCall = 0 Check FORCE
+WHEN openai_action > -1000 RETURN openai_action FORCE
+WHEN AmountToCall == 0 RETURN f$flop_nobet FORCE
+WHEN Others RETURN f$flop_vs_bet FORCE
+
+//-----------------------------------------------------------------------------
+//  No bet to us: value-bet / c-bet / semi-bluff, else check.
+//-----------------------------------------------------------------------------
+
+##f$flop_nobet##
+// Value & protection with strong made hands (bigger on wet boards - see f$BetPctFlop).
+// EXTRACTION is the heart of crushing the micros: "flop a set, hit the pot button" -
+// NEVER win a small pot with a big hand; fastplay (no slowplay below quads). Size UP for
+// value (pot / even overbet) vs ANY of the passive calling types - station, fish AND SLP -
+// they pay on their own hand strength and read a big bet as a bluff. Never attack their
+// strength by bluffing; make the money by value-betting BIG. [CtM p193 "extraction - the
+// heart of it all"; p147,149 value big vs stations; p169 barrel SLPs/fish; p211 "fish view
+// big bets as a bluff"][SunTzu IV "first make yourself invincible"][48L L15 "crush the weak"]
+// SLOW-PLAY (Emrald): sometimes TRAP a monster instead of fastplaying it. ~22% of the time, in position +
+// heads-up + checked to us, holding a BIG made hand (straight/flush/boat/quads) vs a NON-passive opp
+// (stations/fish pay anyway -> keep value-betting them), CHECK to induce a bluff and SET the slow-play
+// memory flag (me_st_slowplay_1 stores 1 + returns 1, only when every prior condition holds) so the later
+// streets keep the trap on. [Emrald: slow-play nut/strong hands via a memory symbol]
+WHEN (f$HaveBigMade OR HaveSet) AND f$InPositionPost AND f$HeadsUpPot AND NOT f$Opp_IsStation AND NOT f$Opp_IsFish AND randomhand < 0.30 AND me_st_slowplay_1 RETURN Check FORCE
+// ACE-RAG PASSIVE (Emrald): we limped a weak ace and CAUGHT one (top pair, weak kicker). Do NOT bet/raise
+// it -- pot-control. Only the big-hand lines below (two pair / set / big draw = lots of outs) get to bet.
+// [Emrald: catch an ace -> don't raise; only raise w/ lots of outs or two pair]
+WHEN me_re_acerag = 1 AND HaveTopPair AND NOT f$HaveBigDraw AND NOT f$HaveComboDraw RETURN Check FORCE
+WHEN f$HaveStrongMade AND (f$Opp_IsStation OR f$Opp_IsFish OR f$Opp_IsSLP) AND explain_value_flop RaiseBy f$BetPctVsStation % FORCE
+WHEN f$HaveStrongMade AND explain_value_flop RaiseBy f$BetPctFlop % FORCE
+// SUPERSTITION (666 Card Oracle): when the Beast favors, fire EVERY draw as a semibluff.
+// sb_beastfavor is 0 unless card_oracle.py --superstition is feeding the omen -> inert when off.
+WHEN (f$HaveWeakDraw OR f$HaveBigDraw OR f$HaveComboDraw) AND sb_beastfavor >= 0.66 RaiseBy f$BetPctFlop % FORCE
+// Semi-bluff strong & combo draws - two ways to win. [B D6]
+WHEN f$HaveComboDraw AND explain_semibluff RaiseBy f$BetPctFlop % FORCE
+// DRAW MIX (Emrald): a bare big draw (4 to a straight/flush) doesn't ALWAYS want to raise -- ~58% semi-bluff,
+// else just take the free card / call at a price below. Keeps us from blasting every draw face-up.
+// [Emrald: four to a straight/flush with outs -- not always a raise]
+WHEN f$HaveBigDraw AND NOT f$Opp_IsStation AND randomround < 0.58 RaiseBy f$BetPctFlop % FORCE
+// RHYTHM (Emrald 2026-06-20): in position as the flat-caller (NOT the pre-flop raiser), the play is
+// usually to CHECK BACK to the raiser - take the free card and see the turn / their next action to
+// gather information before committing. Strong made hands (value, above) and big/combo-draw
+// semibluffs (above) still fire; this governs the marginal one-pair / air spots in position so we
+// act on information, not ahead of it. [info before action; pot control; delayed decision]
+WHEN f$InPositionPost AND f$HeadsUpPot AND NOT f$WasPreflopRaiser AND NOT f$HaveStrongMade Check FORCE
+// RHYTHM (12_aggressor): when an opponent holds the initiative and I act BEFORE him
+// (out of position vs the aggressor), do NOT lead a marginal hand into him - CHECK and
+// let HIM do the betting, then call with the good-but-not-monster hands. Strong made
+// (value, above) and big/combo draws (semibluff, above) still fired; this governs the
+// one-pair / weak spots so I act on his information, not ahead of it. [CtM p59 OOP play
+// blind; p168 pot-control / check OOP][Tao ch.78 "the soft and yielding overcomes"]
+WHEN f$ActBeforeAggressor AND NOT f$HaveStrongMade AND NOT f$HaveBigDraw AND NOT f$HaveComboDraw Check FORCE
+// One pair: bet to protect on wet boards or for thin value vs a station; as the
+// pre-flop raiser take the small pot now; otherwise pot-control. [N p.125]
+WHEN f$HaveOnePair AND f$BoardWet RaiseBy f$BetPctFlop % FORCE
+WHEN f$HaveOnePair AND f$Opp_IsStation RaiseBy f$BetPctFlop % FORCE
+WHEN f$HaveOnePair AND f$WasPreflopRaiser RaiseBy f$BetPctFlop % FORCE
+// Continuation-bet with air as the pre-flop raiser. Skip scary boards & stations;
+// bias to heads-up / foldy opponents; frequency set by style. [B R1.3][N ~60%]
+WHEN f$WasPreflopRaiser AND f$ScaryBoard Check FORCE
+WHEN f$WasPreflopRaiser AND f$Opp_IsStation Check FORCE
+// Gordon high-card read: a J/T-high DRY flop HITS a flat-caller's broadway-heavy
+// range - don't bluff-c-bet it; check the air. (K/A/Q-high dry "foldy" boards and
+// low "parched" boards keep firing below at f$CbetFreq.) [GG bluff-c-bet boards]
+WHEN f$WasPreflopRaiser AND f$BoardHighCardSticky Check FORCE
+WHEN f$WasPreflopRaiser AND f$HeadsUpPot AND randomround < f$CbetFreq AND explain_cbet RaiseBy f$BetPctFlop % FORCE
+WHEN f$WasPreflopRaiser AND f$Opp_Foldy AND randomround < f$CbetFreq RaiseBy f$BetPctFlop % FORCE
+// SHORT-STACK PRESSURE (Emrald): vs a SHORT-STACKED opponent who is likely on air (foldy), apply MORE
+// pressure than a normal c-bet -- a short stack can't call light, so a bet folds them right out of the
+// hand. Higher frequency, heads-up. [Emrald: pressure little stacks when they likely have nothing]
+WHEN f$ShortStack AND f$Opp_Foldy AND f$HeadsUpPot AND randomround < 0.70 RaiseBy f$BetPctFlop % FORCE
+// In-position stab to set up a turn take-away with a weak draw. [N float doctrine]
+WHEN f$InPositionPost AND f$HeadsUpPot AND f$HaveWeakDraw AND randomround < 0.50 RaiseBy f$BetPctFlop % FORCE
+// FEELER (12_aggressor): rather than checking blind with a marginal made hand, fire a SMALL
+// controlled bet (f$FeelerSize - as large as possible while still controlling the pot) to gather
+// information and keep the pot manageable. Only IP or with the initiative (never OOP into the
+// aggressor - that stays a check above). The villain's response feeds f$OppRepresents next street.
+// [Emrald feeler/information-bet system]
+WHEN f$FeelerBet RaiseBy f$FeelerSize % FORCE
+// One pair that did not bet above (not wet / not vs a station / not the PFR): keep the
+// pot small and get to showdown cheaply - don't go broke with one pair. [N p.125]
+WHEN f$HaveOnePair AND explain_potcontrol Check FORCE
+WHEN Others Check FORCE
+
+//-----------------------------------------------------------------------------
+//  Facing a bet on the flop.
+//-----------------------------------------------------------------------------
+
+##f$flop_vs_bet##
+// Value-raise the big made hands (charge draws; build the pot). [B R5.5]
+WHEN f$HaveBigMade RaiseBy f$BetPctFlop % FORCE
+WHEN HaveSet OR HaveTwoPair RaiseBy f$BetPctFlop % FORCE
+// ACE-RAG PASSIVE vs a bet (Emrald): top pair / weak kicker -> CALL only a little bet (cheap to improve or
+// reach showdown), FOLD to anything bigger. Two pair+/sets already raised above; a big draw (lots of outs)
+// falls through to the draw lines. [Emrald: call little bets to improve / get to showdown cheaply]
+WHEN me_re_acerag = 1 AND HaveTopPair AND NOT f$HaveBigDraw AND NOT f$HaveComboDraw AND f$SmallBet RETURN Call FORCE
+WHEN me_re_acerag = 1 AND HaveTopPair AND NOT f$HaveBigDraw AND NOT f$HaveComboDraw RETURN Fold FORCE
+// Low SPR (committed): get top pair / overpair all-in rather than pot-controlling.
+// This is the LOW-SPR branch of "don't go broke with one pair" - at high SPR the
+// peel/pot-control lines below still apply (NOT f$Committed). [SSNL SPR sidebar]
+WHEN (HaveOverPair OR HaveTopPair OR f$HaveStrongMade) AND f$Committed RaiseMax FORCE
+// Combo draw -> get it all in (two ways to win). [B D6.6]
+WHEN f$HaveComboDraw RaiseMax FORCE
+// Brunson plays big draws fast even facing a bet; otherwise call at a price.
+WHEN f$HaveBigDraw AND f$Style = 1 RaiseBy f$BetPctFlop % FORCE
+WHEN f$HaveBigDraw AND f$CheapDraw Call FORCE
+WHEN f$HaveBigDraw AND f$DecentPrice AND f$InPositionPost Call FORCE
+// FISHING (Emrald): when the price is RIGHT and LOW (a small bet, <=1/3 pot / >=3:1) and we hold ANY draw
+// -- weak ones too, not just the big draws above -- a cheap flat call to see if we improve beats folding.
+// Implied-odds speculation; f$SmallBet keeps it to genuinely cheap spots. [Emrald: flat call cheap to improve]
+WHEN f$SmallBet AND f$HaveAnyDraw Call FORCE
+// INTROSPECTION (exploit precedence, confident read only): vs a villain who OVER-FOLDS / gives up the
+// lead, raise our one pair / draw to push him off it; vs a STEAMING / sticky-firing villain, PEEL our
+// one pair rather than fold (he is bluffing the flop far more than his story suggests).
+WHEN (f$HaveOnePair OR f$HaveBigDraw) AND (f$Exploit_Overfold OR f$Exploit_GivesUp) RaiseBy f$BetPctFlop % FORCE
+WHEN f$HaveOnePair AND (f$Exploit_Tilt OR f$Exploit_KeepsFiring) AND f$DecentPrice Call FORCE
+// STORY (12_aggressor / CtM): RESPECT a credible nut-weighted line. A flop raise
+// (especially a check-raise) from a passive/nit micro villain represents top pair
+// or better the large majority of the time; folding a bare one pair here is the
+// standard, NOT a leak. [CtM p153-155 "when you get raised on the flop fold the
+// majority, esp OOP - passive players raising = strength"; p202 facing aggression]
+WHEN f$HaveOnePair AND NOT f$Committed AND f$OppStoryStrong AND explain_fold_pre Fold FORCE
+WHEN f$HaveOnePair AND NOT f$Committed AND f$Opp_NutsyRaise Fold FORCE
+// Timing tell: a tanked bet is usually strength -> release a bare one pair. [Caro]
+WHEN f$HaveOnePair AND f$TimingSaysStrong AND explain_fold_tank Fold FORCE
+// ATTACK a capped/weak line (12_aggressor): a min/probe lead or a station/fish
+// "betting nothing" caps the range hard - RAISE wide IP for value/fold-equity
+// rather than just calling, especially with any equity. NOT vs a station/fish off
+// a hand (no fold equity) - f$OppStoryCapped already excludes the strong line.
+// [CtM p150 "donked into - raise liberally with a wide range, esp IP"; p220 raise good draws]
+WHEN f$InPositionPost AND f$HeadsUpPot AND f$OppStoryCapped AND (f$HaveOnePair OR f$HaveAnyDraw) AND NOT f$Opp_PotCommitted RaiseBy f$BetPctFlop % FORCE
+// Peel one pair at a reasonable price - but never go broke with it. [N p.125]
+WHEN f$HaveOnePair AND f$DecentPrice Call FORCE
+// Timing tell: a snap bet leans weak -> peel one pair a bit wider. [Caro]
+WHEN f$HaveOnePair AND f$TimingSaysWeak AND AmountToCall <= PotSize AND explain_float_snap Call FORCE
+// Weak draws only at a cheap price.
+WHEN f$HaveWeakDraw AND f$CheapDraw Call FORCE
+// Float a single c-bet-happy (or snap-betting) opponent in position with equity.
+WHEN f$InPositionPost AND f$HeadsUpPot AND f$Opp_IsAggro AND prwin > 0.40 AND f$CheapDraw Call FORCE
+WHEN f$InPositionPost AND f$HeadsUpPot AND f$TimingSaysWeak AND f$DecentPrice Call FORCE
+// SUPERSTITION (666 Card Oracle): the Beast favors -> CHASE the draw regardless of price.
+// Strong omen semibluff-raises; lesser omen just calls. Inert when sb_beastfavor = 0 (off).
+WHEN (f$HaveBigDraw OR f$HaveComboDraw) AND sb_beastfavor >= 0.80 RaiseBy f$BetPctFlop % FORCE
+WHEN (f$HaveBigDraw OR f$HaveComboDraw OR f$HaveWeakDraw) AND sb_beastfavor >= 0.50 Call FORCE
+// CHEAP CALL (12_aggressor): a SMALL bet into me is worth calling with any showdown value or
+// draw - the price beats their capped small-betting range even if I might be behind. Excludes a
+// credible nut story (built into f$WorthCallingSmall). [Emrald "if the bet is small, call"]
+WHEN f$WorthCallingSmall Call FORCE
+WHEN Others Fold FORCE
+
+//*****************************************************************************
+//  60_turn - turn play.  The street where small ball "takes the pot away",
+//  and where one-pair hands slow down to keep the pot small. [N pp.75-130]
+//*****************************************************************************
+
+##f$turn##
+// @anchor: turn (id 3)
+// Scrape safety gate: CHECK if free on a hard-flagged mis-scrape; do NOT auto-fold
+// (folding a made hand on a transient bad frame is worse). Facing a bet, fall through.
+WHEN validator_ok = 0 AND AmountToCall = 0 Check FORCE
+WHEN openai_action > -1000 RETURN openai_action FORCE
+WHEN AmountToCall == 0 RETURN f$turn_nobet FORCE
+WHEN Others RETURN f$turn_vs_bet FORCE
+
+//-----------------------------------------------------------------------------
+//  No bet to us.
+//-----------------------------------------------------------------------------
+
+##f$turn_nobet##
+// Value with strong made hands. Vs ANY passive calling type - station, fish, SLP -
+// size UP (pot/overbet) for value: they pay on their own hand - exactly as on the
+// flop. EXTRACTION: bet, bet, shop the strong hands; carry the value-big plan across
+// every street so it stays coherent. [CtM p147,149 value big; p193 extraction; p171
+// barrel two-pair+ for stacks; p169 barrel SLPs/fish]
+// SLOW-PLAY CONTINUE (Emrald): if we flagged a slow-play on the flop (me_re_slowplay = 1) and it's STILL
+// checked to us with the monster intact, check the turn once more to keep the trap baited. The river then
+// value-bets normally; if they bet the turn instead, we fall through to the lines below and spring it. [Emrald]
+WHEN me_re_slowplay = 1 AND (f$HaveBigMade OR HaveSet) RETURN Check FORCE
+// ACE-RAG PASSIVE CONTINUE (Emrald): still pot-controlling our weak top-pair ace -> check the turn too.
+WHEN me_re_acerag = 1 AND HaveTopPair AND NOT f$HaveBigDraw AND NOT f$HaveComboDraw RETURN Check FORCE
+WHEN f$HaveStrongMade AND (f$Opp_IsStation OR f$Opp_IsFish OR f$Opp_IsSLP) RaiseBy f$BetPctVsStation % FORCE
+WHEN f$HaveStrongMade RaiseBy f$BetPctTurn % FORCE
+// SUPERSTITION (666 Card Oracle): the Beast favors -> fire EVERY draw as a semibluff. Inert when off.
+WHEN (f$HaveWeakDraw OR f$HaveBigDraw OR f$HaveComboDraw) AND sb_beastfavor >= 0.66 RaiseBy f$BetPctTurn % FORCE
+// Keep semi-bluffing strong / combo draws.
+WHEN f$HaveComboDraw RaiseBy f$BetPctTurn % FORCE
+WHEN f$HaveBigDraw AND (f$Style = 1 OR f$InPositionPost) AND NOT f$Opp_IsStation RaiseBy f$BetPctTurn % FORCE
+// Float-the-turn take-away: in position, we called the flop, now checked to,
+// vs a non-station. [N pp.75-78]
+WHEN f$InPositionPost AND f$HeadsUpPot AND BotCalledOnFlop AND NOT f$Opp_IsStation AND randomround < 0.70 RaiseBy f$BetPctTurn % FORCE
+// Double-barrel: the turn is an under-bet street. Fire vs reg/foldy types (never
+// stations/fish) on scary/dry boards that miss villain's peeling range. [EG][ER][LTBR][ASH]
+WHEN f$DoubleBarrel AND randomround < 0.62 RaiseBy f$BetPctTurn % FORCE
+// RHYTHM (12_aggressor): when an opponent holds the initiative and I act before him,
+// do NOT lead a marginal hand into the aggressor on the turn - check and let him bet,
+// then bluff-catch the good ones at a price (handled in turn_vs_bet). Strong made fired
+// above. [CtM p166-168 give up / pot-control OOP][Tao ch.78 yielding]
+WHEN f$ActBeforeAggressor AND NOT f$HaveStrongMade AND NOT f$HaveBigDraw AND NOT f$HaveComboDraw Check FORCE
+// One pair: thin value vs a station/SLP/fish; power-style barrels heads-up; else POT
+// CONTROL (check). Don't bother thin-value-barrelling regs - they won't call worse. [N][CtM p169]
+WHEN f$HaveOnePair AND (f$Opp_IsStation OR f$Opp_IsSLP OR f$Opp_IsFish) RaiseBy f$BetPctTurn % FORCE
+WHEN f$HaveOnePair AND f$Style = 1 AND f$HeadsUpPot RaiseBy f$BetPctTurn % FORCE
+// FEELER (12_aggressor): instead of checking blind with a marginal made hand, fire a small
+// controlled bet (f$FeelerSize) to learn where I stand + control the pot - IP or with the lead
+// only. The response is read by f$OppRepresents on the river. [Emrald feeler system]
+WHEN f$FeelerBet RaiseBy f$FeelerSize % FORCE
+WHEN Others Check FORCE
+
+//-----------------------------------------------------------------------------
+//  Facing a bet on the turn.
+//-----------------------------------------------------------------------------
+
+##f$turn_vs_bet##
+WHEN f$HaveBigMade RaiseBy f$BetPctTurn % FORCE
+WHEN HaveSet OR HaveTwoPair RaiseBy f$BetPctTurn % FORCE
+// ACE-RAG PASSIVE vs a turn bet (Emrald): weak top pair -> call only a little bet (cheap to showdown),
+// fold to anything bigger. [Emrald: call little bets to improve / get to showdown cheaply]
+WHEN me_re_acerag = 1 AND HaveTopPair AND NOT f$HaveBigDraw AND NOT f$HaveComboDraw AND f$SmallBet RETURN Call FORCE
+WHEN me_re_acerag = 1 AND HaveTopPair AND NOT f$HaveBigDraw AND NOT f$HaveComboDraw RETURN Fold FORCE
+// Low SPR (committed): get top pair / overpair all-in rather than pot-controlling.
+// Mirrors the flop's commitment branch - the pot only grew, so a hand committed on the
+// flop is still committed here; honor it BEFORE the "never go broke" pot-control lines
+// below (which apply only at high SPR, NOT f$Committed) so a committed overpair is not
+// folded to a passive turn bet. [SSNL SPR sidebar][PNL p182-186]
+WHEN (HaveOverPair OR HaveTopPair OR f$HaveStrongMade) AND f$Committed RaiseMax FORCE
+// Combo draw -> get it in.
+WHEN f$HaveComboDraw RaiseMax FORCE
+// Big draws: continue at a price; in position can peel a bit wider.
+WHEN f$HaveBigDraw AND f$CheapDraw Call FORCE
+WHEN f$HaveBigDraw AND f$DecentPrice AND f$InPositionPost Call FORCE
+// INTROSPECTION (exploit precedence, confident read only): attack the OVER-FOLDER / give-upper with our
+// one pair / draw; PEEL our one pair vs a STEAMING / sticky-firing villain instead of folding.
+WHEN (f$HaveOnePair OR f$HaveBigDraw) AND (f$Exploit_Overfold OR f$Exploit_GivesUp) RaiseBy f$BetPctTurn % FORCE
+WHEN f$HaveOnePair AND (f$Exploit_Tilt OR f$Exploit_KeepsFiring) AND f$DecentPrice Call FORCE
+// STORY (12_aggressor / CtM): a TURN raise or lead-into is "usually the nuts" (two
+// pair+) at the micros - passive players don't turn a hand into a bluff here. Once we
+// are NOT committed (the get-it-in branch above already fired the truly committed
+// hands), fold even an overpair / top pair a fair bit of the time to a credible
+// turn-aggression story. Don't pay it off, don't bluff-raise it. [CtM p172 "fold to
+// turn raises/leads without a strong hand vs all types"; p202-203 fold overpair vs nits;
+// p216 "turn raises are usually the nuts"]
+WHEN (f$HaveOnePair OR HaveOverPair OR HaveTopPair) AND NOT f$Committed AND f$Opp_NutsyRaise Fold FORCE
+WHEN (f$HaveOnePair OR HaveOverPair OR HaveTopPair) AND NOT f$Committed AND f$OppStoryStrong AND (f$Opp_IsNit OR f$Opp_IsPassive) Fold FORCE
+// Timing tell: a tanked turn bet is usually strength -> release a bare one pair. [Caro]
+WHEN f$HaveOnePair AND f$TimingSaysStrong Fold FORCE
+// ATTACK a capped/weak turn line (a min/probe lead or a checked-prior-street stab):
+// bluff-catch one pair wider at a price - and never vs a pot-committed villain. [CtM
+// p210-211 probe bets are weak; p162 delayed/floated lines are capped]
+WHEN f$HaveOnePair AND f$OppStoryCapped AND f$DecentPrice AND NOT f$Opp_PotCommitted Call FORCE
+// One pair: call as a bluff-catcher only at a price vs non-passive players; never
+// stack off. [N "don't go broke with one pair"]
+WHEN f$HaveOnePair AND f$Opp_IsAggro AND f$DecentPrice Call FORCE
+WHEN f$HaveOnePair AND NOT f$Opp_IsPassive AND f$CheapDraw Call FORCE
+// Timing tell: a snap turn bet leans weak -> bluff-catch one pair a bit wider. [Caro]
+WHEN f$HaveOnePair AND f$TimingSaysWeak AND f$DecentPrice Call FORCE
+// SUPERSTITION (666 Card Oracle): the Beast favors -> CHASE the draw regardless of price. Inert when off.
+WHEN (f$HaveBigDraw OR f$HaveComboDraw) AND sb_beastfavor >= 0.80 RaiseBy f$BetPctTurn % FORCE
+WHEN (f$HaveBigDraw OR f$HaveComboDraw OR f$HaveWeakDraw) AND sb_beastfavor >= 0.50 Call FORCE
+// CHEAP CALL (12_aggressor): a small turn bet is worth calling with showdown value/draw - the
+// price beats their capped small-betting range, excluding a credible nut story. [Emrald]
+WHEN f$WorthCallingSmall Call FORCE
+WHEN Others Fold FORCE
+
+//*****************************************************************************
+//  70_river - river play.  No draws left: made-hand value + bluff-catching.
+//  Negreanu keeps the bluff frequency LOW (a wild image gets you called); size
+//  every bet by what THIS opponent will call. [N pp.138-160]
+//*****************************************************************************
+
+##f$river##
+// @anchor: river (id 4)
+// Scrape safety gate: CHECK if free on a hard-flagged mis-scrape; do NOT auto-fold
+// (folding a made hand on a transient bad frame is worse). Facing a bet, fall through.
+WHEN validator_ok = 0 AND AmountToCall = 0 Check FORCE
+WHEN openai_action > -1000 RETURN openai_action FORCE
+WHEN AmountToCall == 0 RETURN f$river_nobet FORCE
+WHEN Others RETURN f$river_vs_bet FORCE
+
+//-----------------------------------------------------------------------------
+//  No bet to us: value-bet / thin value / occasional bluff, else check.
+//-----------------------------------------------------------------------------
+
+##f$river_nobet##
+// Value-bet made hands. Vs ANY passive calling type - station, fish, SLP - size UP
+// (pot/overbet) on the strong made hands: they pay on their own hand - exactly as on
+// the flop/turn, so the value-big plan stays coherent across all three streets. River
+// extraction: bet-bet-SHOVE the monsters, even overbet/jam tiny pots into a fish who
+// fired probing bets (they don't fold two pair+, they won't raise either). [CtM p147,149
+// value big; p193 extraction; p205 overbet-shove monsters into a probing fish]
+WHEN f$HaveBigMade AND (f$Opp_IsStation OR f$Opp_IsFish OR f$Opp_IsSLP) AND explain_value_river RaiseBy f$BetPctVsStation % FORCE
+WHEN (HaveSet OR HaveTwoPair) AND (f$Opp_IsStation OR f$Opp_IsFish OR f$Opp_IsSLP) RaiseBy f$BetPctVsStation % FORCE
+// Value-bet made hands; fuller vs non-passive.
+WHEN f$HaveBigMade AND explain_value_river RaiseBy f$BetPctRiver % FORCE
+WHEN (HaveSet OR HaveTwoPair) AND NOT f$Opp_IsPassive RaiseBy f$BetPctRiver % FORCE
+// Thin value with one pair vs a calling station / SLP / fish - they hero-call worse
+// pairs and ace-high. Don't thin-value one pair vs a reg (won't call worse). [N p.147][CtM p186]
+WHEN f$HaveOnePair AND (f$Opp_IsStation OR f$Opp_IsSLP OR f$Opp_IsFish) RaiseBy f$BetPctRiver % FORCE
+// Power-style value-bets one pair heads-up vs a non-aggressive opponent. [B]
+WHEN f$HaveOnePair AND f$Style = 1 AND f$HeadsUpPot AND NOT f$Opp_IsAggro RaiseBy f$BetPctRiver % FORCE
+// Low-frequency triple-barrel bluff: only as the flop+turn aggressor, busted,
+// heads-up vs a foldy opponent - and NEVER vs a pot-committed/cornered villain who
+// cannot fold (no fold equity). [N low bluff freq][SunTzu VII.36 "golden bridge for a
+// retreating army"][Tao ch.9 "fill to the brim and it spills" -> keep the freq low]
+WHEN f$Opp_PotCommitted Check FORCE
+// RHYTHM (12_aggressor): never lead/bluff into the aggressor when out of position to
+// him - check and decide vs his bet. [CtM p166 give up OOP][Tao yielding]
+WHEN f$ActBeforeAggressor AND NOT f$HaveDecentMade Check FORCE
+WHEN f$WasPreflopRaiser AND BotRaisedOnTurn AND f$HeadsUpPot AND f$Opp_Foldy AND randomround < 0.22 RaiseBy f$BetPctRiver % FORCE
+WHEN Others Check FORCE
+
+//-----------------------------------------------------------------------------
+//  Facing a bet on the river.
+//-----------------------------------------------------------------------------
+
+##f$river_vs_bet##
+// Value-raise the near-nuts vs a non-passive bettor.
+WHEN f$HaveBigMade AND NOT f$Opp_IsPassive RaiseBy f$BetPctRiver % FORCE
+// Pay off with strong made hands (bluff-catch) - but a RIVER RAISE is "always the
+// nuts" at the micros: if our cbet/bet got raised on the river, fold even a strong
+// one-pair / overpair unless it is a tiny fish min-raise. Set/two-pair+ still pay off.
+// [CtM p217 "river raises are ALWAYS the nuts - develop the discipline to fold"]
+WHEN f$Opp_NutsyRaise AND NOT (HaveSet OR HaveTwoPair OR f$HaveBigMade) AND NOT f$Opp_MinBetLead AND explain_fold_pre Fold FORCE
+WHEN f$HaveBigMade Call FORCE
+WHEN (HaveSet OR HaveTwoPair) Call FORCE
+// INTROSPECTION (exploit precedence, confident read only): a STEAMING / sticky-firing villain bluffs
+// the river far more than his story suggests -> bluff-catch one pair WIDER (override the nut-story fold);
+// an HONEST / fast-strong bettor has it -> fold the bluff-catcher.
+WHEN f$HaveOnePair AND (f$Exploit_Tilt OR f$Exploit_KeepsFiring) AND f$DecentPrice Call FORCE
+WHEN f$HaveOnePair AND (f$Exploit_Honest OR f$Exploit_FastStrong) AND NOT f$Opp_MinBetLead Fold FORCE
+// STORY (12_aggressor / CtM): RESPECT a credible nut-weighted river line - a nit /
+// passive player firing represents value ~9/10 times; fold the one-pair bluff-catchers
+// rather than make the "crying call." [CtM p188 "vs a nit calling is a bad idea"; p202]
+WHEN f$HaveOnePair AND f$OppStoryStrong AND NOT f$Opp_MinBetLead Fold FORCE
+// Timing tell: a tanked river bet is usually a value hand -> fold the bluff-catchers. [Caro]
+WHEN f$HaveOnePair AND f$TimingSaysStrong Fold FORCE
+// ATTACK a capped river line: fish & SLPs bluff their MISSED DRAWS small (~1/4 pot) -
+// value-call the top of our showdown range (one pair, or strong ace-high) vs that tiny
+// capped bet. Only at the small price; a reasonable (>=~1/2 pot) bet is value, fold it.
+// [CtM p180 "fish bluff missed draws for a small amount - call ace high"; p211]
+WHEN (f$HaveOnePair OR f$HaveMarginalMade) AND f$OppStoryCapped AND f$Opp_MinBetLead AND (f$Opp_IsFish OR f$Opp_IsSLP OR f$Opp_IsStation) Call FORCE
+// Bluff-catch one pair only vs bluffy players at a price; fold vs passive value. [N]
+WHEN f$HaveOnePair AND f$Opp_IsAggro AND f$DecentPrice AND explain_bluffcatch Call FORCE
+WHEN f$HaveOnePair AND NOT f$Opp_IsPassive AND f$CheapDraw Call FORCE
+// Timing tell: a snap river bet leans weak/bluffy -> bluff-catch one pair wider. [Caro]
+WHEN f$HaveOnePair AND f$TimingSaysWeak AND f$DecentPrice Call FORCE
+// CHEAP CALL (12_aggressor): any SMALL river bet is worth a bluff-catch with showdown value -
+// the price beats their capped small-betting range; excludes a credible nut story. Generalises
+// the fish-min-bet call above to any opponent who underbets the river. [Emrald]
+WHEN f$WorthCallingSmall Call FORCE
+WHEN Others Fold FORCE
+
+//*****************************************************************************
+//  90_table - secondary / hopper functions (table management).
+//*****************************************************************************
+
+##f$sitin##
+// Sit back in whenever we are sitting out. issittingin is true when the Sit-In
+// button is NOT clickable, so we click it only when currently sitting out.
+WHEN NOT issittingin RETURN true FORCE
+
+##f$sitout##
+WHEN Others RETURN false FORCE
+
+##f$leave##
+WHEN Others RETURN false FORCE
+
+##f$rebuy##
+WHEN Others RETURN false FORCE
+

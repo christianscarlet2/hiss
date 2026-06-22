@@ -8,30 +8,41 @@
   </head>
   <body>
     <div id="root"></div>
-    <!-- Red "intriguing" loader shown the instant the React table view opens (before the bundle loads),
-         removed with a fade once React paints into #root. Covers the WebView2 + browser boot. [Emrald] -->
+    <!-- Clever, styled "Scarlet Beast" loader: dual counter-spinning rings, a pulsing spade core, the
+         wordmark, and cycling poker/AI status lines. Matches the boot loader; stays until the ENTIRE table
+         view is rendered WITH data (not just first React mount). [Emrald: clever loader, full-ready] -->
     <div id="hiss-loader" aria-label="loading">
-      <div class="hl-ring"></div>
-      <div class="hl-core"></div>
-      <div class="hl-text">HISS</div>
+      <div class="hl-orb"><div class="hl-ring"></div><div class="hl-ring2"></div><div class="hl-core"></div><div class="hl-suit">&#9824;</div></div>
+      <div class="hl-brand">SCARLET&nbsp;BEAST</div>
+      <div class="hl-msg" id="hl-msg">Waking the Scarlet Beast&hellip;</div>
     </div>
     <style>
-      html,body{margin:0;background:#070304}
+      html,body{margin:0;background:#0a0405}
       #hiss-loader{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;
-        flex-direction:column;background:radial-gradient(circle at 50% 45%,#1a0608 0%,#070304 70%,#000 100%);
-        transition:opacity .45s ease}
+        flex-direction:column;background:radial-gradient(circle at 50% 42%,#220709,#0a0405 65%,#000);
+        font-family:'Segoe UI',system-ui,sans-serif;transition:opacity .45s ease}
       #hiss-loader.hl-gone{opacity:0;pointer-events:none}
-      #hiss-loader .hl-ring{position:absolute;width:120px;height:120px;border-radius:50%;
-        border:3px solid rgba(224,70,85,.14);border-top-color:#e04655;border-right-color:#ff2740;
-        animation:hl-spin .9s linear infinite;box-shadow:0 0 26px rgba(255,39,64,.45),inset 0 0 18px rgba(255,39,64,.22)}
-      #hiss-loader .hl-core{width:46px;height:46px;border-radius:50%;background:radial-gradient(circle,#ff3b4d,#b3071a);
-        box-shadow:0 0 30px 6px rgba(255,40,64,.6);animation:hl-pulse 1.15s ease-in-out infinite}
-      #hiss-loader .hl-text{margin-top:32px;font:800 15px/1 system-ui,Segoe UI,sans-serif;letter-spacing:.55em;
-        color:#ff5566;text-shadow:0 0 14px rgba(255,40,64,.85);animation:hl-flicker 2.4s ease-in-out infinite;padding-left:.55em}
-      @keyframes hl-spin{to{transform:rotate(360deg)}}
-      @keyframes hl-pulse{0%,100%{transform:scale(.82);opacity:.85}50%{transform:scale(1.12);opacity:1}}
-      @keyframes hl-flicker{0%,100%{opacity:.55}45%{opacity:1}55%{opacity:.72}}
+      #hiss-loader .hl-orb{position:relative;width:140px;height:140px;display:flex;align-items:center;justify-content:center}
+      #hiss-loader .hl-ring{position:absolute;inset:0;border-radius:50%;border:3px solid rgba(224,70,85,.12);
+        border-top-color:#ff2740;border-right-color:#e04655;animation:hl-sp 1s linear infinite;box-shadow:0 0 30px rgba(255,39,64,.4)}
+      #hiss-loader .hl-ring2{position:absolute;inset:16px;border-radius:50%;border:2px solid rgba(224,70,85,.10);
+        border-bottom-color:#ff5566;animation:hl-sp 1.6s linear infinite reverse}
+      #hiss-loader .hl-core{width:40px;height:40px;border-radius:50%;background:radial-gradient(circle,#ff3b4d,#9b0718);
+        box-shadow:0 0 34px 8px rgba(255,40,64,.55);animation:hl-pu 1.2s ease-in-out infinite}
+      #hiss-loader .hl-suit{position:absolute;font-size:22px;color:#1a0405;animation:hl-pu 1.2s ease-in-out infinite}
+      #hiss-loader .hl-brand{margin-top:30px;font-weight:800;font-size:16px;letter-spacing:.42em;padding-left:.42em;
+        color:#ff5566;text-shadow:0 0 16px rgba(255,40,64,.8)}
+      #hiss-loader .hl-msg{margin-top:14px;min-height:18px;font-family:Consolas,monospace;font-size:13px;
+        letter-spacing:.08em;color:#c98b96;transition:opacity .25s}
+      @keyframes hl-sp{to{transform:rotate(360deg)}}
+      @keyframes hl-pu{0%,100%{transform:scale(.8);opacity:.85}50%{transform:scale(1.12);opacity:1}}
     </style>
+    <script>
+      (function(){ var M=["Waking the Scarlet Beast…","Shuffling fifty-two truths…","Reading the felt…",
+        "Counting outs and souls…","Tuning the synapses…","Consulting Jasper…","Stacking the odds…",
+        "Sharpening the read…"], i=0, e=document.getElementById('hl-msg');
+        setInterval(function(){ i=(i+1)%M.length; if(e){ e.style.opacity=0; setTimeout(function(){ e.textContent=M[i]; e.style.opacity=1; },250); } },2200); })();
+    </script>
     <!-- Game-type indicator (NLH / PLO / PLO8). Self-contained overlay; reads the cheap, stable
          isomaha/isplo8/ispl symbols (ispl is set whenever the table is detected Omaha, so the badge
          stays correct between hands when isomaha hasn't latched yet). No React-bundle dependency. -->
@@ -97,18 +108,35 @@
     <script src="/table-display/assets/react-dom.production.min.js"></script>
     <script src="/table-display/assets/app.js?v=33"></script>
     <script>
-      // Remove the red loader once React has painted into #root (with an 8s safety so it never traps). [Emrald]
+      // Self-refresh the React table view every 10 minutes to release accumulated WebView2/browser memory.
+      // The red loader re-shows on each reload, so it stays smooth. [Emrald: refresh table view to save memory]
+      setInterval(function(){ try{ location.reload(); }catch(e){} }, 10 * 60 * 1000);
+    </script>
+    <script>
+      // Keep the loader until the ENTIRE table view is READY: (1) React has rendered a real table subtree
+      // into #root (not an empty shell), (2) the backend port is serving real table-state data, and (3) a
+      // short paint-settle has elapsed. Only then fade it out. 15s hard safety so it never traps. [Emrald]
       (function(){
         var L=document.getElementById('hiss-loader'); if(!L) return;
         var root=document.getElementById('root');
-        function gone(){ if(!L) return; L.classList.add('hl-gone');
-          setTimeout(function(){ if(L&&L.parentNode) L.parentNode.removeChild(L); },600); L=null; }
-        function check(){ if(root && root.childElementCount>0){ gone(); return true; } return false; }
-        if(!check()){
-          var obs=new MutationObserver(function(){ if(check()&&obs){ obs.disconnect(); } });
-          try{ obs.observe(root,{childList:true,subtree:true}); }catch(e){}
-          setTimeout(gone,8000);
+        var mounted=false, dataReady=false, settled=false, dead=false;
+        function gone(){ if(dead) return; dead=true; L.classList.add('hl-gone');
+          setTimeout(function(){ if(L&&L.parentNode) L.parentNode.removeChild(L); },600); }
+        function maybe(){ if(mounted && dataReady && settled) gone(); }
+        function checkMount(){ if(root && root.querySelectorAll('*').length > 8){ mounted=true; maybe(); return true; } return false; }
+        function checkData(){ if(dead) return;
+          fetch('/api/table-state',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
+            if(d && (d.handnumber || (d.players && d.players.length))){ dataReady=true; maybe(); }
+            else setTimeout(checkData,500);
+          }).catch(function(){ setTimeout(checkData,800); });
         }
+        if(!checkMount()){
+          var obs=new MutationObserver(function(){ checkMount(); });
+          try{ obs.observe(root,{childList:true,subtree:true}); }catch(e){}
+        }
+        checkData();
+        var iv=setInterval(function(){ if(mounted && dataReady){ clearInterval(iv); setTimeout(function(){ settled=true; maybe(); },500); } if(dead) clearInterval(iv); },150);
+        setTimeout(gone, 15000);
       })();
     </script>
   </body>

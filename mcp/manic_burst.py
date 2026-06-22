@@ -95,8 +95,9 @@ MIN_SAMPLES         = _envi("MANIC_MIN_SAMPLES", 8)        # ignore a seat's HUD
 
 COOLDOWN_SEC        = _envf("MANIC_COOLDOWN_SEC", 1080)    # ~18 min between bursts
 COOLDOWN_JITTER_SEC = _envf("MANIC_COOLDOWN_JITTER_SEC", 300)  # +0..5 min randomness (not clockwork)
-BURST_MIN_SEC       = _envf("MANIC_BURST_MIN_SEC", 180)    # "length of a song" lower bound
-BURST_MAX_SEC       = _envf("MANIC_BURST_MAX_SEC", 240)    # upper bound
+BURST_MIN_SEC       = _envf("MANIC_BURST_MIN_SEC", 360)    # 6 min lower bound [Emrald: 6-9 min burst]
+BURST_MAX_SEC       = _envf("MANIC_BURST_MAX_SEC", 540)    # 9 min upper bound
+AIL_BASE            = os.environ.get("AIL_SERVER_URL", "http://127.0.0.1:7900")
 USE_POWER           = _envb("MANIC_USE_POWER", True)       # also flip f$Style -> power during the burst
 
 # maniac knob targets
@@ -151,6 +152,18 @@ def speak(text):
         subprocess.Popen([LILITH, text], creationflags=0x08000000)
     except Exception as e:
         log("speak failed: %s" % e)
+
+
+def ail_off():
+    """Turn this 'manic' AIL toggle OFF (ail_server :7900) so its indicator shows OFF once the burst is over
+    -- one burst per enable. ail_server marks it disabled and stops the daemon. [Emrald: manic auto-off]"""
+    try:
+        with urllib.request.urlopen(AIL_BASE + "/ail/toggle?name=manic&on=0", timeout=5) as r:
+            r.read()
+        return True
+    except Exception as e:
+        log("ail_off failed: %s" % e)
+        return False
 
 
 # --- instance discovery -----------------------------------------------------
@@ -334,10 +347,12 @@ def main():
                 "openrange=%.2f, style=smallball" % (base, CALM_AGGRO, CALM_BLUFF, CALM_OPENRANGE))
             speak("Back to small ball.")
             apply_smallball(base)
-            last_burst = time.monotonic()
-            cooldown = next_cooldown()
-            last_verdict = None   # re-log the verdict after a burst
-            log("cooldown ~%.0fs before the next possible burst" % cooldown)
+            # The burst is OVER -> shut this AIL toggle off so the indicator reflects it (one burst per
+            # enable; re-toggle it from the AIL tab to arm another). [Emrald: shut off after the burst]
+            log("manic burst complete -> turning the 'manic' AIL toggle OFF (indicator off)")
+            speak("Manic burst complete. Back to small ball.")
+            ail_off()
+            return
 
         time.sleep(POLL_SEC)
 

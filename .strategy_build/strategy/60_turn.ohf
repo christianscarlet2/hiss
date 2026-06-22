@@ -26,6 +26,8 @@ WHEN Others RETURN f$turn_vs_bet FORCE
 // checked to us with the monster intact, check the turn once more to keep the trap baited. The river then
 // value-bets normally; if they bet the turn instead, we fall through to the lines below and spring it. [Emrald]
 WHEN me_re_slowplay = 1 AND (f$HaveBigMade OR HaveSet) RETURN Check FORCE
+// ACE-RAG PASSIVE CONTINUE (Emrald): still pot-controlling our weak top-pair ace -> check the turn too.
+WHEN me_re_acerag = 1 AND HaveTopPair AND NOT f$HaveBigDraw AND NOT f$HaveComboDraw RETURN Check FORCE
 WHEN f$HaveStrongMade AND (f$Opp_IsStation OR f$Opp_IsFish OR f$Opp_IsSLP) RaiseBy f$BetPctVsStation % FORCE
 WHEN f$HaveStrongMade RaiseBy f$BetPctTurn % FORCE
 // SUPERSTITION (666 Card Oracle): the Beast favors -> fire EVERY draw as a semibluff. Inert when off.
@@ -61,6 +63,10 @@ WHEN Others Check FORCE
 ##f$turn_vs_bet##
 WHEN f$HaveBigMade RaiseBy f$BetPctTurn % FORCE
 WHEN HaveSet OR HaveTwoPair RaiseBy f$BetPctTurn % FORCE
+// ACE-RAG PASSIVE vs a turn bet (Emrald): weak top pair -> call only a little bet (cheap to showdown),
+// fold to anything bigger. [Emrald: call little bets to improve / get to showdown cheaply]
+WHEN me_re_acerag = 1 AND HaveTopPair AND NOT f$HaveBigDraw AND NOT f$HaveComboDraw AND f$SmallBet RETURN Call FORCE
+WHEN me_re_acerag = 1 AND HaveTopPair AND NOT f$HaveBigDraw AND NOT f$HaveComboDraw RETURN Fold FORCE
 // Low SPR (committed): get top pair / overpair all-in rather than pot-controlling.
 // Mirrors the flop's commitment branch - the pot only grew, so a hand committed on the
 // flop is still committed here; honor it BEFORE the "never go broke" pot-control lines

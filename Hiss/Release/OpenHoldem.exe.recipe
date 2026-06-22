@@ -1,0 +1,48 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <ProjectOutputs>
+    <ProjectOutput>
+      <FullPath>C:\Users\scarl\AppData\Local\Temp\openholdem-vs2026-release\PokerTracker_Query_Definitions.dll</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\scarl\AppData\Local\Temp\openholdem-vs2026-release\Reference Keyboard DLL.dll</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\scarl\AppData\Local\Temp\openholdem-vs2026-release\Reference Mouse DLL.dll</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\scarl\AppData\Local\Temp\openholdem-vs2026-release\Files.dll</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\scarl\AppData\Local\Temp\openholdem-vs2026-release\Debug.dll</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\scarl\AppData\Local\Temp\openholdem-vs2026-release\string_functions.dll</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\scarl\AppData\Local\Temp\openholdem-vs2026-release\window_functions.dll</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\scarl\AppData\Local\Temp\openholdem-vs2026-release\Preferences.dll</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\scarl\AppData\Local\Temp\openholdem-vs2026-release\globals.dll</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\scarl\AppData\Local\Temp\openholdem-vs2026-release\Reference User DLL.dll</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\scarl\AppData\Local\Temp\openholdem-vs2026-release\GamestateValidation.dll</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\scarl\AppData\Local\Temp\openholdem-vs2026-release\OpenHoldem.exe</FullPath>
+    </ProjectOutput>
+  </ProjectOutputs>
+  <ContentFiles>
+    <ContentFile>
+      <FullPath>C:\www\openholdembot_old\##_OpenHoldem_Release_Directory_##\License_GPLv3.htm</FullPath>
+    </ContentFile>
+  </ContentFiles>
+  <SatelliteDlls />
+  <NonRecipeFileRefs />
+</Project>

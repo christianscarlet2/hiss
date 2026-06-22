@@ -13,6 +13,9 @@
 // persists across hands in this build). me_st_slowplay_0 stores 0 and returns 0, so "0 < 0" is ALWAYS
 // false -> this never fires / never changes the action; it only resets the flag. [slow-play memory symbol]
 WHEN me_st_slowplay_0 < 0 RETURN Fold FORCE
+// ACE-RAG MEMORY RESET (Emrald): same trick -- clear the per-hand ace-rag passive-line flag each hand (stores
+// 0, returns 0, "0 < 0" is always false -> never fires, only resets). [Emrald: ace-rag memory symbol]
+WHEN me_st_acerag_0 < 0 RETURN Fold FORCE
 // SCRAPE SAFETY GATE: if the validator flags a HARD scrape error (impossible cards,
 // chips that don't conserve, a bad/negative pot), do NOT commit chips on garbage data.
 // Check when it's free, otherwise fold. Complements the C++ CSymbolEngineValidator.
@@ -94,6 +97,16 @@ WHEN explain_fold_pre Fold FORCE
 // +1bb per extra limper) using the positional OPEN ranges -- this RAISES KJ/broadway-type
 // hands (e.g. KdJd) instead of flatting them. Speculative hands set-mine cheaply; trash
 // folds. [N p.24][B]
+// OVER-LIMP (Emrald): occasionally just LIMP behind the limpers instead of always iso-raising -- balances
+// our limped range and buys a cheap multiway flop to stack them when we connect. Speculative set-mine hands
+// at LOW frequency (~9%) so we still mostly punish. [Emrald: sometimes limp in with the limpers, not often]
+WHEN listSetMine AND randomround < 0.09 Call FORCE
+// Small suited connectors: limp them in behind the limpers WHENEVER the depth gives implied odds (they flop
+// big draws / two-pair+ multiway and are cheap to see a flop with). [Emrald: limp small SCs when you can]
+WHEN listSmallSuitedConnectors AND f$SetMineOK Call FORCE
+// ACE-RAG: limp weak aces in cheaply (when the depth gives implied odds) instead of iso-raising, and SET the
+// ace-rag memory flag so the flop knows to play the passive pot-control line. [Emrald: limp ace rag when you can]
+WHEN listAceRag AND f$SetMineOK AND me_st_acerag_1 Call FORCE
 WHEN (listBigPair OR list3betValue) AND explain_iso RaiseTo f$Iso_RaiseTo FORCE
 WHEN InEarlyPosition AND listOpenEP AND explain_iso RaiseTo f$Iso_RaiseTo FORCE
 WHEN InMiddlePosition AND listOpenMP AND explain_iso RaiseTo f$Iso_RaiseTo FORCE

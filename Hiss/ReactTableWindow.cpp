@@ -292,12 +292,36 @@ void CReactTableWindow::NavigateToDisplay(unsigned short port)
 		return;
 	}
 
-	CString url;
-	url.Format("http://127.0.0.1:%u/table-display/", port);
 	if (p_openholdem_statusbar != NULL) {
 		p_openholdem_statusbar->SetTableViewLoading();
 	}
-	_webview->Navigate(CStringW(url));
+	CStringW portw; portw.Format(L"%u", port);
+	CStringW url = L"http://127.0.0.1:" + portw + L"/table-display/";
+	// Show a SELF-CONTAINED red loader (needs no port) that POLLS the React port and only redirects to the
+	// real table view once it is up + serving -- so the loader stays on screen all through a Hiss restart /
+	// boot instead of a "can't reach the page" error. The real page then shows its own loader until React
+	// mounts, so the red loader is continuous. [Emrald: loader until the React port is up and running]
+	CStringW html =
+		L"<!doctype html><html><head><meta charset='utf-8'><style>"
+		L"#hl{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;"
+		L"background:radial-gradient(circle at 50% 42%,#220709,#0a0405 65%,#000);font-family:'Segoe UI',system-ui,sans-serif}"
+		L".orb{position:relative;width:140px;height:140px;display:flex;align-items:center;justify-content:center}"
+		L".ring{position:absolute;inset:0;border-radius:50%;border:3px solid rgba(224,70,85,.12);border-top-color:#ff2740;border-right-color:#e04655;animation:sp 1s linear infinite;box-shadow:0 0 30px rgba(255,39,64,.4)}"
+		L".ring2{position:absolute;inset:16px;border-radius:50%;border:2px solid rgba(224,70,85,.10);border-bottom-color:#ff5566;animation:sp 1.6s linear infinite reverse}"
+		L".core{width:40px;height:40px;border-radius:50%;background:radial-gradient(circle,#ff3b4d,#9b0718);box-shadow:0 0 34px 8px rgba(255,40,64,.55);animation:pu 1.2s ease-in-out infinite}"
+		L".suit{position:absolute;font-size:22px;color:#1a0405;animation:pu 1.2s ease-in-out infinite}"
+		L".brand{margin-top:30px;font-weight:800;font-size:16px;letter-spacing:.42em;padding-left:.42em;color:#ff5566;text-shadow:0 0 16px rgba(255,40,64,.8)}"
+		L".msg{margin-top:14px;min-height:18px;font-family:Consolas,monospace;font-size:13px;letter-spacing:.08em;color:#c98b96;transition:opacity .25s}"
+		L"@keyframes sp{to{transform:rotate(360deg)}}@keyframes pu{0%,100%{transform:scale(.8);opacity:.85}50%{transform:scale(1.12);opacity:1}}"
+		L"</style></head><body><div id='hl'>"
+		L"<div class='orb'><div class='ring'></div><div class='ring2'></div><div class='core'></div><div class='suit'>&#9824;</div></div>"
+		L"<div class='brand'>SCARLET&nbsp;BEAST</div><div class='msg' id='m'>Waking the Scarlet Beast&hellip;</div></div>"
+		L"<script>var U='" + url + L"';"
+		L"var M=['Waking the Scarlet Beast\\u2026','Shuffling fifty-two truths\\u2026','Reading the felt\\u2026','Counting outs and souls\\u2026','Tuning the synapses\\u2026','Consulting Jasper\\u2026','Stacking the odds\\u2026','Sharpening the read\\u2026'];"
+		L"var i=0,e=document.getElementById('m');setInterval(function(){i=(i+1)%M.length;e.style.opacity=0;setTimeout(function(){e.textContent=M[i];e.style.opacity=1;},250);},2200);"
+		L"function go(){fetch(U,{mode:'no-cors',cache:'no-store'}).then(function(){location.href=U;}).catch(function(){setTimeout(go,1000);});}go();"
+		L"</script></body></html>";
+	_webview->NavigateToString(html);
 }
 
 // ===== Custom GDI+ title bar =================================================

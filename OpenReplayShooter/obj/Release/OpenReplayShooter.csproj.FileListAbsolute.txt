@@ -1,0 +1,10 @@
+C:\www\openholdembot_old\OpenReplayShooter\bin\Release\OpenReplayShooter.exe.config
+C:\www\openholdembot_old\OpenReplayShooter\bin\Release\OpenReplayShooter.exe
+C:\www\openholdembot_old\OpenReplayShooter\bin\Release\OpenReplayShooter.pdb
+C:\www\openholdembot_old\OpenReplayShooter\obj\Release\OpenReplayShooter.csproj.AssemblyReference.cache
+C:\www\openholdembot_old\OpenReplayShooter\obj\Release\OpenReplayShooter.frmMain.resources
+C:\www\openholdembot_old\OpenReplayShooter\obj\Release\WindowsCapture.Properties.Resources.resources
+C:\www\openholdembot_old\OpenReplayShooter\obj\Release\OpenReplayShooter.csproj.GenerateResource.cache
+C:\www\openholdembot_old\OpenReplayShooter\obj\Release\OpenReplayShooter.csproj.CoreCompileInputs.cache
+C:\www\openholdembot_old\OpenReplayShooter\obj\Release\OpenReplayShooter.exe
+C:\www\openholdembot_old\OpenReplayShooter\obj\Release\OpenReplayShooter.pdb

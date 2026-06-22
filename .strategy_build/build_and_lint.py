@@ -211,4 +211,19 @@ if unknown:
 else:
     print("[lint] all identifiers resolved against the whitelist")
 
+# Auto-copy the regenerated master to hiss-linux on swiftsnake whenever the OHF changes (best-effort; a
+# missing connection never fails the lint). This keeps the headless self-play strategy in lockstep with the
+# live bot for PPO/CFR training. [Emrald: copy the OHF to hiss-server on change]
+if not errors:
+    try:
+        import subprocess
+        _sync = os.path.join(ROOT, "scripts", "sync_ohf_to_hisslinux.sh")
+        if os.path.isfile(_sync):
+            _r = subprocess.run(["bash", _sync, MASTER], capture_output=True, text=True, timeout=90)
+            for _ln in (_r.stdout + _r.stderr).splitlines():
+                if "[sync-ohf]" in _ln:
+                    print(_ln)
+    except Exception as _e:
+        print(f"[sync-ohf] skipped: {_e}")
+
 sys.exit(1 if errors else 0)

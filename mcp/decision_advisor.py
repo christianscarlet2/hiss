@@ -277,14 +277,27 @@ def main():
     last_claude = 0.0    # throttle for the extra claude passes during a turn
     last_brain = 0.0     # continuous between-turn brain refresh
     cached = None        # last advice -> re-pushed so the knobs never decay mid-decision
+    last_hn = None       # last hand we ran the introspection look-ahead on
     while True:
         now = time.time()
         st = get(base, "/api/symbols?names=ismyturn,betround")
         my = synapse_map.num(st.get("ismyturn"))
         # handnumber is NOT an OHF symbol (querying it via /api/symbols logged "Unknown identifier:
         # handnumber" against the formula) -> read it from /api/table-state, where it actually lives. [Emrald]
-        hn = (get(base, "/api/table-state") or {}).get("handnumber")
+        ts2 = get(base, "/api/table-state") or {}
+        hn = ts2.get("handnumber")
         key = (hn, st.get("betround"))
+        # INTROSPECTION LOOK-AHEAD (Emrald): the instant a NEW hand starts AND we can see our hole cards, run a
+        # brain/introspection pass so the villain reads + plan are ready BEFORE it's our turn to act.
+        if hn and hn != last_hn:
+            uc = ts2.get("userchair", -1)
+            have_hole = any(p.get("chair") == uc and any(c and c != "BACK" for c in (p.get("cards") or []))
+                            for p in (ts2.get("players") or []))
+            if have_hole:
+                last_hn = hn
+                synapse_map.BOT = base
+                synapse_map.store_brain(synapse_map.brain(synapse_map.gather()))   # look-ahead for the new hand
+                last_brain = now
         try:
             if my and my > 0:
                 if key != last_key:

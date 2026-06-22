@@ -81,29 +81,57 @@ def play_audio(path):
     winmm.mciSendStringW("close lilithq", None, 0, None)
 
 
+def sapi_tts(text):
+    """FREE, offline fallback: the built-in Windows System.Speech voice (no API key, no credits). Synthesizes
+    AND plays in one call (blocks until done). Prefers a female voice to match Lilith. [Emrald: free TTS fallback]"""
+    import subprocess
+    safe = (text or "").replace("'", "''")
+    ps = ("Add-Type -AssemblyName System.Speech; "
+          "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+          "$s.Rate = 0; $s.Volume = 100; "
+          "try { $s.SelectVoiceByHints([System.Speech.Synthesis.VoiceGender]::Female) } catch {}; "
+          "$s.Speak('%s'); $s.Dispose()" % safe)
+    # CREATE_NO_WINDOW (0x08000000): never flash a console. Generous timeout for long lines.
+    subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
+                   timeout=180, creationflags=0x08000000)
+
+
 def speak(text, lead_secs=3.0):
-    """Read `text` aloud in the Lilith voice. Returns (ok, message)."""
+    """Read `text` aloud. ElevenLabs (premium) if a working key is configured; otherwise -- or if it fails
+    (e.g. 401 / OUT OF CREDITS / no network) -- fall back to the FREE built-in Windows voice so Lilith always
+    speaks. Returns (ok, message). [Emrald: free computer-voice fallback when ElevenLabs has no credits]"""
     text = (text or "").strip()
     if not text:
         return False, "empty text"
     p = _prefs()
     key = p.get("elevenlabs_api_key", "")
     voice = p.get("elevenlabs_voice_id", "")
-    if not key or not voice:
-        return False, "no ElevenLabs key/voice in %s" % PREF_FILE
+    out = None
+    engine = "SAPI"
+    # 1) Try to SYNTH with ElevenLabs first (sound still on during the slow network synth). On ANY failure,
+    #    out stays None and we fall through to the free SAPI voice below.
+    if key and voice:
+        try:
+            out = os.path.join(tempfile.gettempdir(), "lilith_say.mp3")
+            eleven_tts(key, voice, text, out)
+            engine = "elevenlabs"
+        except Exception as e:
+            out = None
+            sys.stderr.write("[lilith] elevenlabs synth failed (%s) -> free SAPI voice\n" % e)
     muted = False
     try:
-        out = os.path.join(tempfile.gettempdir(), "lilith_say.mp3")
-        eleven_tts(key, voice, text, out)          # 1) synth first (sound still on)
-        set_app_mutes(True); muted = True          # 2) mute others (keep scrcpy + ACR)
-        time.sleep(lead_secs)                       #    ~3s before reading
-        play_audio(out)                             # 3) read it (blocks)
-        return True, "spoke %d chars" % len(text)
+        set_app_mutes(True); muted = True          # mute others (keep scrcpy + ACR)
+        time.sleep(lead_secs)                       # ~3s before reading
+        if out:
+            play_audio(out)                         # ElevenLabs MP3
+        else:
+            sapi_tts(text)                          # FREE Windows voice (synth + play)
+        return True, "spoke %d chars (%s)" % (len(text), engine)
     except Exception as e:
         return False, "tts error: %s" % e
     finally:
         if muted:
-            set_app_mutes(False)                    # 4) turn sound back on
+            set_app_mutes(False)                    # turn sound back on
 
 
 if __name__ == "__main__":
