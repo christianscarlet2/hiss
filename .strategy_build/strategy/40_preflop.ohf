@@ -9,6 +9,10 @@
 //*****************************************************************************
 
 ##f$preflop##
+// SLOW-PLAY MEMORY RESET (Emrald): clear the per-hand slow-play flag at the start of each hand (memory
+// persists across hands in this build). me_st_slowplay_0 stores 0 and returns 0, so "0 < 0" is ALWAYS
+// false -> this never fires / never changes the action; it only resets the flag. [slow-play memory symbol]
+WHEN me_st_slowplay_0 < 0 RETURN Fold FORCE
 // SCRAPE SAFETY GATE: if the validator flags a HARD scrape error (impossible cards,
 // chips that don't conserve, a bad/negative pot), do NOT commit chips on garbage data.
 // Check when it's free, otherwise fold. Complements the C++ CSymbolEngineValidator.

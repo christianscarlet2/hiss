@@ -142,8 +142,13 @@ WHEN Others RETURN 2.5 FORCE
 WHEN Others RETURN (f$OpenBase + Calls) * f$SizeMult FORCE
 
 ##f$Iso_RaiseTo##
-// PUNISH limpers (1bb bettors): iso-raise to 5bb for a single limper, +1bb for each
-// extra limper. Big enough to deny a cheap flop and play a bigger pot with the better hand.
+// PUNISH limpers (1bb bettors): iso-raise over the limp, +1bb per extra limper. But DON'T always slam
+// the big ~5bb punish -- mix the size with randomround so we're not face-up: ~12% a ~2bb min-raise
+// (cheap iso / trap), ~25% 3bb, ~28% 4bb, ~35% the full 5bb. Stays balanced + harder to read.
+// [Emrald: don't always 5-bet limpers -- vary 2/3/4/5bb]
+WHEN randomround < 0.12 RETURN (1 + Calls) * f$SizeMult FORCE
+WHEN randomround < 0.37 RETURN (2 + Calls) * f$SizeMult FORCE
+WHEN randomround < 0.65 RETURN (3 + Calls) * f$SizeMult FORCE
 WHEN Others RETURN (4 + Calls) * f$SizeMult FORCE
 
 ##f$ThreeBet_RaiseTo##

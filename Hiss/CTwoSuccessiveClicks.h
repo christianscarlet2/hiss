@@ -55,6 +55,9 @@ class CTwoSuccessiveClicks {
   bool     _enable1, _enable2;
   int      _delay_ms;
   bool     _was_matching;
+  unsigned long _last_fire_tick;  // GetTickCount() when the LAST full progression finished -> cooldown gate
+                                  // so the whole click1->delay->click2 + table-settle completes before we
+                                  // can fire again (stops the limp-then-raise double-fire). [Emrald]
 };
 
 extern CTwoSuccessiveClicks *p_two_successive_clicks;

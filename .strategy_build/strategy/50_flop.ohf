@@ -25,6 +25,12 @@ WHEN Others RETURN f$flop_vs_bet FORCE
 // strength by bluffing; make the money by value-betting BIG. [CtM p193 "extraction - the
 // heart of it all"; p147,149 value big vs stations; p169 barrel SLPs/fish; p211 "fish view
 // big bets as a bluff"][SunTzu IV "first make yourself invincible"][48L L15 "crush the weak"]
+// SLOW-PLAY (Emrald): sometimes TRAP a monster instead of fastplaying it. ~22% of the time, in position +
+// heads-up + checked to us, holding a BIG made hand (straight/flush/boat/quads) vs a NON-passive opp
+// (stations/fish pay anyway -> keep value-betting them), CHECK to induce a bluff and SET the slow-play
+// memory flag (me_st_slowplay_1 stores 1 + returns 1, only when every prior condition holds) so the later
+// streets keep the trap on. [Emrald: slow-play nut/strong hands via a memory symbol]
+WHEN f$HaveBigMade AND f$InPositionPost AND f$HeadsUpPot AND NOT f$Opp_IsStation AND NOT f$Opp_IsFish AND randomhand < 0.22 AND me_st_slowplay_1 RETURN Check FORCE
 WHEN f$HaveStrongMade AND (f$Opp_IsStation OR f$Opp_IsFish OR f$Opp_IsSLP) AND explain_value_flop RaiseBy f$BetPctVsStation % FORCE
 WHEN f$HaveStrongMade AND explain_value_flop RaiseBy f$BetPctFlop % FORCE
 // SUPERSTITION (666 Card Oracle): when the Beast favors, fire EVERY draw as a semibluff.

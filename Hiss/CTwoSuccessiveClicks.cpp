@@ -41,6 +41,7 @@ CTwoSuccessiveClicks::CTwoSuccessiveClicks() {
   _enable2 = false;
   _delay_ms = kDefaultDelayMs;
   _was_matching = false;
+  _last_fire_tick = 0;
 }
 
 CTwoSuccessiveClicks::~CTwoSuccessiveClicks() {
@@ -208,6 +209,20 @@ bool CTwoSuccessiveClicks::HandleCycle(bool decision_is_raise) {
     if (!mutex.IsLocked()) {
       return false;
     }
+    // COOLDOWN: the WHOLE progression (click1 -> delay_ms -> click2) AND the table must finish updating
+    // before we may fire again. On a laggy phone mirror the table doesn't reflect the raise before the
+    // next heartbeat, so without this gate the autoplayer re-evaluated and clicked the SAME button again
+    // mid-progression -> an unintended limp-then-raise. Hold off re-firing for the progression time plus a
+    // generous settle buffer. [Emrald: the whole progression must complete before firing again]
+    unsigned long now = ::GetTickCount();
+    unsigned long cooldown = (unsigned long)delay_ms + 2500;
+    if (_last_fire_tick != 0 && (now - _last_fire_tick) < cooldown) {
+      write_log(k_always_log_basic_information,
+        "[TwoClicks] SKIP: cooldown -- progression must complete first (%lu of %lu ms elapsed)\n",
+        now - _last_fire_tick, cooldown);
+      _was_matching = matching;
+      return false;
+    }
     write_log(k_always_log_basic_information,
       "[TwoClicks] RAISE + label \"%s\" matched: click rect1 (%d,%d-%d,%d), wait %d ms, click rect2 (%d,%d-%d,%d).\n",
       ocr.GetString(), rect1.left, rect1.top, rect1.right, rect1.bottom, delay_ms,
@@ -219,6 +234,7 @@ bool CTwoSuccessiveClicks::HandleCycle(bool decision_is_raise) {
       return false;
     }
     p_casino_interface->ClickRect(rect2);
+    _last_fire_tick = ::GetTickCount();   // progression done -> start the cooldown before any re-fire
     clicked = true;
   }
   _was_matching = matching;
