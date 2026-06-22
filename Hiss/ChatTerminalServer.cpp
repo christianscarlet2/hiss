@@ -468,6 +468,29 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		return;
 	}
 
+	// RED-decision detail feed:  /api/decision-detail?text=<url-encoded, '\n'-separated lines> (or POST body).
+	// The Python brain pushes the SAME rich context the React overlay shows (exploit / branch / vs-villain /
+	// confidence / mischief / energy) so the scrcpy mirror carries it too. Stales after ~12s. [Emrald: more scrcpy lines]
+	if (path.CompareNoCase("/api/decision-detail") == 0) {
+		CStringA det = UrlDecode(QueryValue(query, "text"));
+		if (det.IsEmpty() && body_start >= 0) det = request.Mid(body_start + 4);  // also accept the raw POST body
+		extern char g_hero_decision_detail[256];
+		extern DWORD g_hero_decision_detail_tick;
+		if (!det.IsEmpty()) {
+			strncpy_s(g_hero_decision_detail, sizeof(g_hero_decision_detail), det.GetString(), _TRUNCATE);
+			g_hero_decision_detail_tick = GetTickCount();
+		} else {
+			g_hero_decision_detail[0] = '\0';   // empty text explicitly clears the overlay detail
+		}
+		CStringA body = "{\"ok\":true}";
+		CStringA response;
+		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+			body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
 	// Synapse-harmonizer runtime knobs:  /api/knob?name=openrange|aggro|bluff&value=0..1  sets one
 	// (clamped 0..1); a BARE /api/knob just reports all three. Default 0.5 = NEUTRAL. The Synapse tab
 	// + the manic_burst daemon push here; the OHF reads them as openai_knob_* (no rebuild to retune).

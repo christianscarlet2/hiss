@@ -139,6 +139,8 @@ bool g_table_is_omaha = false;
 char g_hero_decision_text[48] = {0};        // bot's locked action for the on-table RED decision overlay
 volatile bool g_hero_decision_active = false;
 DWORD g_hero_decision_tick = 0;             // GetTickCount() when the action was locked (drives the 10s trail+fade)
+char g_hero_decision_detail[256] = {0};     // brain context lines under the action ('\n'-sep), pushed via /api/decision-detail
+DWORD g_hero_decision_detail_tick = 0;      // freshness of the detail [Emrald: more lines on the RED decision in scrcpy]
 volatile bool g_reset_detection_request = false;  // React badge backup: wipe per-table game-type cache + identity -> re-detect
 char g_fckra_indicator[8] = {0};   // lit PRIMARY buttons among F,C,K,R,A (cached on heartbeat for the React table-view corners)
 char g_tiolp_indicator[8] = {0};   // lit SECONDARY/hopper buttons among T,I,O,L,P
@@ -1076,8 +1078,10 @@ static bool SB_Bool(const std::string& s, const std::string& key, bool def) {
 
 bool CScraper::ScrapeFromScarletBeastServer() {
   if (p_scarlet_beast == NULL || p_table_state == NULL) return false;
-  if (!p_scarlet_beast->RefreshSeatView()) return false;  // keep last good state on failure
+  // Non-blocking: the background worker keeps the seat view fresh; we just read its cache here.
+  // (No RefreshSeatView() HTTP on the scrape/heartbeat thread anymore — that caused the ~31s stall.)
   const std::string json = p_scarlet_beast->LastSeatJson();
+  if (json.empty()) return false;  // worker hasn't fetched yet -> keep last good state
 
   std::string hand = SB_Object(json, "hand");
   if (hand.empty()) return false;

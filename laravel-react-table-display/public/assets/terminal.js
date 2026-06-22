@@ -395,7 +395,22 @@
       live: { kind: "endpoint", url: "/api/autoplayer", field: "engaged" },
       control: "toolbar / loop,  or  /api/autoplayer?on=1|0",
       does: "The always-on executor that actually clicks the table. With NN/ULTRA off it runs the OHF; with NN on it executes the NN's forced action. Must be ON for any play to happen.",
-      pair: "Everything — it's the hands that carry out whatever brain (OHF or NN) is steering." }
+      pair: "Everything — it's the hands that carry out whatever brain (OHF or NN) is steering." },
+    { id: "obsbranch", icon: "🧭", label: "Observer Branch  (f$ObsStrategy / obsbranch)",
+      live: { kind: "symbol", name: "obsbranch", map: { "0": "Normal (quiet)", "1": "Isolate Short-Stack", "2": "Attack Folders", "3": "Punish Tilt", "4": "Value Station", "5": "Donkfest Cheap", "6": "Steady", "7": "Press Downtrend" } },
+      control: "Driven by the 🧠 BRAIN (observer layer) — pushes obsbranch + obsbranch_aggro/bluff/openrange via /api/knob.",
+      does: "The live STRATEGY BRANCH the brain picked from the table read — it routes the OHF (f$ObsStrategy GOTO) and retunes the aggro/bluff/open targets to exploit THIS table: attack a folder-heavy table, stop bluffing a calling station, punish a tilting villain, isolate short stacks, press when we're on a downswing.",
+      pair: "Aggression / Bluff / Opening-Range knobs (the branch sets their targets) · Opponent introspection (the exploit_* reads pick the branch) · Mischief." },
+    { id: "obsaggro", icon: "🎚", label: "Observer Aggro Target  (obsbranch_aggro)",
+      live: { kind: "symbol", name: "obsbranch_aggro" },
+      control: "Set live by the active Observer Branch (0 when the brain is quiet → the manual Aggression knob takes over).",
+      does: "The aggression target the current observer branch wants (0..1). When a branch is live it OVERRIDES the manual Aggression knob via f$AggroFreqMult; when the brain is quiet it decays to 0 and your manual knob drives.",
+      pair: "Observer Branch (sets it) · Aggression Frequency (manual fallback)." },
+    { id: "mischief", icon: "🃏", label: "Mischief  (deception layer)",
+      live: { kind: "symbol", name: "mischief_fire", map: { "0": "calm", "1": "FIRING — pretending" } },
+      control: "Driven by the 🧠 BRAIN (mischief layer), energy-modulated (astrology).",
+      does: "Occasionally the brain PRETENDS — reps strength, floats then steals, fake-weak traps, polarizes with an overbet — to stay unreadable. Fires probabilistically, modulated by the energy-in-the-air.",
+      pair: "Observer Branch · Energy (astrology) · Opponent introspection." }
   ];
 
   // ---- Live runtime KNOBS (interactive sliders -> /api/knob, 0..1, 0.5 = neutral) ----
@@ -556,9 +571,41 @@
     synConn.className = "syn-conn" + (ok ? "" : " down");
   }
 
+  // ---- Brain Source: run the brain LOCALLY (this PC) or offload to the SERVER (swiftsnake) ----
+  function brainSourceHtml() {
+    return '<div class="syn-knobs"><div class="syn-knobs-h">&#129504;&nbsp;Brain Compute &mdash; run the observer / introspection / mischief brain LOCALLY (this PC) or OFFLOAD it to the server (swiftsnake: the replica opponent DB is local there). The bot is steered the same way via the knobs either way.</div>'
+      + '<div class="knob-card"><div class="knob-top"><span class="syn-icon">&#129504;</span>'
+      + '<span class="knob-label">Brain Source</span>'
+      + '<span class="knob-val" id="brainsrcval">&mdash;</span></div>'
+      + '<div class="brainsrc-row" style="display:flex;gap:8px;margin:6px 0">'
+      + '<button class="brainsrc-btn" id="brainsrc-local" style="flex:1;padding:6px;cursor:pointer">Local (this PC)</button>'
+      + '<button class="brainsrc-btn" id="brainsrc-server" style="flex:1;padding:6px;cursor:pointer">Server (swiftsnake)</button></div>'
+      + '<div class="syn-row"><span class="syn-v">Local = synapse_map computes here. Server = synapse_map offloads to the hiss-brain service (192.168.1.39:8092) and pushes its observer/exploit/mischief output to the bot.</span></div>'
+      + '</div>';
+  }
+  function setBrainSrc(src) {
+    var v = document.getElementById("brainsrcval");
+    if (v) v.innerHTML = src === "server" ? '<b class="on">SERVER</b>' : '<b>LOCAL</b>';
+    var lb = document.getElementById("brainsrc-local"), sb = document.getElementById("brainsrc-server");
+    if (lb) lb.style.fontWeight = (src !== "server") ? "bold" : "normal";
+    if (sb) sb.style.fontWeight = (src === "server") ? "bold" : "normal";
+  }
+  function bindBrainSource() {
+    function go(v) {
+      fetch(AIL_BASE + "/brain-source" + (v ? "?v=" + v : ""), { cache: "no-store" })
+        .then(function (r) { return r.json(); })
+        .then(function (j) { setBrainSrc(j.source); })
+        .catch(function () {});
+    }
+    var lb = document.getElementById("brainsrc-local"), sb = document.getElementById("brainsrc-server");
+    if (lb) lb.onclick = function () { go("local"); };
+    if (sb) sb.onclick = function () { go("server"); };
+    go("");   // read current
+  }
+
   function renderSynapse() {
     if (!synWrap) return;
-    var html = knobsHtml();
+    var html = brainSourceHtml() + knobsHtml();
     for (var i = 0; i < SYNAPSE_DIALS.length; i++) {
       var d = SYNAPSE_DIALS[i];
       var lv = synLive[d.id] || "&mdash;";
@@ -573,6 +620,7 @@
     }
     synWrap.innerHTML = html;
     bindKnobs();
+    bindBrainSource();
     loadKnobs();
   }
 

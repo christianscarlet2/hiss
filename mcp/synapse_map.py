@@ -102,6 +102,101 @@ def push_brain_knobs(b):
     mis = (b or {}).get("mischief") or {}
     _push_knob("mischief_fire", 1 if (isinstance(mis, dict) and mis.get("fired")) else 0)
 
+
+def push_decision_detail(b):
+    """Push the RED-decision CONTEXT lines to Hiss /api/decision-detail so the scrcpy overlay carries the
+    SAME rich read the React table view shows (exploit / branch / vs-villain / confidence / mischief / energy).
+    The action itself is drawn big by g_hero_decision_text; this adds the small lines under it. [Emrald: more scrcpy lines]"""
+    b = b or {}
+    cda = b.get("current_decided_action") or {}
+    dec = b.get("decision") or {}
+    obs = b.get("observer_strategy") or {}
+    mis = b.get("mischief") or {}
+    pin = b.get("pineal") or b.get("astro") or {}
+    exploit = cda.get("exploit") or dec.get("exploit") or "none"
+    branch = obs.get("branch") or "NORMAL"
+    villain = (b.get("villain") or "villain")
+    conf = num(cda.get("confidence"), num(dec.get("confidence"), 0.0))
+    energy = num(pin.get("energy"), num(dec.get("energy"), 0.0))
+    source = (cda.get("source") or "engine")[:48]
+    fired = isinstance(mis, dict) and mis.get("fired")
+    lines = ["exploit: %s  «%s»" % (exploit, branch),
+             "vs %s  ·  conf %d%%" % (villain, int(round(conf * 100)))]
+    lines.append(("mischief: %s  ·  energy %.2f" % (mis.get("kind"), energy)) if fired
+                 else ("energy %.2f" % energy))
+    lines.append("via %s" % source)
+    try:
+        import urllib.parse
+        urllib.request.urlopen(BOT + "/api/decision-detail?text=" + urllib.parse.quote("\n".join(lines)),
+                               timeout=3).read()
+    except Exception:
+        pass
+
+
+# ---- BRAIN SOURCE: local vs server (the React Synapse "Brain: Local/Server" toggle) ----------------
+_brain_src_cache = {"ts": 0.0, "src": "local", "url": "http://192.168.1.39:8092/brain"}
+
+
+def _brain_source():
+    """Read the local/server brain toggle from the AIL server (:7900), cached ~5s."""
+    now = time.time()
+    if now - _brain_src_cache["ts"] < 5:
+        return _brain_src_cache["src"], _brain_src_cache["url"]
+    _brain_src_cache["ts"] = now
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:7900/brain-source", timeout=2) as r:
+            j = json.loads(r.read().decode("utf-8", "replace"))
+        _brain_src_cache["src"] = j.get("source", "local")
+        _brain_src_cache["url"] = j.get("server_url", _brain_src_cache["url"])
+    except Exception:
+        pass
+    return _brain_src_cache["src"], _brain_src_cache["url"]
+
+
+def maybe_push_server_brain(g, state):
+    """When the Synapse toggle is on SERVER, OFFLOAD the observer/introspection/mischief brain to the
+    hiss-brain service on swiftsnake and push ITS output to the bot (overriding the local push). The
+    replica opponent DB is local on the server, so the heavy lookups happen there. [Emrald]"""
+    src, url = _brain_source()
+    if src != "server":
+        return
+    ts = g.get("ts", {}) or {}
+    s = g.get("syms", {}) or {}
+    brain = state.get("brain", {}) or {}
+    rc = int(num(s.get("raischair"), -1))
+    uc = ts.get("userchair", -1)
+    players, vname = [], ""
+    for p in (ts.get("players") or []):
+        nm = (p.get("name") or "").strip()
+        if not nm:
+            continue
+        players.append({"name": nm, "hero": p.get("chair") == uc})
+        if p.get("chair") == rc:
+            vname = nm
+    energy = num((brain.get("pineal") or brain.get("astro") or {}).get("energy"), 0.0)
+    hn = int(num(s.get("handnumber") or ts.get("handnumber"), 0))
+    rnd = ((hn * 2654435761) % 1000) / 1000.0   # deterministic per-hand 0..1
+    gt = "plo" if ts.get("isomaha") else "holdem"
+    payload = json.dumps({"raiser_name": vname, "players": players,
+                          "energy": energy, "rnd": rnd, "gametype": gt}).encode()
+    try:
+        import subprocess
+        out = subprocess.run(["curl", "-s", "-m", "3", url, "-d", "@-"], input=payload,
+                             capture_output=True,
+                             creationflags=(0x08000000 if os.name == "nt" else 0)).stdout
+        b = (json.loads(out.decode("utf-8", "replace")).get("brain") or {})
+    except Exception:
+        return
+    if not b:
+        return
+    _push_knob("obsbranch", b.get("obsbranch", 0))
+    if b.get("obsbranch", 0):
+        _push_knob("obsbranch_aggro", round(num(b.get("obsbranch_aggro"), 0.5), 3))
+        _push_knob("obsbranch_bluff", round(num(b.get("obsbranch_bluff"), 0.5), 3))
+        _push_knob("obsbranch_openrange", round(num(b.get("obsbranch_openrange"), 0.5), 3))
+        _push_knob("obsbranch_affinity", round(num(b.get("obsbranch_affinity"), 1.0), 3))
+    _push_knob("mischief_fire", 1 if b.get("mischief_fire") else 0)
+
 # ---- curated signal symbols the synapse map reads every tick --------------------------------
 # NOTE: deliberately EXCLUDES prwin -- its Monte-Carlo evaluation runs synchronously on the HTTP
 # thread in /api/symbols (no heartbeat lock), which is slow and can race the engine -> a heavy query
@@ -1014,6 +1109,8 @@ def main():
             store_state(state)
             store_brain(state["brain"])   # the easy-API row: INTUITION + PLAN + DECISION + DECIDED ACTION
             push_brain_knobs(state["brain"])   # observer branch + mischief -> OHF via /api/knob (Phase 2)
+            push_decision_detail(state["brain"])  # rich RED-decision lines -> scrcpy overlay (matches React) [Emrald]
+            maybe_push_server_brain(g, state)  # if Synapse "Brain: Server" toggle is on, offload to swiftsnake [Emrald]
             if time.time() - last_flush > 60:    # persist the brain LOAD profile every minute (overwork hooks)
                 flush_load(); last_flush = time.time()
             hn, bal = g.get("handnumber") or "", g.get("hero_balance")

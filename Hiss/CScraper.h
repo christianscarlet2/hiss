@@ -250,6 +250,10 @@ extern bool    g_table_is_omaha;     // scraped text says Omaha/PLO/Hi-Lo -> dri
 extern char    g_hero_decision_text[48];   // e.g. "RAISE 2.50" / "CALL" / "FOLD" (empty = no decision)
 extern volatile bool g_hero_decision_active; // true only while ismyturn && isfinalanswer
 extern DWORD   g_hero_decision_tick;        // GetTickCount() at decision lock; RED overlay trails ~10s then fades
+// Brain detail for the RED overlay: extra context lines (exploit / branch / vs-villain / confidence / mischief),
+// '\n'-separated, pushed by the Python brain via /api/decision-detail. Drawn small+red under the action on scrcpy.
+extern char    g_hero_decision_detail[256]; // [Emrald: more lines on the RED decision in scrcpy]
+extern DWORD   g_hero_decision_detail_tick; // freshness of the detail (independent of the action lock)
 extern volatile bool g_reset_detection_request; // React badge backup: clear per-table game-type cache + identity -> re-detect
 extern char g_fckra_indicator[8];   // lit primary buttons F/C/K/R/A (mirrors the main view's bottom-corner indicators)
 extern char g_tiolp_indicator[8];   // lit secondary buttons T/I/O/L/P

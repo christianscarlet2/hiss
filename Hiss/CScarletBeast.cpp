@@ -27,8 +27,12 @@ CScarletBeast::CScarletBeast()
       _seat_json_tick(0),
       _hud_tick(0),
       _last_rebuy_tick(0) {
+  ::InitializeCriticalSection(&_cache_cs);
+  _worker = NULL;
+  _worker_run = false;
   LoadFromRegistry();
   ParseCommandLine();
+  if (_scrape_from_server) StartWorker();   // only spins the HTTP thread when server-scrape is actually on
 }
 
 // Detect child mode: "--sb-table=N" on the command line binds this instance to
@@ -105,7 +109,76 @@ void CScarletBeast::ManageInstances() {
   }
 }
 
-CScarletBeast::~CScarletBeast() {}
+CScarletBeast::~CScarletBeast() {
+  StopWorker();
+  ::DeleteCriticalSection(&_cache_cs);
+}
+
+// ---------------------------------------- async HTTP worker (kills the heartbeat stall) ----
+// All Scarlet Beast HTTP (seat view, HUD, instance management, rebuy) runs HERE, off the
+// heartbeat. The heartbeat only ever copies the already-fetched results out of the cache, so a
+// slow/unreachable poker.scarletbeast.com can no longer freeze the bot for ~31s. [Emrald]
+
+DWORD WINAPI CScarletBeast::WorkerThunk(LPVOID self) {
+  reinterpret_cast<CScarletBeast*>(self)->WorkerLoop();
+  return 0;
+}
+
+void CScarletBeast::StartWorker() {
+  if (_worker != NULL) return;               // already running
+  _worker_run = true;
+  _worker = ::CreateThread(NULL, 0, &CScarletBeast::WorkerThunk, this, 0, NULL);
+}
+
+void CScarletBeast::StopWorker() {
+  if (_worker == NULL) return;
+  _worker_run = false;
+  ::WaitForSingleObject(_worker, 8000);      // let an in-flight request unwind (timeouts capped ~3s)
+  ::CloseHandle(_worker);
+  _worker = NULL;
+}
+
+void CScarletBeast::WorkerLoop() {
+  while (_worker_run) {
+    if (_scrape_from_server) {
+      // 1) refresh the seat view (writes _seat_json_cache under the lock) and flatten symbols
+      std::map<std::string, std::string> syms;
+      bool ok = PopulateSymbols(TableId(), syms);   // calls RefreshSeatView internally
+      if (ok) {
+        ::EnterCriticalSection(&_cache_cs);
+        _cached_symbols.swap(syms);                 // publish for the heartbeat (GetCachedSymbols)
+        ::LeaveCriticalSection(&_cache_cs);
+      }
+      // 2) the slower side-channels — spawning children / rebuy / HUD; all self-throttled internally
+      ManageInstances();
+      AutoRebuyIfBusted();
+      RefreshHud();
+    }
+    ::Sleep(_scrape_from_server ? 350 : 1000);
+  }
+}
+
+bool CScarletBeast::GetCachedSymbols(std::map<std::string, std::string>& out) {
+  ::EnterCriticalSection(&_cache_cs);
+  out = _cached_symbols;
+  bool any = !_cached_symbols.empty();
+  ::LeaveCriticalSection(&_cache_cs);
+  return any;
+}
+
+std::string CScarletBeast::SeatJsonCopy() {
+  ::EnterCriticalSection(&_cache_cs);
+  std::string s = _seat_json_cache;
+  ::LeaveCriticalSection(&_cache_cs);
+  return s;
+}
+
+std::string CScarletBeast::HudJsonCopy() {
+  ::EnterCriticalSection(&_cache_cs);
+  std::string s = _hud_json_cache;
+  ::LeaveCriticalSection(&_cache_cs);
+  return s;
+}
 
 // ----------------------------------------------------------- registry I/O ----
 
@@ -154,7 +227,10 @@ void CScarletBeast::SaveToRegistry() {
   RegWriteString(L"TableId", std::to_wstring(_table_id));
 }
 
-void CScarletBeast::SetScrapeFromServer(bool on) { _scrape_from_server = on; SaveToRegistry(); }
+void CScarletBeast::SetScrapeFromServer(bool on) {
+  _scrape_from_server = on; SaveToRegistry();
+  if (on) StartWorker(); else StopWorker();   // the worker is inert (never spun) while server-scrape is off
+}
 void CScarletBeast::SetAutoRebuy(bool on) { _auto_rebuy = on; SaveToRegistry(); }
 void CScarletBeast::SetTableId(int id) { _table_id = (id > 0 ? id : 1); SaveToRegistry(); }
 void CScarletBeast::SetBaseUrl(const std::wstring& url) { _base_url = url; SaveToRegistry(); }
@@ -261,10 +337,12 @@ bool CScarletBeast::RefreshSeatView() {
   if (!_seat_json_cache.empty() && _seat_json_tick != 0 && (now - _seat_json_tick) < 120) {
     return true;  // reuse the very recent fetch (same heartbeat)
   }
-  std::string seat = SeatView(TableId());
+  std::string seat = SeatView(TableId());     // HTTP — runs on the worker thread, off the heartbeat
   if (!_last_ok || seat.empty()) return false;
+  ::EnterCriticalSection(&_cache_cs);
   _seat_json_cache = seat;
   _seat_json_tick = now;
+  ::LeaveCriticalSection(&_cache_cs);
   return true;
 }
 
@@ -272,7 +350,7 @@ bool CScarletBeast::RefreshSeatView() {
 // tablemap-style symbols. Uses tiny extractors instead of a JSON dependency.
 bool CScarletBeast::PopulateSymbols(int table_id, std::map<std::string, std::string>& out) {
   if (!RefreshSeatView()) return false;
-  const std::string& seat = _seat_json_cache;
+  std::string seat = SeatJsonCopy();   // worker thread already fetched it under the lock
 
   // Headline fields the symbol engine can map onto OpenHoldem symbols.
   out["sb_table_id"] = std::to_string(table_id);
@@ -410,8 +488,8 @@ void CScarletBeast::AutoRebuyIfBusted() {
   if (!_scrape_from_server || !_auto_rebuy) return;
   unsigned long now = ::GetTickCount();
   if (_last_rebuy_tick != 0 && (now - _last_rebuy_tick) < 6000) return;  // throttle
-  if (_seat_json_cache.empty()) return;
-  const std::string& json = _seat_json_cache;
+  std::string json = SeatJsonCopy();
+  if (json.empty()) return;
 
   // Our seat + bankroll (chips).
   std::string you = HUD_Object(json, "you");
@@ -527,7 +605,7 @@ static std::string HUD_JsonEscape(const std::string& s) {
 
 std::string CScarletBeast::ServerHudArrayForChair(int chair) {
   if (chair < 0) return "";
-  std::string hud = _hud_json_cache;  // snapshot (read-only)
+  std::string hud = HudJsonCopy();  // snapshot (read-only, locked)
   if (hud.empty()) return "";
   std::string profile = HUD_Object(hud, "profile");
   std::string rows = profile.empty() ? "" : HUD_ArraySubstr(profile, "rows");
@@ -606,8 +684,9 @@ std::string CScarletBeast::UploadPt4Hud(const std::wstring& filepath) {
 }
 
 std::string CScarletBeast::ServerTableName() {
-  if (_seat_json_cache.empty()) return std::string();
-  std::string table = HUD_Object(_seat_json_cache, "table");
+  std::string s = SeatJsonCopy();
+  if (s.empty()) return std::string();
+  std::string table = HUD_Object(s, "table");
   if (table.empty()) return std::string();
   return ExtractJsonString(table, "name");
 }
@@ -619,17 +698,20 @@ bool CScarletBeast::RefreshHud() {
   std::wstring path = L"/api/v1/tables/" + std::to_wstring((long)TableId()) + L"/hud";
   std::string body = Request(L"GET", path, "", true);
   if (!_last_ok || body.empty()) return false;
+  ::EnterCriticalSection(&_cache_cs);
   _hud_json_cache = body;
   _hud_tick = now;
+  ::LeaveCriticalSection(&_cache_cs);
   return true;
 }
 
 bool CScarletBeast::HudStatForChair(int chair, const char* basic_stat, double* out_value) {
   if (chair < 0 || out_value == NULL) return false;
-  if (!RefreshHud()) return false;
+  std::string hud = HudJsonCopy();   // the async worker keeps this fresh; never HTTP on the heartbeat
+  if (hud.empty()) return false;
   std::string key = MapPtStatToApiKey(basic_stat);
   if (key.empty()) return false;  // stat not provided by the API
-  std::string seats = HUD_Object(_hud_json_cache, "seats");
+  std::string seats = HUD_Object(hud, "seats");
   if (seats.empty()) return false;
   char seat_no[8];
   sprintf_s(seat_no, sizeof(seat_no), "%d", chair + 1);  // API seats are 1-based
@@ -643,20 +725,24 @@ bool CScarletBeast::HudStatForChair(int chair, const char* basic_stat, double* o
 // occurs exactly once in the payload, so the first-match extractor is safe.
 
 long CScarletBeast::ServerToAct() {
-  if (_seat_json_cache.empty()) return -1;
-  return ExtractJsonNumber(_seat_json_cache, "to_act", -1);
+  std::string s = SeatJsonCopy();
+  if (s.empty()) return -1;
+  return ExtractJsonNumber(s, "to_act", -1);
 }
 long CScarletBeast::ServerCurrentBet() {
-  if (_seat_json_cache.empty()) return 0;
-  return ExtractJsonNumber(_seat_json_cache, "current_bet", 0);
+  std::string s = SeatJsonCopy();
+  if (s.empty()) return 0;
+  return ExtractJsonNumber(s, "current_bet", 0);
 }
 long CScarletBeast::ServerMinRaise(long def) {
-  if (_seat_json_cache.empty()) return def;
-  return ExtractJsonNumber(_seat_json_cache, "min_raise", def);
+  std::string s = SeatJsonCopy();
+  if (s.empty()) return def;
+  return ExtractJsonNumber(s, "min_raise", def);
 }
 long CScarletBeast::ServerStateVersion() {
-  if (_seat_json_cache.empty()) return 0;
-  return ExtractJsonNumber(_seat_json_cache, "version", 0);
+  std::string s = SeatJsonCopy();
+  if (s.empty()) return 0;
+  return ExtractJsonNumber(s, "version", 0);
 }
 
 // --------------------------------------------------------- tiny JSON utils ----

@@ -555,6 +555,45 @@ function OddsPanel(props) {
 // ---- RED DECISION overlay, ON FIRE, trailing 10s after each new decision. Shows the brain's CURRENT
 // DECIDED ACTION (exploit/branch/mischief), polled from the AIL server's /decision -- a crash-safe DB
 // read of brain_state (never re-evaluates the OHF/prwin). [Emrald: red decision on fire, trail 10s]
+// ---- PERSISTENT decision chip in the topbar: ALWAYS shows the latest OHF/brain decision (so it's never
+// missed even when the bot is quietly folding); glows red when the decision is fresh (<10s). The on-fire
+// DecisionOverlay below the board is the dramatic flash; this is the always-on readout. [Emrald]
+function DecisionChip() {
+  var dPair = useState(null), dec = dPair[0], setDec = dPair[1];
+  var nPair = useState(0), setNow = nPair[1];
+  useEffect(function () {
+    var alive = true;
+    function poll() {
+      fetch(window.location.protocol + '//' + window.location.hostname + ':7900/decision')
+        .then(function (r) { return r.json(); }).then(function (d) { if (alive) setDec(d); }).catch(function () {});
+    }
+    poll();
+    var t = setInterval(poll, 800);
+    var tick = setInterval(function () { setNow(Date.now()); }, 500);
+    return function () { alive = false; clearInterval(t); clearInterval(tick); };
+  }, []);
+  if (!dec || !dec.ok || !dec.action) {
+    return e('span', { style: { marginLeft: '10px', color: '#666', fontFamily: 'monospace', fontSize: '12px' } }, '🔴 DECISION —');
+  }
+  var act = (dec.action || '').toUpperCase();
+  var label = act + (dec.size_bb ? (' ' + Number(dec.size_bb).toFixed(1) + 'bb') : '');
+  var extra = [dec.exploit && dec.exploit !== 'none' ? dec.exploit : null,
+               dec.branch && dec.branch !== 'NORMAL' ? ('«' + dec.branch + '»') : null,
+               dec.mischief || null].filter(Boolean).join(' · ');
+  var age = dec.ts_ms ? (Date.now() - dec.ts_ms) / 1000 : 999;
+  var fresh = age < 10;
+  var col = act === 'FOLD' ? '#d9a06b'
+          : (act.indexOf('RAISE') >= 0 || act.indexOf('ALL') >= 0) ? '#ff5a3c'
+          : act === 'CALL' ? '#7fd6ff' : act === 'CHECK' ? '#9ad0a0' : '#e6e6e6';
+  return e('span', { title: 'live decision (' + (dec.source || '') + ', ' + Math.round(age) + 's ago)',
+      style: { marginLeft: '12px', padding: '3px 12px', borderRadius: '6px', fontFamily: 'monospace',
+               fontWeight: 'bold', fontSize: '13px', letterSpacing: '.5px',
+               border: '1px solid ' + (fresh ? '#ff5a3c' : '#3a3a3a'),
+               background: fresh ? 'rgba(150,15,15,0.22)' : '#161616', color: col,
+               boxShadow: fresh ? '0 0 11px rgba(255,70,30,.55)' : 'none' } },
+    '🔴 ' + label + (extra ? ('  ·  ' + extra) : ''));
+}
+
 function DecisionOverlay() {
   var decPair = useState(null), dec = decPair[0], setDec = decPair[1];
   var shownPair = useState(null), shown = shownPair[0], setShown = shownPair[1];
@@ -576,8 +615,9 @@ function DecisionOverlay() {
     var key = [dec.handnumber, dec.betround, dec.action, dec.size_bb || 0, dec.source || ''].join('|');
     setShown(function (prev) {
       if (prev && prev.key === key) return prev;          // same decision -> keep its 10s timer running
-      return { key: key, action: dec.action, size: dec.size_bb, source: dec.source,
-               branch: dec.branch, mischief: dec.mischief, exploit: dec.exploit, ts: Date.now() };
+      return { key: key, action: dec.action, size: dec.size_bb, source: dec.source, branch: dec.branch,
+               mischief: dec.mischief, exploit: dec.exploit, conf: dec.confidence, energy: dec.energy,
+               villain: dec.villain, betround: dec.betround, ts: Date.now() };
     });
   }, [dec]);
   if (!shown) return null;
@@ -586,24 +626,34 @@ function DecisionOverlay() {
   var fade = age < 8 ? 1 : (10 - age) / 2;                 // hold 8s, fade the last 2s
   var flick = 0.6 + 0.4 * Math.abs(Math.sin(Date.now() / 120));
   var act = (shown.action || '').toUpperCase();
-  // LINE 1: the action on fire. LINE 2: the exploit + observer branch. LINE 3: mischief + source. Sits
-  // right below the community cards and spans the open felt. [Emrald: red decision below the board, 2-3 lines]
+  var STREETS = ['', 'preflop', 'flop', 'turn', 'river'];
+  // The fiery action + the full read behind it: exploit + branch, the villain + confidence, mischief +
+  // the energy in the air, and the source/street. [Emrald: more lines, more relevant info]
   var big = '🔥 ' + act + (shown.size ? ('  ' + Number(shown.size).toFixed(1) + 'bb') : '') + ' 🔥';
-  var line2 = [shown.exploit && shown.exploit !== 'none' ? ('exploit ' + shown.exploit) : null,
-               shown.branch && shown.branch !== 'NORMAL' ? ('« ' + shown.branch + ' »') : null].filter(Boolean).join('   ·   ');
-  var line3 = [shown.mischief ? ('mischief: ' + shown.mischief) : null,
-               (shown.source && shown.source !== 'engine') ? shown.source : null].filter(Boolean).join('   ·   ');
-  return e('div', { className: 'decision-overlay', style: {
-        margin: '6px auto 2px', width: '100%', maxWidth: '540px', textAlign: 'center',
-        pointerEvents: 'none', opacity: fade, lineHeight: '1.15' } },
-    e('div', { style: {
+  var lines = [
+    [shown.exploit && shown.exploit !== 'none' ? ('exploit: ' + shown.exploit) : null,
+     shown.branch && shown.branch !== 'NORMAL' ? ('« ' + shown.branch + ' »') : null].filter(Boolean).join('   ·   '),
+    [shown.villain ? ('vs ' + shown.villain) : null,
+     (shown.conf != null) ? ('confidence ' + Math.round(shown.conf * 100) + '%') : null].filter(Boolean).join('   ·   '),
+    [shown.mischief ? ('mischief: ' + shown.mischief) : null,
+     (shown.energy != null && shown.energy !== 0) ? ('energy ' + Number(shown.energy).toFixed(2)) : null].filter(Boolean).join('   ·   '),
+    [(shown.source && shown.source !== 'engine') ? ('via ' + shown.source) : null,
+     STREETS[shown.betround] || null].filter(Boolean).join('   ·   ')
+  ];
+  var cols = ['#ffb199', '#9fd0ff', '#caa6ff', '#e8927a'];
+  var szs = ['13px', '12px', '12px', '11px'];
+  var kids = [e('div', { key: 'big', style: {
         fontFamily: 'monospace', fontWeight: 'bold', fontSize: '30px', letterSpacing: '3px', color: '#ff5a3c',
         textShadow: '0 0 ' + (6 + 16 * flick) + 'px rgba(255,70,30,' + (0.65 * flick) + '), 0 0 ' + (2 + 6 * flick) + 'px #ff2a00',
-        WebkitTextStroke: '1px rgba(120,10,0,.55)' } }, big),
-    line2 ? e('div', { style: { marginTop: '1px', fontFamily: 'monospace', fontSize: '13px', color: '#ffb199',
-        letterSpacing: '1px', textShadow: '0 0 6px rgba(255,80,40,.6)' } }, line2) : null,
-    line3 ? e('div', { style: { marginTop: '1px', fontFamily: 'monospace', fontSize: '11px', color: '#e8927a',
-        letterSpacing: '.5px' } }, line3) : null);
+        WebkitTextStroke: '1px rgba(120,10,0,.55)' } }, big)];
+  lines.forEach(function (ln, i) {
+    if (ln) kids.push(e('div', { key: 'l' + i, style: { marginTop: '1px', fontFamily: 'monospace',
+        fontSize: szs[i], color: cols[i], letterSpacing: '.8px',
+        textShadow: i === 0 ? '0 0 6px rgba(255,80,40,.6)' : 'none' } }, ln));
+  });
+  return e('div', { className: 'decision-overlay', style: {
+        margin: '6px auto 2px', width: '100%', maxWidth: '560px', textAlign: 'center',
+        pointerEvents: 'none', opacity: fade, lineHeight: '1.15' } }, kids);
 }
 
 function App() {
@@ -770,7 +820,8 @@ function App() {
       e('div', { className: 'meta' },
         e('span', null, 'Hand ' + (table.handnumber || '-')),
         e('span', null, 'Blinds ' + money(limits.sblind) + ' / ' + money(limits.bblind)),
-        e('span', { className: 'status' }, error ? ('API: ' + error) : 'API connected')
+        e('span', { className: 'status' }, error ? ('API: ' + error) : 'API connected'),
+        e(DecisionChip)
       ),
       e('button', {
         onClick: toggleNn,

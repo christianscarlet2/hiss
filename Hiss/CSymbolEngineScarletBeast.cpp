@@ -25,23 +25,15 @@ void CSymbolEngineScarletBeast::UpdateOnNewRound() {}
 void CSymbolEngineScarletBeast::UpdateOnMyTurn() { RefreshFromServer(); }
 
 void CSymbolEngineScarletBeast::UpdateOnHeartbeat() {
-  // ALL of the work below makes synchronous HTTP requests to
-  // poker.scarletbeast.com on the heartbeat thread. When the server isn't the
-  // active scrape source (e.g. screen-scraping a phone mirror), those requests
-  // just time out (~30s each) and stall the entire bot. So do nothing unless
-  // Scarlet Beast server-scrape is actually enabled.
+  // The Scarlet Beast HTTP (seat view, HUD, instance management, rebuy) used to run RIGHT HERE on the
+  // heartbeat thread, so a slow/unreachable poker.scarletbeast.com froze the whole bot for ~31s per
+  // cycle. That work now lives on CScarletBeast's background worker thread; this heartbeat call only
+  // COPIES the already-fetched symbols out of the worker's cache (non-blocking). [Emrald: fix RefreshSeatView async]
   if (p_scarlet_beast == NULL || !p_scarlet_beast->ScrapeFromServer()) {
     _connected_ok = false;
     return;
   }
-  // Each heartbeat, pull the current seat view and flatten it into sb_* symbols...
-  RefreshFromServer();
-  // ...and keep the per-table Hiss instances in sync with the seated tables.
-  p_scarlet_beast->ManageInstances();
-  // Auto buy-back-in when we bust out (stack hit zero).
-  p_scarlet_beast->AutoRebuyIfBusted();
-  // Keep the HUD payload fresh (throttled) so the React table display can render it.
-  p_scarlet_beast->RefreshHud();
+  RefreshFromServer();   // non-blocking: reads the worker's published symbol cache
 }
 
 void CSymbolEngineScarletBeast::UpdateOnAutoPlayerAction() {}
@@ -51,10 +43,14 @@ void CSymbolEngineScarletBeast::RefreshFromServer() {
     _connected_ok = false;
     return;
   }
+  // Non-blocking: copy the symbols the background worker already fetched (no HTTP on this thread).
+  // Keep the last good _symbols if the worker hasn't published anything yet (cold start).
   std::map<std::string, std::string> fresh;
-  _connected_ok = p_scarlet_beast->PopulateSymbols(p_scarlet_beast->TableId(), fresh);
-  if (_connected_ok) {
+  if (p_scarlet_beast->GetCachedSymbols(fresh)) {
     _symbols = fresh;
+    _connected_ok = true;
+  } else {
+    _connected_ok = false;
   }
 }
 

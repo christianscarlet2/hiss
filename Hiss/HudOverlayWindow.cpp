@@ -353,6 +353,22 @@ void CHudOverlayWindow::OnPaint() {
 			mem.SetTextColor(dec_color);                 // table name fades with the action
 			CRect tr(ctrx - 220, hb.top - 70, ctrx + 220, hb.top - 52);    // table name just under the action
 			mem.DrawText(tname, -1, &tr, DT_CENTER | DT_SINGLELINE | DT_NOCLIP | DT_END_ELLIPSIS);
+			// Brain detail lines (exploit / branch / vs-villain / confidence / mischief), pushed by the Python
+			// brain via /api/decision-detail. Multi-line ('\n'-separated), small, fading with the action so the
+			// scrcpy mirror carries the SAME rich context the React table view shows. [Emrald: more lines on scrcpy]
+			extern char g_hero_decision_detail[256];
+			extern DWORD g_hero_decision_detail_tick;
+			if (g_hero_decision_detail[0] != '\0' && (GetTickCount() - g_hero_decision_detail_tick) < 12000) {
+				LOGFONT df; ZeroMemory(&df, sizeof(df));
+				df.lfHeight = -13; df.lfWeight = FW_SEMIBOLD; df.lfQuality = CLEARTYPE_QUALITY;
+				strcpy_s(df.lfFaceName, 32, "Segoe UI");
+				CFont detf; detf.CreateFontIndirect(&df);
+				mem.SelectObject(&detf);
+				mem.SetTextColor(dec_color);              // same fading red as the action
+				CRect dr(ctrx - 230, hb.top - 50, ctrx + 230, hb.top - 50 + 84);  // up to ~5 lines under the table name
+				mem.DrawText(CString(g_hero_decision_detail), -1, &dr,
+					DT_CENTER | DT_NOPREFIX | DT_NOCLIP | DT_WORDBREAK);
+			}
 			mem.SelectObject(prevf);
 		}
 	}

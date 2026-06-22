@@ -123,6 +123,12 @@ AILS = [
     {"name": "manic", "label": "Manic Burst", "icon": "\U0001F525",
      "desc": "When a table is very passive (low opp AF), fires a short maniac burst (aggro/bluff/open knobs maxed + power style) to wake people up, then reverts to small ball after ~a song. Auto-discovers the live seated Hiss.",
      "args": ["manic_burst.py"], "logs": ["manic_burst.log"]},
+    {"name": "trainrand", "label": "Train Randomizer", "icon": "\U0001F3B2",
+     "desc": "DOMAIN RANDOMIZATION for self-play data generation: re-rolls each bot's game style (smallball/power/hybrid) + synapse knobs PER HAND so retraining sees the whole strategy space. Turn ON only while generating PPO/CFR training data, OFF for real-money play.",
+     "args": ["train_randomize.py"], "logs": ["train_randomize.log"]},
+    {"name": "parseguard", "label": "Parse Guard", "icon": "\U0001F6E1",
+     "desc": "Watches for OHF parse-error modals and AUTO-REPAIRS the strategy (via Claude, windowless) so a bad edit never leaves the bot folding every hand. Autonomous self-heal.",
+     "args": ["parse_guard.py", "--watch"], "logs": ["parse_guard*.log"]},
 ]
 AIL_BY_NAME = {a["name"]: a for a in AILS}
 
@@ -392,6 +398,16 @@ class Handler(BaseHTTPRequestHandler):
                 # re-evaluates the OHF / prwin, so the React overlay can poll it freely). Drives the
                 # RED DECISION "on fire" overlay on the table view.
                 return self._send(200, latest_decision())
+            if path == "/brain-source":
+                # Local vs server brain. React's Synapse-tab "Brain: Local/Server" toggle sets v=local|server;
+                # synapse_map reads this and, when "server", offloads the observer/introspection/mischief
+                # computation to the hiss-brain service on swiftsnake (replica DB is local THERE). [Emrald]
+                if "v" in q:
+                    v = (q.get("v") or ["local"])[0]
+                    _state["brain_source"] = "server" if v == "server" else "local"
+                    save_state()
+                return self._send(200, {"source": _state.get("brain_source", "local"),
+                                        "server_url": _state.get("brain_server_url", "http://192.168.1.39:8092/brain")})
             return self._send(404, {"error": "not found"})
         except Exception as e:
             return self._send(500, {"error": str(e), "trace": traceback.format_exc()})

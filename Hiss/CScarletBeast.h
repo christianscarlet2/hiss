@@ -15,6 +15,7 @@
 #include <string>
 #include <map>
 #include <utility>
+#include <windows.h>   // CRITICAL_SECTION / thread handle for the async HTTP worker
 
 class CScarletBeast {
  public:
@@ -68,7 +69,9 @@ class CScarletBeast {
   // raw JSON. Returns true when a fresh-or-recent payload is in LastSeatJson().
   // Lets the scraper and the symbol engine share a single fetch per heartbeat.
   bool RefreshSeatView();
-  const std::string& LastSeatJson() const { return _seat_json_cache; }
+  // Returns a thread-safe COPY of the worker's last seat JSON (empty until the worker has fetched one).
+  // Non-blocking — the heartbeat reads this instead of triggering its own HTTP. [Emrald: async]
+  std::string LastSeatJson() { return SeatJsonCopy(); }
 
   // --- server-scrape acting context (parsed from the cached seat view) ---
   // hand.to_act as a 1-based server seat number (-1 if absent / unknown).
@@ -104,6 +107,15 @@ class CScarletBeast {
   // seated as sitting_out), top it back up from our bankroll via POST /rebuy.
   // Throttled; no-op unless server-scrape is on and we can afford a buy-in.
   void AutoRebuyIfBusted();
+
+  // ---- ASYNC: all the SB HTTP runs on a background worker thread, NEVER on the heartbeat. ----
+  // The worker loops (RefreshSeatView + Manage + Rebuy + Hud + PopulateSymbols) into a mutex-protected
+  // cache; the heartbeat reads the cache non-blocking via GetCachedSymbols. This is what kills the
+  // ~31s heartbeat stall when poker.scarletbeast.com is slow/unreachable. [Emrald: fix RefreshSeatView async]
+  void StartWorker();
+  void StopWorker();
+  // Non-blocking copy of the worker's latest symbols (true if any are present).
+  bool GetCachedSymbols(std::map<std::string, std::string>& out);
 
   // True once a request has produced a 2xx; useful for the settings "Test" button.
   bool LastOk() const { return _last_ok; }
@@ -145,6 +157,18 @@ class CScarletBeast {
   std::string   _hud_json_cache;   // last raw HUD JSON (stats change slowly)
   unsigned long _hud_tick;         // GetTickCount() of the last HUD fetch
   unsigned long _last_rebuy_tick;  // throttle for AutoRebuyIfBusted
+
+  // Async worker: does the HTTP off the heartbeat; _cache_cs guards _seat_json_cache / _hud_json_cache /
+  // _cached_symbols against the heartbeat readers.
+  CRITICAL_SECTION _cache_cs;
+  HANDLE           _worker;
+  volatile bool    _worker_run;
+  std::map<std::string, std::string> _cached_symbols;
+  void WorkerLoop();
+  static DWORD WINAPI WorkerThunk(LPVOID self);
+  // Thread-safe snapshots of the worker-written caches for the heartbeat readers.
+  std::string SeatJsonCopy();
+  std::string HudJsonCopy();
 };
 
 // Single shared instance for the process (declared in the .cpp).
