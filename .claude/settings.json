@@ -30,6 +30,11 @@
             "type": "command",
             "command": "python \"C:\\www\\openholdembot_old\\scripts\\validate_ohf_hook.py\"",
             "timeout": 130
+          },
+          {
+            "type": "command",
+            "command": "python \"C:\\www\\openholdembot_old\\scripts\\hiss_linux_couple_hook.py\"",
+            "timeout": 20
           }
         ]
       }
