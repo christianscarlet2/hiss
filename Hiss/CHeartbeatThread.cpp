@@ -487,19 +487,44 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
       g_mcp_action_force = false;
       // Return the cursor to where the user left it after the WHOLE sequence.
       CCursorRestorer _cursor_restorer;
-      // Sized bet/raise: go through the autoplayer's two-successive-clicks + on-screen
-      // numpad path (same as auto-play), entering the amount (in big blinds).
-      if (code == k_autoplayer_function_raise && amount > 0
-          && p_two_successive_clicks != NULL) {
-        if (p_two_successive_clicks->HandleCycle(true)) {
-          Sleep(p_two_successive_clicks->DelayMs());
-          p_casino_interface->EnterBetsizeNumpadRaw(amount);
-          write_log(k_always_log_basic_information, "[MCP] Manual sized bet/raise %.2fbb via two-successive-clicks.\n", amount);
-        } else {
-          CAutoplayerButton *btn = p_casino_interface->LogicalAutoplayerButton(code);
-          if (btn != NULL && btn->IsClickable()) btn->Click();
-          write_log(k_always_log_basic_information, "[MCP] Manual raise %.2fbb: two-clicks N/A, clicked raise button.\n", amount);
-        }
+      // Sized bet/raise AND ALL-IN: go through the autoplayer's two-successive-clicks +
+      // on-screen numpad path (same as auto-play), entering the amount (in big blinds).
+      //
+      // ALL-IN used to be EXCLUDED here (the gate was `code == ..._raise && amount > 0`), so a
+      // jam fell through to the plain-click branch below and did ONE click. On these phone maps
+      // that single click only pops the "Raise Options" panel OPEN -- the amount is never typed
+      // and the raise is never confirmed. That is the NN driver "raises with one click and
+      // nothing happens" bug: the driver sends do=allin with NO &amount (its <=12bb rule jams
+      // instead of raising), so it never met the old gate. The autoplayer never had this bug --
+      // its own two-successive-clicks path handles wants_allin (CAutoplayer.cpp) -- but the
+      // /api/action path that the NN driver / learner use was never given the same treatment.
+      //
+      // An ALL-IN carries no numeric RaiseTo size, so type the FULL stack (posted bet +
+      // remaining balance), exactly as CAutoplayer's two-successive-clicks path does.
+      double keypad_amount = amount;
+      if (code == k_autoplayer_function_allin && keypad_amount <= 0
+          && p_table_state != NULL && p_table_state->User() != NULL) {
+        keypad_amount = p_table_state->User()->_bet.GetValue()
+                      + p_table_state->User()->_balance.GetValue();
+      }
+      // HandleCycle() is self-gating: it only fires when the configured label regions
+      // ("BetOptions" / "RaiseOptions") actually match on screen. So on a short-stack table that
+      // shows a real Fold|All-In bar instead, it returns false and we correctly fall back to a
+      // single click of the genuine All-In button.
+      if ((code == k_autoplayer_function_raise || code == k_autoplayer_function_allin)
+          && keypad_amount > 0 && p_two_successive_clicks != NULL
+          && p_two_successive_clicks->HandleCycle(true)) {
+        Sleep(p_two_successive_clicks->DelayMs());
+        p_casino_interface->EnterBetsizeNumpadRaw(keypad_amount);
+        write_log(k_always_log_basic_information,
+          "[MCP] Manual %s %.2fbb via two-successive-clicks%s.\n",
+          (code == k_autoplayer_function_allin) ? "ALL-IN" : "sized bet/raise",
+          keypad_amount,
+          (code == k_autoplayer_function_allin && amount <= 0) ? " (full stack)" : "");
+      } else if (code == k_autoplayer_function_raise && amount > 0) {
+        CAutoplayerButton *btn = p_casino_interface->LogicalAutoplayerButton(code);
+        if (btn != NULL && btn->IsClickable()) btn->Click();
+        write_log(k_always_log_basic_information, "[MCP] Manual raise %.2fbb: two-clicks N/A, clicked raise button.\n", amount);
       } else {
         CAutoplayerButton *btn = p_casino_interface->LogicalAutoplayerButton(code);
         if (btn != NULL && btn->IsClickable()) {
