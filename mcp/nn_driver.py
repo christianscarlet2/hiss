@@ -209,6 +209,23 @@ def decide_and_act(gs):
     allin = ((float(nn.get("f$allin", 0) or 0)) > 0) or a == "allin"
     do = "allin" if allin else ("raise" if a == "raise" else a)
     amount = bb if (do == "raise") else 0
+    # The NN's "f$betsize" is a POT-FRACTION BET, not a raise-TO, despite the field name: nn_decide.py
+    # returns (bucket_fraction * PotSize) / bb. Consuming it as a raise-TO is why the bot NEVER RAISED.
+    # Preflop the pot is only ~1.5bb, so even a 1/3-pot bucket yields ~0.5bb -- always below the 2bb
+    # legal minimum -- and the guard further down turned EVERY raise into a call (observed 100% of the
+    # time: "raise 0.54<min 2.00 -> call"). With no raise ever sent, the two-successive-clicks raise
+    # progression could never fire either. Convert the fraction to a real raise-TO first:
+    #     raise_to = highest_bet + frac * (pot + amount_to_call)
+    # i.e. the standard pot-fraction raise. Everything downstream (depth x ICM sizing, the legal-min
+    # clamp, the allin check) then operates on an actual raise-TO, as it always assumed it did.
+    if do == "raise" and amount > 0:
+        _bbl0   = float(sv.get("bblind", 1) or 1) or 1.0
+        _pot    = float(sym.get("PotSize", 0) or 0) / _bbl0        # money -> bb
+        _tocall = float(sym.get("AmountToCall", 0) or 0) / _bbl0
+        _mybet  = float(sv.get("bet", 0) or 0) / _bbl0
+        if _pot > 0:
+            _frac  = amount / _pot                                  # recover the NN's pot fraction
+            amount = (_mybet + _tocall) + _frac * (_pot + _tocall)  # -> raise-TO, in bb
     do, amount, note = brain_override(do, amount, sv)   # exploit precedence steers the NN too
     # STACK-DEPTH-PROPORTIONAL sizing (leverage) [Emrald]: a fixed bb raise is nothing to a deep stack
     # and everything to a short one. Scale the NN's raise-TO by the EFFECTIVE stack depth; when SHORT
@@ -255,13 +272,18 @@ def decide_and_act(gs):
                 amount = quarter_pot
                 note = "  (postflop bet -> >=1/4 pot %.2fbb)" % amount
         eff_max = my_bet + float(sv.get("stack", 0) or 0)
+        # Too small to be legal -> MIN-RAISE, don't abandon the raise. The NN's ACTION (raise) is the
+        # signal; its SIZE is the part that's unreliable. The old rule ("below the minimum -> fall back
+        # to call/check") silently converted the NN's aggression into passivity -- and because the NN's
+        # size was ALWAYS below the minimum preflop (see the pot-fraction fix above), the bot never
+        # raised a single hand. A min-raise is always legal, so honour "open >= 2bb / re-raise >= last
+        # increment" by raising TO that minimum. If we cannot even afford it, the allin check below
+        # turns it into the jam it effectively is. [Emrald: raise>=stack = all-in]
+        if amount > 0 and amount < min_raise_to - 1e-6:
+            note = "  (NN size %.2f < min %.2f -> min-raise)" % (amount, min_raise_to)
+            amount = min_raise_to
         if amount > 0 and amount >= eff_max - 1e-6:
             do, amount, note = "allin", 0, "  (raise>=stack -> allin)"
-        elif amount < min_raise_to - 1e-6:            # below the legal minimum -> call, else check
-            if to_call > 0.001:
-                do, amount, note = "call", 0, "  (raise %.2f<min %.2f -> call)" % (amount, min_raise_to)
-            else:
-                do, amount, note = "check", 0, "  (raise %.2f<min %.2f -> check)" % (amount, min_raise_to)
     # Reconcile call/check with the actual spot: with no bet to call the table shows a CHECK
     # button (not Call), so do=call would find no button and never click. AmountToCall>0 means
     # we're facing a bet (can't check). Uses AmountToCall from the sym we already fetched.
