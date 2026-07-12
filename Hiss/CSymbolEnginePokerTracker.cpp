@@ -53,6 +53,13 @@ void CSymbolEnginePokerTracker::InitOnStartup() {
 
 void CSymbolEnginePokerTracker::UpdateOnConnection() {
 	ClearAllStats();
+	// SHUTDOWN RACE: StopThreads() NULLs p_pokertracker_thread, but the heartbeat thread can still
+	// be inside AutoConnect() -> CAutoConnector::Connect() -> CEngineContainer::UpdateOnConnection()
+	// and land here after that. Deref'ing the NULL global killed Hiss with 0xC0000005 while quitting
+	// (crash_hiss_36628: this frame, +0xA). No PT thread => nothing to connect.
+	if (p_pokertracker_thread == NULL) {
+		return;
+	}
 	if (!p_pokertracker_thread->_connected) {
 		p_pokertracker_thread->Connect();
 	}

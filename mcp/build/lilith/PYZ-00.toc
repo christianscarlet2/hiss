@@ -1,4 +1,4 @@
-('C:\\www\\openholdembot_old\\mcp\\build\\lilith\\PYZ-00.pyz',
+('c:\\www\\openholdembot_old\\mcp\\build\\lilith\\PYZ-00.pyz',
  [('__future__',
    'C:\\Users\\scarl\\AppData\\Local\\Programs\\Python\\Python310\\lib\\__future__.py',
    'PYMODULE'),

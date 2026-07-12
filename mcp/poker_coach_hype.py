@@ -17,6 +17,10 @@ Run:  nohup python mcp/poker_coach_hype.py > Release/logs/poker_coach.log 2>&1 &
 Stop: kill the python process (the loop-stop path also kills it).
 """
 import os, sys, json, time, random, subprocess
+SI = subprocess.STARTUPINFO() if os.name == 'nt' else None
+if SI is not None:
+    SI.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    SI.wShowWindow = 0
 
 PSQL    = os.environ.get("HISS_PSQL", r"C:\Program Files\PostgreSQL\12\bin\psql.exe")
 PGUSER  = os.environ.get("PGUSER", "postgres")
@@ -40,7 +44,7 @@ def psql(sql):
     cmd = [PSQL, "-U", PGUSER, "-d", PGDB, "-t", "-A", "-c", sql]
     # CREATE_NO_WINDOW (0x08000000): never pop a psql console/terminal window. [Emrald]
     p = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=30,
-                       creationflags=(0x08000000 if os.name == "nt" else 0))
+                       creationflags=(0x08000000 if os.name == "nt" else 0), startupinfo=SI)
     return p.stdout.strip() if p.returncode == 0 else ""
 
 
@@ -79,7 +83,7 @@ def speak(text, kind="support"):
     try:
         # CREATE_NO_WINDOW (0x08000000): lilith.exe must never pop a console window when it speaks. [Emrald]
         subprocess.run([LILITH, text], cwd=RELEASE, timeout=420,
-                       creationflags=(0x08000000 if os.name == "nt" else 0))
+                       creationflags=(0x08000000 if os.name == "nt" else 0), startupinfo=SI)
     except Exception as e:
         log("lilith failed:", e)
 

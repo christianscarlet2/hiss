@@ -21,6 +21,10 @@ LILITH  = os.path.join(RELEASE, "lilith.exe")
 TICK_S  = 30
 SAY_MIN_S = int(os.environ.get("ICM_SAY_MIN", "150"))   # speak at most ~every 2.5 min unless an event fires
 NOWIN = (0x08000000 if os.name == "nt" else 0)          # CREATE_NO_WINDOW: never pop a console
+SI = subprocess.STARTUPINFO() if os.name == 'nt' else None
+if SI is not None:
+    SI.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    SI.wShowWindow = 0
 
 
 def log(*a): print("[icm]", *a, file=sys.stderr, flush=True)
@@ -38,7 +42,7 @@ def psql(sql):
     env = dict(os.environ); env["PGPASSWORD"] = PGPASS
     try:
         p = subprocess.run([PSQL, "-U", PGUSER, "-d", PGDB, "-t", "-A", "-c", sql],
-                           capture_output=True, text=True, env=env, timeout=30, creationflags=NOWIN)
+                           capture_output=True, text=True, env=env, timeout=30, creationflags=NOWIN, startupinfo=SI)
         return p.stdout.strip() if p.returncode == 0 else ""
     except Exception:
         return ""
@@ -51,7 +55,7 @@ def speak(text, kind="strategy"):
     log("speak:", text[:80])
     psql("INSERT INTO coach_notes (kind,priority,message,spoken) VALUES ('%s',1,'%s',true);" % (kind, esc(text)))
     try:
-        subprocess.run([LILITH, text], cwd=RELEASE, timeout=120, creationflags=NOWIN)
+        subprocess.run([LILITH, text], cwd=RELEASE, timeout=120, creationflags=NOWIN, startupinfo=SI)
     except Exception as e:
         log("lilith failed:", e)
 

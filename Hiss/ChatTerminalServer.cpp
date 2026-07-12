@@ -10,6 +10,8 @@
 #include "CSymbolEngineChipAmounts.h"
 #include "CSymbolEngineValidator.h"
 #include "CSymbolEngineUserchair.h"
+#include "CSymbolEngineAutoplayer.h"
+#include "CHeartbeatThread.h"
 #include "CScarletBeast.h"
 #include "CHandresetDetector.h"
 #include "CTableState.h"
@@ -336,6 +338,15 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		// Evaluating a typo'd / unknown symbol must NOT pop Hiss's blocking modal
 		// (which would freeze the heartbeat). Suppress it for the duration.
 		g_suppress_unknown_symbol_warning = true;
+		// EvaluateSymbol() walks the symbol engines + the OHF parse tree -- the SAME state the
+		// heartbeat mutates in EvaluateAll(). Running it unsynchronized on this HTTP thread is a
+		// data race: it corrupts engine state, and under a heavy symbol (prwin's Monte-Carlo, which
+		// nn_driver pulls in its 86-feature infoset) it wedges this thread outright. A wedged HTTP
+		// thread is silent-but-fatal: every driver poll then times out, the driver's turn gate reads
+		// "not my turn", and the bot folds its arms with the autoplayer disengaged. Serialize against
+		// the heartbeat's update cycle -- the same lock CHeartbeatThread::ScrapeEvaluateAct() holds.
+		// The send() below stays OUTSIDE the lock: never hold it across network I/O.
+		EnterCriticalSection(&CHeartbeatThread::cs_update_in_progress);
 		while (start <= names.GetLength()) {
 			int comma = names.Find(',', start);
 			CStringA one = comma >= 0 ? names.Mid(start, comma - start) : names.Mid(start);
@@ -358,6 +369,7 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 			if (comma < 0) break;
 			start = comma + 1;
 		}
+		LeaveCriticalSection(&CHeartbeatThread::cs_update_in_progress);
 		g_suppress_unknown_symbol_warning = false;
 		body += "}";
 		CStringA response;
@@ -977,6 +989,15 @@ CStringA CChatTerminalServer::BuildTableStateJson(void)
 	double pot = p_engine_container == NULL ? 0 : p_engine_container->symbol_engine_chip_amounts()->pot();
 	int gametype = p_engine_container == NULL ? 0 : p_engine_container->symbol_engine_gametype()->gametype();
 	bool is_omaha = p_engine_container != NULL && p_engine_container->symbol_engine_isomaha()->isomaha();
+	// The hero's TURN signal, served from the heartbeat's cached bits. Drivers (nn_driver /
+	// ultra_mode) used to gate on /api/symbols?names=ismyturn, which EVALUATES on this HTTP
+	// thread -- the very race this JSON was rewritten to avoid. When that endpoint wedged, the
+	// driver's gate silently read "not my turn" and the bot sat out every hand with the
+	// autoplayer disengaged (hand 2776921615: AT on a CHECK/RAISE spot, no action at all).
+	// These are all cheap CACHED accessors (bit-test / bool / enum compare) -- no evaluation.
+	bool ismyturn = p_engine_container != NULL && p_engine_container->symbol_engine_autoplayer()->ismyturn();
+	bool is_plo8 = p_engine_container != NULL && p_engine_container->symbol_engine_isomaha()->isplo8();
+	bool is_pl = p_engine_container != NULL && p_engine_container->symbol_engine_gametype()->ispl();
 	// DO NOT refresh HUD/PT4 stats here: this runs on the HTTP server thread, and
 	// PT_DLL_GetStat evaluates PT4 query symbols through the (non-thread-safe) symbol
 	// engine. Doing that off the heartbeat/UI thread races the engine and crashes
@@ -1003,8 +1024,10 @@ CStringA CChatTerminalServer::BuildTableStateJson(void)
 		if (ta > 0) toact = (int)ta - 1;
 	}
 	double beastfavor_live = (GetTickCount() - g_beast_favor_tick < 15000) ? g_beast_favor : 0.0;
-	json.Format("{\"nchairs\":%d,\"userchair\":%d,\"toact\":%d,\"handnumber\":\"%s\",\"isomaha\":%s,\"observer\":%s,\"table\":\"%s\",\"limits\":{\"sblind\":%.2f,\"bblind\":%.2f,\"ante\":%.2f,\"gametype\":%d},\"pot\":%.2f,\"beastfavor\":%.3f,\"fckra\":\"%s\",\"tiolp\":\"%s\",",
-		nchairs, userchair, toact, JsonEscape(handnumber).GetString(), is_omaha ? "true" : "false",
+	json.Format("{\"nchairs\":%d,\"userchair\":%d,\"toact\":%d,\"handnumber\":\"%s\",\"ismyturn\":%s,\"isomaha\":%s,\"isplo8\":%s,\"ispl\":%s,\"observer\":%s,\"table\":\"%s\",\"limits\":{\"sblind\":%.2f,\"bblind\":%.2f,\"ante\":%.2f,\"gametype\":%d},\"pot\":%.2f,\"beastfavor\":%.3f,\"fckra\":\"%s\",\"tiolp\":\"%s\",",
+		nchairs, userchair, toact, JsonEscape(handnumber).GetString(),
+		ismyturn ? "true" : "false", is_omaha ? "true" : "false",
+		is_plo8 ? "true" : "false", is_pl ? "true" : "false",
 		observer ? "true" : "false", JsonEscape(g_table_identity).GetString(), sblind, bblind, ante, gametype, pot, beastfavor_live,
 		g_fckra_indicator, g_tiolp_indicator);
 	json += "\"commonCards\":[";

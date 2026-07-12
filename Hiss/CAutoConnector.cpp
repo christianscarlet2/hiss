@@ -71,9 +71,9 @@ CAutoConnector::~CAutoConnector() {
 bool CAutoConnector::IsConnectedToAnything() {
   HWND table = attached_hwnd();
   bool result = (table != NULL);
-  write_log(Preferences()->debug_autoconnector(), 
+  { static int s_ic_last = -1; if ((int)result != s_ic_last) { s_ic_last = (int)result; write_log(Preferences()->debug_autoconnector(), 
     "[CAutoConnector] IsConnectedToAnything: %s\n",
-    Bool2CString(result));
+    Bool2CString(result)); } }
 	return result;
 }
 
@@ -443,6 +443,7 @@ double CAutoConnector::SecondsSinceLastFailedAttemptToConnect() {
 	time_t CurrentTime;
 	time(&CurrentTime);
 	double _TimeSincelast_failed_attempt_to_connect = difftime(CurrentTime, last_failed_attempt_to_connect);
-	write_log(Preferences()->debug_autoconnector(), "[CAutoConnector] TimeSincelast_failed_attempt_to_connect %f\n", _TimeSincelast_failed_attempt_to_connect);
+	{ static DWORD s_thr_since = 0; DWORD now_s_thr_since = ::GetTickCount(); if (now_s_thr_since - s_thr_since > 5000) { s_thr_since = now_s_thr_since; write_log(Preferences()->debug_autoconnector(), "[CAutoConnector] TimeSincelast_failed_attempt_to_connect %f\n", _TimeSincelast_failed_attempt_to_connect); } }
 	return _TimeSincelast_failed_attempt_to_connect;
 }
+// flood-throttle applied

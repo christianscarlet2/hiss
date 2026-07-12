@@ -213,7 +213,8 @@ extern int g_mcp_superstition_request; // -1 idle, 0 = disengage, 1 = engage sup
 extern bool g_superstition_engaged;    // current superstition/omen state (read by /api/superstition + UIs)
 extern double g_beast_favor;           // 666 Card Oracle resonance 0..1 (pushed via /api/beast)
 extern unsigned long g_beast_favor_tick;  // GetTickCount when last set; goes stale (->0) after ~15s
-extern int g_terminal_port;            // the bound ChatTerminalServer port (for the NN driver's URL)
+extern int g_terminal_port;
+void TerminateInstanceHelpers();   // kill this instance's helper daemons (port-keyed)            // the bound ChatTerminalServer port (for the NN driver's URL)
 extern int g_mcp_action_request;       // a k_autoplayer_function_* code (FCKRA)
 extern double g_mcp_action_amount;     // bet/raise size in big blinds (<0 = plain click)
 extern unsigned long g_mcp_action_set_tick;  // tick when set (wait-for-turn expiry)

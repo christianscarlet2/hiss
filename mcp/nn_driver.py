@@ -5,11 +5,15 @@ The "special setting" is simply running this script: start it = the NN plays; st
 OHF plays. It uses only the bot's existing HTTP API, so it can't touch the live binary.
 
 Flow (turn-gated on ismyturn; the sym comes from the LIVE bot, not swiftsnake's /decide):
-  1. poll http://127.0.0.1:27654/api/symbols?names=ismyturn   -> rising edge = the hero's turn
-  2. GET  http://127.0.0.1:27654/api/table-state               -> hero hole, board, bblind
-  3. GET  http://127.0.0.1:27654/api/symbols?names=<86 NUMERIC_SYMBOLS> -> the full sym (local, DB-free)
-  4. POST http://192.168.1.39:8088/nn-decide ({sym,hole,board,bblind}) -> {action, f$betsize, f$allin}
-  5. GET  http://127.0.0.1:27654/api/action?do=<a>[&amount=<bb>]&force=1   -> the bot clicks it
+  1. poll http://127.0.0.1:27654/api/table-state  -> ismyturn (CACHED) + hero hole, board, bblind
+  2. GET  http://127.0.0.1:27654/api/symbols?names=<86 NUMERIC_SYMBOLS> -> the full sym (local, DB-free)
+  3. POST http://192.168.1.39:8088/nn-decide ({sym,hole,board,bblind}) -> {action, f$betsize, f$allin}
+  4. GET  http://127.0.0.1:27654/api/action?do=<a>[&amount=<bb>]&force=1   -> the bot clicks it
+
+The GATE polls /api/table-state, never /api/symbols. /api/symbols EVALUATES symbols on Hiss's HTTP
+thread (racing the heartbeat), so polling it at 0.6s wedged that thread -- and a wedged endpoint made
+the old gate silently read "not my turn" forever, with the autoplayer disengaged and nobody driving.
+The heavy 86-symbol pull (incl. prwin) now happens once per TURN, not ~100x/min. See ismyturn().
 
 Only /nn-decide is remote (pure inference, ~10ms); everything else is local, so a swamped
 swiftsnake DB can't stall the NN. Run the bot with the AUTOPLAYER OFF so the NN drives.
@@ -107,24 +111,32 @@ def click(action, amount):
     return _get(BOT + "/api/action?" + urllib.parse.urlencode(q))
 
 
-def ismyturn():
-    """The bot's real turn signal (toact is unreliable). 1 == it's the hero's turn to act."""
-    try:
-        v = _get(BOT + "/api/symbols?names=ismyturn").get("ismyturn", 0)
-        return (v or 0) >= 1
-    except Exception:
-        return False
+def table_state():
+    """The bot's published state. Raises on an unreachable/wedged bot -- callers must NOT swallow it.
+
+    Everything the driver GATES on is served from here. /api/table-state is built from the values the
+    heartbeat already cached, so it never evaluates symbols on Hiss's HTTP thread. /api/symbols DOES
+    evaluate there, so it is reserved for the once-per-turn feature pull (below) -- never for polling.
+    """
+    return _get(BOT + "/api/table-state")
 
 
-def table_is_omaha():
-    """PLO/PLO8 guard for the NEW driver model [Emrald]: the NN is Hold'em-only, so on an Omaha table
-    the autoplayer/OHF must drive -- the NN driver DEFERS. Light engine booleans only (isomaha / isplo8 /
-    ispl via /api/symbols) -- NEVER prwin / pt_ (heavy; would wedge the bot's HTTP thread)."""
-    try:
-        d = _get(BOT + "/api/symbols?names=isomaha,isplo8,ispl")
-        return (float(d.get("isomaha", 0) or 0) > 0) or (float(d.get("isplo8", 0) or 0) > 0) or (float(d.get("ispl", 0) or 0) > 0)
-    except Exception:
-        return False
+def ismyturn(gs):
+    """The bot's real turn signal, read CACHED from /api/table-state (`toact` is unreliable).
+
+    NEVER gate on /api/symbols?names=ismyturn (what this used to do). That endpoint evaluates on
+    Hiss's HTTP thread; when it wedged, this function swallowed the exception and returned False --
+    i.e. "not my turn", forever, with no log line. And because NN-driver mode disengages the
+    autoplayer, NOBODY was driving: the bot sat on AT facing CHECK/RAISE and did nothing for a whole
+    session (hand 2776921615). A dead gate must SCREAM, not quietly report "nothing to do".
+    """
+    return bool(gs.get("ismyturn", False))
+
+
+def table_is_omaha(gs):
+    """PLO/PLO8 guard [Emrald]: the NN is Hold'em-only, so on an Omaha table the autoplayer/OHF must
+    drive -- the NN driver DEFERS. Cached booleans from /api/table-state (never prwin / pt_)."""
+    return bool(gs.get("isomaha") or gs.get("isplo8") or gs.get("ispl"))
 
 
 def brain_override(do, amount, sv):
@@ -176,14 +188,16 @@ def brain_override(do, amount, sv):
     return do, amount, ""
 
 
-def decide_and_act():
+def decide_and_act(gs):
     """Returns True if we read the seat and clicked (or decided, in DRY); False if the hole
     isn't readable yet so the CALLER should retry within the same turn (do NOT skip the turn --
-    that silently drops the action and looks like a phantom 'sit out / between hands')."""
-    if table_is_omaha():
+    that silently drops the action and looks like a phantom 'sit out / between hands').
+
+    Takes the table-state the caller already gated on -- one read per poll, and the decision is made
+    against the exact same snapshot we saw the turn in."""
+    if table_is_omaha(gs):
         print("[nn_driver] PLO/PLO8 table -> NN gated off; deferring to the autoplayer/OHF", flush=True)
         return True            # not the NN's job on Omaha; the autoplayer runs the OHF this turn
-    gs = _get(BOT + "/api/table-state")
     sv = seat_view(gs)
     if not sv:
         return False                       # hole not scraped yet -> retry, don't consume the turn
@@ -274,15 +288,21 @@ def main():
     last_act = 0.0
     wait_start = 0.0            # when the current "my turn but hole unreadable" wait began
     warned = False
+    unreachable = 0             # consecutive failed state reads -- a dead gate must never look idle
     while True:
         try:
-            now = ismyturn()
+            gs = table_state()      # raises if the bot is down/wedged -> caught below, LOUDLY
+            if unreachable:
+                print("[nn_driver] bot reachable again after %d failed poll(s) -- driving resumed"
+                      % unreachable, flush=True)
+                unreachable = 0
+            now = ismyturn(gs)
             if now:
                 # Act exactly once per turn, but if the hole isn't readable yet keep RETRYING
                 # within the turn (decide_and_act returns False) instead of skipping it. The 1s
                 # floor is just a glitch guard against a same-tick double-fire.
                 if not acted_this_turn and (time.monotonic() - last_act) > 1.0:
-                    if decide_and_act():
+                    if decide_and_act(gs):
                         acted_this_turn = True
                         last_act = time.monotonic()
                         wait_start = 0.0
@@ -299,7 +319,18 @@ def main():
                 wait_start = 0.0
                 warned = False
         except Exception as e:
-            print("[nn_driver] err:", e, flush=True)
+            # The bot is unreachable or its HTTP thread is wedged. This is NOT "not my turn" -- with
+            # the autoplayer disengaged, nothing else is driving, so the bot is folding its arms at a
+            # live table RIGHT NOW. Say so, every time, and escalate: silence here is what let a whole
+            # session pass with zero actions.
+            unreachable += 1
+            print("[nn_driver] !! CANNOT READ BOT STATE (%s: %s) -- poll %d. The bot is NOT being "
+                  "driven and the autoplayer is disengaged; NO ONE is acting."
+                  % (type(e).__name__, e, unreachable), flush=True)
+            if unreachable in (5, 25) or (unreachable and unreachable % 100 == 0):
+                print("[nn_driver] !! %d consecutive failed polls (~%.0fs). Hiss's HTTP thread is "
+                      "likely WEDGED -- restart Hiss; the NN driver cannot act until it responds."
+                      % (unreachable, unreachable * POLL), flush=True)
         time.sleep(POLL)
 
 

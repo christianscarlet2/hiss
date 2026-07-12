@@ -80,6 +80,7 @@ BEGIN_MESSAGE_MAP(CReactTableWindow, CWnd)
 	ON_WM_GETMINMAXINFO()
 	ON_WM_NCACTIVATE()
 	ON_WM_TIMER()
+	ON_WM_DESTROY()
 END_MESSAGE_MAP()
 
 CReactTableWindow::CReactTableWindow()
@@ -690,7 +691,19 @@ void CReactTableWindow::DoButtonAction(int index)
 	} else if (index == 1) {
 		ShowWindow(IsZoomed() ? SW_RESTORE : SW_MAXIMIZE);
 	} else if (index == 2) {
-		ShowWindow(SW_HIDE);
+		// CLOSE button (emulated -- the native caption is hidden, this red X replaces it).
+		// The user expects this to shut the whole bot down, not just hide the table view.
+		// Kill every related process for this instance (OCR-worker Hiss.exe, the companion
+		// exes, the WebView2 renderers, and the python brain daemons -- all descendants of
+		// this Hiss process), then close the main app so ExitInstance runs as a backstop.
+		extern void TerminateInstanceHelpers();
+		TerminateInstanceHelpers();
+		CWnd *main_wnd = AfxGetMainWnd();
+		if (main_wnd != NULL && ::IsWindow(main_wnd->GetSafeHwnd())) {
+			main_wnd->PostMessage(WM_CLOSE);
+		} else {
+			AfxPostQuitMessage(0);
+		}
 	}
 }
 
@@ -827,4 +840,17 @@ void CReactTableWindow::ForwardCommand(unsigned int command_id)
 	if (_owner != NULL && ::IsWindow(_owner->GetSafeHwnd())) {
 		_owner->PostMessage(WM_COMMAND, MAKEWPARAM(command_id, 0), 0);
 	}
+}
+
+void CReactTableWindow::OnDestroy()
+{
+	// React table window closed -> kill this instance's Hiss + all related processes, then
+	// close the whole app so closing the React window shuts Hiss down completely.
+	extern void TerminateInstanceHelpers();
+	TerminateInstanceHelpers();
+	CWnd *main_wnd = AfxGetMainWnd();
+	if (main_wnd != NULL && ::IsWindow(main_wnd->GetSafeHwnd())) {
+		main_wnd->PostMessage(WM_CLOSE);
+	}
+	CWnd::OnDestroy();
 }

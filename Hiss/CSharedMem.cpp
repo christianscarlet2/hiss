@@ -220,8 +220,8 @@ void CSharedMem::RememberTimeOfLastFailedAttemptToConnect() {
 
 time_t CSharedMem::GetTimeOfLastFailedAttemptToConnect() {
 	ENT;
-	write_log(Preferences()->debug_autoconnector(), "[CSharedMem] Get last_failed_attempt_to_connect %d\n", last_failed_attempt_to_connect);
-	write_log(Preferences()->debug_autoconnector(), "[CSharedMem] Stored by failed session ID: %d\n", session_ID_of_last_instance_that_failed_to_connect);
+	{ static DWORD s_thr_getfail = 0; DWORD now_s_thr_getfail = ::GetTickCount(); if (now_s_thr_getfail - s_thr_getfail > 5000) { s_thr_getfail = now_s_thr_getfail; write_log(Preferences()->debug_autoconnector(), "[CSharedMem] Get last_failed_attempt_to_connect %d\n", last_failed_attempt_to_connect);
+	write_log(Preferences()->debug_autoconnector(), "[CSharedMem] Stored by failed session ID: %d\n", session_ID_of_last_instance_that_failed_to_connect); } }
 	return last_failed_attempt_to_connect;
 }
 
@@ -447,3 +447,4 @@ int CSharedMem::OpenHoldemProcessID() {
   int my_session_ID = p_sessioncounter->session_id();
   return openholdem_PIDs[my_session_ID];
 }
+// flood-throttle applied

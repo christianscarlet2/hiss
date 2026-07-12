@@ -284,7 +284,83 @@ void COpenHoldemApp::FinishInitialization() {
 	m_pMainWnd->DragAcceptFiles();
 }
 
+#include <tlhelp32.h>
+#include <vector>
+#include <set>
+// Close ALL of this instance's Hiss processes -- pure C++, runs INSIDE Hiss (its own session), no
+// WMI / no command-line reading (both are unreliable across a session boundary). Takes a process
+// snapshot and terminates (a) every DESCENDANT of this process (the OCR-worker Hiss.exe, the
+// msedgewebview2.exe WebView2 renderers, and any child brain daemons), and (b) any process named
+// like a Hiss ecosystem exe. Excludes THIS process (it exits on its own). Logs the tree for diag.
+void TerminateInstanceHelpers() {
+  DWORD myPid = GetCurrentProcessId();
+  HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snap == INVALID_HANDLE_VALUE) return;
+  std::vector<PROCESSENTRY32> procs;
+  PROCESSENTRY32 pe; pe.dwSize = sizeof(pe);
+  if (Process32First(snap, &pe)) { do { procs.push_back(pe); } while (Process32Next(snap, &pe)); }
+  CloseHandle(snap);
+  std::set<DWORD> targets, frontier;
+  frontier.insert(myPid);
+  bool grew = true;
+  while (grew) {
+    grew = false;
+    for (size_t i = 0; i < procs.size(); ++i) {
+      DWORD pid = procs[i].th32ProcessID, par = procs[i].th32ParentProcessID;
+      if (pid != myPid && pid != 0 && frontier.count(par) && !targets.count(pid)) {
+        targets.insert(pid); frontier.insert(pid); grew = true;
+      }
+    }
+  }
+  static const char *kNames[] = { "Hiss.exe", "Vision.exe", "OHReplay.exe", "ManualMode.exe",
+                                  "DeveloperToolbar.exe", "WindowSizer.exe", "OpenReplayShooter.exe" };
+  for (size_t i = 0; i < procs.size(); ++i) {
+    if (procs[i].th32ProcessID == myPid) continue;
+    for (int n = 0; n < (int)(sizeof(kNames)/sizeof(kNames[0])); ++n)
+      if (_stricmp(procs[i].szExeFile, kNames[n]) == 0) { targets.insert(procs[i].th32ProcessID); break; }
+  }
+  FILE *lg = NULL; fopen_s(&lg, "C:\\www\\openholdembot_old\\Release\\logs\\terminate.log", "a");
+  if (lg) fprintf(lg, "--- terminate: self=%lu, %d procs, %d targets ---\n",
+                  (unsigned long)myPid, (int)procs.size(), (int)targets.size());
+  for (size_t i = 0; i < procs.size(); ++i) {
+    DWORD pid = procs[i].th32ProcessID;
+    bool kill = targets.count(pid) > 0;
+    if (lg && (kill || _strnicmp(procs[i].szExeFile, "python", 6) == 0
+               || _strnicmp(procs[i].szExeFile, "msedgewebview2", 14) == 0))
+      fprintf(lg, "  %-24s pid=%-6lu parent=%-6lu %s\n", procs[i].szExeFile,
+              (unsigned long)pid, (unsigned long)procs[i].th32ParentProcessID, kill ? "[KILL]" : "[skip]");
+    if (kill) { HANDLE hk = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+                if (hk != NULL) { TerminateProcess(hk, 1); CloseHandle(hk); } }
+  }
+  if (lg) fclose(lg);
+  // Second pass -- the python brain daemons (hud_aggregator, decision_advisor, nn_driver, ...)
+  // and ail_server are NOT children of this Hiss: a persistent ail_server launches/manages them,
+  // so the descendant walk above never reaches them. They can only be identified by their command
+  // line (the repo path in the script args), which a 32-bit process can't reliably read from a
+  // 64-bit process's PEB. So shell out to a synchronous, hidden PowerShell running in OUR own
+  // interactive session (here WMI CAN read our own processes' command lines) and kill every python
+  // whose command line references the repo. Unrelated WebView2 apps (Search/Widgets/Copilot/PT4)
+  // don't match 'openholdembot', so they are never touched.
+  // The python brain daemons + ail_server are managed by a persistent ail_server (NOT children of
+  // this Hiss) and are launched with bare script-name args (cwd = repo\mcp), so neither the
+  // descendant walk nor an 'openholdembot' path match finds them. Delegate to an external, hidden,
+  // synchronous PowerShell script (editable without rebuilding Hiss) that matches them by script
+  // name / the ail_server tree and kills them + their descendants, in OUR interactive session.
+  char _kc[600];
+  _snprintf_s(_kc, sizeof(_kc), _TRUNCATE,
+    "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "
+    "\"C:\\www\\openholdembot_old\\Release\\terminate_daemons.ps1\" %lu",
+    (unsigned long)myPid);
+  STARTUPINFOA _si; ZeroMemory(&_si, sizeof(_si)); _si.cb = sizeof(_si);
+  PROCESS_INFORMATION _pi; ZeroMemory(&_pi, sizeof(_pi));
+  if (CreateProcessA(NULL, _kc, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &_si, &_pi)) {
+    WaitForSingleObject(_pi.hProcess, 10000);
+    CloseHandle(_pi.hProcess); CloseHandle(_pi.hThread);
+  }
+}
+
 int COpenHoldemApp::ExitInstance() {
+  TerminateInstanceHelpers();
   // timers and threads are already stopped 
   // by CMainFrame::DestroyWindow().
   // Now we cancontinue with singletons.

@@ -66,7 +66,14 @@ def eleven_tts(api_key, voice_id, text, out_path):
         headers={"xi-api-key": api_key, "Content-Type": "application/json",
                  "Accept": "audio/mpeg"})
     with urllib.request.urlopen(req, timeout=30) as r:
+        ctype = (r.headers.get("Content-Type") or "").lower()
         data = r.read()
+    # Voice unavailable / quota / plan issues can return HTTP 200 with a JSON/text error body instead
+    # of audio (no exception raised). Treat anything that is not real MP3 audio as a failure so the
+    # caller (speak) falls back to the FREE Windows SAPI voice. [Emrald: robust free-voice fallback]
+    if ("audio" not in ctype) or (len(data) < 2048) or (data.lstrip()[:1] == b"{"):
+        raise ValueError("elevenlabs non-audio response (%s, %d bytes): %s"
+                         % (ctype, len(data), data[:180].decode("utf-8", "replace")))
     with open(out_path, "wb") as f:
         f.write(data)
     return out_path

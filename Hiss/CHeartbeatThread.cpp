@@ -633,7 +633,8 @@ void CHeartbeatThread::AutoConnect() {
 			write_log(Preferences()->debug_autoconnector(), "[CHeartbeatThread] going to call Connect()\n");
 			p_autoconnector->Connect(NULL);
 		}	else {
-			write_log(Preferences()->debug_autoconnector(), "[CHeartbeatThread] Reconnection blocked. Other instance failed previously.\n");
+			{ static DWORD s_thr_block = 0; DWORD now_s_thr_block = ::GetTickCount(); if (now_s_thr_block - s_thr_block > 5000) { s_thr_block = now_s_thr_block; write_log(Preferences()->debug_autoconnector(), "[CHeartbeatThread] Reconnection blocked. Other instance failed previously.\n"); } }
 		}
 	}
 }
+// flood-throttle applied
