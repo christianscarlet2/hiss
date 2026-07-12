@@ -102,7 +102,8 @@ bool CAutoConnector::IsConnectedToGoneWindow() {
 }
 
 void CAutoConnector::Check_TM_Against_All_Windows_Or_TargetHWND(int tablemap_index, HWND targetHWnd) {
-	write_log(Preferences()->debug_autoconnector(), "[CAutoConnector] Check_TM_Against_All_Windows(..)\n");
+	// ONE line per enumeration pass (not per window -- see EnumProcTopLevelWindowList below).
+	write_log(Preferences()->debug_autoconnector(), "[CAutoConnector] Check_TM_Against_All_Windows(..) tablemap nr. %d\n", tablemap_index);
   if (targetHWnd == NULL) {
 		EnumWindows(EnumProcTopLevelWindowList, (LPARAM) tablemap_index);
   } else {
@@ -165,16 +166,20 @@ BOOL CALLBACK EnumProcTopLevelWindowList(HWND hwnd, LPARAM lparam) {
 	STableList	tablelisthold;
 	int					tablemap_index = (int)(lparam);
 
-	write_log(Preferences()->debug_autoconnector(), "[CAutoConnector] EnumProcTopLevelWindowList(..)\n");
-	write_log(Preferences()->debug_autoconnector(), "[CAutoConnector] Tablemap nr. %d\n", tablemap_index);
+  // NO per-window logging here. This callback fires once for EVERY top-level window on the desktop
+  // (~430 of them) x every tablemap, and the autoconnector re-runs ~1x/second while disconnected.
+  // Three unconditional lines here cost ~1700 log lines per connect attempt = ~61 KB/s = ~5 GB/day;
+  // that is what grew oh_1.log to 15 GB. They carried no information anyway (no hwnd, no title), and
+  // the two lines they duplicated already exist: the enumeration pass is logged ONCE by the caller
+  // (Check_TM_Against_All_Windows_Or_TargetHWND), and every REAL candidate is logged WITH its hwnd
+  // below ("Adding window candidate to the list" / "already served").
   if (!IsWindowVisible(hwnd)) {
     return true;
   }
-  // Since OH 11.1.0 We do no longer check for (GetParent(hwnd) != NULL) 
+  // Since OH 11.1.0 We do no longer check for (GetParent(hwnd) != NULL)
   // because we want OpenHoldem to be able to connect to popups
   // e.g. to click a confirmation-button
   // or maybe even do more complicated hopper-tasks in the future.
-  write_log(Preferences()->debug_autoconnector(), "[CAutoConnector] EnumProcTopLevelWindowList(..) found a window candidate...\n");
 	// See if it matches the currently loaded table map
   if (Check_TM_Against_Single_Window(tablemap_index, hwnd)) { 
 		// Filter out served tables already here,
