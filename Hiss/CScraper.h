@@ -258,8 +258,10 @@ extern DWORD   g_hero_decision_tick;        // GetTickCount() at decision lock; 
 extern char    g_hero_decision_detail[256]; // [Emrald: more lines on the RED decision in scrcpy]
 extern DWORD   g_hero_decision_detail_tick; // freshness of the detail (independent of the action lock)
 extern volatile bool g_reset_detection_request; // React badge backup: clear per-table game-type cache + identity -> re-detect
-extern char g_fckra_indicator[8];   // lit primary buttons F/C/K/R/A (mirrors the main view's bottom-corner indicators)
-extern char g_tiolp_indicator[8];   // lit secondary buttons T/I/O/L/P
+// 8-byte aligned: written on the heartbeat thread as a single atomic 64-bit store, read on the HTTP
+// thread. See CScraper.cpp -- a torn read of these crashed Hiss via "%s" with no NUL terminator.
+extern __declspec(align(8)) char g_fckra_indicator[8];   // lit primary buttons F/C/K/R/A
+extern __declspec(align(8)) char g_tiolp_indicator[8];   // lit secondary buttons T/I/O/L/P
 extern CString g_tgi_gametype;       // e.g. "No Limit"
 // table_game_info_2: current + previous hand numbers (ACR shows "Current: n  Previous: n").
 // Claude reads them from the frame and posts via /api/table-game-info-2.

@@ -845,8 +845,12 @@ static void ReleaseTurnLock() {
 // distinguishes them by LABEL, so a "check" with no Check button present was clicked blind and landed
 // on RAISE OPTIONS: the raise panel popped open and the hand stalled (hand 2777062344, AK).
 void CAutoplayer::CacheButtonIndicators(void) {
-	extern char g_fckra_indicator[8]; extern char g_tiolp_indicator[8];
-	char f[8]; int fi = 0; char t[8]; int ti = 0;
+	extern __declspec(align(8)) char g_fckra_indicator[8];
+	extern __declspec(align(8)) char g_tiolp_indicator[8];
+	// Zero-filled: every one of the 8 bytes is defined, so whichever 8-byte snapshot the HTTP thread
+	// loads is always NUL-terminated.
+	char f[8] = {0}; int fi = 0;
+	char t[8] = {0}; int ti = 0;
 	if (p_casino_interface != NULL) {
 		if (p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_fold)->IsClickable())  f[fi++] = 'F';
 		if (p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_call)->IsClickable())  f[fi++] = 'C';
@@ -859,9 +863,15 @@ void CAutoplayer::CacheButtonIndicators(void) {
 		if (p_casino_interface->LogicalAutoplayerButton(k_hopper_function_leave)->IsClickable())     t[ti++] = 'L';
 		if (p_casino_interface->LogicalAutoplayerButton(k_standard_function_prefold)->IsClickable()) t[ti++] = 'P';
 	}
-	f[fi] = '\0'; t[ti] = '\0';
-	strcpy_s(g_fckra_indicator, sizeof(g_fckra_indicator), f);
-	strcpy_s(g_tiolp_indicator, sizeof(g_tiolp_indicator), t);
+	// PUBLISH ATOMICALLY. strcpy_s here wrote byte-by-byte, and because this now runs on EVERY
+	// heartbeat (not just inside DoAutoplayer) the HTTP thread reading "%s" for /api/table-state
+	// caught the buffer mid-copy with no terminator and crashed the process (crash_hiss_61228).
+	// One aligned 64-bit store => the reader sees either the whole old value or the whole new one.
+	__int64 fv = 0, tv = 0;
+	memcpy(&fv, f, sizeof(fv));
+	memcpy(&tv, t, sizeof(tv));
+	InterlockedExchange64((volatile __int64 *)g_fckra_indicator, fv);
+	InterlockedExchange64((volatile __int64 *)g_tiolp_indicator, tv);
 }
 
 void CAutoplayer::DoAutoplayer(void) {

@@ -29,9 +29,15 @@ class CHeartbeatThread /*: public CSpaceOptimizedGlobalObject */{
 	void StartThread();
 	long int heartbeat_counter() { return _heartbeat_counter; }
  public:
-	// This critical section does not control access to any variables/members, but is used as 
+	// This critical section does not control access to any variables/members, but is used as
 	// a flag to indicate when the scraper/symbol classes are in an update cycle
 	static CRITICAL_SECTION	cs_update_in_progress;
+	// 1 only while cs_update_in_progress is actually INITIALIZED (between this object's ctor and
+	// dtor). The HTTP server thread outlives that window at BOTH ends, and /api/symbols takes this
+	// lock -- entering it before InitializeCriticalSection (or after DeleteCriticalSection) corrupts
+	// it and later blew up the heartbeat inside RtlEnterCriticalSection (crash_hiss_23456).
+	// Off-thread users MUST check this before Enter/Leave.
+	static volatile LONG cs_update_ready;
  private:
 	// private functions and variables - not available via accessors or mutators
 	static UINT HeartbeatThreadFunction(LPVOID pParam);

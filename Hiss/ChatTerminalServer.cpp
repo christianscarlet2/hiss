@@ -346,7 +346,15 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		// "not my turn", and the bot folds its arms with the autoplayer disengaged. Serialize against
 		// the heartbeat's update cycle -- the same lock CHeartbeatThread::ScrapeEvaluateAct() holds.
 		// The send() below stays OUTSIDE the lock: never hold it across network I/O.
-		EnterCriticalSection(&CHeartbeatThread::cs_update_in_progress);
+		//
+		// Take it ONLY while it is actually initialized. This HTTP thread outlives the heartbeat
+		// object at both ends, and entering an uninitialized / already-deleted CRITICAL_SECTION
+		// corrupts it -- which later blew up the heartbeat inside RtlEnterCriticalSection
+		// (crash_hiss_23456). If the heartbeat isn't up, nothing is mutating the engines anyway.
+		bool cs_held = (InterlockedCompareExchange(&CHeartbeatThread::cs_update_ready, 1, 1) == 1);
+		if (cs_held) {
+			EnterCriticalSection(&CHeartbeatThread::cs_update_in_progress);
+		}
 		while (start <= names.GetLength()) {
 			int comma = names.Find(',', start);
 			CStringA one = comma >= 0 ? names.Mid(start, comma - start) : names.Mid(start);
@@ -369,7 +377,9 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 			if (comma < 0) break;
 			start = comma + 1;
 		}
-		LeaveCriticalSection(&CHeartbeatThread::cs_update_in_progress);
+		if (cs_held) {
+			LeaveCriticalSection(&CHeartbeatThread::cs_update_in_progress);
+		}
 		g_suppress_unknown_symbol_warning = false;
 		body += "}";
 		CStringA response;
@@ -1024,12 +1034,22 @@ CStringA CChatTerminalServer::BuildTableStateJson(void)
 		if (ta > 0) toact = (int)ta - 1;
 	}
 	double beastfavor_live = (GetTickCount() - g_beast_favor_tick < 15000) ? g_beast_favor : 0.0;
+	// Snapshot the button indicators with ONE 8-byte load each (they are published by the heartbeat
+	// with one 8-byte store). Formatting straight from the globals let "%s" read them byte-by-byte
+	// while the heartbeat was rewriting them -- which crashed the process. Both are always
+	// NUL-terminated within their 8 bytes, so these copies are safe to print.
+	char fckra_snapshot[9] = {0};
+	char tiolp_snapshot[9] = {0};
+	*(__int64 *)fckra_snapshot = *(volatile __int64 *)g_fckra_indicator;
+	*(__int64 *)tiolp_snapshot = *(volatile __int64 *)g_tiolp_indicator;
+	fckra_snapshot[8] = '\0';
+	tiolp_snapshot[8] = '\0';
 	json.Format("{\"nchairs\":%d,\"userchair\":%d,\"toact\":%d,\"handnumber\":\"%s\",\"ismyturn\":%s,\"isomaha\":%s,\"isplo8\":%s,\"ispl\":%s,\"observer\":%s,\"table\":\"%s\",\"limits\":{\"sblind\":%.2f,\"bblind\":%.2f,\"ante\":%.2f,\"gametype\":%d},\"pot\":%.2f,\"beastfavor\":%.3f,\"fckra\":\"%s\",\"tiolp\":\"%s\",",
 		nchairs, userchair, toact, JsonEscape(handnumber).GetString(),
 		ismyturn ? "true" : "false", is_omaha ? "true" : "false",
 		is_plo8 ? "true" : "false", is_pl ? "true" : "false",
 		observer ? "true" : "false", JsonEscape(g_table_identity).GetString(), sblind, bblind, ante, gametype, pot, beastfavor_live,
-		g_fckra_indicator, g_tiolp_indicator);
+		fckra_snapshot, tiolp_snapshot);
 	json += "\"commonCards\":[";
 	for (int i = 0; i < kNumberOfCommunityCards; ++i) {
 		if (i > 0) json += ",";

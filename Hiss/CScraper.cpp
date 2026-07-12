@@ -143,8 +143,13 @@ DWORD g_hero_decision_tick = 0;             // GetTickCount() when the action wa
 char g_hero_decision_detail[256] = {0};     // brain context lines under the action ('\n'-sep), pushed via /api/decision-detail
 DWORD g_hero_decision_detail_tick = 0;      // freshness of the detail [Emrald: more lines on the RED decision in scrcpy]
 volatile bool g_reset_detection_request = false;  // React badge backup: wipe per-table game-type cache + identity -> re-detect
-char g_fckra_indicator[8] = {0};   // lit PRIMARY buttons among F,C,K,R,A (cached on heartbeat for the React table-view corners)
-char g_tiolp_indicator[8] = {0};   // lit SECONDARY/hopper buttons among T,I,O,L,P
+// Written on the HEARTBEAT thread, read on the HTTP thread (BuildTableStateJson) -- so they are
+// published as ONE aligned 64-bit store (exactly 8 bytes) and never byte-by-byte. A torn read here
+// crashed Hiss: the HTTP thread caught the buffer mid-strcpy_s, saw no NUL terminator, and "%s" ran
+// off the end of the array (CRT invalid parameter, crash_hiss_61228). Alignment is what makes the
+// 64-bit load/store atomic, so do NOT drop __declspec(align(8)).
+__declspec(align(8)) char g_fckra_indicator[8] = {0};   // lit PRIMARY buttons among F,C,K,R,A (React table-view corners)
+__declspec(align(8)) char g_tiolp_indicator[8] = {0};   // lit SECONDARY/hopper buttons among T,I,O,L,P
 CString g_tgi_gametype = "";
 double g_tgi2_handnumber = 0.0;
 double g_tgi2_prev_handnumber = 0.0;

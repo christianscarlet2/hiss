@@ -278,6 +278,7 @@ static void SyncSuperstitionLiveness() {
 
 CHeartbeatThread	 *p_heartbeat_thread = NULL;
 CRITICAL_SECTION	 CHeartbeatThread::cs_update_in_progress;
+volatile LONG      CHeartbeatThread::cs_update_ready = 0;   // see CHeartbeatThread.h
 long int			     CHeartbeatThread::_heartbeat_counter = 0;
 CHeartbeatThread   *CHeartbeatThread::pParent = NULL;
 CHeartbeatDelay    CHeartbeatThread::_heartbeat_delay;
@@ -285,6 +286,7 @@ COpenHoldemStarter CHeartbeatThread::_openholdem_starter;
 
 CHeartbeatThread::CHeartbeatThread() {
 	InitializeCriticalSectionAndSpinCount(&cs_update_in_progress, 4000);
+	InterlockedExchange(&cs_update_ready, 1);   // only NOW may off-thread users (e.g. /api/symbols) take it
   _heartbeat_counter = 0;
   // Create events
 	_m_stop_thread = CreateEvent(0, TRUE, FALSE, 0);
@@ -302,6 +304,9 @@ CHeartbeatThread::~CHeartbeatThread() {
 	::CloseHandle(_m_stop_thread);
 	::CloseHandle(_m_wait_thread);
 
+	// Close the gate BEFORE destroying the lock, so an in-flight /api/symbols on the HTTP thread
+	// can't enter a critical section that is about to be (or has been) deleted.
+	InterlockedExchange(&cs_update_ready, 0);
 	DeleteCriticalSection(&cs_update_in_progress);
 	p_heartbeat_thread = NULL;
 }
