@@ -22,7 +22,11 @@
 CLogWriter *p_log_writer = NULL;
 
 // Keep the most-recent N hands locally (server keeps 100).
-static const int kLocalHandsToKeep = 10;
+// 100, not 10: at 10 the local Advanced Replay pruned a hand within a couple of minutes, so by the
+// time a misplay was reported its frames were already gone (hand 2777172499 -- the frames the bug
+// report pointed at had been deleted, and /api/frames returned []). Debugging a live bot means
+// looking BACK at the moment, so keep the local window as deep as the server's. [Emrald]
+static const int kLocalHandsToKeep = 100;
 
 static CString EnvOr(const char *name, const char *def) {
 	char buf[512] = {0}; size_t n = 0;

@@ -533,7 +533,22 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
       } else {
         CAutoplayerButton *btn = p_casino_interface->LogicalAutoplayerButton(code);
         if (btn != NULL && btn->IsClickable()) {
-          write_log(k_always_log_basic_information, "[MCP] Manual FCKRA action: clicking button code %d\n", code);
+          // Log WHICH region we are about to click, its OCR'd label, and its rect -- not just the
+          // action code. Buttons are matched to actions purely by their scraped LABEL, and the phone
+          // stacks check/call/raise-options on overlapping rects, so a mislabelled region makes the
+          // bot press a DIFFERENT physical button than the one it asked for (reported: "pressed the
+          // raise button and nothing followed" on a hand where the bot only ever asked for
+          // call/check -- hand 2777172499). Without the rect there is no way to tell which. The
+          // pre-existing ButtonDebugLog claims to be "always-on" but is gated behind
+          // debug_autoplayer(), so it was silent. This line is genuinely always on and fires only on
+          // an actual click (a few per hand), so it cannot flood the log.
+          RECT br = {0};
+          p_tablemap->GetTMRegion(btn->TechnicalName(), &br);
+          write_log(k_always_log_basic_information,
+            "[MCP] Manual FCKRA action: code %d -> region \"%s\" label=\"%s\" rect=(%d,%d)-(%d,%d) center=(%d,%d)\n",
+            code, btn->TechnicalName().GetString(), btn->Label().GetString(),
+            br.left, br.top, br.right, br.bottom,
+            (br.left + br.right) / 2, (br.top + br.bottom) / 2);
           btn->Click();
         } else {
           write_log(k_always_log_basic_information, "[MCP] Manual FCKRA code %d: button not clickable yet; keeping pending.\n", code);
