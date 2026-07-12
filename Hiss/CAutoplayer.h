@@ -33,6 +33,12 @@ public:
 	// driver POSTs actions but never clicks the Sit-In button, so a sat-out bot would blind off).
 	// Self-guards: only clicks when the Sit-In button is actually present + on a short cooldown.
 	bool HandleSitinFast();
+	// Cache the FCKRA / TIOLP clickable-button indicators. PUBLIC + called from the heartbeat EVERY
+	// beat, because this used to live inside DoAutoplayer() -- which never runs when the autoplayer
+	// is disengaged. Under the NN driver that left fckra permanently EMPTY, so nothing could tell
+	// which buttons actually exist: the NN's "check" was clicked blind and landed on Raise Options
+	// (the phone stacks check/call/raise on the same rect and separates them by LABEL only).
+	void CacheButtonIndicators();
 
 public:
 	// public accessors

@@ -284,20 +284,28 @@ def decide_and_act(gs):
             amount = min_raise_to
         if amount > 0 and amount >= eff_max - 1e-6:
             do, amount, note = "allin", 0, "  (raise>=stack -> allin)"
-    # Reconcile call/check with the actual spot: with no bet to call the table shows a CHECK
-    # button (not Call), so do=call would find no button and never click. AmountToCall>0 means
-    # we're facing a bet (can't check). Uses AmountToCall from the sym we already fetched.
     # The phone keypad only accepts 0.5 increments (6.5 or 7, not 6.6) -> snap to nearest half-bb.
     if amount and amount > 0:
         amount = int(amount * 2 + 0.5) / 2.0
+    # Reconcile call/check with the actual spot, using AmountToCall (the bet state), NOT fckra.
+    #
+    # fckra is now published every heartbeat and is printed below purely as DIAGNOSTICS -- do NOT gate
+    # decisions on it. Measured live, it is not trustworthy: it reports "FCKA", i.e. Call AND Check
+    # simultaneously (mutually exclusive), and it NEVER reports R even in spots the bot can and does
+    # raise (raises execute through the two-successive-clicks "RaiseOptions" label path, which needs no
+    # R button at all). Gating on it therefore (a) silently disabled this call/check reconciliation
+    # whenever both C and K were claimed, and (b) turned every intended raise into an ALL-IN SHOVE.
+    # Both were worse than the bug they were meant to fix. Until the button label/rect detection is
+    # recalibrated (the known i6/Raise mis-calibration), AmountToCall stays the authority here.
+    fckra = (gs.get("fckra") or "").upper()          # diagnostics only -- see above
     amt_to_call = float(sym.get("AmountToCall", 0) or 0)
     if do == "call" and amt_to_call <= 0.001:
         do, note = "check", note + "  (call->check: nothing to call)"
     elif do == "check" and amt_to_call > 0.001:
         do, note = "call", note + "  (check->call: facing a bet)"
-    print("[nn_driver] %s hole=%s board=%s -> NN: %s%s%s  (val=%s)" %
+    print("[nn_driver] %s hole=%s board=%s -> NN: %s%s%s  [btns=%s]  (val=%s)" %
           (sv["_handnumber"], sv["hole"], sv["board"] or "-", do,
-           (" to %.1fbb" % amount) if amount else "", note, nn.get("value")), flush=True)
+           (" to %.1fbb" % amount) if amount else "", note, fckra or "-", nn.get("value")), flush=True)
     if not DRY:
         click(do, amount)
     return True

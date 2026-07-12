@@ -599,6 +599,12 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
 		Bool2CString(p_engine_container->symbol_engine_userchair()->userchair_confirmed()));
 	// If autoplayer is engaged, we know our chair, and the DLL hasn't told us to wait, then go do it!
 	DWORD t_act0 = GetTickCount();
+	// Refresh the FCKRA / TIOLP clickable-button indicators EVERY heartbeat -- engaged or not. This
+	// used to happen inside DoAutoplayer(), which only runs when the autoplayer is engaged, so under
+	// the NN driver fckra stayed EMPTY and /api/table-state could not tell the driver which buttons
+	// were on screen. The driver then clicked "check" blind into a spot that had no Check button and
+	// hit RAISE OPTIONS instead (hand 2777062344). Cheap: reads already-scraped button state.
+	p_autoplayer->CacheButtonIndicators();
 	if (p_autoplayer->autoplayer_engaged()) {
 		write_log(Preferences()->debug_heartbeat(), "[HeartBeatThread] Calling DoAutoplayer.\n");
 		p_autoplayer->DoAutoplayer();
