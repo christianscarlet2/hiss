@@ -200,6 +200,19 @@ bool CAutoplayerButton::IsLabelSitin() {
   s_lower_case.Remove(' ');
   s_lower_case.Remove('-');
   s_lower_case.Remove('\'');
+  // Strip the OCR junk that the leading capital "I" of "I Am Back" turns into. Tesseract renders that
+  // lone upright stroke as a pipe / bracket / exclamation far more often than as an "I", and none of
+  // those were removed here -- so the label came through as "|amback", matched nothing, the button was
+  // never classified as Sit-In, and a sat-out bot blinded off with the button right there on screen.
+  s_lower_case.Remove('|');
+  s_lower_case.Remove('!');
+  s_lower_case.Remove('[');
+  s_lower_case.Remove(']');
+  s_lower_case.Remove('(');
+  s_lower_case.Remove(')');
+  s_lower_case.Remove('.');
+  s_lower_case.Remove(',');
+  s_lower_case.Remove(':');
   // The standalone capital "I" of "I Am Back" is a bare vertical stroke, and Tesseract
   // reads it as a pipe (measured: the i9label region OCRs as "| Am Back") or, less often,
   // as an exclamation mark. Drop those so the leading glyph can't decide the match.

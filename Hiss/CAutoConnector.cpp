@@ -425,8 +425,18 @@ void CAutoConnector::Disconnect(CString reason_for_disconnection) {
 	write_log(Preferences()->debug_autoconnector(), "[CAutoConnector] Going to continue with window title\n");
 	// Change window title
 	p_openholdem_title->UpdateTitle();
-	// Reset Display 
-	PMainframe()->ResetDisplay();
+	// Reset Display
+	//
+	// NULL-GUARDED. PMainframe() is theApp.m_pMainWnd, which is NULL while the app is tearing down (and
+	// before the main window exists). Disconnect() runs on the HEARTBEAT thread, so when the table window
+	// disappears at the same moment the app is closing, this dereferenced NULL and took the whole process
+	// down: 0xC0000005 in CAutoConnector::Disconnect (crash_hiss_6340, 2026-07-13 12:58:03) -- both
+	// instances died on a plain table-window-gone disconnect, mid-tournament, with no other symptom.
+	// The connect path at SelectTableMapAndWindowAutomatically() already guards the identical call; the
+	// disconnect path never did. UpdateTitle() above is guarded internally for the same reason.
+	if (PMainframe() != NULL) {
+		PMainframe()->ResetDisplay();
+	}
 	// Reset "ScraperOutput" dialog, if it is live
 	if (m_ScraperOutputDlg)	{
 		m_ScraperOutputDlg->Reset();

@@ -665,14 +665,27 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
 	p_autoplayer->CacheButtonIndicators();
 	if (p_autoplayer->autoplayer_engaged()) {
 		write_log(Preferences()->debug_heartbeat(), "[HeartBeatThread] Calling DoAutoplayer.\n");
-		p_autoplayer->DoAutoplayer();
+		p_autoplayer->DoAutoplayer();   // reaches HandleSitinFast() internally
 	}
-	else if (g_nn_driver_engaged) {
-		// The NN driver plays via POST /api/action and never clicks screen buttons, so a sat-out bot
-		// would blind off. Keep re-seating under the NN driver too: fire the fast Sit-In every
-		// heartbeat (it self-guards -- only clicks when the Sit-In button is actually present).
+	else {
+		// ALWAYS RE-SEAT. Sitting out bleeds blinds every orbit, so the Sit-In button gets clicked no
+		// matter what is (or isn't) driving the bot.
+		//
+		// This used to be `else if (g_nn_driver_engaged)`, so fast Sit-In only ran when the autoplayer
+		// OR the NN driver was engaged. With BOTH off -- which is the state after every single restart,
+		// since the autoplayer comes up disengaged -- nothing clicked "I Am Back" and the bot just sat
+		// there blinding off. Re-seating is not a strategy decision and must not depend on who is
+		// playing: an unseated bot cannot act at all.
+		//
+		// Safe to run every heartbeat: HandleSitinFast() self-guards -- it only clicks when a Sit-In
+		// button is genuinely on screen (f$sitin + a clickable button) and holds a 1.2s cooldown, and
+		// the "I Am Back" label disappears once the click lands, so it cannot toggle us back out.
 		if (p_autoplayer->HandleSitinFast()) {
-			write_log(Preferences()->debug_heartbeat(), "[HeartBeatThread] NN-driver: Fast Sit-In handled\n");
+			write_log(k_always_log_basic_information,
+				"[HeartBeatThread] Fast Sit-In: clicked (autoplayer=%s, nn_driver=%s) -- a sat-out bot "
+				"blinds off, so we re-seat regardless of who is driving.\n",
+				p_autoplayer->autoplayer_engaged() ? "on" : "off",
+				g_nn_driver_engaged ? "on" : "off");
 		}
 	}
 	// Even when the autoplayer is DISABLED (manual / NN driver / off), PUBLISH the would-be OHF decision
