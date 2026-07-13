@@ -188,6 +188,57 @@ def brain_override(do, amount, sv):
     return do, amount, ""
 
 
+### ---------------------------------------------------------------------------------------------
+### Engine attribution. hand_results records what each hand WON; nothing recorded WHO PLAYED IT,
+### so "does the NN beat the OHF on real tables?" was unanswerable -- the production question had
+### never been asked. These two writes are the missing half:
+###
+###   bot_engine_beat   a heartbeat every ~10s while this driver is alive  -> the NN was in charge
+###                     during this window (covers hands the NN was dealt but never had to act in)
+###   bot_nn_decision   one row per actual decision                        -> per-hand ground truth
+###
+### measure_live.py joins these against hand_results to split bb/100 by engine. Best-effort only:
+### a dead DB must never stop the bot from playing, so every failure here is swallowed after one
+### loud line. DRY runs write nothing -- they don't move money, so they must not pollute the sample.
+_PG = {"conn": None, "warned": False}
+
+def _pg_exec(sql, params):
+    if DRY:
+        return
+    try:
+        import psycopg2
+        if _PG["conn"] is None or _PG["conn"].closed:
+            dsn = os.environ.get("HISS_PG_DSN",
+                                 "host=127.0.0.1 port=5432 dbname=hiss user=postgres password=dbpass")
+            _PG["conn"] = psycopg2.connect(dsn)
+            _PG["conn"].autocommit = True
+        with _PG["conn"].cursor() as cur:
+            cur.execute(sql, params)
+    except Exception as e:
+        if not _PG["warned"]:
+            print("[nn_driver] WARNING: cannot record engine attribution (%s) -- the bot plays on, "
+                  "but these hands will not be measurable" % e, flush=True)
+            _PG["warned"] = True
+        try:
+            if _PG["conn"] is not None:
+                _PG["conn"].close()
+        except Exception:
+            pass
+        _PG["conn"] = None
+
+
+def record_beat():
+    _pg_exec("INSERT INTO bot_engine_beat (ts_ms, engine, pid) VALUES (%s, 'nn', %s)",
+             (int(time.time() * 1000), os.getpid()))
+
+
+def record_decision(handnumber, betround, action, amount, note):
+    _pg_exec("INSERT INTO bot_nn_decision (handnumber, ts_ms, betround, action, amount, note) "
+             "VALUES (%s, %s, %s, %s, %s, %s)",
+             (str(handnumber), int(time.time() * 1000), betround, action,
+              float(amount or 0), (note or "").strip() or None))
+
+
 def decide_and_act(gs):
     """Returns True if we read the seat and clicked (or decided, in DRY); False if the hole
     isn't readable yet so the CALLER should retry within the same turn (do NOT skip the turn --
@@ -312,6 +363,7 @@ def decide_and_act(gs):
     print("[nn_driver] %s hole=%s board=%s -> NN: %s%s%s  [btns=%s]  (val=%s)" %
           (sv["_handnumber"], sv["hole"], sv["board"] or "-", do,
            (" to %.1fbb" % amount) if amount else "", note, fckra or "-", nn.get("value")), flush=True)
+    record_decision(sv["_handnumber"], gs.get("betround"), do, amount, note)
     if not DRY:
         click(do, amount)
     return True
@@ -325,8 +377,12 @@ def main():
     wait_start = 0.0            # when the current "my turn but hole unreadable" wait began
     warned = False
     unreachable = 0             # consecutive failed state reads -- a dead gate must never look idle
+    last_beat = 0.0             # engine-attribution heartbeat (see record_beat)
     while True:
         try:
+            if (time.monotonic() - last_beat) > 10.0:
+                record_beat()
+                last_beat = time.monotonic()
             gs = table_state()      # raises if the bot is down/wedged -> caught below, LOUDLY
             if unreachable:
                 print("[nn_driver] bot reachable again after %d failed poll(s) -- driving resumed"
