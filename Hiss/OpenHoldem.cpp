@@ -338,7 +338,8 @@ void COpenHoldemApp::FinishInitialization() {
 		m_pMainWnd);
 	assert(p_openholdem_title != NULL);
 	p_openholdem_title->UpdateTitle();
-	HANDLE ail = CreateThread(NULL, 0, AilServerStarterThread, NULL, 0, NULL);
+	// ::CreateThread -- unqualified would bind to CWinThread::CreateThread (we are inside a CWinApp).
+	HANDLE ail = ::CreateThread(NULL, 0, AilServerStarterThread, NULL, 0, NULL);
 	if (ail != NULL) CloseHandle(ail);
 	// Show each instance (no auto-minimize for secondary instances) and restore its
 	// own last size/position from the DB, so multiple instances open where they last
