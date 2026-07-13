@@ -25,6 +25,145 @@
 
 #pragma comment(lib, "ws2_32.lib")
 
+// ---- /api/symbols snapshot (see ChatTerminalServer.h) -------------------------------------------
+// The heartbeat WRITES this; HTTP threads only READ it. Guarded by its own small lock, never by
+// cs_update_in_progress, so a reader can no longer stall the bot.
+#include <map>
+#include <set>
+
+static std::map<CStringA, CStringA> g_symbols_snapshot;  // name -> JSON value fragment
+static std::set<CStringA>           g_symbols_wanted;    // only what someone actually reads
+
+// The lock must be initialized EXACTLY once. A plain "if (!ready) InitializeCriticalSection()" is a
+// race: the HTTP thread and the heartbeat thread both call it, both can see !ready, and
+// initializing the same CRITICAL_SECTION twice corrupts it -- which then hangs whoever enters it.
+// (I wrote that race, and it wedged the endpoint exactly the way the original bug did.) A
+// function-local static is initialized thread-safely by the C++ runtime; let it do the work.
+struct SymbolsCriticalSection {
+  CRITICAL_SECTION cs;
+  SymbolsCriticalSection()  { InitializeCriticalSection(&cs); }
+  ~SymbolsCriticalSection() { DeleteCriticalSection(&cs); }
+};
+
+static CRITICAL_SECTION *SymbolsCs() {
+  static SymbolsCriticalSection instance;   // thread-safe init (magic statics)
+  return &instance.cs;
+}
+
+#define g_symbols_cs (*SymbolsCs())
+
+static void EnsureSymbolsCs() { SymbolsCs(); }
+
+// CChatTerminalServer::JsonEscape is a member; these helpers are free functions (the heartbeat calls
+// them without an instance), so they carry their own.
+static CStringA JsonEscapeFree(const CString &value) {
+  CStringA out;
+  CStringA in(value);
+  for (int i = 0; i < in.GetLength(); ++i) {
+    char c = in[i];
+    switch (c) {
+      case '"':  out += "\\\""; break;
+      case '\\': out += "\\\\"; break;
+      case '\n': out += "\\n";  break;
+      case '\r': out += "\\r";  break;
+      case '\t': out += "\\t";  break;
+      default:
+        if ((unsigned char) c < 0x20) {
+          CStringA esc; esc.Format("\\u%04x", (unsigned char) c);
+          out += esc;
+        } else {
+          out += c;
+        }
+    }
+  }
+  return out;
+}
+
+static void SplitNames(const CStringA &names, std::vector<CStringA> *out) {
+  int start = 0;
+  while (start <= names.GetLength()) {
+    int comma = names.Find(',', start);
+    CStringA one = comma >= 0 ? names.Mid(start, comma - start) : names.Mid(start);
+    one.Trim();
+    if (!one.IsEmpty()) out->push_back(one);
+    if (comma < 0) break;
+    start = comma + 1;
+  }
+}
+
+void WantSymbols(const CStringA &names) {
+  EnsureSymbolsCs();
+  std::vector<CStringA> list;
+  SplitNames(names, &list);
+  EnterCriticalSection(&g_symbols_cs);
+  for (size_t i = 0; i < list.size(); ++i) g_symbols_wanted.insert(list[i]);
+  LeaveCriticalSection(&g_symbols_cs);
+}
+
+bool SymbolsFromSnapshot(const CStringA &names, CStringA *json_body) {
+  EnsureSymbolsCs();
+  std::vector<CStringA> list;
+  SplitNames(names, &list);
+  CStringA body = "{";
+  bool first = true;
+  bool complete = true;
+  EnterCriticalSection(&g_symbols_cs);
+  for (size_t i = 0; i < list.size(); ++i) {
+    std::map<CStringA, CStringA>::const_iterator it = g_symbols_snapshot.find(list[i]);
+    if (it == g_symbols_snapshot.end()) { complete = false; break; }   // never snapshotted yet
+    if (!first) body += ",";
+    first = false;
+    body += "\"" + JsonEscapeFree(CString(list[i])) + "\":" + it->second;
+  }
+  LeaveCriticalSection(&g_symbols_cs);
+  if (!complete) return false;
+  body += "}";
+  *json_body = body;
+  return true;
+}
+
+// Called from the heartbeat, INSIDE cs_update_in_progress, right after the engines were evaluated.
+// Only the names somebody has actually asked for get refreshed, so this stays proportional to what
+// is being read (the driver's ~110) rather than to the whole symbol space.
+void RefreshSymbolSnapshot(void) {
+  EnsureSymbolsCs();
+  if (p_engine_container == NULL) return;
+
+  std::vector<CStringA> wanted;
+  EnterCriticalSection(&g_symbols_cs);
+  for (std::set<CStringA>::const_iterator it = g_symbols_wanted.begin();
+       it != g_symbols_wanted.end(); ++it) {
+    wanted.push_back(*it);
+  }
+  LeaveCriticalSection(&g_symbols_cs);
+  if (wanted.empty()) return;
+
+  // Evaluate OUTSIDE our little lock (we already hold the heartbeat's), then publish in one go.
+  std::map<CStringA, CStringA> fresh;
+  g_suppress_unknown_symbol_warning = true;     // a typo must never pop a modal on the heartbeat
+  for (size_t i = 0; i < wanted.size(); ++i) {
+    CString name(wanted[i]);
+    double dval = 0.0;
+    CString sval;
+    CStringA frag;
+    if (p_engine_container->EvaluateSymbol(name, &dval, false)) {
+      frag.Format("%.4f", dval);
+    } else if (p_engine_container->EvaluateSymbol(name, &sval, false)) {
+      frag = "\"" + JsonEscapeFree(sval) + "\"";
+    } else {
+      frag = "null";
+    }
+    fresh[wanted[i]] = frag;
+  }
+  g_suppress_unknown_symbol_warning = false;
+
+  EnterCriticalSection(&g_symbols_cs);
+  for (std::map<CStringA, CStringA>::const_iterator it = fresh.begin(); it != fresh.end(); ++it) {
+    g_symbols_snapshot[it->first] = it->second;
+  }
+  LeaveCriticalSection(&g_symbols_cs);
+}
+
 CChatTerminalServer *p_chat_terminal_server = NULL;
 
 CChatTerminalServer::CChatTerminalServer()
@@ -332,6 +471,34 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 	// the live internal-engine symbol values to Claude.
 	if (path.CompareNoCase("/api/symbols") == 0) {
 		CStringA names = UrlDecode(QueryValue(query, "names"));
+
+		// Serve the snapshot the HEARTBEAT publishes. The HTTP thread NEVER evaluates symbols and
+		// NEVER touches cs_update_in_progress, so no query -- however large or heavy -- can stall
+		// the bot. That was the whole defect: a read of the bot's state could stop the bot.
+		WantSymbols(names);                       // tell the heartbeat to keep these fresh
+		CStringA snap;
+		// On the first-ever request for a name the snapshot has no entry yet. WAIT for the heartbeat
+		// to publish it (it runs at ~3.4 Hz, so this is typically one beat, ~300 ms) instead of
+		// evaluating here. Evaluating here is what held the update lock -- measured at 10.7 s on the
+		// first 110-symbol pull, i.e. a ten-second freeze of the bot, every restart.
+		const DWORD deadline = GetTickCount() + 3000;
+		for (;;) {
+			if (SymbolsFromSnapshot(names, &snap)) break;
+			if (GetTickCount() >= deadline) break;                  // give up, fall through below
+			Sleep(25);
+		}
+		if (!snap.IsEmpty()) {
+			CStringA fast;
+			fast.Format(
+				"HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+				"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+				snap.GetLength(), snap.GetString());
+			send(client, fast.GetString(), fast.GetLength(), 0);
+			return;
+		}
+		// Only if the heartbeat never published within the deadline (it is down, or the bot is not
+		// connected to a table). Fall back to the old direct evaluation so a symbol read still works
+		// when there is no heartbeat to publish for us -- in that case there is nothing to stall.
 		CStringA body = "{";
 		int start = 0;
 		bool first = true;

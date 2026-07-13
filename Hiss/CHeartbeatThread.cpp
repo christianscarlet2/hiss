@@ -27,6 +27,8 @@
 #include "CBetroundCalculator.h"
 #include "CHeartbeatDelay.h"
 #include "CEngineContainer.h"
+#include "ChatTerminalServer.h"   // RefreshSymbolSnapshot() -- /api/symbols is served from a
+                                  // heartbeat-published snapshot, never evaluated on the HTTP thread
 #include "CIteratorThread.h"
 #include "CLazyScraper.h"
 #include "COpenHoldemHopperCommunication.h"
@@ -422,6 +424,14 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
   //   * auto-player needs stable frames too
   DWORD t_eval0 = GetTickCount();
 	p_engine_container->EvaluateAll();
+  // Publish the symbols the HTTP callers are reading (/api/symbols). We are already inside
+  // cs_update_in_progress and the engines were just evaluated, so this is the cheapest possible
+  // place to do it -- and it means the HTTP thread NEVER evaluates and never takes this lock.
+  // Before this, a read of the bot's state could stall the bot: a large or heavy /api/symbols query
+  // held the update lock for its whole duration, and the endpoint wedged outright (reproduced: a few
+  // back-to-back 110-symbol pulls, and afterwards even a single cheap symbol timed out). The
+  // nn_driver cannot decide a hand without this endpoint.
+  RefreshSymbolSnapshot();
   DWORD t_eval_ms = GetTickCount() - t_eval0;
   // Refresh the HUD/PT4 stat cache HERE, on the heartbeat thread, inside the update lock
   // and right after the engine evaluated -- this is the ONLY place PT_DLL_GetStat (which
