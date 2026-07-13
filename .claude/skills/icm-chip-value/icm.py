@@ -23,6 +23,42 @@ Notes
 """
 import sys, json, random
 
+def homogeneous_equity(hero, avg, n_field, payouts):
+    """EXACT hero equity when the field is modelled as n_field IDENTICAL average stacks.
+
+    That is precisely the MTT mid-field mode, and it has a closed form -- so we never simulate it.
+    Malmuth-Harville draws the next finisher proportional to chips, so while the hero is still in with
+    k field players left, P(hero is drawn now) = hero / (hero + k*avg). Walking places from the top:
+
+        P(reach place p) = prod_{j<p} [ (k0-j)*avg / (hero + (k0-j)*avg) ]
+        P(hero takes p)  = P(reach p) * hero / (hero + (k0-p)*avg)
+
+    Summing P(p)*payout[p] is O(len(payouts)) and instant. The Monte-Carlo it replaces was
+    O(sims * places * field) -- ~2 billion operations for a 593-runner freeroll paying 184, which
+    simply never returned (120s timeout) and left the daemon speaking $0.00 equity."""
+    k0 = max(0, int(n_field))
+    if hero <= 0:
+        return 0.0
+    eq = 0.0
+    reach = 1.0                      # P(hero still unfinished when place p is awarded)
+    for p in range(len(payouts)):
+        k = k0 - p                   # field players still in (hero has survived p eliminations)
+        if k < 0:
+            # Everyone else is out; hero necessarily takes this place.
+            eq += reach * payouts[p]
+            reach = 0.0
+            break
+        denom = hero + k * avg
+        if denom <= 0:
+            break
+        p_here = hero / denom
+        eq += reach * p_here * payouts[p]
+        reach *= (1.0 - p_here)
+        if reach <= 1e-12:
+            break
+    return eq
+
+
 def mc_equities(stacks, payouts, sims, hero_index):
     n = len(stacks)
     npay = len(payouts)
