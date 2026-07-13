@@ -37,6 +37,42 @@ CCritSec log_critsec;  // Used to ensure only one thread at a time writes to log
 bool footer_needs_to_be_written = false;
 const char *footer = "********************************************************************************\n";
 
+// Log rotation. A single session was measured at 380 MB / 72 minutes (~7.6 GB/day) with no bound
+// at all -- the log grew until the disk complained. Rotating keeps the most recent history (the
+// only part anyone ever reads) while capping disk at 2 * k_max_log_file_bytes per session.
+//
+// NOTE the per-line fflush() below is deliberately KEPT. It looks like an easy win, but this log is
+// the primary forensic record when the bot crashes, and buffering would drop precisely the last
+// lines before the crash -- the ones that matter. Its measured cost is under 0.5% CPU; the real
+// problem was never the flush, it was the volume (78% of all lines came from six templates that
+// were reporting normal, healthy state). Fix the volume, keep the durability.
+const long k_max_log_file_bytes = 64 * 1024 * 1024;
+
+// Precondition: log_critsec is already held by the caller.
+static void rotate_log_if_necessary() {
+  if (log_fp == NULL) {
+    return;
+  }
+  long size = ftell(log_fp);
+  if (size < k_max_log_file_bytes) {
+    return;
+  }
+  CString current = LogFilePath(session_ID);
+  CString previous = current + ".1";
+  fclose(log_fp);
+  log_fp = NULL;
+  remove(previous.GetString());                       // keep exactly one generation back
+  rename(current.GetString(), previous.GetString());
+  log_fp = _fsopen(current.GetString(), "a", _SH_DENYWR);
+  if (log_fp != NULL) {
+    fprintf(log_fp, "%s\n", footer);
+    fprintf(log_fp, "*** LOG ROTATED - previous %ld bytes moved to %s ***\n",
+            size, previous.GetString());
+    fprintf(log_fp, "%s\n", footer);
+    fflush(log_fp);
+  }
+}
+
 void write_footer_if_necessary() {
   if (footer_needs_to_be_written == false) {
     return;
@@ -170,6 +206,10 @@ void write_log_vl(bool debug_settings_for_this_message, const char* fmt, va_list
   }
   if (log_fp != NULL) {
     CSLock lock(log_critsec);
+    rotate_log_if_necessary();
+    if (log_fp == NULL) {
+      return;                     // rotation failed to reopen; drop the line rather than crash
+    }
     vsprintf_s(buff, 10000, fmt, vl);
     get_time(nowtime);
     fprintf(log_fp, "%s > %s", nowtime, buff);
@@ -189,6 +229,10 @@ void write_log(bool debug_settings_for_this_message, const char* fmt, ...) {
   }
   write_footer_if_necessary();
   CSLock lock(log_critsec);
+  rotate_log_if_necessary();
+  if (log_fp == NULL) {
+    return;                       // rotation failed to reopen; drop the line rather than crash
+  }
   va_start(ap, fmt);
   vsprintf_s(buff, 10000, fmt, ap);
   get_time(nowtime);

@@ -1332,15 +1332,27 @@ int CScraper::ScrapeCard(CString name) {
       return result;
     }
   }
-  // Nothing found
-  write_log(k_always_log_errors, 
-    "[CScraper] WARNING ScrapeCard(%s) found nothing\n", name);
-  write_log(k_always_log_errors, 
-    "[CScraper] Not nocard, no cards and no cardbacks.\n");
-  write_log(k_always_log_errors,
-    "[CScraper] Defaulting to nocard\n");
-  write_log(k_always_log_errors,
-     "[CScraper] Please revisit your cards, especially nocard-regions.\n");
+  // Nothing found.
+  //
+  // This used to emit FOUR unconditional lines every time, every frame, for every unresolved card
+  // region -- 28,594 failures in one session, ~118,000 lines, and (with k_always_log_errors being a
+  // compile-time `const bool = true`) no preference could silence them. Together with the
+  // autoconnector flood they made the log 78% noise and 380 MB/session, which is exactly why nobody
+  // reads it, which is exactly how a real miscalibration hides in plain sight.
+  //
+  // Now: one line, rate-limited per region. The message is UNCHANGED in substance -- if a card
+  // region genuinely never resolves, you still hear about it -- you just hear it once per region
+  // every 10 s instead of ~3x/second. Rate-limiting a warning is not the same as suppressing it.
+  static std::map<CString, DWORD> last_warned;
+  DWORD now = GetTickCount();
+  std::map<CString, DWORD>::iterator w = last_warned.find(name);
+  if (w == last_warned.end() || (now - w->second) > 10000) {
+    last_warned[name] = now;
+    write_log(k_always_log_errors,
+      "[CScraper] WARNING ScrapeCard(%s) found nothing - not a cardback, not a card, not nocard. "
+      "Defaulting to nocard; revisit this region's card/nocard calibration. "
+      "(rate-limited to 1 per region per 10s)\n", name);
+  }
   // For some time we tried to be smart and returned
   //   * CARD_BACK for players
   //   * CARD_NOCARD for board-cards

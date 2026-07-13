@@ -83,9 +83,17 @@ bool CAutoConnector::IsConnectedToExistingWindow() {
   }
   HWND table = attached_hwnd();
   bool result = IsWindow(table);
-  write_log(Preferences()->debug_autoconnector(), 
-    "[CAutoConnector] IsConnectedToexistingWindow: %s\n",
-    Bool2CString(result));
+  // Log only on CHANGE. This fires ~15x/second and was the single largest source of log flood:
+  // 65,487 lines in one session, all of them saying "yes, still connected". The change-only dedup
+  // was already added to IsConnectedToAnything() six lines above -- it was simply never applied to
+  // this sibling, so the flood survived the fix that was meant to kill it.
+  { static int s_iw_last = -1;
+    if ((int)result != s_iw_last) {
+      s_iw_last = (int)result;
+      write_log(Preferences()->debug_autoconnector(),
+        "[CAutoConnector] IsConnectedToexistingWindow: %s\n",
+        Bool2CString(result));
+    } }
   return result;
 }
 
