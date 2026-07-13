@@ -543,12 +543,16 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
       // /api/action path that the NN driver / learner use was never given the same treatment.
       //
       // An ALL-IN carries no numeric RaiseTo size, so type the FULL stack (posted bet +
-      // remaining balance), exactly as CAutoplayer's two-successive-clicks path does.
+      // remaining balance) PLUS kAllinOvershoot, exactly as CAutoplayer's two-successive-clicks
+      // path does. The table accepts an over-bet and caps it to our real stack, so overshooting
+      // means the shove no longer depends on our stack scrape being exact -- only on it being
+      // close enough to be too big. A stack that scraped a hair high used to type an amount the
+      // table refused, which left the raise panel open and hung the bot mid-hand.
       double keypad_amount = amount;
       if (code == k_autoplayer_function_allin && keypad_amount <= 0
           && p_table_state != NULL && p_table_state->User() != NULL) {
         keypad_amount = p_table_state->User()->_bet.GetValue()
-                      + p_table_state->User()->_balance.GetValue();
+                      + p_table_state->User()->_balance.GetValue() + kAllinOvershoot;
       }
       // HandleCycle() is self-gating: it only fires when the configured label regions
       // ("BetOptions" / "RaiseOptions") actually match on screen. So on a short-stack table that

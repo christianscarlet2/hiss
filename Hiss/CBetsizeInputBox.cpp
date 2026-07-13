@@ -251,20 +251,37 @@ bool CBetsizeInputBox::ClickNumpadRegion(CString region_name) {
 // Enter the betsize by tapping the on-screen numpad: "type" each character by
 // clicking n0..n9 / nDecimalPoint, then click nOkay.
 void CBetsizeInputBox::EnterBetsizeByNumpad(CString amount) {
-	// Clamp to the scraped hero balance: never type a bet/raise larger than the stack
-	// we actually have on the table. A mis-scrape or an over-large f$betsize must not
-	// enter a number bigger than our balance -- the casino rejects it or it mis-parses.
+	// DELIBERATE ALL-IN OVERSHOOT.
+	//
+	// This table ACCEPTS a bet larger than our stack and caps it to the stack [Emrald]. That makes
+	// overshooting strictly SAFER than typing the stack exactly, because the stack we type is a
+	// SCRAPED number and it is not always right:
+	//
+	//   * scrape reads a hair HIGH -> we type more than we actually have -> the table refuses the
+	//     entry, the raise panel just sits there open, and the bot freezes until it times out.
+	//     (This is exactly how hand 2778175981 and 2778192596 hung.)
+	//   * scrape reads a hair LOW  -> we type less than our stack -> we leave chips behind on a hand
+	//     we meant to shove, and the "all-in" silently isn't one.
+	//
+	// Overshooting removes both failure modes at once: the table clamps it down to the exact stack
+	// for us, using ITS number instead of ours. So we no longer need our scrape to be exact -- only
+	// to be close enough to be too big, which is what kAllinOvershoot guarantees.
+	//
+	// We still cap the overshoot so a garbage f$betsize can't type an absurd figure; anything above
+	// the cap is an all-in anyway, so the cap costs nothing.
 	if (p_table_state != NULL && p_table_state->User() != NULL) {
-		// Cap at the full committable stack = already-posted bet + remaining balance. A
-		// "RaiseTo" amount is the TOTAL bet, so the max legal entry is our whole stack, not
-		// just the remaining balance (clamping to balance alone would clip a real all-in).
+		// The full committable stack = already-posted bet + remaining balance. A "RaiseTo" amount is
+		// the TOTAL bet, so the max meaningful entry is our whole stack, not just the balance.
 		double max_stack = p_table_state->User()->_bet.GetValue()
 			+ p_table_state->User()->_balance.GetValue();
+		double ceiling = max_stack + kAllinOvershoot;
 		double amt = atof(amount.GetString());
-		if (max_stack > 0.0 && amt > max_stack) {
+		if (max_stack > 0.0 && amt > ceiling) {
 			write_log(k_always_log_basic_information,
-				"[CBetsizeInputBox] amount %.2f exceeds full stack %.2f -- clamping to stack.\n", amt, max_stack);
-			amount = Number2CString(max_stack);
+				"[CBetsizeInputBox] amount %.2f is above stack %.2f + overshoot %.2f -- capping at %.2f "
+				"(the table will clamp it to our real stack).\n",
+				amt, max_stack, kAllinOvershoot, ceiling);
+			amount = Number2CString(ceiling);
 		}
 	}
 	// Trim trailing zeros after the decimal point: type "2.5" not "2.50", and "2"

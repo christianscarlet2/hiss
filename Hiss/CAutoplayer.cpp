@@ -368,8 +368,12 @@ bool CAutoplayer::HandleTwoSuccessiveClicksBetRaise() {
 	// 0, the keypad path SKIPS, and the bot folds a hand it wanted to shove. This is the
 	// leak that folded 77/AJ-type hands facing a shove. [equity]
 	if (wants_allin && betsize <= 0 && p_table_state != NULL && p_table_state->User() != NULL) {
-		betsize = p_table_state->User()->_bet.GetValue() + p_table_state->User()->_balance.GetValue();
-		APTrace("two-successive-clicks: ALL-IN with no numeric size -> typing full stack");
+		// Type stack + kAllinOvershoot, not the stack exactly: the table accepts the over-bet and
+		// caps it to our REAL stack, so a stack that scraped a hair high can no longer produce an
+		// entry the table refuses (which leaves the raise panel open and hangs the bot).
+		betsize = p_table_state->User()->_bet.GetValue()
+		        + p_table_state->User()->_balance.GetValue() + kAllinOvershoot;
+		APTrace("two-successive-clicks: ALL-IN with no numeric size -> typing full stack + overshoot");
 	}
 	write_log(k_always_log_basic_information,
 		"[TwoClicks] BetRaise entry: wants_raise=%d wants_allin=%d f$betsize=%.2f decision_bb=%.2f -> keypad betsize=%.2f\n",
@@ -423,9 +427,10 @@ bool CAutoplayer::HandleTwoSuccessiveClicksBetRaise() {
 		}
 		if (all_in_to > 0 && betsize >= all_in_to - 0.005) {
 			write_log(k_always_log_basic_information,
-				"[TwoClicks] raise-to %.2f meets or exceeds our whole stack (%.2f) -> typing the full "
-				"stack: the raise IS a jam.\n", betsize, all_in_to);
-			betsize = all_in_to;                    // never type more than we have
+				"[TwoClicks] raise-to %.2f meets or exceeds our whole stack (%.2f) -> the raise IS a jam; "
+				"typing stack + %.2f and letting the TABLE clamp it to our real stack.\n",
+				betsize, all_in_to, kAllinOvershoot);
+			betsize = all_in_to + kAllinOvershoot;  // over-shoot on purpose; the table caps it for us
 		}
 	}
 

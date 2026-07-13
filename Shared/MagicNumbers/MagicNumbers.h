@@ -199,6 +199,16 @@ const int k_max_length_of_handnumber = 256;
 // Hand history generator
 const double k_hand_history_rake = 0.05;
 
+// ALL-IN OVERSHOOT (in big blinds).
+//
+// The table ACCEPTS a bet bigger than our stack and caps it to the stack [Emrald]. So when we shove
+// we deliberately type stack + this, and let the TABLE decide the exact number instead of trusting
+// our scrape. Typing the stack exactly means a stack that scraped a hair HIGH gets refused (the raise
+// panel sits open and the bot freezes), and one that scraped a hair LOW leaves chips behind on a hand
+// we meant to shove. Overshooting removes both, and costs nothing: anything at or above the stack is
+// the same all-in.
+const double kAllinOvershoot = 1.0;
+
 //  File accessable?
 //  (<unistd.h> is not contained in MSCVPP)
 const int F_OK = 0;
