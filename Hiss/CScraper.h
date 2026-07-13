@@ -184,13 +184,6 @@ class CScraper : public CSpaceOptimizedGlobalObject {
 	CString _mem_p3observer_name;
 	// Parallel-OCR pre-pass results for this scrape cycle (region name -> text).
 	std::map<CString, CString> _ocr_cache;
-	// Regions already captured + change-checked by PreOcrParallel THIS cycle, and what it found.
-	// Without this, EvaluateRegion called ProcessRegion a SECOND time on every OCR region: the
-	// prepass had already promoted cur_bmp -> last_bmp, so the second call always answered
-	// "identical" and its only effect was to pay the full GDI capture + pixel-compare cost again
-	// (~210 redundant region captures/sec). It also inflated the identical-region counter, which is
-	// part of why the "99.877% identical" figure looked so extreme.
-	std::map<CString, bool> _prepass_changed;
 	// Last OCR result per AutoOcr region, kept ACROSS frames. When a region's
 	// pixels are identical to the previous frame (ProcessRegion() == false) we
 	// reuse this instead of re-running Tesseract - the big scrape-speed win.

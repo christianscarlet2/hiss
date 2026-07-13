@@ -3,8 +3,6 @@
 
 #include <math.h>
 #include <float.h>
-#include <map>
-#include <vector>
 #include "CPokerTrackerThread.h"
 #include "CEngineContainer.h"           // p_engine_container -> current gametype for per-gametype HUD
 #include "CSymbolEngineIsOmaha.h"
@@ -413,11 +411,6 @@ void CHudManager::RefreshIfNeeded(CString hand_number, bool force)
 	if (p_engine_container != NULL && p_engine_container->symbol_engine_isomaha() != NULL
 		&& p_engine_container->symbol_engine_isomaha()->isomaha())
 		hud_gametype = p_engine_container->symbol_engine_isomaha()->isplo8() ? "plo8" : "plo";
-	// ONE round trip for every seated player, not one per chair. This runs on the heartbeat thread
-	// inside cs_update_in_progress, so each extra query was lock-held time that every /api reader
-	// (and the NN driver) waits on -- and it scaled with the number of players at the table.
-	std::vector<CString> seated_names;
-	CString chair_name[kMaxNumberOfPlayers];
 	for (int chair = 0; chair < kMaxNumberOfPlayers; ++chair) {
 		_chair_samples[chair] = -1;
 		_chair_stats[chair].clear();
@@ -425,19 +418,9 @@ void CHudManager::RefreshIfNeeded(CString hand_number, bool force)
 		CString name = p_table_state->Player(chair)->name();
 		name.Trim();
 		if (name.IsEmpty()) continue;
-		chair_name[chair] = name;
-		seated_names.push_back(name);
-	}
-	std::map<CString, SHudDbStats> batch;
-	p_tablemap_db->GetHudPlayerStatsBatch(seated_names, hud_gametype, &batch);
 
-	for (int chair = 0; chair < kMaxNumberOfPlayers; ++chair) {
-		CString name = chair_name[chair];
-		if (name.IsEmpty()) continue;
-
-		std::map<CString, SHudDbStats>::const_iterator hit = batch.find(name);
-		if (hit == batch.end() || !hit->second.found) continue;
-		SHudDbStats st = hit->second;
+		SHudDbStats st;
+		if (!p_tablemap_db->GetHudPlayerStats(name, hud_gametype, &st) || !st.found) continue;
 		_chair_samples[chair] = st.hands;
 		if (!build_stats) continue;
 
