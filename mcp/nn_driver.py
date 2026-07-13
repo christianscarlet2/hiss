@@ -71,13 +71,10 @@ NUMERIC_SYMBOLS = ("handrank169,f$BoardWet,f$BoardDry,f$ScaryBoard,f$BoardHighCa
     "exploit_honest_raischair,intro_known_raischair,intro_foldpress_raischair,intro_tilt_raischair,"
     "intro_contfreq_raischair,intro_rangestrength_raischair,openai_knob_openrange,"
     "openai_knob_aggro,openai_knob_bluff,"
-    # The TRUE opponent count. features.py computes hand equity as `hole vs nopponents`, defaulting to
-    # 1 when it isn't sent -- so the bot has been acting on HEADS-UP equity in a nine-handed game.
-    # AJo reads ~0.55 when its true five-way equity is ~0.25: every marginal hand overvalued.
-    # Safe to send today: nn_decide clamps it back to 1 unless the champion was actually TRAINED on a
-    # real opponent count (the SIGHTED marker), so the current heads-up-trained champion is unaffected
-    # and multiway equity switches on by itself the day a sighted champion is promoted.
-    "nopponents,"
+    # NOTE: do NOT ask for "nopponents". It was REMOVED from this fork's code-base, and requesting a
+    # removed symbol pops a BLOCKING modal ("ERROR: outdated symbol") that freezes the heartbeat --
+    # which is exactly what wedged /api/symbols. The live opponent count is carried by
+    # `nopponentsplaying` (already in this list) and is aliased to `nopponents` for the NN below.
     "validator_ok,validator_confidence,"
     # Not a model feature -- the driver's own ICM sizing multiplier. Pulled in the SAME request rather
     # than a second mid-decision /api/symbols call on Hiss's symbol-evaluating HTTP thread.
@@ -285,6 +282,21 @@ def decide_and_act(gs):
         return False                       # hole not scraped yet -> retry, don't consume the turn
     # Sym straight from the live bot (local, DB-free) -- not swiftsnake's /decide.
     sym = _get(BOT + "/api/symbols?names=" + NUMERIC_SYMBOLS)
+
+    # features.py computes hand equity as `hole vs sym["nopponents"]`, defaulting to 1 when absent --
+    # so the bot has been acting on HEADS-UP equity in a nine-handed game (AJo reads ~0.55 when its
+    # true five-way equity is ~0.25). The symbol literally named `nopponents` was REMOVED from this
+    # fork and asking for it pops a blocking modal that freezes the heartbeat, so alias the live
+    # count from `nopponentsplaying`, which is the same thing: opponents still in the hand.
+    #
+    # Safe to send today: nn_decide clamps it back to 1 unless the champion was actually TRAINED on a
+    # real opponent count (the SIGHTED marker). So the current heads-up-trained champion is
+    # unaffected, and multiway equity switches on by itself the day a sighted champion is promoted.
+    if isinstance(sym, dict) and "nopponentsplaying" in sym:
+        try:
+            sym["nopponents"] = int(float(sym["nopponentsplaying"]))
+        except (TypeError, ValueError):
+            pass
     nn = _post(NN, {"sym": sym, "hole": sv["hole"], "board": sv["board"], "bblind": sv["bblind"]})
 
     # NEVER DEFAULT TO FOLD.
