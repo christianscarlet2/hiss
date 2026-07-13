@@ -20,17 +20,48 @@ the writes are idempotent (ON CONFLICT on handnumber), so the two cannot corrupt
 """
 import os, sys, time, json, urllib.request
 
-BOT = os.environ.get("NN_BOT_URL", "http://127.0.0.1:27654")
+REPO = os.environ.get("HISS_REPO", r"C:\www\openholdembot_old")
+PORT_FILE = os.path.join(REPO, "Release", "logs", "terminal_port.txt")
 DSN = os.environ.get("HISS_PG_DSN",
                      "host=127.0.0.1 port=5432 dbname=hiss user=postgres password=dbpass")
 POLL_S = float(os.environ.get("ODOMETER_POLL_S", "1.0"))
 
+# NEVER HARD-CODE THE PORT.
+#
+# Hiss binds a different terminal port per session (27654, then 27655, ...) and publishes the one it
+# actually got to Release/logs/terminal_port.txt. When parse_guard restarts a wedged Hiss, the new
+# instance can come up on a DIFFERENT port -- and every daemon still pointing at the old one goes on
+# polling a dead socket forever, silently doing nothing. That is how a "running" odometer records
+# zero hands while the bot plays a whole session. Read the file, and re-read it whenever the bot
+# stops answering, so a port move is survivable rather than fatal.
+_port = [None]
+
+
+def bot_url():
+    if _port[0]:
+        return "http://127.0.0.1:%d" % _port[0]
+    try:
+        with open(PORT_FILE) as f:
+            _port[0] = int(f.read().strip())
+            return "http://127.0.0.1:%d" % _port[0]
+    except Exception:
+        pass
+    for cand in range(27654, 27665):                       # fall back to scanning, like the MCP does
+        try:
+            urllib.request.urlopen("http://127.0.0.1:%d/api/autoplayer" % cand, timeout=0.5).read()
+            _port[0] = cand
+            return "http://127.0.0.1:%d" % cand
+        except Exception:
+            continue
+    return "http://127.0.0.1:27654"                         # nothing up yet; retry next poll
+
 
 def get(path, timeout=4):
     try:
-        with urllib.request.urlopen(BOT + path, timeout=timeout) as r:
+        with urllib.request.urlopen(bot_url() + path, timeout=timeout) as r:
             return json.loads(r.read().decode("utf-8", "replace"))
     except Exception:
+        _port[0] = None            # the bot moved (or died): rediscover on the next poll
         return None
 
 
@@ -101,7 +132,7 @@ def record(handnumber, ts_ms, net, start_bal, end_bal):
 
 def main():
     once = "--once" in sys.argv
-    print("[odometer] recording every hand's result from %s -> hand_results" % BOT, flush=True)
+    print("[odometer] recording every hand's result from %s -> hand_results" % bot_url(), flush=True)
     cur_hand, cur_bal, cur_had_cards, cur_observer = "", None, False, False
     recorded = skipped = 0
     while True:

@@ -20,7 +20,7 @@ swiftsnake DB can't stall the NN. Run the bot with the AUTOPLAYER OFF so the NN 
   python nn_driver.py            # live: NN plays
   python nn_driver.py --dry-run  # read + decide + print, but DON'T click (safe test)
 """
-import os, sys, json, math, time, subprocess, urllib.parse
+import os, sys, json, math, time, subprocess, urllib.parse, urllib.request
 
 def _argval(flag, default):
     if flag in sys.argv:
@@ -28,9 +28,26 @@ def _argval(flag, default):
         if i + 1 < len(sys.argv):
             return sys.argv[i + 1]
     return default
-# Bot URL precedence: --bot-url <url>  >  $NN_BOT_URL  >  default. Hiss launches the driver with
-# --bot-url http://127.0.0.1:<its own terminal port> when you engage it from the NN-driver button.
-BOT    = _argval("--bot-url", os.environ.get("NN_BOT_URL", "http://127.0.0.1:27654"))
+def _discover_bot_url():
+    """Hiss binds a DIFFERENT terminal port per session (27654, then 27655, ...) and publishes the one
+    it actually got to Release/logs/terminal_port.txt. When parse_guard restarts a wedged Hiss, the new
+    instance can land on a different port -- and anything still aimed at 27654 polls a dead socket
+    forever, silently driving nothing. Hiss passes --bot-url when it launches us, so this only matters
+    for a hand-started driver; but a hand-started driver aimed at the wrong port is exactly the kind of
+    quiet nothing that is hard to notice. Read the file Hiss already writes."""
+    try:
+        pf = os.path.join(os.environ.get("HISS_REPO", r"C:\www\openholdembot_old"),
+                          "Release", "logs", "terminal_port.txt")
+        with open(pf) as f:
+            return "http://127.0.0.1:%d" % int(f.read().strip())
+    except Exception:
+        return "http://127.0.0.1:27654"
+
+
+# Bot URL precedence: --bot-url <url>  >  $NN_BOT_URL  >  the port Hiss published  >  27654.
+# Hiss launches the driver with --bot-url http://127.0.0.1:<its own terminal port> from the
+# NN-driver button, so that always wins when it starts us.
+BOT    = _argval("--bot-url", os.environ.get("NN_BOT_URL") or _discover_bot_url())
 NN     = os.environ.get("NN_URL",        "http://192.168.1.39:8088/nn-decide")
 POLL   = float(os.environ.get("NN_POLL_S", "0.6"))
 DRY    = "--dry-run" in sys.argv
@@ -81,12 +98,32 @@ NUMERIC_SYMBOLS = ("handrank169,f$BoardWet,f$BoardDry,f$ScaryBoard,f$BoardHighCa
     # features.py indexes by name, so an extra key it doesn't know about is simply ignored.
     "f$ICM_SizeMult")
 
-# Use curl, not urllib: on this box something (Defender/firewall app-filtering) resets python's
-# outbound LAN POSTs mid-body, but curl is reliable on every leg. Keeps the driver dependency-free.
-def _get(url):
+# curl vs urllib, and why it is SPLIT.
+#
+# The LAN leg genuinely needs curl: on this box something (Defender / firewall app-filtering) resets
+# python's outbound LAN POSTs mid-body. That is a real, diagnosed problem and it stays on curl.
+#
+# But that decision was applied to EVERY leg, including the three localhost calls (table-state,
+# symbols, action) -- which are polled continuously. Measured: ~25.7 ms for a curl subprocess vs
+# ~12.5 ms in-process, so ~13 ms of pure process-spawn overhead per call, and roughly 6,000 curl
+# processes an hour. Loopback never had the firewall problem the LAN leg has; it was collateral.
+#
+# So: localhost goes in-process, the LAN keeps curl. And loopback still falls back to curl if urllib
+# fails, so the worst case is the behaviour we already had.
+def _curl_get(url):
     out = subprocess.run(["curl", "-s", "--max-time", "6", url],
                          capture_output=True, text=True).stdout
     return json.loads(out)
+
+
+def _get(url):
+    if url.startswith("http://127.0.0.1") or url.startswith("http://localhost"):
+        try:
+            with urllib.request.urlopen(url, timeout=6) as r:
+                return json.loads(r.read().decode("utf-8", "replace"))
+        except Exception:
+            pass          # loopback hiccup -> fall back to the curl path we always used
+    return _curl_get(url)
 
 
 def _post(url, payload):
@@ -187,11 +224,11 @@ def brain_override(do, amount, sv):
     sizing); only when the brain is quiet does the NN's card-based action stand. Reads brain_state
     (synapse_map --watch); fresh (<4s) + same-hand only; graceful."""
     try:
-        import psycopg2
-        dsn = os.environ.get("HISS_PG_DSN", "host=127.0.0.1 port=5432 dbname=hiss user=postgres password=dbpass")
-        c = psycopg2.connect(dsn); cur = c.cursor()
-        cur.execute("SELECT ts_ms, handnumber, brain FROM brain_state WHERE id=1")
-        r = cur.fetchone(); c.close()
+        # Reuse the pooled connection (see _pg_conn) instead of opening a NEW postgres connection on
+        # every decision. A TCP connect + auth inside the act-now path is latency the bot spends while
+        # a clock is running, and it silently swallowed every failure -- if psycopg2 was missing or PG
+        # was down, the brain simply never fired and nothing anywhere said so.
+        r = _pg_query_one("SELECT ts_ms, handnumber, brain FROM brain_state WHERE id=1")
         if not r:
             return do, amount, ""
         ts, hn, b = r
@@ -240,31 +277,58 @@ def brain_override(do, amount, sv):
 ### measure_live.py joins these against hand_results to split bb/100 by engine. Best-effort only:
 ### a dead DB must never stop the bot from playing, so every failure here is swallowed after one
 ### loud line. DRY runs write nothing -- they don't move money, so they must not pollute the sample.
-_PG = {"conn": None, "warned": False}
+_PG = {"conn": None, "warned": False, "read_warned": False}
+
+
+def _pg_conn():
+    """One pooled connection, opened lazily. Everything that touches postgres in this driver goes
+    through here -- the attribution writes AND the brain-state read that runs inside the decision."""
+    import psycopg2
+    if _PG["conn"] is None or _PG["conn"].closed:
+        dsn = os.environ.get("HISS_PG_DSN",
+                             "host=127.0.0.1 port=5432 dbname=hiss user=postgres password=dbpass")
+        _PG["conn"] = psycopg2.connect(dsn)
+        _PG["conn"].autocommit = True
+    return _PG["conn"]
+
+
+def _pg_drop():
+    try:
+        if _PG["conn"] is not None:
+            _PG["conn"].close()
+    except Exception:
+        pass
+    _PG["conn"] = None
+
 
 def _pg_exec(sql, params):
     if DRY:
         return
     try:
-        import psycopg2
-        if _PG["conn"] is None or _PG["conn"].closed:
-            dsn = os.environ.get("HISS_PG_DSN",
-                                 "host=127.0.0.1 port=5432 dbname=hiss user=postgres password=dbpass")
-            _PG["conn"] = psycopg2.connect(dsn)
-            _PG["conn"].autocommit = True
-        with _PG["conn"].cursor() as cur:
+        with _pg_conn().cursor() as cur:
             cur.execute(sql, params)
     except Exception as e:
         if not _PG["warned"]:
             print("[nn_driver] WARNING: cannot record engine attribution (%s) -- the bot plays on, "
                   "but these hands will not be measurable" % e, flush=True)
             _PG["warned"] = True
-        try:
-            if _PG["conn"] is not None:
-                _PG["conn"].close()
-        except Exception:
-            pass
-        _PG["conn"] = None
+        _pg_drop()
+
+
+def _pg_query_one(sql):
+    """Read one row on the pooled connection. Used by brain_override, which runs INSIDE the decision
+    path -- so it must never open a fresh connection there, and must never fail silently forever."""
+    try:
+        with _pg_conn().cursor() as cur:
+            cur.execute(sql)
+            return cur.fetchone()
+    except Exception as e:
+        if not _PG["read_warned"]:
+            print("[nn_driver] WARNING: cannot read brain_state (%s) -- the brain will NOT steer the "
+                  "NN until this is fixed; the net's own action stands." % e, flush=True)
+            _PG["read_warned"] = True
+        _pg_drop()
+        return None
 
 
 def record_beat():
@@ -293,14 +357,9 @@ _OPP_LOGGED = set()   # villains already audit-logged this session
 
 
 def _pg_query(sql, params):
-    """Read-only query reusing the _PG connection (runs in DRY too -- reads never mutate)."""
+    """Read-only query on the pooled connection (runs in DRY too -- reads never mutate)."""
     try:
-        import psycopg2
-        if _PG["conn"] is None or _PG["conn"].closed:
-            dsn = os.environ.get("HISS_PG_DSN",
-                                 "host=127.0.0.1 port=5432 dbname=hiss user=postgres password=dbpass")
-            _PG["conn"] = psycopg2.connect(dsn); _PG["conn"].autocommit = True
-        with _PG["conn"].cursor() as cur:
+        with _pg_conn().cursor() as cur:
             cur.execute(sql, params)
             return cur.fetchall()
     except Exception as e:
@@ -594,6 +653,8 @@ def main():
     print("[nn_driver] gating on ismyturn (per-turn latch; retries until the hole scrapes). Waiting for your turn...", flush=True)
     acted_this_turn = False     # acted on THIS turn already? re-armed on the falling edge of ismyturn
     last_act = 0.0
+    ACT_WATCHDOG_S = 5.0        # still our turn this long after acting -> the click never landed
+    nn_fail = 0                 # consecutive DECISION failures (swiftsnake/LAN, not Hiss)
     wait_start = 0.0            # when the current "my turn but hole unreadable" wait began
     warned = False
     unreachable = 0             # consecutive failed state reads -- a dead gate must never look idle
@@ -613,8 +674,47 @@ def main():
                 # Act exactly once per turn, but if the hole isn't readable yet keep RETRYING
                 # within the turn (decide_and_act returns False) instead of skipping it. The 1s
                 # floor is just a glitch guard against a same-tick double-fire.
+                # WATCHDOG: we "acted", but it is STILL our turn.
+                #
+                # The latch is set when the HTTP request is accepted, not when the button is actually
+                # clicked -- and the click can silently never happen: Hiss keeps the request pending
+                # while the button isn't clickable, and (since the spot-stamp fix) DROPS it outright
+                # once the hand or street moves on. Both leave the driver believing it acted while the
+                # clock runs down to a timeout-fold. Nothing re-armed it, because ismyturn never fell.
+                #
+                # So if the turn is still ours several seconds after acting, the action did not land.
+                # Re-arm and decide again. Re-sending simply overwrites Hiss's pending request, so the
+                # worst case is one duplicate click of the SAME action in the SAME spot -- which the
+                # spot-stamp makes safe, and which is strictly better than sitting there timing out.
+                if acted_this_turn and (time.monotonic() - last_act) > ACT_WATCHDOG_S:
+                    print("[nn_driver] !! acted %.0fs ago but it is STILL my turn -- the click never "
+                          "landed (button not clickable, or a stale action was dropped). Re-deciding."
+                          % (time.monotonic() - last_act), flush=True)
+                    acted_this_turn = False
+                    last_act = 0.0          # let the re-decide fire on this pass, not in another 1s
+
                 if not acted_this_turn and (time.monotonic() - last_act) > 1.0:
-                    if decide_and_act(gs):
+                    # Diagnose the RIGHT machine. The decision leg talks to swiftsnake over the LAN;
+                    # when it fails it used to fall through to the handler below, which prints
+                    # "CANNOT READ BOT STATE ... Hiss's HTTP thread is likely WEDGED -- restart Hiss".
+                    # That blames the one component that was working, and sends you to restart it.
+                    try:
+                        acted = decide_and_act(gs)
+                        nn_fail = 0
+                    except Exception as e:
+                        nn_fail += 1
+                        acted = False
+                        print("[nn_driver] !! DECISION FAILED (%s: %s) -- this is the NN service / LAN "
+                              "(%s). Hiss is fine; the BRAIN is unreachable. Do not restart Hiss."
+                              % (type(e).__name__, e, NN), flush=True)
+                        if nn_fail >= 3:
+                            print("[nn_driver] !! %d decision failures in a row -- handing this table "
+                                  "back to the OHF autoplayer so SOMEONE is acting." % nn_fail, flush=True)
+                            try:
+                                _get(BOT + "/api/autoplayer?on=1")
+                            except Exception:
+                                pass
+                    if acted:
                         acted_this_turn = True
                         last_act = time.monotonic()
                         wait_start = 0.0
