@@ -218,15 +218,41 @@ static int CountHissInstances() {
 	return (n < 1) ? 1 : n;
 }
 
-#define __HDC_HEADER 		HBITMAP		old_bitmap = NULL; \
-	HDC				hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL); \
-	HDC				hdcCompatible = CreateCompatibleDC(hdcScreen); \
-  ++_leaking_GDI_objects;
+// The scraper never needed a DISPLAY device context.
+//
+// Every BitBlt below copies out of _entire_window_cur -- a bitmap that is ALREADY in memory -- so a
+// plain memory DC is sufficient. CreateDC("DISPLAY", ...) builds a full display-driver context, one
+// of the most expensive calls in GDI, and the old macro made TWO of them per region per heartbeat:
+// EvaluateRegion opened the macro, then called ProcessRegion, which opened it again. At ~129 regions
+// x 3.4 Hz that was roughly 874 CreateDC + 874 CreateCompatibleDC + 1748 DeleteDC every second, all
+// of it to blit a rectangle out of RAM.
+//
+// Now: memory DCs created once per thread and reused for the life of the thread. ProcessRegion needs
+// two of them at the same time (you cannot select two bitmaps into one DC) -- one for the region
+// bitmap it writes, one for the window snapshot it reads from.
+struct CachedScraperDC {
+  HDC dc;
+  CachedScraperDC() : dc(CreateCompatibleDC(NULL)) {}
+  ~CachedScraperDC() { if (dc != NULL) DeleteDC(dc); }
+};
 
-#define __HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK \
-  DeleteDC(hdcCompatible); \
-	DeleteDC(hdcScreen); \
-  --_leaking_GDI_objects;
+static HDC ScraperRegionDC() {          // destination: a region's own bitmap
+  static thread_local CachedScraperDC region_dc;
+  return region_dc.dc;
+}
+
+static HDC ScraperSourceDC() {          // source: the captured whole-window snapshot
+  static thread_local CachedScraperDC source_dc;
+  return source_dc.dc;
+}
+
+#define __HDC_HEADER 		HBITMAP		old_bitmap = NULL; \
+	HDC				hdcCompatible = ScraperRegionDC(); \
+	(void) old_bitmap;
+
+// Nothing to release any more: the DCs are cached and owned by the thread. Kept as an empty macro
+// so every existing call site (and the "must be called on every exit" discipline) stays intact.
+#define __HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK
 
 
 
@@ -293,7 +319,7 @@ bool CScraper::ProcessRegion(RMapCI r_iter) {
     "[CScraper] ProcessRegion color %i radius %i transform %s\n",
     r_iter->second.color, r_iter->second.radius, r_iter->second.transform);
 	__HDC_HEADER
-	HDC hdcWindowSnapshot = CreateCompatibleDC(hdcScreen);
+	HDC hdcWindowSnapshot = ScraperSourceDC();
 	HBITMAP old_window_snapshot = (HBITMAP) SelectObject(hdcWindowSnapshot, _entire_window_cur);
 	// Get "current" bitmap
 	old_bitmap = (HBITMAP) SelectObject(hdcCompatible, r_iter->second.cur_bmp);
@@ -340,12 +366,10 @@ bool CScraper::ProcessRegion(RMapCI r_iter) {
 		//}
 		SelectObject(hdcCompatible, old_bitmap);
 		SelectObject(hdcWindowSnapshot, old_window_snapshot);
-		DeleteDC(hdcWindowSnapshot);
 		__HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK
 		return true;
 	}
 	SelectObject(hdcWindowSnapshot, old_window_snapshot);
-	DeleteDC(hdcWindowSnapshot);
 	__HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK
 	return false;
 }
@@ -574,7 +598,6 @@ void CScraper::PreOcrParallel() {
 	}
 
 	// Capture each "A" region's pixels (serial GDI on this thread).
-	HDC screen = CreateDC("DISPLAY", NULL, NULL, NULL);
 	std::vector<RMapCI> regs;
 	std::vector<Mat> mats;
 	for (RMapCI it = p_tablemap->r$()->begin(); it != p_tablemap->r$()->end(); ++it) {
@@ -593,17 +616,15 @@ void CScraper::PreOcrParallel() {
 			++_ocr_reuses;
 			continue;
 		}
-		HDC mdc = CreateCompatibleDC(screen);
+		HDC mdc = ScraperRegionDC();
 		HBITMAP ob = (HBITMAP)SelectObject(mdc, it->second.cur_bmp);
 		Mat input(rh, rw, CV_8UC4);
 		BITMAPINFOHEADER bi = { sizeof(bi), rw, -rh, 1, 32, BI_RGB };
 		GetDIBits(mdc, it->second.cur_bmp, 0, rh, input.data, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
 		SelectObject(mdc, ob);
-		DeleteDC(mdc);
 		regs.push_back(it);
 		mats.push_back(input.clone());
 	}
-	DeleteDC(screen);
 	if (regs.empty()) return;
 
 	// Dispatch: each job borrows a free worker pipe, ships the region image to that
