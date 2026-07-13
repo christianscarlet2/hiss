@@ -200,6 +200,11 @@ bool CAutoplayerButton::IsLabelSitin() {
   s_lower_case.Remove(' ');
   s_lower_case.Remove('-');
   s_lower_case.Remove('\'');
+  // The standalone capital "I" of "I Am Back" is a bare vertical stroke, and Tesseract
+  // reads it as a pipe (measured: the i9label region OCRs as "| Am Back") or, less often,
+  // as an exclamation mark. Drop those so the leading glyph can't decide the match.
+  s_lower_case.Remove('|');
+  s_lower_case.Remove('!');
   // "I am back" / "I'm back" is this client's Sit-In button. OCR often reads the
   // leading "I" as "1" (seen as "1AmBack"), so accept that garble too.
   // OCR often drops the leading "I " of "I am back" (seen scraped as "AmBack"), and the
