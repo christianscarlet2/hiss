@@ -91,7 +91,7 @@ bool CBetsizeInputBox::EnterBetsize(double total_betsize_in_dollars) {
 			lost_focus = true;
 		}
 		else {
-			if (!numpad) Clear();  // numpad clears via 1x nBackspace click instead
+			if (!numpad) Clear();  // the numpad opens empty -- nothing to clear
 			write_log(Preferences()->debug_autoplayer(), "[CBetsizeInputBox] Sleeping %dms.\n", Preferences()->swag_delay_2());
 			Sleep(Preferences()->swag_delay_2()); // Delete to entry autoplayer delay (default 400ms)
 			SetFocus(attached_window);
@@ -248,8 +248,8 @@ bool CBetsizeInputBox::ClickNumpadRegion(CString region_name) {
 	return true;
 }
 
-// Enter the betsize by tapping the on-screen numpad: clear with 1x nBackspace,
-// "type" each character by clicking n0..n9 / nDecimalPoint, then click nOkay.
+// Enter the betsize by tapping the on-screen numpad: "type" each character by
+// clicking n0..n9 / nDecimalPoint, then click nOkay.
 void CBetsizeInputBox::EnterBetsizeByNumpad(CString amount) {
 	// Clamp to the scraped hero balance: never type a bet/raise larger than the stack
 	// we actually have on the table. A mis-scrape or an over-large f$betsize must not
@@ -285,13 +285,9 @@ void CBetsizeInputBox::EnterBetsizeByNumpad(CString amount) {
 	if (kNumpadClickDelayMs < 0) kNumpadClickDelayMs = 0;
 	write_log(k_always_log_basic_information, "[CBetsizeInputBox] Entering betsize \"%s\" via on-screen numpad (%d ms/click).\n",
 		amount.GetString(), kNumpadClickDelayMs);
-	// 1) Clear the field: click nBackspace 2 times to wipe a short pre-filled amount
-	// before typing (Emrald tuned this down from 4 -> 2).
-	for (int i = 0; i < 2; i++) {
-		ClickNumpadRegion("nBackspace");
-		Sleep(kNumpadClickDelayMs);
-	}
-	// 2) "Type" the amount by clicking each character's region centre.
+	// 1) "Type" the amount by clicking each character's region centre. No nBackspace
+	// pre-clear: the keypad opens empty, so the leading backspaces were dead clicks
+	// [Emrald: tuned 4 -> 2 -> none].
 	for (int i = 0; i < amount.GetLength(); i++) {
 		char c = amount[i];
 		CString region;
@@ -305,12 +301,12 @@ void CBetsizeInputBox::EnterBetsizeByNumpad(CString amount) {
 		ClickNumpadRegion(region);
 		Sleep(kNumpadClickDelayMs);
 	}
-	// 3) Confirm the numpad entry by clicking nOkay (if defined).
+	// 2) Confirm the numpad entry by clicking nOkay (if defined).
 	if (p_tablemap->ItemExists("nOkay")) {
 		ClickNumpadRegion("nOkay");
 		Sleep(kNumpadClickDelayMs);
 	}
-	// 4) Optional second confirmation tap: some casinos require an extra "Confirm"
+	// 3) Optional second confirmation tap: some casinos require an extra "Confirm"
 	// button after Okay. Click nConfirm (if defined) after a delay.
 	if (p_tablemap->ItemExists("nConfirm")) {
 		Sleep(kNumpadClickDelayMs);

@@ -289,6 +289,7 @@ def record_decision(handnumber, betround, action, amount, note):
 _OPP_COLS = ("vpip_n", "vpip_d", "pfr_n", "pfr_d", "threeb_n", "threeb_d", "f3b_n", "f3b_d",
              "ftc_n", "ftc_d", "aggr_actions", "call_actions", "wtsd_n", "wtsd_d")
 _OPP_WARNED = [False]
+_OPP_LOGGED = set()   # villains already audit-logged this session
 
 
 def _pg_query(sql, params):
@@ -378,11 +379,19 @@ def _inject_opp_read(gs, sym):
         if not feats.get("f$Opp_Known"):
             return sym                                 # <20 hands -> unreliable, keep placeholder
         sym.update(feats)
-        if DRY:
+        if name not in _OPP_LOGGED:
+            _OPP_LOGGED.add(name)
             arche = [k.replace("f$Opp_Is", "") for k in feats if k.startswith("f$Opp_Is") and feats[k]]
-            print("[nn_driver] opp-read %-14s VPIP=%.0f AF=%.2f -> %s%s" %
-                  (name[:14], vpip, af, arche or ["(no archetype)"],
-                   " +Foldy" if feats["f$Opp_Foldy"] else ""), flush=True)
+            _line = "opp-read %-14s VPIP=%.0f AF=%.2f Known=%d -> %s%s" % (
+                name[:14], vpip, af, feats["f$Opp_Known"], arche or ["(no archetype)"],
+                " +Foldy" if feats["f$Opp_Foldy"] else "")
+            try:
+                with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "opp_reads.log"), "a") as _fh:
+                    _fh.write("%d %s\n" % (int(time.time()), _line))
+            except Exception:
+                pass
+            if DRY:
+                print("[nn_driver] " + _line, flush=True)
     except Exception as e:
         print("[nn_driver] opp-read skipped (%s) -- OHF placeholder kept" % e, flush=True)
     return sym
