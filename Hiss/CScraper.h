@@ -227,6 +227,17 @@ extern bool g_mcp_action_force;        // true: manual learner click -> bypass t
 // one on screen. Empty handnumber = "don't check" (a human clicking in the learner).
 extern CString g_mcp_action_hand;      // handnumber the action was decided for ("" = unchecked)
 extern int g_mcp_action_betround;      // betround it was decided for (<0 = unchecked)
+
+// Manual game-type override (React badge menu -> /api/gametype). See CScraper.cpp for why.
+// AUTO means "detect it"; anything else is a human stating the truth, and the symbols, the strategy
+// dispatch and the TABLEMAP all obey it until it is cleared.
+const int kGametypeOverrideAuto = -1;
+const int kGametypeOverrideNLH  = 0;
+const int kGametypeOverridePLO  = 1;
+const int kGametypeOverridePLO8 = 2;
+extern int g_gametype_override;
+// true when the override says this table is Omaha (PLO or PLO8)
+inline bool GametypeOverrideSaysOmaha() { return g_gametype_override >= kGametypeOverridePLO; }
 extern bool g_mcp_reload_ohf_request;  // set by /api/reload-ohf; heartbeat reloads the strategy folder
 extern CString g_mcp_click_region;     // /api/click-region: heartbeat clicks this tablemap region's rect (lobby nav)
 // HUD overlay recalibration: user right-clicks "Recalibrate all HUDs (Claude)" -> request flag.

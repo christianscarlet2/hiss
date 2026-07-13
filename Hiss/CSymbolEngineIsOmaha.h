@@ -49,6 +49,9 @@ public:
 private:
   // Scan the attached table-window title for Hi/Lo / 8-or-better markers.
   bool TitleLooksLikeHiLo();
+  // Force _isomaha/_isplo8 from the manual game-type override (no-op when it is AUTO). The strategy
+  // tree dispatches on these, so the override must land here as well as on g_table_is_omaha.
+  void ApplyGametypeOverride();
   bool _isomaha;
   bool _isplo8;
 };

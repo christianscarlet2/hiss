@@ -216,6 +216,13 @@ void CHandHistoryWriter::UpdateOnHeartbeat() {
     }
     g_table_is_omaha = resolved_omaha;
   }
+  // A MANUAL OVERRIDE BEATS THE DETECTOR. The detector reads hole-card counts and the table title,
+  // and both lie: the title OCR is unreliable and a fresh felt has no cards to count. When a human
+  // has told us what this table is, that is simply the answer -- and because the tablemap switch keys
+  // off g_table_is_omaha, forcing it here also forces the correct map (base vs "<base>_omaha").
+  if (g_gametype_override != kGametypeOverrideAuto) {
+    g_table_is_omaha = GametypeOverrideSaysOmaha();
+  }
   if (!_meta_captured) {
     // Wait until at least two players are dealt (blinds posted) before we
     // open a hand. If we joined mid-hand we still open it, with placeholders.

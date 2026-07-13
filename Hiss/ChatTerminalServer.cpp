@@ -853,8 +853,57 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		// React badge BACKUP: clear the per-table game-type cache + cached identity + the game-type flag so
 		// the engine re-detects the CURRENT table's game type from a clean slate (hole-card count) -- for
 		// when the auto per-table detection has latched the wrong type. [Emrald]
+		//
+		// CLEAR GAME STATE deliberately does NOT touch the manual override. An override is a human
+		// stating what this table IS, and it holds for the whole Hiss session until they clear it
+		// themselves [Emrald]. Wiping it here would mean the one button you press when the detector
+		// has gone wrong also throws away the correction you made -- and the detector would just
+		// re-latch the same wrong type. Use CLEAR OVERRIDE (/api/gametype?set=auto) to hand control
+		// back to the detector.
 		g_reset_detection_request = true;
 		CStringA response = Response("{\"ok\":true,\"reset\":true}\r\n");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	// MANUAL GAME-TYPE OVERRIDE (the React badge menu).
+	//   GET /api/gametype              -> report the override + what the table is currently playing as
+	//   GET /api/gametype?set=nlh|plo|plo8|auto
+	// Selecting a type forces the symbols (isomaha/isplo8 -> the strategy tree's dispatch) AND the
+	// tablemap (SwitchTablemapForGameTypeIfNeeded keys off g_table_is_omaha, which the override sets),
+	// so the bot plays the right tree on the right map instead of whatever the title OCR guessed.
+	if (path.CompareNoCase("/api/gametype") == 0) {
+		CStringA set = QueryValue(query, "set");
+		set.MakeLower();
+		if (!set.IsEmpty()) {
+			if      (set == "nlh"  || set == "holdem") g_gametype_override = kGametypeOverrideNLH;
+			else if (set == "plo"  || set == "omaha")  g_gametype_override = kGametypeOverridePLO;
+			else if (set == "plo8" || set == "hilo")   g_gametype_override = kGametypeOverridePLO8;
+			else if (set == "auto" || set == "clear")  g_gametype_override = kGametypeOverrideAuto;
+			// Force the flag the tablemap switch keys off IMMEDIATELY, so the map swaps on the next
+			// heartbeat instead of waiting for the detector to run again on the next hand.
+			if (g_gametype_override != kGametypeOverrideAuto) {
+				g_table_is_omaha = GametypeOverrideSaysOmaha();
+			}
+			write_log(k_always_log_basic_information,
+				"[Gametype] MANUAL OVERRIDE -> %s (omaha=%d). The detector is now ignored for this table "
+				"until it is cleared; the tablemap and the strategy tree both follow this.\n",
+				set.GetString(), (int)g_table_is_omaha);
+		}
+		const char *ov = (g_gametype_override == kGametypeOverrideNLH)  ? "nlh"
+		               : (g_gametype_override == kGametypeOverridePLO)  ? "plo"
+		               : (g_gametype_override == kGametypeOverridePLO8) ? "plo8" : "auto";
+		bool omaha = false, plo8 = false;
+		if (p_engine_container != NULL && p_engine_container->symbol_engine_isomaha() != NULL) {
+			omaha = p_engine_container->symbol_engine_isomaha()->isomaha();
+			plo8  = p_engine_container->symbol_engine_isomaha()->isplo8();
+		}
+		const char *eff = plo8 ? "plo8" : (omaha ? "plo" : "nlh");
+		CString map = (p_tablemap != NULL) ? p_tablemap->filename() : CString("");
+		CStringA body;
+		body.Format("{\"ok\":true,\"override\":\"%s\",\"effective\":\"%s\",\"tablemap\":\"%s\"}\r\n",
+			ov, eff, CStringA(map).GetString());
+		CStringA response = Response(body);
 		send(client, response.GetString(), response.GetLength(), 0);
 		return;
 	}

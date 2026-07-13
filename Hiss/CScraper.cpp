@@ -139,6 +139,19 @@ CString g_table_identity = "";
 // tablemap switch (CTableMapLoader::SwitchTablemapForGameTypeIfNeeded) between the Hold'em map and
 // its "<name>_omaha" variant, since Omaha's 4-card layout needs a separate, separately-calibrated map.
 bool g_table_is_omaha = false;
+// MANUAL GAME-TYPE OVERRIDE (React badge menu -> /api/gametype).
+//
+// Auto-detection reads the hero's hole-card count and the table title, and both can be wrong: the
+// title OCR is unreliable, and a fresh felt has no cards to count yet. When it latches the wrong type
+// the bot plays the wrong strategy tree on the wrong tablemap, which is about as bad as it gets. This
+// lets a human simply state the truth and have everything -- the symbols, the strategy dispatch, and
+// the tablemap -- obey it, until they clear it again.
+//
+//   -1 = AUTO (detect, the default)   0 = NLH   1 = PLO   2 = PLO8
+//
+// The tablemap follows for free: SwitchTablemapForGameTypeIfNeeded() keys off g_table_is_omaha, which
+// the override forces, so selecting PLO/PLO8 loads the "<name>_omaha" map and NLH loads the base map.
+int g_gametype_override = kGametypeOverrideAuto;
 char g_hero_decision_text[48] = {0};        // bot's locked action for the on-table RED decision overlay
 volatile bool g_hero_decision_active = false;
 DWORD g_hero_decision_tick = 0;             // GetTickCount() when the action was locked (drives the 10s trail+fade)

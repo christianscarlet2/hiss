@@ -130,6 +130,25 @@ void CSymbolEngineIsOmaha::UpdateOnHandreset() {
   // dont see PLO or PLO8 raising at all".]
   _isomaha = g_table_is_omaha;
   _isplo8 = false;   // hi/lo (PLO8) re-detected each hand via TitleLooksLikeHiLo / game-info
+  ApplyGametypeOverride();
+}
+
+// A human has told us what this table is -> that IS the game type. The strategy tree dispatches on
+// isomaha/isplo8 (f$preflop's game-type dispatch), so the override has to land here as well as on
+// g_table_is_omaha, or the bot would load the right MAP and still play the wrong TREE.
+void CSymbolEngineIsOmaha::ApplyGametypeOverride() {
+  if (g_gametype_override == kGametypeOverrideAuto) {
+    return;
+  }
+  bool want_omaha = GametypeOverrideSaysOmaha();
+  bool want_plo8  = (g_gametype_override == kGametypeOverridePLO8);
+  if (_isomaha != want_omaha || _isplo8 != want_plo8) {
+    write_log(k_always_log_basic_information,
+      "[Gametype] override=%d -> isomaha %d->%d, isplo8 %d->%d\n",
+      g_gametype_override, (int)_isomaha, (int)want_omaha, (int)_isplo8, (int)want_plo8);
+  }
+  _isomaha = want_omaha;
+  _isplo8  = want_plo8;
 }
 
 void CSymbolEngineIsOmaha::UpdateOnNewRound()
@@ -139,6 +158,12 @@ void CSymbolEngineIsOmaha::UpdateOnMyTurn() {
 }
 
 void CSymbolEngineIsOmaha::UpdateOnHeartbeat() {
+  // A MANUAL OVERRIDE SHORT-CIRCUITS DETECTION ENTIRELY. Not "detect, then correct" -- the detector
+  // must not get a say at all, or a 4-card misread would keep flipping isomaha back underneath us.
+  if (g_gametype_override != kGametypeOverrideAuto) {
+    ApplyGametypeOverride();
+    return;
+  }
   // ALWAYS-OMAHA-MAP design: the 4-card map is always loaded (CTableMapLoader), so SupportsOmaha() is
   // always true and can't distinguish the game. The hero's CARD COUNT is the per-hand ground truth:
   // 4 known hole cards => Omaha; only 2 (cards 2,3 read nocard on the 4-card map) => Hold'em. Because the

@@ -46,30 +46,114 @@
     <!-- Game-type indicator (NLH / PLO / PLO8). Self-contained overlay; reads the cheap, stable
          isomaha/isplo8/ispl symbols (ispl is set whenever the table is detected Omaha, so the badge
          stays correct between hands when isomaha hasn't latched yet). No React-bundle dependency. -->
-    <div id="gametype-badge" title="Detected game type. Click to CLEAR gamestate/symbols/scrapes and force a clean re-detect (backup if it's stuck on the wrong type)." style="position:fixed;top:8px;left:8px;z-index:99999;padding:3px 11px;border-radius:7px;font:700 14px system-ui,Segoe UI,sans-serif;color:#fff;background:#1f3a5f;border:1px solid rgba(255,255,255,.30);box-shadow:0 1px 4px rgba(0,0,0,.45);cursor:pointer;user-select:none">NLH</div>
+    <div id="gametype-badge" title="Game type. Click to override it (NLH / PLO / PLO8) or clear the game state. An override forces BOTH the strategy tree and the tablemap." style="position:fixed;top:8px;left:8px;z-index:99999;padding:3px 11px;border-radius:7px;font:700 14px system-ui,Segoe UI,sans-serif;color:#fff;background:#1f3a5f;border:1px solid rgba(255,255,255,.30);box-shadow:0 1px 4px rgba(0,0,0,.45);cursor:pointer;user-select:none">NLH</div>
+    <div id="gametype-menu" style="position:fixed;top:34px;left:8px;z-index:100000;display:none;min-width:186px;
+         background:#15161a;border:1px solid rgba(255,255,255,.16);border-radius:8px;
+         box-shadow:0 8px 24px rgba(0,0,0,.6);padding:4px;
+         font:600 13px system-ui,Segoe UI,sans-serif;color:#dfe3e0;user-select:none"></div>
     <script>
       (function(){
+        // Game-type badge + MANUAL OVERRIDE menu.
+        //
+        // Auto-detection reads the hero's hole-card count and the table title, and both lie: title OCR
+        // is unreliable and a fresh felt has no cards to count. When it latches wrong, the bot plays the
+        // wrong strategy tree on the wrong tablemap. This lets you just state the truth: the override
+        // forces the symbols (isomaha/isplo8 -> the f$preflop dispatch) AND the tablemap (the base map
+        // for NLH, the "_omaha" map for PLO/PLO8), and it sticks until you clear it.
         var el=document.getElementById('gametype-badge');
-        var resetting=0;   // suppress the poll label briefly while a reset is in flight
+        var menu=document.getElementById('gametype-menu');
+        var busy=0;             // suppress polling briefly while a change is in flight
+        var override='auto';    // 'auto' | 'nlh' | 'plo' | 'plo8'
+        var effective='nlh';    // what the table is actually playing as right now
+
+        var STYLE={ nlh:{label:'NLH',bg:'#1f3a5f'}, plo:{label:'PLO',bg:'#1e5631'}, plo8:{label:'PLO8',bg:'#7b341e'} };
+
+        function paintBadge(){
+          var s=STYLE[effective]||STYLE.nlh;
+          // A manual override is PINNED: show the pin so it is obvious the badge is being forced and
+          // not detected -- a silent override is how you end up debugging the wrong thing for an hour.
+          el.textContent = (override!=='auto' ? '📌 ' : '') + s.label;
+          el.style.background = s.bg;
+          el.style.borderColor = (override!=='auto') ? 'rgba(255,214,102,.85)' : 'rgba(255,255,255,.30)';
+        }
+
+        function row(key,label,danger,disabled){
+          var d=document.createElement('div');
+          // The tick marks the ACTIVE override -- i.e. what the bot is being FORCED to play as, not
+          // merely what it detected. That distinction is the whole point of the menu.
+          var checked=(override===key);
+          d.setAttribute('role','menuitem');
+          d.tabIndex = disabled ? -1 : 0;
+          d.style.cssText='display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:5px;'
+            + (disabled ? 'cursor:default;opacity:.38;' : 'cursor:pointer;')
+            + (danger?'color:#ff8189;margin-top:4px;border-top:1px solid rgba(255,255,255,.10);padding-top:9px;':'');
+          d.innerHTML='<span style="width:12px;display:inline-block;color:#ffd666">'+(checked?'✓':'')+'</span>'
+                    + '<span>'+label+'</span>';
+          if(!disabled){
+            d.onmouseenter=function(){ d.style.background='rgba(255,255,255,.08)'; };
+            d.onmouseleave=function(){ d.style.background='transparent'; };
+            d.onclick=function(ev){ ev.stopPropagation(); choose(key); };
+            d.onkeydown=function(ev){ if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); choose(key); } };
+          } else {
+            d.onclick=function(ev){ ev.stopPropagation(); };   // nothing to clear
+          }
+          return d;
+        }
+
+        function paintMenu(){
+          menu.innerHTML='';
+          menu.appendChild(row('nlh','NLH'));
+          menu.appendChild(row('plo','PLO'));
+          menu.appendChild(row('plo8','PLO8'));
+          // Two DIFFERENT clears, and the difference matters:
+          //   CLEAR OVERRIDE  -> hand the game type back to auto-detection (drops the pin)
+          //   CLEAR GAME STATE -> wipe this table's cached gamestate/symbols/scrapes. It does NOT
+          //                       touch the override: an override holds for the whole Hiss session
+          //                       until you clear it yourself.
+          menu.appendChild(row('auto','CLEAR OVERRIDE', false, override==='auto'));
+          menu.appendChild(row('clear','CLEAR GAME STATE', true));
+        }
+
+        function openMenu(open){
+          menu.style.display = open ? 'block' : 'none';
+          if(open){ paintMenu(); }
+        }
+
+        function choose(key){
+          openMenu(false);
+          busy=Date.now()+1500;
+          if(key==='clear'){
+            // CLEAR GAME STATE: wipe this table's cached gamestate/symbols/scrapes so the engine
+            // re-reads everything from a clean slate. It does NOT drop the override -- that is
+            // CLEAR OVERRIDE's job, and conflating the two would throw away your correction every
+            // time you tried to un-stick a bad scrape.
+            el.textContent='...'; el.style.background='#444';
+            fetch('/api/reset-detection').then(function(r){return r.json();})
+              .then(function(){ setTimeout(upd,800); })
+              .catch(function(){ busy=0; });
+            return;
+          }
+          fetch('/api/gametype?set='+encodeURIComponent(key)).then(function(r){return r.json();})
+            .then(function(d){ if(d){ override=d.override||'auto'; effective=d.effective||effective; } paintBadge(); setTimeout(upd,600); })
+            .catch(function(){ busy=0; });
+        }
+
         function upd(){
-          if(resetting && Date.now()<resetting) return;
-          fetch('/api/symbols?names=isomaha,isplo8,ispl').then(function(r){return r.json();}).then(function(d){
-            var omaha=(+d.isomaha)>0, plo8=(+d.isplo8)>0, pl=(+d.ispl)>0;
-            var label='NLH', bg='#1f3a5f';
-            if(plo8){ label='PLO8'; bg='#7b341e'; }
-            else if(omaha||pl){ label='PLO'; bg='#1e5631'; }
-            if(el){ el.textContent=label; el.style.background=bg; }
+          if(busy && Date.now()<busy) return;
+          busy=0;
+          fetch('/api/gametype',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
+            if(!d) return;
+            override = d.override || 'auto';
+            effective = d.effective || 'nlh';
+            paintBadge();
+            if(menu.style.display==='block') paintMenu();   // keep the tick in sync while it is open
           }).catch(function(){});
         }
-        // BACKUP: click the badge -> confirm -> clear the per-table gamestate/symbols/scrapes so the
-        // engine re-detects the game type from a clean slate (hole-card count). [Emrald]
-        if(el){ el.onclick=function(){
-          if(!confirm('Clear gamestate, symbols and scrapes for this table and force a clean game-type re-detect?')) return;
-          el.textContent='...'; el.style.background='#444'; resetting=Date.now()+2500;
-          fetch('/api/reset-detection').then(function(r){return r.json();}).then(function(){
-            setTimeout(upd,800);   // let the next heartbeats re-detect, then resume polling
-          }).catch(function(){ resetting=0; });
-        }; }
+
+        el.onclick=function(ev){ ev.stopPropagation(); openMenu(menu.style.display!=='block'); };
+        document.addEventListener('click', function(){ openMenu(false); });
+        document.addEventListener('keydown', function(ev){ if(ev.key==='Escape') openMenu(false); });
+
         upd(); setInterval(upd,1000);
       })();
     </script>
