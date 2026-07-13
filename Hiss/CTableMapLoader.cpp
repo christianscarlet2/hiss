@@ -16,6 +16,7 @@
 
 #include "CAutoConnector.h"
 #include "CAutoOcr.h"
+#include "CCasinoInterface.h"
 #include "CFileSystemMonitor.h"
 #include "CHeartbeatThread.h"
 #include "CScraper.h"
@@ -246,16 +247,23 @@ void CTableMapLoader::ReloadConnectedTablemapIfSettingsChanged() {
   // allocated at connect). The rebuilt regions have NULL bitmaps, so we must free the
   // old ones first and re-allocate after the reload, or the next scrape dereferences
   // NULL HBITMAPs and crashes. All done inside the lock so no scrape runs in between.
+  // CCasinoInterface::Reset() re-reads each button's iXbuttondefaultlabel / clickmethod tm-symbol.
+  // Those are cached in CAutoplayerButton at CONNECT time, so without this a live reload rebuilt the
+  // REGIONS but left the buttons bound to the OLD defaults -- a fixed button mapping silently did
+  // nothing until Hiss was restarted. (android_9max shipped i1buttondefaultlabel=call on what is
+  // physically the "Raise Options" button, so every CALL opened the bet panel instead of calling.)
   if (p_heartbeat_thread != NULL) {
     EnterCriticalSection(&p_heartbeat_thread->cs_update_in_progress);
     if (p_scraper != NULL) p_scraper->DeleteBitmaps();
     p_tablemap_db->LoadTablemapFromDB(name, p_tablemap);
     if (p_scraper != NULL) p_scraper->CreateBitmaps();
+    if (p_casino_interface != NULL) p_casino_interface->Reset();
     LeaveCriticalSection(&p_heartbeat_thread->cs_update_in_progress);
   } else {
     if (p_scraper != NULL) p_scraper->DeleteBitmaps();
     p_tablemap_db->LoadTablemapFromDB(name, p_tablemap);
     if (p_scraper != NULL) p_scraper->CreateBitmaps();
+    if (p_casino_interface != NULL) p_casino_interface->Reset();
   }
   AutoOcr()->LoadModelSettings();
   // Also drop the parallel-OCR worker engines so they reload the new models on the

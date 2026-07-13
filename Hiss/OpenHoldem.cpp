@@ -265,12 +265,81 @@ BOOL COpenHoldemApp::InitInstance() {
 	return TRUE;
 }
 
+// ---- AIL control server (mcp/ail_server.py, 0.0.0.0:7900) -----------------------------------
+// ONE server backs the browser Terminal's AIL tab + the MCP ail_* tools for EVERY Hiss instance,
+// so it is a singleton: start it only when nothing is already listening on 7900. Nothing used to
+// start it at all -- it had to be launched by hand, so the AIL tab was dead on a fresh boot.
+// [Emrald: start the AIL server on Hiss start]
+//
+// The painted CLOSE button on the React table view already kills it again: DoButtonAction(2) ->
+// TerminateInstanceHelpers() -> terminate_daemons.ps1, whose regex matches ail_server and every
+// daemon it spawned.
+static bool AilServerIsListening() {
+	bool up = false;
+	SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (s == INVALID_SOCKET) return false;
+	sockaddr_in a;
+	ZeroMemory(&a, sizeof(a));
+	a.sin_family = AF_INET;
+	a.sin_port = htons(7900);
+	a.sin_addr.s_addr = inet_addr("127.0.0.1");
+	u_long non_blocking = 1;
+	ioctlsocket(s, FIONBIO, &non_blocking);   // never let a dead port stall startup
+	connect(s, (sockaddr *)&a, sizeof(a));
+	fd_set writable;
+	FD_ZERO(&writable);
+	FD_SET(s, &writable);
+	timeval tv;
+	tv.tv_sec = 0;
+	tv.tv_usec = 300000;                      // 300 ms is a lifetime on loopback
+	up = (select(0, NULL, &writable, NULL, &tv) == 1);
+	closesocket(s);
+	return up;
+}
+
+static DWORD WINAPI AilServerStarterThread(LPVOID) {
+	// Off the UI thread: probing + the post-launch settle must never delay Hiss's startup.
+	// The named mutex serialises two instances booting together -- without it both would probe an
+	// empty port in the same millisecond and both would launch, and the loser would die on bind().
+	HANDLE once = CreateMutexA(NULL, FALSE, "Global\\HissAilServerLaunch");
+	if (once != NULL) WaitForSingleObject(once, 10000);
+	if (!AilServerIsListening()) {
+		// pythonw.exe (not python.exe): the server -- and every daemon it spawns -- stays windowless.
+		char cmd[512];
+		_snprintf_s(cmd, sizeof(cmd), _TRUNCATE,
+			"\"C:\\Users\\scarl\\AppData\\Local\\Programs\\Python\\Python310\\pythonw.exe\" ail_server.py");
+		STARTUPINFOA si;
+		ZeroMemory(&si, sizeof(si));
+		si.cb = sizeof(si);
+		PROCESS_INFORMATION pi;
+		ZeroMemory(&pi, sizeof(pi));
+		if (CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL,
+			"C:\\www\\openholdembot_old\\mcp", &si, &pi)) {
+			CloseHandle(pi.hProcess);
+			CloseHandle(pi.hThread);
+			write_log(k_always_log_basic_information, "[AIL] control server started on :7900\n");
+			// Hold the mutex until it has actually bound, so a sibling instance sees it listening.
+			for (int i = 0; i < 30 && !AilServerIsListening(); ++i) Sleep(100);
+		} else {
+			write_log(k_always_log_basic_information,
+				"[AIL] control server launch FAILED (err %lu)\n", GetLastError());
+		}
+	}
+	if (once != NULL) {
+		ReleaseMutex(once);
+		CloseHandle(once);
+	}
+	return 0;
+}
+
 void COpenHoldemApp::FinishInitialization() {
 	write_log(Preferences()->debug_openholdem(), "[OpenHoldem] FinishInitialization()\n");
 	write_log(Preferences()->debug_openholdem(), "[OpenHoldem] m_pMainWnd = %i\n",
 		m_pMainWnd);
 	assert(p_openholdem_title != NULL);
 	p_openholdem_title->UpdateTitle();
+	HANDLE ail = CreateThread(NULL, 0, AilServerStarterThread, NULL, 0, NULL);
+	if (ail != NULL) CloseHandle(ail);
 	// Show each instance (no auto-minimize for secondary instances) and restore its
 	// own last size/position from the DB, so multiple instances open where they last
 	// closed.

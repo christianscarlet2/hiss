@@ -10,7 +10,7 @@ Pure standard library + pycaw (for per-app mute). Safe to call with no key/voice
 (it just no-ops with a message on stderr).
 """
 
-import os, json, sys, time, tempfile, ctypes, urllib.request
+import os, json, sys, time, tempfile, ctypes, threading, urllib.request
 
 # The windowless (console=False) PyInstaller build has sys.stdout/stderr/stdin = None, so any write or
 # read would crash (that's why lilith popped an "unhandled exception" dialog). Back them with devnull so
@@ -24,7 +24,15 @@ if getattr(sys, "stdin", None) is None:
     except Exception: pass
 
 PREF_FILE = os.path.join(os.path.expanduser("~"), ".hiss_learner.json")
-KEEP_UNMUTED = ["scrcpy", "acrpoker"]   # process-name substrings that stay audible
+# Process-name substrings that stay audible. scrcpy + ACR are Emrald's tables; the rest are the
+# processes that render LILITH'S OWN VOICE and so must never be caught by our own mute sweep:
+#   - lilith / python : the ElevenLabs MP3 is played by MCI *inside this process*
+#   - powershell      : the free SAPI fallback speaks inside a spawned powershell.exe
+# Muting the speaker is not just a transient bug: Windows PERSISTS a per-app mute BY EXECUTABLE
+# PATH, so one sweep that catches powershell.exe leaves EVERY future SAPI voice born muted. That is
+# exactly what silenced Lilith once the ElevenLabs credits ran out and playback moved from MCI
+# (in-process) to powershell -- audio was still generated (peak 0.54), into a muted session.
+KEEP_UNMUTED = ["scrcpy", "acrpoker", "lilith", "powershell", "python"]
 
 
 def _prefs():
@@ -54,6 +62,29 @@ def set_app_mutes(mute_others, keep_names=KEEP_UNMUTED):
             pass
 
 
+def unmute_pid(pid, timeout=3.0):
+    """Force pid's audio session audible, waiting for it to appear.
+
+    Keeping the speaker out of the mute sweep is not enough on its own: Windows remembers a
+    per-app mute by executable path, so a session that a PREVIOUS run muted is born muted again.
+    The session also does not exist until the process first renders audio -- hence the poll."""
+    try:
+        from pycaw.pycaw import AudioUtilities, ISimpleAudioVolume
+    except Exception:
+        return False
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for s in AudioUtilities.GetAllSessions():
+            try:
+                if s.Process and s.Process.pid == pid:
+                    s._ctl.QueryInterface(ISimpleAudioVolume).SetMute(0, None)
+                    return True
+            except Exception:
+                pass
+        time.sleep(0.1)
+    return False
+
+
 def eleven_tts(api_key, voice_id, text, out_path):
     body = json.dumps({
         "text": text,
@@ -80,10 +111,13 @@ def eleven_tts(api_key, voice_id, text, out_path):
 
 
 def play_audio(path):
-    # Blocks until playback finishes so the caller can unmute afterward.
+    # Blocks until playback finishes so the caller can unmute afterward. MCI renders inside THIS
+    # process, so clear any mute Windows remembered for us before the audio starts.
+    unmute_pid(os.getpid(), timeout=0.2)
     winmm = ctypes.windll.winmm
     winmm.mciSendStringW("close lilithq", None, 0, None)
     winmm.mciSendStringW('open "%s" type mpegvideo alias lilithq' % path, None, 0, None)
+    threading.Thread(target=unmute_pid, args=(os.getpid(), 3.0), daemon=True).start()
     winmm.mciSendStringW("play lilithq wait", None, 0, None)
     winmm.mciSendStringW("close lilithq", None, 0, None)
 
@@ -99,8 +133,15 @@ def sapi_tts(text):
           "try { $s.SelectVoiceByHints([System.Speech.Synthesis.VoiceGender]::Female) } catch {}; "
           "$s.Speak('%s'); $s.Dispose()" % safe)
     # CREATE_NO_WINDOW (0x08000000): never flash a console. Generous timeout for long lines.
-    subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
-                   timeout=180, creationflags=0x08000000)
+    p = subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
+                         creationflags=0x08000000)
+    # The voice comes out of THIS child. Its audio session does not exist until it starts speaking,
+    # and Windows may hand it a remembered mute -- so chase it down and unmute it while it talks.
+    threading.Thread(target=unmute_pid, args=(p.pid, 5.0), daemon=True).start()
+    try:
+        p.wait(timeout=180)
+    except Exception:
+        p.kill()
 
 
 def speak(text, lead_secs=3.0):
