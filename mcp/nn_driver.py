@@ -132,10 +132,22 @@ def seat_view(gs):
     }
 
 
-def click(action, amount):
+def click(action, amount, hand=None, betround=None):
+    """Send the action, STAMPED with the spot it was decided for.
+
+    force=1 bypasses Hiss's ismyturn gate and the request then stays PENDING for up to 25 s. Hands
+    finish in seconds, so without the stamp a fold decided for hand N could still be queued when hand
+    N+1 deals -- and fire there, into a spot nobody decided anything about, as soon as a matching
+    button appeared. (Seen live: a fold sat pending ~5 s against a Check|Raise bar that has no Fold
+    button.) Hiss now drops any pending action whose hand or street is no longer the one on screen.
+    """
     q = {"do": action, "force": "1"}
     if action in ("raise", "bet") and amount and amount > 0:
         q["amount"] = "%.2f" % amount
+    if hand:
+        q["hand"] = str(hand)
+    if betround is not None:
+        q["betround"] = str(int(betround))
     return _get(BOT + "/api/action?" + urllib.parse.urlencode(q))
 
 

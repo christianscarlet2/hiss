@@ -111,6 +111,8 @@ int g_mcp_action_request = -1;       // a k_autoplayer_function_* code (FCKRA)
 double g_mcp_action_amount = -1.0;   // bet/raise size in big blinds (<0 = plain button click)
 unsigned long g_mcp_action_set_tick = 0;  // GetTickCount() when the request was set (for wait-for-turn expiry)
 bool g_mcp_action_force = false;          // true: a manual learner click -> bypass the ismyturn gate
+CString g_mcp_action_hand = "";           // the handnumber this action was decided for ("" = unchecked)
+int g_mcp_action_betround = -1;           // the betround it was decided for (<0 = unchecked)
 bool g_mcp_reload_ohf_request = false;  // /api/reload-ohf -> heartbeat reloads the strategy folder
 CString g_mcp_click_region = "";        // /api/click-region -> heartbeat clicks this region's rect
 bool    g_hud_calibrate_request = false; // /api/hud-calibrate -> overlay recalibration pending

@@ -485,12 +485,38 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
     bool my_turn = (p_engine_container->symbol_engine_autoplayer() != NULL
                     && p_engine_container->symbol_engine_autoplayer()->ismyturn());
     bool force = g_mcp_action_force;   // manual learner click: bypass the ismyturn gate
-    if (GetTickCount() - g_mcp_action_set_tick > 25000) {
+    // THE SPOT MOVED ON -> DROP IT.
+    //
+    // The 25 s expiry alone is not enough: hands finish in seconds, so a decision made for hand N
+    // (or for the flop) could still be sitting in the queue when hand N+1 deals -- or when the turn
+    // card lands -- and fire there, into a spot nobody decided anything about, the moment a matching
+    // button appeared. force=1 makes that worse, because it bypasses the ismyturn gate entirely.
+    // An action is only valid for the exact hand and street it was decided for.
+    CString cur_hand = (p_handreset_detector != NULL) ? p_handreset_detector->GetHandNumber() : CString("");
+    int cur_betround = (p_betround_calculator != NULL) ? p_betround_calculator->betround() : -1;
+    bool stale_spot =
+        (!g_mcp_action_hand.IsEmpty() && !cur_hand.IsEmpty() && g_mcp_action_hand != cur_hand)
+     || (g_mcp_action_betround >= 0 && cur_betround >= 0 && g_mcp_action_betround != cur_betround);
+
+    if (stale_spot) {
+      write_log(k_always_log_basic_information,
+        "[MCP] Manual action DISCARDED: decided for hand %s round %d, but the table is now on "
+        "hand %s round %d. A decision is only valid for the spot it was made in.\n",
+        g_mcp_action_hand.GetString(), g_mcp_action_betround,
+        cur_hand.GetString(), cur_betround);
+      g_mcp_action_request = -1;
+      g_mcp_action_amount = -1.0;
+      g_mcp_action_force = false;
+      g_mcp_action_hand = "";
+      g_mcp_action_betround = -1;
+    } else if (GetTickCount() - g_mcp_action_set_tick > 25000) {
       // Expired before our turn came -- discard so it can't fire a later hand.
       write_log(k_always_log_basic_information, "[MCP] Manual action expired before our turn; discarded.\n");
       g_mcp_action_request = -1;
       g_mcp_action_amount = -1.0;
       g_mcp_action_force = false;
+      g_mcp_action_hand = "";
+      g_mcp_action_betround = -1;
     } else if (!force && !my_turn) {
       // Not our turn yet -- keep the request PENDING and retry next heartbeat. With
       // force (manual click) we skip this wait and try the click below right away.
@@ -500,6 +526,8 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
       g_mcp_action_request = -1;
       g_mcp_action_amount = -1.0;
       g_mcp_action_force = false;
+      g_mcp_action_hand = "";
+      g_mcp_action_betround = -1;
       // Return the cursor to where the user left it after the WHOLE sequence.
       CCursorRestorer _cursor_restorer;
       // Sized bet/raise AND ALL-IN: go through the autoplayer's two-successive-clicks +

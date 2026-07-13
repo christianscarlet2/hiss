@@ -219,6 +219,14 @@ extern int g_mcp_action_request;       // a k_autoplayer_function_* code (FCKRA)
 extern double g_mcp_action_amount;     // bet/raise size in big blinds (<0 = plain click)
 extern unsigned long g_mcp_action_set_tick;  // tick when set (wait-for-turn expiry)
 extern bool g_mcp_action_force;        // true: manual learner click -> bypass the ismyturn gate
+// The SPOT the action was decided for. A forced request bypasses the ismyturn gate and stays PENDING
+// for up to 25 s, so without this a fold decided for hand N could still be sitting in the queue when
+// hand N+1 deals -- and fire there, into a completely different spot, as soon as a matching button
+// appeared. (Observed: a fold pending ~5 s against a Check|Raise bar that has no Fold button.) The
+// heartbeat drops the request the moment the hand or the street it was decided for is no longer the
+// one on screen. Empty handnumber = "don't check" (a human clicking in the learner).
+extern CString g_mcp_action_hand;      // handnumber the action was decided for ("" = unchecked)
+extern int g_mcp_action_betround;      // betround it was decided for (<0 = unchecked)
 extern bool g_mcp_reload_ohf_request;  // set by /api/reload-ohf; heartbeat reloads the strategy folder
 extern CString g_mcp_click_region;     // /api/click-region: heartbeat clicks this tablemap region's rect (lobby nav)
 // HUD overlay recalibration: user right-clicks "Recalibrate all HUDs (Claude)" -> request flag.

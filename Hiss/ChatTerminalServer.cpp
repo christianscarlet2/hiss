@@ -774,6 +774,15 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		} else {
 			g_mcp_action_amount = ((d == "raise" || d == "bet") ? amount : -1.0);
 			g_mcp_action_set_tick = GetTickCount();   // for wait-for-turn expiry
+			// The SPOT this action was decided for. A forced request bypasses the ismyturn gate and
+			// stays pending up to 25 s, so without this stamp a decision made for hand N could still
+			// be queued when hand N+1 deals -- and fire there, into a different spot, the moment a
+			// matching button appeared. Callers that know their spot (the NN driver) send it; a human
+			// clicking in the learner sends nothing and stays unchecked, exactly as before.
+			CString hand_stamp = CString(UrlDecode(QueryValue(query, "hand")));
+			CStringA br_a = QueryValue(query, "betround");
+			g_mcp_action_hand = hand_stamp;
+			g_mcp_action_betround = br_a.IsEmpty() ? -1 : atoi(br_a.GetString());
 			// force=1 (manual learner click) bypasses the ismyturn gate: fire as soon as
 			// the button is clickable, even if the buttons-visible threshold isn't met.
 			g_mcp_action_force = (QueryValue(query, "force") == "1");
