@@ -15,6 +15,8 @@
 #include "CSymbolEngineChipAmounts.h"
 
 #include "CBetroundCalculator.h"
+#include "CCasinoInterface.h"        // the BUTTONS: what the table says our options actually are
+#include "CAutoplayerFunctions.h"
 #include "CEngineContainer.h"
 
 #include "CScraper.h"
@@ -56,6 +58,8 @@ void CSymbolEngineChipAmounts::UpdateOnHandreset() {
 	_potplayer = 0;
 	_potcommon = 0;
   _call = 0;
+  _last_good_call = 0.0;
+  _last_good_call_betround = -1;
   _nbetstocall = 0.0;
   _nbetstorais = 0.0;
   _ncallbets = 0.0;
@@ -169,6 +173,53 @@ void CSymbolEngineChipAmounts::CalculateAmountsToCallToRaise() {
 	} else {
 		_call = 0;
 	}
+
+  // A LIVE CALL BUTTON WITH NO CHECK BUTTON PROVES THERE IS SOMETHING TO CALL.
+  //
+  // _call is inferred as (largest bet - my bet) from the opponents' bet pills -- the flakiest thing
+  // we scrape. ONE mis-read pill collapses largest_bet, _call becomes 0, and the strategy concludes
+  // "it's free -> check". But the bar in that spot is Fold | Call | Raise Options: there IS no Check
+  // button. Hiss then refuses the click (CAutoplayerButton::Click returns false when the button is
+  // not clickable) and the bot simply SITS THERE -- the "it just stalled" symptom -- or, when the
+  // phone map stacks check/raise-options on the same rect, the click lands on RAISE OPTIONS and pops
+  // the raise panel open (see CAutoplayer::CacheButtonIndicators).
+  //
+  // The buttons are the table telling us our options DIRECTLY. When they contradict the inference,
+  // the buttons win. We do NOT invent an amount -- guessing would be worse than the bug: call 45 BB
+  // believing it costs 1. Instead we reuse the last amount we actually READ on this same street,
+  // which is the same OCR-memory principle already used for the bets themselves. If we have never
+  // had a clean read this street, _call stays 0 and the bot waits for one rather than acting on a
+  // number it knows is a lie.
+  if (p_casino_interface != NULL
+      && p_engine_container->symbol_engine_userchair()->userchair_confirmed()) {
+    bool call_button  = p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_call)->IsClickable();
+    bool check_button = p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_check)->IsClickable();
+    int  this_round   = p_betround_calculator->betround();
+
+    if (_call > 0.005 && call_button) {
+      // A clean read while a Call button is up -> remember it for this street.
+      _last_good_call = _call;
+      _last_good_call_betround = this_round;
+    } else if (call_button && !check_button && _call <= 0.005) {
+      // The contradiction. The pills say "free", the table says "you owe".
+      if (_last_good_call > 0.005 && _last_good_call_betround == this_round) {
+        write_log(k_always_log_errors,
+          "[CSymbolEngineChipAmounts] CALL BUTTON LIVE, NO CHECK BUTTON, but the bet scrape says "
+          "call=0.00 -- a mis-read bet pill. Restoring this street's last good call=%.2f rather than "
+          "'checking' a button that does not exist.\n", _last_good_call);
+        _call = _last_good_call;
+      } else {
+        write_log(k_always_log_errors,
+          "[CSymbolEngineChipAmounts] CALL BUTTON LIVE, NO CHECK BUTTON, but the bet scrape says "
+          "call=0.00 and there is no clean read on this street yet. NOT pretending it is free; "
+          "waiting for a good scrape.\n");
+      }
+    }
+    if (this_round != _last_good_call_betround) {
+      _last_good_call = 0.0;             // a new street starts with a clean slate
+    }
+  }
+
   write_log(Preferences()->debug_symbolengine(),
     "[CSymbolEngineChipAmounts] call = %.2f\n", _call);
   // In case we are covered consider only the effective amount to call,

@@ -95,6 +95,14 @@ public:
 	double _potcommon;
 	double _potplayer;
  private:
+	// The last amount-to-call we actually READ on this street, while a Call button was live.
+	// _call is inferred from the opponents' bet pills, so one mis-scraped pill collapses it to 0 and
+	// the strategy concludes "it's free -> check" -- into a bar that has no Check button. When the
+	// buttons contradict the inference we restore this value rather than inventing one.
+	// See CalculateAmountsToCallToRaise().
+	double _last_good_call;
+	int    _last_good_call_betround;
+ private:
 	double _sraiprev;
 	double _sraimin;
 	double _sraimax;

@@ -624,8 +624,31 @@ def decide_and_act(gs):
     # whenever both C and K were claimed, and (b) turned every intended raise into an ALL-IN SHOVE.
     # Both were worse than the bug they were meant to fix. Until the button label/rect detection is
     # recalibrated (the known i6/Raise mis-calibration), AmountToCall stays the authority here.
-    fckra = (gs.get("fckra") or "").upper()          # diagnostics only -- see above
+    fckra = (gs.get("fckra") or "").upper()
     amt_to_call = float(sym.get("AmountToCall", 0) or 0)
+
+    # A CHECK BUTTON THAT ISN'T THERE.
+    #
+    # AmountToCall is derived as (largest bet - my bet) from the opponents' bet pills, so ONE
+    # mis-scraped pill collapses it to 0 -- and then every rule below "reconciles" a call into a
+    # check. But the bar in that spot is Fold | Call | Raise Options: there IS no Check button. Hiss
+    # itself says so (fckra reports C and no K), and its own source documents where the click lands:
+    # "a check with no Check button present was clicked blind and landed on RAISE OPTIONS: the raise
+    # panel popped open and the hand stalled."
+    #
+    # A live Call button with no Check button PROVES there is something to call. So when the two
+    # disagree, the button bar wins -- it is the table telling us directly what our options are,
+    # while AmountToCall is an inference built on the flakiest thing we scrape. We do NOT guess the
+    # amount and we do NOT act on a state we know is inconsistent: we return False, which makes the
+    # caller re-read and re-decide within the same turn (the bet pill usually recovers next frame).
+    call_button = "C" in fckra
+    check_button = "K" in fckra
+    if call_button and not check_button and amt_to_call <= 0.001:
+        print("[nn_driver] !! INCONSISTENT: a live CALL button (fckra=%s) but AmountToCall=0 -- the "
+              "bet scrape is lying. NOT acting on it; re-reading. (Refusing to 'check' a button that "
+              "does not exist.)" % (fckra or "-"), flush=True)
+        return False                       # do not consume the turn; the caller retries
+
     if do == "call" and amt_to_call <= 0.001:
         do, note = "check", note + "  (call->check: nothing to call)"
     elif do == "check" and amt_to_call > 0.001:
@@ -636,6 +659,18 @@ def decide_and_act(gs):
         # answers "button not clickable yet; keeping pending" every heartbeat and the bot just
         # sits there until the human clicks (hand 2777793688, 7h Jd in the BB).
         do, note = "check", note + "  (fold->check: nothing to call)"
+
+    # Last line of defence: never send a CHECK when the table says there is no Check button. Hiss
+    # would refuse the click anyway (CAutoplayerButton::Click returns false when not clickable) and
+    # the bot would silently stall, which is exactly the "it just sat there" symptom.
+    if do == "check" and fckra and not check_button:
+        if call_button:
+            print("[nn_driver] !! decided CHECK but there is no Check button (fckra=%s) -- not "
+                  "acting; re-reading rather than clicking blind." % fckra, flush=True)
+            return False
+        print("[nn_driver] !! decided CHECK with no Check button and no Call button (fckra=%s) -- "
+              "not acting." % fckra, flush=True)
+        return False
     print("[nn_driver] %s hole=%s board=%s -> NN: %s%s%s  [btns=%s]  (val=%s)" %
           (sv["_handnumber"], sv["hole"], sv["board"] or "-", do,
            (" to %.1fbb" % amount) if amount else "", note, fckra or "-", nn.get("value")), flush=True)
