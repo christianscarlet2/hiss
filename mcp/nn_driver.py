@@ -20,7 +20,7 @@ swiftsnake DB can't stall the NN. Run the bot with the AUTOPLAYER OFF so the NN 
   python nn_driver.py            # live: NN plays
   python nn_driver.py --dry-run  # read + decide + print, but DON'T click (safe test)
 """
-import os, sys, json, time, subprocess, urllib.parse
+import os, sys, json, math, time, subprocess, urllib.parse
 
 def _argval(flag, default):
     if flag in sys.argv:
@@ -36,9 +36,22 @@ POLL   = float(os.environ.get("NN_POLL_S", "0.6"))
 DRY    = "--dry-run" in sys.argv
 
 # The infoset the NN was trained on (features.py NUMERIC_SYMBOLS). The LIVE bot resolves all of
-# these locally via /api/symbols (verified 86/86), so we read the sym straight from the bot --
-# fast and reliable -- instead of swiftsnake's /decide (which hangs under postgres load).
-NUMERIC_SYMBOLS = ("prwin,handrank169,f$BoardWet,f$BoardDry,f$ScaryBoard,f$BoardHighCardFoldy,"
+# these locally via /api/symbols, so we read the sym straight from the bot -- fast and reliable --
+# instead of swiftsnake's /decide (which hangs under postgres load).
+#
+# Two corrections, both measured:
+#
+#  * The 92 -> 115 feature retrain happened; THIS LIST WAS NEVER UPDATED. The driver was sending 86
+#    symbols to a features.py that expects 109, so 23 arrived as 0.0 on every live decision. Most are
+#    dead in training anyway (harmless), but `obsbranch` (sd 2.29) and `aggressorchair` (sd 2.79) are
+#    alive -- so the net was being handed z-scores of -1.54 and -1.13, values it never saw in
+#    training, every single hand. All 23 are appended below (verified resolvable on the live bot).
+#
+#  * `prwin` is NOT sent any more. features.py overwrites it unconditionally with its own eval7
+#    equity (features.py:288-294), so the bot's Monte-Carlo result was computed and then thrown away
+#    -- and computing it means running the Monte-Carlo on Hiss's HTTP thread, the documented crash
+#    vector. Dropping it costs nothing and removes the risk: identical decisions, less latency.
+NUMERIC_SYMBOLS = ("handrank169,f$BoardWet,f$BoardDry,f$ScaryBoard,f$BoardHighCardFoldy,"
     "f$BoardHighCardSticky,f$BoardParched,HaveTopPair,HaveOverPair,HaveSet,HaveTwoPair,HaveFlush,"
     "HaveStraight,FlushPossible,StraightPossible,f$HaveStrongMade,f$HaveBigMade,f$HaveOnePair,"
     "f$HaveComboDraw,f$HaveBigDraw,f$HaveWeakDraw,betround,nplayersdealt,nopponentsplaying,"
@@ -50,8 +63,19 @@ NUMERIC_SYMBOLS = ("prwin,handrank169,f$BoardWet,f$BoardDry,f$ScaryBoard,f$Board
     "f$Opp_IsAggro,f$Opp_IsTAG,f$Opp_IsLAG,f$Opp_IsFish,f$Opp_IsManiac,f$Opp_Foldy,"
     "f$Opp_ThreeBetsLight,f$Opp_PotCommitted,lastraiseractiontime,f$TimingSaysWeak,"
     "f$TimingSaysStrong,Raises,Calls,Bets,BotRaisedBeforeFlop,BotRaisedOnFlop,BotRaisedOnTurn,"
-    "f$Style,f$OpenBase,f$CbetFreq,f$ThreeBetBluffFreq,f$DoubleBarrel,validator_ok,"
-    "validator_confidence")
+    "f$Style,f$OpenBase,f$CbetFreq,f$ThreeBetBluffFreq,f$DoubleBarrel,"
+    # --- the 23 the driver was silently omitting (brain / observer / exploit / introspection / knobs)
+    "obsbranch,obsbranch_aggro,obsbranch_bluff,obsbranch_openrange,mischief_fire,aggressorchair,"
+    "iamaggressor,isplo8,isomaha,exploit_overfold_raischair,exploit_neverfolds_raischair,"
+    "exploit_keepsfiring_raischair,exploit_tilting_raischair,exploit_folds3bet_raischair,"
+    "exploit_honest_raischair,intro_known_raischair,intro_foldpress_raischair,intro_tilt_raischair,"
+    "intro_contfreq_raischair,intro_rangestrength_raischair,openai_knob_openrange,"
+    "openai_knob_aggro,openai_knob_bluff,"
+    "validator_ok,validator_confidence,"
+    # Not a model feature -- the driver's own ICM sizing multiplier. Pulled in the SAME request rather
+    # than a second mid-decision /api/symbols call on Hiss's symbol-evaluating HTTP thread.
+    # features.py indexes by name, so an extra key it doesn't know about is simply ignored.
+    "f$ICM_SizeMult")
 
 # Use curl, not urllib: on this box something (Defender/firewall app-filtering) resets python's
 # outbound LAN POSTs mid-body, but curl is reliable on every leg. Keeps the driver dependency-free.
@@ -255,7 +279,23 @@ def decide_and_act(gs):
     # Sym straight from the live bot (local, DB-free) -- not swiftsnake's /decide.
     sym = _get(BOT + "/api/symbols?names=" + NUMERIC_SYMBOLS)
     nn = _post(NN, {"sym": sym, "hole": sv["hole"], "board": sv["board"], "bblind": sv["bblind"]})
-    a = nn.get("action", "fold")
+
+    # NEVER DEFAULT TO FOLD.
+    #
+    # This was `a = nn.get("action", "fold")`. nn_decide.py returns {"error": ...} on ANY exception --
+    # no champion loaded, a feature-dimension mismatch, a torch fault -- so a single bad promotion
+    # turned the bot into a fold-bot that folded 100% of hands facing a bet, while the log line
+    # printed a perfectly normal-looking "-> NN: fold". Silent, and catastrophic.
+    #
+    # A brain that cannot answer must not get to act. Hand the turn back to the OHF autoplayer, which
+    # is a competent player in its own right, and say so loudly.
+    if not isinstance(nn, dict) or "action" not in nn:
+        print("[nn_driver] !! NN GAVE NO ACTION (%s) -- NOT acting. Handing this turn back to the "
+              "OHF autoplayer. The NN is not driving until this is fixed."
+              % (nn.get("error") if isinstance(nn, dict) else type(nn).__name__), flush=True)
+        _get(BOT + "/api/autoplayer?on=1")
+        return True                        # turn consumed -- by the OHF, not by a blind fold
+    a = nn["action"]
     bb = float(nn.get("f$betsize", 0) or 0)
     allin = ((float(nn.get("f$allin", 0) or 0)) > 0) or a == "allin"
     do = "allin" if allin else ("raise" if a == "raise" else a)
@@ -291,8 +331,9 @@ def decide_and_act(gs):
             _dm = 1.50 if _eff_bb >= 250 else 1.35 if _eff_bb >= 150 else 1.20 if _eff_bb >= 100 else 1.10 if _eff_bb >= 60 else 1.0
             # ICM chip-value multiplier: the SAME f$ICM_SizeMult the OHF uses (light symbol, no prwin/pt_)
             # -> the NN now sizes by depth x ICM, matching the OHF. 1.0 in cash/freeroll/early.
+            # Comes from the once-per-turn sym pull now, not a second HTTP round trip.
             try:
-                _icm = float((_get(BOT + "/api/symbols?names=f$ICM_SizeMult") or {}).get("f$ICM_SizeMult", 1.0) or 1.0)
+                _icm = float(sym.get("f$ICM_SizeMult", 1.0) or 1.0)
             except Exception:
                 _icm = 1.0
             if _icm <= 0:
@@ -302,27 +343,48 @@ def decide_and_act(gs):
                 amount *= _mult
                 note = "  (size x%.2f: depth %.2f@%.0fbb, icm %.2f)" % (_mult, _dm, _eff_bb, _icm)
     if do == "raise":
-        # Legal raise sizing (NLHE): an opening raise must be >= 2bb (when bb=1bb), and a re-raise
-        # must be >= the last raise increment. If the NN's raise-TO does NOT meet the legal minimum,
-        # do NOT raise -- fall back to call if facing a bet, else check (Emrald's rule: "otherwise
-        # hit call or check in that succession"). A full-stack shove is always legal, so a raise-TO
-        # at/over the effective stack becomes all-in.
+        # EVERYTHING IN THIS BLOCK IS IN BIG BLINDS.
+        #
+        # It used to mix units: `amount` is a raise-TO in bb (see the pot-fraction conversion above),
+        # but min_raise_to / eff_max were built from sv.bet, sym.AmountToCall and sv.stack, which are
+        # in TABLE MONEY. Those two only coincide while bblind == 1.0 -- which is exactly the current
+        # ACR override, so the bug sat there armed and invisible. (The quarter-pot line divided by bbl
+        # while its neighbours did not: the units were confused, not chosen.)
+        #
+        # The moment bblind isn't 1 -- a real-money cash table, a tourney whose tablemap reads true
+        # chips, or your own documented gotcha where a restart didn't re-POST the bb=1.0 override --
+        # EVERY raise would have become an all-in shove (e.g. at bb=0.02: a 3.5bb raise-to compared
+        # against an eff_max of 2.00 in money -> 3.5 >= 2.0 -> jam). Convert once, compare in bb.
         bbl     = float(sv.get("bblind", 1) or 1) or 1.0
-        my_bet  = float(sv.get("bet", 0) or 0)
-        to_call = float(sym.get("AmountToCall", 0) or 0)
-        highest = my_bet + to_call                    # current highest bet, relative to hero
-        min_raise_to = highest + max(bbl, to_call)    # last increment ~ to_call; never < one bb
-        if highest <= bbl + 1e-6:                     # only the blinds are in -> opening raise
-            min_raise_to = max(min_raise_to, 2.0 * bbl)
+        my_bet  = float(sv.get("bet", 0) or 0) / bbl                 # money -> bb
+        to_call = float(sym.get("AmountToCall", 0) or 0) / bbl        # money -> bb
+        stack   = float(sv.get("stack", 0) or 0) / bbl                # money -> bb
+        pot     = float(sym.get("PotSize", 0) or 0) / bbl             # money -> bb
+
+        highest = my_bet + to_call                    # current highest bet, relative to hero (bb)
+        min_raise_to = highest + max(1.0, to_call)    # last increment ~ to_call; never < one bb
+        if highest <= 1.0 + 1e-6:                     # only the blinds are in -> opening raise
+            min_raise_to = max(min_raise_to, 2.0)
+        eff_max = my_bet + stack                      # a full shove, in bb
+
+        # A raise with NO SIZE is a silent no-op: click("raise", 0) sends /api/action?do=raise with no
+        # amount, and Hiss then only pops the Raise Options panel open and never confirms it. That
+        # happens whenever PotSize scrapes as 0, because the NN's f$betsize is frac * PotSize / bb.
+        # The NN's ACTION is the signal; if its SIZE is missing, give it the legal minimum rather than
+        # throwing the decision away.
+        if amount <= 0:
+            amount = min_raise_to
+            note = "  (no size from the NN -> min-raise %.2fbb)" % amount
+
         # Postflop OPENING bet (nothing to call -> a bet, not a raise): size it at least a QUARTER
         # of the pot (Emrald's rule). Only bumps the size up; raises facing a bet keep their sizing.
         betround = float(sym.get("betround", 0) or 0)
-        if betround >= 2 and to_call <= 0.001 and amount > 0:
-            quarter_pot = 0.25 * (float(sym.get("PotSize", 0) or 0)) / bbl   # pot money units -> bb
+        if betround >= 2 and to_call <= 0.001:
+            quarter_pot = 0.25 * pot
             if quarter_pot > amount:
                 amount = quarter_pot
                 note = "  (postflop bet -> >=1/4 pot %.2fbb)" % amount
-        eff_max = my_bet + float(sv.get("stack", 0) or 0)
+
         # Too small to be legal -> MIN-RAISE, don't abandon the raise. The NN's ACTION (raise) is the
         # signal; its SIZE is the part that's unreliable. The old rule ("below the minimum -> fall back
         # to call/check") silently converted the NN's aggression into passivity -- and because the NN's
@@ -330,14 +392,19 @@ def decide_and_act(gs):
         # raised a single hand. A min-raise is always legal, so honour "open >= 2bb / re-raise >= last
         # increment" by raising TO that minimum. If we cannot even afford it, the allin check below
         # turns it into the jam it effectively is. [Emrald: raise>=stack = all-in]
-        if amount > 0 and amount < min_raise_to - 1e-6:
+        if amount < min_raise_to - 1e-6:
             note = "  (NN size %.2f < min %.2f -> min-raise)" % (amount, min_raise_to)
             amount = min_raise_to
-        if amount > 0 and amount >= eff_max - 1e-6:
+
+        # The phone keypad only accepts 0.5 increments (6.5 or 7, not 6.6). CEIL, never round: this
+        # snap used to run AFTER the min-raise clamp and round to NEAREST, so a min_raise_to of 2.2bb
+        # became 2.0bb -- an illegal under-raise, rejected by the table or landing as a call. Rounding
+        # a legal minimum DOWN is never safe; rounding up always is.
+        amount = math.ceil(amount * 2 - 1e-9) / 2.0
+
+        # Check the shove AFTER the snap, so ceiling can't push us over our own stack unnoticed.
+        if amount >= eff_max - 1e-6:
             do, amount, note = "allin", 0, "  (raise>=stack -> allin)"
-    # The phone keypad only accepts 0.5 increments (6.5 or 7, not 6.6) -> snap to nearest half-bb.
-    if amount and amount > 0:
-        amount = int(amount * 2 + 0.5) / 2.0
     # Reconcile call/check with the actual spot, using AmountToCall (the bet state), NOT fckra.
     #
     # fckra is now published every heartbeat and is printed below purely as DIAGNOSTICS -- do NOT gate
