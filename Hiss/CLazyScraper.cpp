@@ -204,8 +204,12 @@ void CLazyScraper::DoScrape() {
     p_scraper->ScrapeMTTRegions();
   }
 
-  // --- per-cycle scrape profile (only when scraper-debugging is enabled) ------
-  if (Preferences()->debug_scraper()) {
+  // --- per-cycle scrape profile ----------------------------------------------
+  // Gated on debug_HEARTBEAT, not debug_scraper. debug_scraper logs a line PER REGION (~129 per
+  // beat), so turning it on to see this breakdown floods the log AND inflates the very number you
+  // came to measure. This belongs next to the heartbeat profile it explains: it is the line that
+  // says whether the scrape is spending its time in OCR or somewhere else.
+  if (Preferences()->debug_heartbeat()) {
     DWORD elapsed = GetTickCount() - scrape_start_ms;
     CString perf_path = LogsDirectory() + "scrape_perf.log";
     FILE *pf = fopen(perf_path.GetString(), "a");

@@ -568,20 +568,39 @@ void CScraper::PreOcrParallel() {
 	_ocr_cache.clear();
 	if (!HissParallelOcrEnabled() || p_tablemap == NULL) return;
 
-	// Size the worker pool from settings, split across running Hiss instances.
-	int cpus = 0, wpc = 1;
-	if (p_tablemap_db != NULL) {
-		CString c = p_tablemap_db->GetSettingString("parallel_workers", "num_cpus");
-		CString w = p_tablemap_db->GetSettingString("parallel_workers", "workers_per_cpu");
-		if (!c.IsEmpty()) cpus = atoi(c.GetString());
-		if (!w.IsEmpty()) wpc = atoi(w.GetString());
+	// Size the worker pool -- AT MOST ONCE EVERY FEW SECONDS, not on every scrape cycle.
+	//
+	// This block ran 3.4 times a second, and CountHissInstances() enumerates EVERY process on the
+	// machine to do it. Worse, our own OCR workers are Hiss.exe processes too, so while they are
+	// spawning the count wobbles, `want` changes with it, and EnsureStarted() then TEARS DOWN AND
+	// RESPAWNS the whole worker pool -- killing and re-launching processes in the middle of a scrape,
+	// and restarting the I/O thread-pool with them. Measured: the OCR prepass is 90% of all scrape
+	// time, with a p99 of 4.1 s and a worst case of 28 SECONDS -- far beyond the 5 s batch-wait cap,
+	// because the cost is here, BEFORE the wait.
+	//
+	// The number of Hiss instances changes when a human starts or stops one. Polling it at 3.4 Hz
+	// buys nothing and costs everything.
+	static DWORD s_last_sizing_tick = 0;
+	static int   s_want = 0;
+	const DWORD  kResizeEveryMs = 5000;
+
+	if (s_want == 0 || (GetTickCount() - s_last_sizing_tick) > kResizeEveryMs) {
+		int cpus = 0, wpc = 1;
+		if (p_tablemap_db != NULL) {
+			CString c = p_tablemap_db->GetSettingString("parallel_workers", "num_cpus");
+			CString w = p_tablemap_db->GetSettingString("parallel_workers", "workers_per_cpu");
+			if (!c.IsEmpty()) cpus = atoi(c.GetString());
+			if (!w.IsEmpty()) wpc = atoi(w.GetString());
+		}
+		// Our OCR workers are also Hiss.exe processes, so exclude the ones we already
+		// spawned from the instance count (otherwise they inflate it and thrash the
+		// pool size). On the first cycle Size()==0, so instances == real Hiss count.
+		int instances = CountHissInstances() - g_ocr_worker_pool.Size();
+		if (instances < 1) instances = 1;
+		s_want = ParallelWorkerCountForInstances(cpus, wpc, instances);
+		s_last_sizing_tick = GetTickCount();
 	}
-	// Our OCR workers are also Hiss.exe processes, so exclude the ones we already
-	// spawned from the instance count (otherwise they inflate it and thrash the
-	// pool size). On the first cycle Size()==0, so instances == real Hiss count.
-	int instances = CountHissInstances() - g_ocr_worker_pool.Size();
-	if (instances < 1) instances = 1;
-	int want = ParallelWorkerCountForInstances(cpus, wpc, instances);
+	int want = s_want;
 
 	// Spawn/respawn the OUT-OF-PROCESS OCR workers for the connected tablemap, and
 	// size the I/O thread-pool to match (one blocking pipe I/O thread per worker).
