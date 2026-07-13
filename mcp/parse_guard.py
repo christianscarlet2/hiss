@@ -43,14 +43,39 @@ def read_port():
 
 
 def port_responds():
+    """Is Hiss ANSWERING -- on whatever port it actually bound?
+
+    This used to trust terminal_port.txt alone. But Hiss binds the next free port when the previous
+    one is still in TIME_WAIT after a restart (27654 -> 27655), and there is a window where the file
+    still names the OLD port while the new instance is happily serving on a new one. This function
+    then reported "dead", the guard declared STUCK, and it REVERTED THE LIVE OHF MASTER to .lastgood
+    and restarted a bot that was never broken. A guard that rolls back your strategy because it looked
+    at the wrong socket is worse than no guard.
+    """
     p = read_port()
-    if not p:
-        return False
-    try:
-        urllib.request.urlopen("http://127.0.0.1:%s/api/table-state" % p, timeout=2).read()
-        return True
-    except Exception:
-        return False
+    if p:
+        try:
+            urllib.request.urlopen("http://127.0.0.1:%s/api/table-state" % p, timeout=2).read()
+            return True
+        except Exception:
+            pass
+    # The file's port is dead. Before condemning Hiss, look for it: it may simply have MOVED.
+    for cand in range(27654, 27665):
+        if str(cand) == str(p):
+            continue
+        try:
+            urllib.request.urlopen("http://127.0.0.1:%d/api/table-state" % cand, timeout=0.5).read()
+            log("Hiss moved to port %d (the port file said %r) -- alive, NOT stuck. No repair."
+                % (cand, p or "none"))
+            try:                       # heal the stale file so everything else finds it too
+                with open(PORTFILE, "w") as f:
+                    f.write(str(cand))
+            except Exception:
+                pass
+            return True
+        except Exception:
+            continue
+    return False
 
 
 def hiss_running():
