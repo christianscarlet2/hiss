@@ -378,6 +378,57 @@ bool CAutoplayer::HandleTwoSuccessiveClicksBetRaise() {
 		APTrace("two-successive-clicks: SKIP, no positive size (f$betsize=0 AND OpenPPL decision<=0)");
 		return false;
 	}
+
+	// ---- THE RAISE MUST BE LEGAL, OR THE TABLE JUST IGNORES IT --------------------------------
+	//
+	// EnterBetsizeNumpadRaw() below deliberately bypasses the casino's AdjustedBetsize(), because
+	// that used to clamp a BB-scale size down to 0 (the "typed 0" bug). But bypassing it removed the
+	// only thing enforcing the table's MINIMUM RAISE -- so nothing has been checking that since.
+	//
+	// When the strategy asks to raise to 3 BB and the table's minimum raise-to is 21.13 BB, the bot
+	// clicks Raise Options, the panel opens, it types 3, the table silently refuses it, and the bot
+	// SITS THERE with the panel open until it times out. That is not a freeze and not a missing
+	// button -- it is an illegal bet being typed into a live raise panel. (Hand 2778175981: A8s
+	// facing a 10.56 BB bet; the panel itself showed "21.13 BB Raise To" -- the table telling us the
+	// minimum -- and the bot sat for 19 seconds and timed out.)
+	//
+	// Minimum raise-to = the highest bet + the last raise increment. The increment is at least one
+	// big blind, and when we are facing a bet it is the amount we are being asked to call. We only
+	// ever raise the size UP to the minimum: a strategy that wanted to raise still raises, it just
+	// does so legally. And if we cannot afford the minimum, the raise IS a jam -- type the whole
+	// stack rather than an amount the table will reject.
+	if (!wants_allin && p_table_state != NULL && p_table_state->User() != NULL
+	    && p_engine_container->symbol_engine_chip_amounts() != NULL) {
+		double my_bet  = p_table_state->User()->_bet.GetValue();
+		double stack   = p_table_state->User()->_balance.GetValue();
+		double to_call = p_engine_container->symbol_engine_chip_amounts()->call();
+		double bb      = (p_engine_container->symbol_engine_tablelimits() != NULL)
+		                 ? p_engine_container->symbol_engine_tablelimits()->bblind() : 1.0;
+		if (bb <= 0) bb = 1.0;                      // the blind-guesser has reported 0 before
+
+		double highest      = my_bet + to_call;     // the biggest bet in front of anyone right now
+		double min_raise_to = highest + max(bb, to_call);
+		double all_in_to    = my_bet + stack;       // a full shove is always legal
+
+		if (betsize < min_raise_to - 0.005) {
+			write_log(k_always_log_basic_information,
+				"[TwoClicks] ILLEGAL RAISE: %.2f is below the table minimum raise-to of %.2f "
+				"(highest bet %.2f + increment %.2f). Raising to the minimum instead -- typing an "
+				"illegal amount just leaves the raise panel open and times the hand out.\n",
+				betsize, min_raise_to, highest, max(bb, to_call));
+			betsize = min_raise_to;
+			// Round UP to the next half-BB: our computed minimum can sit a cent under the table's own
+			// (it showed 21.13 where we compute 21.12), and being a cent short is still illegal.
+			betsize = ceil(betsize * 2.0 - 1e-9) / 2.0;
+		}
+		if (all_in_to > 0 && betsize >= all_in_to - 0.005) {
+			write_log(k_always_log_basic_information,
+				"[TwoClicks] raise-to %.2f meets or exceeds our whole stack (%.2f) -> typing the full "
+				"stack: the raise IS a jam.\n", betsize, all_in_to);
+			betsize = all_in_to;                    // never type more than we have
+		}
+	}
+
 	if (!p_two_successive_clicks->HandleCycle(true)) {
 		APTrace("two-successive-clicks: HandleCycle returned false (see [TwoClicks] SKIP/label line for why)");
 		return false;
