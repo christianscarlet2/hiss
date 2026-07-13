@@ -102,6 +102,14 @@ def list_audio_devices():
 # who launched it (the loop runs one synapse per phone, e.g. synapse_s10/a17), so the tailer merges all
 # matches PLUS ail_<name>.out.log (used when this server starts the daemon). All tagged with the name.
 AILS = [
+    # The odometer is FIRST because nothing else means anything without it. It records what every hand
+    # won, and it is deliberately its OWN daemon: hand_results used to be written by synapse_map, but
+    # synapse_map is also the brain, and "brain disengage" switches the synapse AIL off -- so every
+    # Hiss restart silently killed the measurement while the bot kept playing (102 hands seen in six
+    # hours, 2 recorded). Nothing may switch this off as a side effect of switching off something else.
+    {"name": "odometer", "label": "Odometer (hand results)", "icon": "\U0001F4CF",
+     "desc": "Records EVERY hand's win/loss into hand_results (hero stack delta across the hand boundary). Independent of the brain -- measure_live.py, the A/B gate and the AIL all read this. Leave it ON.",
+     "args": ["odometer.py"], "logs": ["odometer*.out.log"]},
     {"name": "synapse", "label": "Synapse Harmonizer", "icon": "\U0001F9EC",
      "desc": "Unifies every signal/knob/mode/output into one node+synapse graph; writes synapse_state + per-hand hand_results (AIL step 1b).",
      "args": ["synapse_map.py", "--watch"], "logs": ["synapse_*.out.log"]},
@@ -155,12 +163,47 @@ def load_state():
     _state.setdefault("enabled", {})
     _state.setdefault("pid", {})
 
-def save_state():
-    try:
-        with open(STATE_FILE, "w") as f:
-            json.dump(_state, f)
-    except Exception:
-        pass
+def save_state(name=None):
+    """MERGE-write, never whole-dict overwrite.
+
+    Dumping the entire in-memory dict loses updates. Each Hiss restart spawns a fresh ail_server, and
+    for a moment two of them are alive, each holding its own copy of the state it loaded at startup.
+    Whichever writes LAST wins -- and it writes ALL the keys, silently reverting every switch the
+    other one had changed. That is how the Synapse Harmonizer -- the daemon that records every hand's
+    P&L -- kept switching itself back off: never by anyone stopping it (stop_daemon zeroes the pid,
+    and the pid was still there), but by a stale copy of the state file overwriting the flag.
+
+    A measurement pipeline that turns itself off without saying so is worse than one that was never
+    built, because you go on trusting it. So: re-read the file, change ONLY the switch we just
+    touched, and write atomically.
+    """
+    with _state_lock:
+        try:
+            with open(STATE_FILE) as f:
+                disk = json.load(f)
+        except Exception:
+            disk = {}
+        disk.setdefault("enabled", {})
+        disk.setdefault("pid", {})
+        if name is None:                       # full save (first boot / voice_device etc.)
+            disk["enabled"].update(_state.get("enabled", {}))
+            disk["pid"].update(_state.get("pid", {}))
+        else:                                  # only the switch that actually changed
+            disk["enabled"][name] = _state["enabled"].get(name, False)
+            disk["pid"][name] = _state["pid"].get(name, 0)
+        for k, v in _state.items():            # non-switch keys (voice_device, ...)
+            if k not in ("enabled", "pid"):
+                disk[k] = v
+        try:
+            tmp = STATE_FILE + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(disk, f)
+            os.replace(tmp, STATE_FILE)        # atomic: a torn file cannot disable a daemon either
+        except Exception:
+            return
+        # adopt what is now on disk, so this server stops carrying a stale view of the others
+        _state["enabled"] = disk["enabled"]
+        _state["pid"] = disk["pid"]
 
 # --- pid-alive (ctypes, fast) ----------------------------------------------
 def pid_alive(pid):
@@ -205,13 +248,13 @@ def start_daemon(name):
         return False, "unknown AIL"
     if is_running(name):
         _state["enabled"][name] = True
-        save_state()
+        save_state(name)
         return True, "already running"
     ext = find_existing_pid(a["args"][0])
     if ext:
         _state["pid"][name] = ext
         _state["enabled"][name] = True
-        save_state()
+        save_state(name)
         return True, "adopted existing pid %d" % ext
     try:
         lf = open(logfile(name), "ab", buffering=0)
@@ -226,7 +269,7 @@ def start_daemon(name):
                              close_fds=True, creationflags=LAUNCH_FLAGS)
         _state["pid"][name] = p.pid
         _state["enabled"][name] = True
-        save_state()
+        save_state(name)
         return True, "started pid %d" % p.pid
     except Exception as e:
         return False, "start failed: %s" % e
@@ -241,7 +284,7 @@ def stop_daemon(name):
         except Exception:
             pass
     _state["pid"][name] = 0
-    save_state()
+    save_state(name)
     return True, "stopped"
 
 # --- merged output ring buffer + log tailer --------------------------------
@@ -556,7 +599,9 @@ def brain_kill(port):
     # ticking and brain_running (freshness) reports the button as still engaged. [Emrald]
     _kill_brain_processes()
     _state["enabled"]["synapse"] = False
-    save_state()
+    save_state("synapse")   # ONLY the brain switch. The odometer is a separate AIL precisely so that
+                            # disengaging the brain -- which every Hiss restart does -- can no longer
+                            # take the hand-result recording down with it. Never disable it here.
     return True, "brain disengaged for %s" % port
 
 
