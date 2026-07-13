@@ -253,6 +253,10 @@
 
   // ---- AIL control server (cross-origin to :7900 on the same host) -----------
   var AIL_BASE = location.protocol + "//" + location.hostname + ":7900";
+  // This page is served BY a Hiss instance on its own port, so location.port IS the bot we belong to.
+  // Per-port AILs (the brain / Synapse) are switched per instance, so every list/toggle carries it --
+  // without it, switching the brain off here would switch it off on the other bot too. [Emrald]
+  var AIL_PORT = location.port || "27654";
   var ailConn = document.getElementById("ail-conn");
   var ailSwitches = document.getElementById("ail-switches");
   var ailBody = document.getElementById("ail-body");
@@ -321,7 +325,7 @@
   }
 
   function ailListPoll() {
-    fetch(AIL_BASE + "/ail/list", { cache: "no-store" })
+    fetch(AIL_BASE + "/ail/list?port=" + AIL_PORT, { cache: "no-store" })
       .then(function (r) { return r.json(); })
       .then(function (d) { setAilConn(true); renderAilList(d.ails || []); })
       .catch(function () { setAilConn(false); });
@@ -343,7 +347,8 @@
     var name = cb.getAttribute("data-ail");
     var on = cb.checked;
     togglingUntil[name] = Date.now() + 4000; togglingUntil[name + "_on"] = on;
-    fetch(AIL_BASE + "/ail/toggle?name=" + encodeURIComponent(name) + "&on=" + (on ? 1 : 0), { cache: "no-store" })
+    fetch(AIL_BASE + "/ail/toggle?name=" + encodeURIComponent(name) + "&port=" + AIL_PORT + "&on=" + (on ? 1 : 0),
+          { cache: "no-store" })
       .then(function (r) { return r.json(); })
       .then(function () { setTimeout(ailListPoll, 600); })
       .catch(function () { setAilConn(false); });

@@ -11,30 +11,6 @@
       <FullPath>C:\www\openholdembot_old\Release\Reference Mouse DLL.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\www\openholdembot_old\Release\Files.dll</FullPath>
-    </ProjectOutput>
-    <ProjectOutput>
-      <FullPath>C:\www\openholdembot_old\Release\Debug.dll</FullPath>
-    </ProjectOutput>
-    <ProjectOutput>
-      <FullPath>C:\www\openholdembot_old\Release\string_functions.dll</FullPath>
-    </ProjectOutput>
-    <ProjectOutput>
-      <FullPath>C:\www\openholdembot_old\Release\window_functions.dll</FullPath>
-    </ProjectOutput>
-    <ProjectOutput>
-      <FullPath>C:\www\openholdembot_old\Release\Preferences.dll</FullPath>
-    </ProjectOutput>
-    <ProjectOutput>
-      <FullPath>C:\www\openholdembot_old\Release\globals.dll</FullPath>
-    </ProjectOutput>
-    <ProjectOutput>
-      <FullPath>C:\www\openholdembot_old\Release\Reference User DLL.dll</FullPath>
-    </ProjectOutput>
-    <ProjectOutput>
-      <FullPath>C:\www\openholdembot_old\Release\GamestateValidation.dll</FullPath>
-    </ProjectOutput>
-    <ProjectOutput>
       <FullPath>C:\www\openholdembot_old\Release\Hiss.exe</FullPath>
     </ProjectOutput>
   </ProjectOutputs>

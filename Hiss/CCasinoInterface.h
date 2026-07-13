@@ -37,6 +37,9 @@ class CCasinoInterface: public CSpaceOptimizedGlobalObject {
   // Numpad-only amount entry (after the two-successive-clicks opened the keypad).
   bool EnterBetsizeNumpad(double total_betsize_in_dollars);
   bool EnterBetsizeNumpadRaw(double amount);   // type the BB amount as-is (no adjustment)
+  // The smallest LEGAL raise-TO for the current spot, in big blinds (0 = unknown). Every typed betsize
+  // is clamped up to this, so a sub-minimum raise can never be sent to the casino and silently rejected.
+  double MinimumRaiseToInBigBlinds();
   bool EnterBetsizeForAllin();
 	bool UseSliderForAllin();
 	bool UseSliderForBetsize(double betsize, double betsize_for_allin);

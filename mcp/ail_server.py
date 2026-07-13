@@ -110,12 +110,14 @@ AILS = [
     {"name": "odometer", "label": "Odometer (hand results)", "icon": "\U0001F4CF",
      "desc": "Records EVERY hand's win/loss into hand_results (hero stack delta across the hand boundary). Independent of the brain -- measure_live.py, the A/B gate and the AIL all read this. Leave it ON.",
      "args": ["odometer.py"], "logs": ["odometer*.out.log"]},
-    # --bot-url is EXPLICIT (it used to default to 27654 implicitly). Every brain process must carry its
-    # bot's port on the command line, because that is how brain_kill tells one instance's brain from
-    # another's -- an untagged synapse could not be killed per-instance. [Emrald: per-instance brain]
-    {"name": "synapse", "label": "Synapse Harmonizer", "icon": "\U0001F9EC",
-     "desc": "Unifies every signal/knob/mode/output into one node+synapse graph; writes synapse_state + per-hand hand_results (AIL step 1b).",
-     "args": ["synapse_map.py", "--bot-url", "http://127.0.0.1:27654", "--watch"], "logs": ["synapse_*.out.log"]},
+    # PER-PORT: the brain. Each Hiss instance runs its own synapse steering its own bot, so this switch is
+    # per instance -- "{port}" is substituted with that bot's port and the state is keyed "synapse@<port>".
+    # The bot-url is EXPLICIT (it used to default to 27654 implicitly): every brain process must carry its
+    # port on the command line, because that is how we tell one instance's brain from another's -- an
+    # untagged synapse could not be killed, adopted or reported per-instance. [Emrald: per-instance brain]
+    {"name": "synapse", "label": "Synapse Harmonizer", "icon": "\U0001F9EC", "per_port": True,
+     "desc": "Unifies every signal/knob/mode/output into one node+synapse graph; writes synapse_state + per-hand hand_results (AIL step 1b). Per Hiss instance.",
+     "args": ["synapse_map.py", "--bot-url", "http://127.0.0.1:{port}", "--watch"], "logs": ["synapse_*.out.log"]},
     {"name": "observe", "label": "Observational Learning", "icon": "\U0001F441",
      "desc": "While observing, mines villain exploits / table reads / session trend into observations; drives the HUD aggregator (AIL step 1c).",
      "args": ["observe_learn.py", "--watch"], "logs": ["observe_learn.out.log"]},
@@ -149,8 +151,53 @@ AILS = [
 ]
 AIL_BY_NAME = {a["name"]: a for a in AILS}
 
-def logfile(name):
-    return os.path.join(LOGS, "ail_%s.out.log" % name)
+# --- the PORT dimension -----------------------------------------------------
+# Most AILs are machine-wide: one replay shipper, one mic, one HUD aggregator -- a single switch is right.
+# But some steer ONE Hiss instance, and the brain (synapse) above all: two bots each need their own, and
+# switching one off must not switch the other off. Those carry "per_port": True, and everything about them
+# is keyed by the bot's port:
+#     state key   "synapse@27655"   (global AILs stay plain: "shipper")
+#     args        "{port}" -> the bot's port, so the process is identifiable on its command line
+#     log file    ail_synapse_27655.out.log
+# A global AIL ignores `port` entirely, so callers can pass it unconditionally. [Emrald: per-instance brain]
+DEFAULT_PORT = "27654"
+
+
+def is_per_port(name):
+    return bool((AIL_BY_NAME.get(name) or {}).get("per_port"))
+
+
+def ail_key(name, port=None):
+    """The state key for this AIL. Per-port AILs get one key per Hiss instance; global AILs keep the
+    bare name, so existing state and switches are untouched."""
+    if not is_per_port(name):
+        return name
+    return "%s@%s" % (name, str(port or DEFAULT_PORT))
+
+
+def ail_args(a, port=None):
+    return [x.replace("{port}", str(port or DEFAULT_PORT)) for x in a["args"]]
+
+
+def key_port(key):
+    """The port a state key belongs to ('synapse@27655' -> '27655'); DEFAULT_PORT for a global key."""
+    return key.split("@", 1)[1] if "@" in key else DEFAULT_PORT
+
+
+def known_ports():
+    """Every Hiss instance we hold per-port state for, plus the default. This is how the reconcile loop
+    and the startup restore know which instances' per-port AILs to look after."""
+    ports = {DEFAULT_PORT}
+    for k in list(_state.get("enabled", {})) + list(_state.get("pid", {})):
+        if "@" in k:
+            ports.add(key_port(k))
+    return sorted(ports)
+
+
+def logfile(key):
+    # keyed by state key, so each instance's brain writes its own log ('@' is legal on NTFS but reads
+    # badly in a glob, so it becomes '_': ail_synapse_27655.out.log)
+    return os.path.join(LOGS, "ail_%s.out.log" % str(key).replace("@", "_"))
 
 # --- persistent enabled-state ----------------------------------------------
 _state_lock = threading.Lock()
@@ -165,8 +212,24 @@ def load_state():
         _state = {"enabled": {}, "pid": {}}
     _state.setdefault("enabled", {})
     _state.setdefault("pid", {})
+    # MIGRATE: an AIL that became per-port still has its old bare key on disk ("synapse": true). Move it
+    # onto the default instance so a brain that was ON before this upgrade stays ON, and doesn't silently
+    # come back as a second, portless daemon.
+    #
+    # This MUST be persisted, not just done in memory: save_state() re-adopts the file after every write,
+    # so an unpersisted migration would be wiped by the very next switch change -- and the retired bare key
+    # would come back from disk with it. Write the new key and retire the old one in the same atomic save.
+    for a in AILS:
+        n = a["name"]
+        if not a.get("per_port") or n not in _state["enabled"] and n not in _state["pid"]:
+            continue
+        key = ail_key(n, DEFAULT_PORT)
+        for bucket, default in (("enabled", False), ("pid", 0)):
+            if n in _state[bucket]:
+                _state[bucket].setdefault(key, _state[bucket].pop(n, default))
+        save_state(key, drop=[n])
 
-def save_state(name=None):
+def save_state(name=None, drop=()):
     """MERGE-write, never whole-dict overwrite.
 
     Dumping the entire in-memory dict loses updates. Each Hiss restart spawns a fresh ail_server, and
@@ -179,6 +242,10 @@ def save_state(name=None):
     A measurement pipeline that turns itself off without saying so is worse than one that was never
     built, because you go on trusting it. So: re-read the file, change ONLY the switch we just
     touched, and write atomically.
+
+    `drop` retires keys from the file outright (used when an AIL becomes per-port and its old bare key
+    is migrated to "<name>@<port>"). Without it a retired key would live on in the file and, because we
+    re-adopt the file below, keep coming back into memory on every write.
     """
     with _state_lock:
         try:
@@ -194,6 +261,9 @@ def save_state(name=None):
         else:                                  # only the switch that actually changed
             disk["enabled"][name] = _state["enabled"].get(name, False)
             disk["pid"][name] = _state["pid"].get(name, 0)
+        for k in (drop or ()):
+            disk["enabled"].pop(k, None)
+            disk["pid"].pop(k, None)
         for k, v in _state.items():            # non-switch keys (voice_device, ...)
             if k not in ("enabled", "pid"):
                 disk[k] = v
@@ -227,16 +297,21 @@ def pid_alive(pid):
     except Exception:
         return False
 
-def is_running(name):
-    return pid_alive(_state["pid"].get(name))
+def is_running(name, port=None):
+    return pid_alive(_state["pid"].get(ail_key(name, port)))
 
-def find_existing_pid(script):
+def find_existing_pid(script, port=None):
     """One-shot PowerShell scan for a python.exe whose command line contains <script>, so we adopt an
-    already-running daemon instead of starting a duplicate. Only called on toggle-ON (rare)."""
+    already-running daemon instead of starting a duplicate. Only called on toggle-ON (rare).
+    `port` narrows the match to the daemon steering THAT bot (its --bot-url carries ':<port>') -- without
+    it, one instance's brain would be adopted as another's and the two switches would fuse together."""
     try:
+        cond = "$_.CommandLine -like '*%s*'" % script
+        if port:
+            cond += " -and $_.CommandLine -like '*:%s*'" % port
         ps = ("Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
-              "Where-Object { $_.CommandLine -like '*%s*' } | "
-              "Select-Object -First 1 -ExpandProperty ProcessId" % script)
+              "Where-Object { %s } | "
+              "Select-Object -First 1 -ExpandProperty ProcessId" % cond)
         out = subprocess.run(["powershell", "-NoProfile", "-Command", ps],
                              capture_output=True, text=True, timeout=12,
                              creationflags=CREATE_NO_WINDOW, startupinfo=no_window_si()).stdout.strip()
@@ -245,49 +320,52 @@ def find_existing_pid(script):
         return 0
 
 # --- start / stop -----------------------------------------------------------
-def start_daemon(name):
+def start_daemon(name, port=None):
     a = AIL_BY_NAME.get(name)
     if not a:
         return False, "unknown AIL"
-    if is_running(name):
-        _state["enabled"][name] = True
-        save_state(name)
+    key = ail_key(name, port)
+    scope = key_port(key) if is_per_port(name) else None   # per-port: only ever match/act on THIS bot
+    if is_running(name, port):
+        _state["enabled"][key] = True
+        save_state(key)
         return True, "already running"
-    ext = find_existing_pid(a["args"][0])
+    ext = find_existing_pid(a["args"][0], scope)
     if ext:
-        _state["pid"][name] = ext
-        _state["enabled"][name] = True
-        save_state(name)
+        _state["pid"][key] = ext
+        _state["enabled"][key] = True
+        save_state(key)
         return True, "adopted existing pid %d" % ext
     try:
-        lf = open(logfile(name), "ab", buffering=0)
+        lf = open(logfile(key), "ab", buffering=0)
         lf.write(("\n==== %s started %s ====\n"
-                  % (name, time.strftime("%Y-%m-%d %H:%M:%S"))).encode())
-        cmd = [daemon_python(), "-u"] + a["args"]
+                  % (key, time.strftime("%Y-%m-%d %H:%M:%S"))).encode())
+        cmd = [daemon_python(), "-u"] + ail_args(a, port)
         if name == "voice":   # apply the AIL-tab-selected mic device
             dev = _state.get("voice_device")
             if dev not in (None, "", "default"):
                 cmd += ["--device", str(dev)]
         p = subprocess.Popen(cmd, cwd=MCPDIR, stdout=lf, stderr=lf, stdin=subprocess.DEVNULL,
                              close_fds=True, creationflags=LAUNCH_FLAGS)
-        _state["pid"][name] = p.pid
-        _state["enabled"][name] = True
-        save_state(name)
+        _state["pid"][key] = p.pid
+        _state["enabled"][key] = True
+        save_state(key)
         return True, "started pid %d" % p.pid
     except Exception as e:
         return False, "start failed: %s" % e
 
-def stop_daemon(name):
-    pid = _state["pid"].get(name)
-    _state["enabled"][name] = False
+def stop_daemon(name, port=None):
+    key = ail_key(name, port)
+    pid = _state["pid"].get(key)
+    _state["enabled"][key] = False
     if pid and pid_alive(pid):
         try:
             subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
                            capture_output=True, creationflags=CREATE_NO_WINDOW, startupinfo=no_window_si())
         except Exception:
             pass
-    _state["pid"][name] = 0
-    save_state(name)
+    _state["pid"][key] = 0
+    save_state(key)
     return True, "stopped"
 
 # --- merged output ring buffer + log tailer --------------------------------
@@ -305,17 +383,27 @@ def push_line(name, text):
             del _ring[:len(_ring) - RING_MAX]
 
 def resolve_logs(a):
-    """All log files (full paths) for an AIL: ail_<name>.out.log + everything its glob patterns match."""
-    paths = [logfile(a["name"])]
+    """All log files (full paths) for an AIL: ail_<key>.out.log + everything its glob patterns match.
+    A per-port AIL has one log per instance, so collect them for every known port."""
+    if a.get("per_port"):
+        paths = [logfile(ail_key(a["name"], p)) for p in known_ports()]
+    else:
+        paths = [logfile(a["name"])]
     for pat in a.get("logs", []):
         paths += glob.glob(os.path.join(LOGS, pat))
     return paths
+
+def ail_enabled_anywhere(a):
+    """Global AIL: is it on? Per-port AIL: is it on for ANY instance? (the tab merges every bot's output)"""
+    if not a.get("per_port"):
+        return bool(_state["enabled"].get(a["name"]))
+    return any(_state["enabled"].get(ail_key(a["name"], p)) for p in known_ports())
 
 def tail_loop():
     while True:
         try:
             for a in AILS:
-                if not _state["enabled"].get(a["name"]):
+                if not ail_enabled_anywhere(a):
                     continue
                 for path in resolve_logs(a):
                     if not os.path.isfile(path):
@@ -398,20 +486,28 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/ail/ping":
                 return self._send(200, {"ok": True})
             if path == "/ail/list":
+                # ?port= selects WHICH Hiss instance's switches to report. Global AILs ignore it; per-port
+                # AILs (the brain) report that instance's own state, so two tabs don't mirror each other.
+                port = (q.get("port") or [DEFAULT_PORT])[0]
                 items = []
                 for a in AILS:
                     n = a["name"]
+                    k = ail_key(n, port)
                     items.append({"name": n, "label": a["label"], "desc": a["desc"], "icon": a["icon"],
-                                  "enabled": bool(_state["enabled"].get(n)), "running": is_running(n)})
-                return self._send(200, {"ails": items})
+                                  "enabled": bool(_state["enabled"].get(k)), "running": is_running(n, port),
+                                  "per_port": bool(a.get("per_port")),
+                                  "port": key_port(k) if a.get("per_port") else None})
+                return self._send(200, {"ails": items, "port": port})
             if path == "/ail/toggle":
                 n = (q.get("name") or [""])[0]
+                port = (q.get("port") or [DEFAULT_PORT])[0]
                 on = (q.get("on") or ["1"])[0] in ("1", "true", "on", "yes")
                 if n not in AIL_BY_NAME:
                     return self._send(400, {"error": "unknown AIL: %s" % n})
-                ok, msg = (start_daemon(n) if on else stop_daemon(n))
-                return self._send(200, {"name": n, "enabled": bool(_state["enabled"].get(n)),
-                                        "running": is_running(n), "ok": ok, "msg": msg})
+                ok, msg = (start_daemon(n, port) if on else stop_daemon(n, port))
+                return self._send(200, {"name": n, "port": port,
+                                        "enabled": bool(_state["enabled"].get(ail_key(n, port))),
+                                        "running": is_running(n, port), "ok": ok, "msg": msg})
             if path == "/ail/audio-devices":
                 return self._send(200, {"devices": list_audio_devices(),
                                         "selected": _state.get("voice_device")})
@@ -572,6 +668,15 @@ def brain_launch(port):
                 except Exception:
                     pass
         _brain[port] = procs
+    # The 🧠 button and the AIL tab's Synapse switch drive the SAME daemon, so keep them in agreement:
+    # mark THIS instance's synapse switch on (and record its pid, so the tab shows it running and the
+    # reconcile loop doesn't try to adopt it as somebody else's).
+    key = ail_key("synapse", port)
+    _state["enabled"][key] = True
+    if procs:
+        _state["pid"][key] = procs[0].pid
+    save_state(key)
+    _brain_run_cache.pop(port, None)
     return True, "brain engaged for %s" % bot
 
 
@@ -581,11 +686,6 @@ _BRAIN_PORT_SCRIPTS   = ["synapse_map.py", "decision_advisor.py"]
 # SHARED: one set for the whole machine (they serve every instance). Only the LAST instance to disengage
 # may stop these -- killing them while another bot still has its brain engaged would lobotomise it.
 _BRAIN_GLOBAL_SCRIPTS = ["deep_thought.py", "growth.py", "brain_service.py", "progression_bard.py"]
-
-# The port the AIL 'synapse' switch is bound to (see the AILS registry). Disengaging the brain on THIS
-# port must also flip the AIL switch off, or the reconcile loop revives the daemon and the button won't
-# stick. Disengaging any OTHER port must leave the switch alone -- that is this instance's brain, not theirs.
-AIL_SYNAPSE_PORT = "27654"
 
 
 def _kill_brain_processes(scripts, port=None):
@@ -633,44 +733,51 @@ def brain_kill(port):
     _kill_brain_processes(_BRAIN_PORT_SCRIPTS, port=port)
     if last_one_out:
         _kill_brain_processes(_BRAIN_GLOBAL_SCRIPTS)
-    # The AIL 'synapse' switch drives exactly one bot (AIL_SYNAPSE_PORT). Flip it off only when THAT is the
-    # bot being disengaged, otherwise the reconcile loop revives its daemon and the button won't stick --
-    # and flipping it for any other port would silently disengage the wrong instance's brain.
-    if port == AIL_SYNAPSE_PORT:
-        _state["enabled"]["synapse"] = False
-        save_state("synapse")   # ONLY the brain switch. The odometer is a separate AIL precisely so that
-                                # disengaging the brain -- which every Hiss restart does -- can no longer
-                                # take the hand-result recording down with it. Never disable it here.
+    # Flip THIS instance's synapse switch off, so the reconcile loop can't revive its daemon and the button
+    # sticks. 'synapse' is a per-port AIL, so this touches only this bot -- the other instance's brain
+    # switch is a different key and is left exactly as it was.
+    key = ail_key("synapse", port)
+    _state["enabled"][key] = False
+    _state["pid"][key] = 0
+    save_state(key)   # ONLY this brain switch. The odometer is a separate AIL precisely so that
+                      # disengaging the brain -- which every Hiss restart does -- can no longer take the
+                      # hand-result recording down with it. Never disable it here.
     _brain_run_cache.pop(port, None)   # don't serve a stale "engaged" for ~2s after we just killed it
     return True, "brain disengaged for %s" % port
 
 
 def reconcile_loop():
     """Keep the switches honest: adopt a daemon that's already running (started by the loop / a .bat /
-    a previous server) so it shows ON, without resurrecting one the user explicitly switched OFF."""
+    a previous server) so it shows ON, without resurrecting one the user explicitly switched OFF.
+    Per-port AILs are reconciled PER INSTANCE -- adoption is scoped to the bot's port, so one instance's
+    brain can never be adopted as another's (which would fuse the two switches back together)."""
     while True:
         time.sleep(12)
         try:
             for a in AILS:
                 n = a["name"]
-                if is_running(n):
-                    continue
-                if _state["enabled"].get(n) is False:   # user turned it off -> respect that
-                    continue
-                pid = find_existing_pid(a["args"][0])
-                if pid:
-                    _state["pid"][n] = pid
-                    _state["enabled"][n] = True
-                    save_state()
+                for port in (known_ports() if a.get("per_port") else [None]):
+                    k = ail_key(n, port)
+                    if is_running(n, port):
+                        continue
+                    if _state["enabled"].get(k) is False:   # user turned it off -> respect that
+                        continue
+                    pid = find_existing_pid(a["args"][0], key_port(k) if a.get("per_port") else None)
+                    if pid:
+                        _state["pid"][k] = pid
+                        _state["enabled"][k] = True
+                        save_state()
         except Exception:
             pass
 
 def main():
     load_state()
-    # restore: re-launch any AIL that was switched ON before this server (re)started
+    # restore: re-launch any AIL that was switched ON before this server (re)started -- per-port AILs once
+    # per instance that had it on, so both bots get their brain back, not just the default one.
     for a in AILS:
-        if _state["enabled"].get(a["name"]) and not is_running(a["name"]):
-            start_daemon(a["name"])
+        for port in (known_ports() if a.get("per_port") else [None]):
+            if _state["enabled"].get(ail_key(a["name"], port)) and not is_running(a["name"], port):
+                start_daemon(a["name"], port)
     threading.Thread(target=tail_loop, daemon=True).start()
     threading.Thread(target=reconcile_loop, daemon=True).start()
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)

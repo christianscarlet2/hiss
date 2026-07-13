@@ -346,10 +346,11 @@ TOOLS = [
          "position": {"type": "string"}, "slot": {"type": "integer"},
          "scraped": {"type": "string"}, "correct": {"type": "string"}, "note": {"type": "string"}},
       "required": ["position", "slot", "correct"]}},
-    {"name": "ail_list", "description": "List the Autonomous-Improvement-Loop / data daemons (synapse harmonizer, observational learning, voice feedback, replay shipper, coach hype, HUD aggregator) with their on/off + running state, via the AIL control server (mcp/ail_server.py :7900). These are the same switches shown on the browser Terminal's AIL tab.",
-     "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "ail_toggle", "description": "Switch one AIL daemon on or off via the AIL control server (same switches as the browser Terminal AIL tab). name = synapse|observe|voice|shipper|coach|hud; on = true/false.",
-     "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "on": {"type": "boolean"}}, "required": ["name", "on"]}},
+    {"name": "ail_list", "description": "List the Autonomous-Improvement-Loop / data daemons (synapse harmonizer, observational learning, voice feedback, replay shipper, coach hype, HUD aggregator) with their on/off + running state, via the AIL control server (mcp/ail_server.py :7900). These are the same switches shown on the browser Terminal's AIL tab. Each entry reports per_port: a per-port AIL (the brain / synapse) is switched PER HISS INSTANCE -- pass port to see that instance's switches (default 27654).",
+     "inputSchema": {"type": "object", "properties": {"port": {"type": "integer", "default": 27654}}}},
+    {"name": "ail_toggle", "description": "Switch one AIL daemon on or off via the AIL control server (same switches as the browser Terminal AIL tab). name = synapse|observe|voice|shipper|coach|hud; on = true/false. port = which Hiss instance (default 27654) -- it matters for per-port AILs like synapse (the brain), where each instance has its OWN switch; global AILs ignore it.",
+     "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "on": {"type": "boolean"},
+         "port": {"type": "integer", "default": 27654}}, "required": ["name", "on"]}},
     {"name": "ail_output", "description": "Recent merged feedback lines from all enabled AIL daemons (the big terminal on the AIL tab). Pass since=<cursor> to get only new lines; returns lines + the new cursor to pass next time.",
      "inputSchema": {"type": "object", "properties": {"since": {"type": "integer", "default": 0}}}},
     {"name": "lobby_fetch", "description": "Trigger the lobby-recon choreography (mcp/lobby_fetch.sh) for a Hiss instance via the AIL control server: navigate to the tournament lobby, capture the info pages to C:/tmp, and return to the felt. port = the instance's terminal port (default 27654). Parse C:/tmp/lobby_main.png + C:/tmp/lobby_moreinfo.png AFTER it returns.",
@@ -477,11 +478,13 @@ def call_tool(name, args):
     if name == "reload_ohf":
         return [{"type": "text", "text": hiss_get("/api/reload-ohf")}]
     if name == "ail_list":
-        return [{"type": "text", "text": ail_get("/ail/list")}]
+        # port selects WHICH Hiss instance's switches to report -- per-port AILs (the brain / synapse)
+        # are per instance, so without it you always see (and toggle) the default bot's.
+        return [{"type": "text", "text": ail_get("/ail/list?port=%d" % int(args.get("port") or 27654))}]
     if name == "ail_toggle":
         on = "1" if args.get("on") else "0"
-        return [{"type": "text", "text": ail_get("/ail/toggle?name=%s&on=%s"
-                 % (urllib.parse.quote(str(args["name"])), on))}]
+        return [{"type": "text", "text": ail_get("/ail/toggle?name=%s&port=%d&on=%s"
+                 % (urllib.parse.quote(str(args["name"])), int(args.get("port") or 27654), on))}]
     if name == "ail_output":
         since = int(args.get("since") or 0)
         return [{"type": "text", "text": ail_get("/ail/output?since=%d" % since)}]

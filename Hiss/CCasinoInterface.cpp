@@ -272,14 +272,74 @@ bool CCasinoInterface::EnterBetsizeNumpad(double total_betsize_in_dollars) {
   return _betsize_input_box.EnterAmountViaNumpad(total_betsize_in_dollars);
 }
 
+// The smallest LEGAL raise-TO for the spot we are in right now, in BIG BLINDS -- or 0 when we cannot
+// work it out (no blinds / no table state), in which case callers leave the amount alone rather than
+// inventing one.
+//
+// No-limit rule: you must raise TO at least (largest bet on the table + the size of the last raise
+// increment), and that increment is never smaller than one big blind. The increment is the gap between
+// the largest bet and the largest bet BELOW it -- NOT the gap to the second-largest player (two players
+// can sit on the same largest bet after a call, which would make the increment look like zero).
+//
+// Nothing computed this before: CSymbolEngineChipAmounts declares _sraimin but never assigns it, so the
+// keypad path had no idea what the table minimum was. It only floored sub-1bb amounts, which is why a
+// f$betsize of 2.50 got typed while facing a raise to 3.37 -- below the min raise-to of 5.74, and below
+// even the call. The casino rejects it, no action lands, and the bot sits there until it times out.
+double CCasinoInterface::MinimumRaiseToInBigBlinds() {
+  if (p_table_state == NULL || p_tablemap == NULL || p_engine_container == NULL) return 0.0;
+  double bb = p_engine_container->symbol_engine_tablelimits()->bblind();
+  if (bb <= 0.0) return 0.0;
+  double largest = 0.0;
+  for (int i = 0; i < p_tablemap->nchairs(); ++i) {
+    double b = p_table_state->Player(i)->_bet.GetValue();
+    if (b > largest) largest = b;
+  }
+  double below = 0.0;                                  // largest bet strictly below the largest
+  for (int i = 0; i < p_tablemap->nchairs(); ++i) {
+    double b = p_table_state->Player(i)->_bet.GetValue();
+    if (b < largest - 0.005 && b > below) below = b;
+  }
+  double increment = largest - below;
+  if (increment < bb) increment = bb;                  // never smaller than one big blind
+  return (largest + increment) / bb;                   // a raise-TO, in big blinds
+}
+
 bool CCasinoInterface::EnterBetsizeNumpadRaw(double amount) {
   // Floor a sub-1 betsize up to 1: a big-blind amount below 1 (e.g. 0.99) is below the
   // table minimum, so round it up to exactly 1 before typing it on the keypad. This is
   // the single entry point for raw BB betsizes (autoplayer + manual /api/action raises).
   if (amount > 0.0 && amount < 1.0) amount = 1.0;
+  // NEVER TYPE A RAISE BELOW THE TABLE MINIMUM. The strategy chose to RAISE; the smallest legal way to
+  // do that is a min-raise, so clamp up to it rather than typing a number the casino will reject (which
+  // is indistinguishable, from the felt, from the bot having frozen). Capped at our own stack, because
+  // an all-in for LESS than a full raise is always legal.
+  double requested = amount;
+  if (amount > 0.0) {
+    double min_bb = MinimumRaiseToInBigBlinds();
+    if (min_bb > 0.0 && amount < min_bb - 0.005) {
+      double stack_bb = 0.0;
+      double bb = p_engine_container->symbol_engine_tablelimits()->bblind();
+      if (bb > 0.0 && p_table_state != NULL && p_table_state->User() != NULL) {
+        stack_bb = (p_table_state->User()->_bet.GetValue()
+                  + p_table_state->User()->_balance.GetValue()) / bb;
+      }
+      amount = (stack_bb > 0.0 && min_bb > stack_bb) ? stack_bb : min_bb;
+      write_log(k_always_log_basic_information,
+        "[CasinoInterface] RAISE BELOW TABLE MINIMUM: asked for %.2fbb but the minimum raise-to here is "
+        "%.2fbb -- typing %.2fbb instead%s. (A sub-minimum raise is rejected by the casino, so this "
+        "would have been NO ACTION AT ALL.)\n",
+        requested, min_bb, amount, (min_bb > stack_bb && stack_bb > 0.0) ? " (our whole stack -- a jam)" : "");
+    }
+  }
   // The phone keypad only accepts 0.5 increments (you can enter 6.5 or 7, not 6.6), so snap
   // EVERY typed betsize to the nearest half-bb before entering it. (Emrald's rule, all bets.)
-  if (amount > 0.0) amount = (double)((long)(amount * 2.0 + 0.5)) / 2.0;
+  // Snap UP, not to-nearest, once we are at the minimum: rounding 5.74 down to 5.5 would put us back
+  // under the minimum and we would be rejected all over again.
+  if (amount > 0.0) {
+    double snapped = (double)((long)(amount * 2.0 + 0.5)) / 2.0;
+    if (snapped < amount - 0.005) snapped += 0.5;      // never round a clamped minimum back down
+    amount = snapped;
+  }
   return _betsize_input_box.EnterAmountViaNumpadRaw(amount);
 }
 
