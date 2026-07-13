@@ -463,7 +463,10 @@ def decide_and_act(gs):
            (" to %.1fbb" % amount) if amount else "", note, fckra or "-", nn.get("value")), flush=True)
     record_decision(sv["_handnumber"], gs.get("betround"), do, amount, note)
     if not DRY:
-        click(do, amount)
+        # Stamped with the spot it was decided for: Hiss drops the request if the hand or the street
+        # has moved on before the button becomes clickable. Without this a fold decided for hand N
+        # could still be pending when hand N+1 deals, and fire there.
+        click(do, amount, hand=sv.get("_handnumber"), betround=sym.get("betround"))
     return True
 
 
