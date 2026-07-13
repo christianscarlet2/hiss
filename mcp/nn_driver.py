@@ -303,6 +303,12 @@ def decide_and_act(gs):
         do, note = "check", note + "  (call->check: nothing to call)"
     elif do == "check" and amt_to_call > 0.001:
         do, note = "call", note + "  (check->call: facing a bet)"
+    elif do == "fold" and amt_to_call <= 0.001:
+        # Folding a free option is strictly dominated -- and worse, the bar in that spot
+        # (Check | Raise Options) has no Fold button at all, so the request never lands: Hiss
+        # answers "button not clickable yet; keeping pending" every heartbeat and the bot just
+        # sits there until the human clicks (hand 2777793688, 7h Jd in the BB).
+        do, note = "check", note + "  (fold->check: nothing to call)"
     print("[nn_driver] %s hole=%s board=%s -> NN: %s%s%s  [btns=%s]  (val=%s)" %
           (sv["_handnumber"], sv["hole"], sv["board"] or "-", do,
            (" to %.1fbb" % amount) if amount else "", note, fckra or "-", nn.get("value")), flush=True)
