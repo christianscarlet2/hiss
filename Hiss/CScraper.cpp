@@ -1857,16 +1857,76 @@ void CScraper::ScrapeBet(int chair) {
 	__HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK
 }
 
+// A clipped bet-pill region OCRs "1 BB" as "11 BB" or "14 BB" -- a spurious EXTRA DIGIT welded
+// onto a good value. A bet that reads 14x too big is more dangerous than one that reads zero: the
+// bot sizes, calls and folds against it.
+//
+// But 11 BB and 14 BB are also perfectly LEGAL bets. Rewriting them on sight would turn a real
+// 14 BB shove into 1 BB and the bot would walk into it -- a far worse bug than the one being fixed.
+// So the repair is gated on the value being IMPOSSIBLE, never merely suspicious:
+//
+//     a player cannot wager more than they had.  [Emrald: "if the person didn't have a
+//     chance to bet yet, it can't be that"]
+//
+// Only when the scraped bet exceeds that hard ceiling do we drop the trailing digit: 14 -> 1,
+// 11 -> 1. A bet the player COULD have made is never touched, whatever it reads.
+//
+// EXACTLY ONE digit is dropped, never more. One spurious digit is the actual failure signature of a
+// clipped glyph. If one drop still leaves an impossible number (6556 -> 655, 212133 -> 21213) then
+// the region did not mis-read a digit, it read RUBBISH -- and inventing a plausible-looking number
+// from rubbish is worse than admitting we don't know. Those fall through to the last-good bet below.
+static double RepairImpossibleBet(double bet, double max_possible, bool *repaired) {
+	*repaired = false;
+	if (bet <= max_possible + 0.01) return bet;    // possible -> it may well be real; hands off
+	double candidate = floor(bet / 10.0);          // strip the ONE spurious trailing digit
+	if (candidate >= 1.0 && candidate <= max_possible + 0.01) {
+		*repaired = true;
+		return candidate;
+	}
+	return bet;                                    // rubbish -> caller restores last-good
+}
+
 // Bet memory: a player can't wager more than their stack. If the scraped bet exceeds the
 // remembered stack (a stack/other number mis-read into the bet region, e.g. the 142.91
-// case), restore the last-good bet (usually 0 / the real bet) and flag the frame for
-// Claude clarification + training capture. Otherwise remember the plausible bet. Gated on
-// the OCR-memory toggle.
+// case), first try the digit repair above; failing that restore the last-good bet (usually
+// 0 / the real bet) and flag the frame for Claude clarification + training capture.
+// Otherwise remember the plausible bet. Gated on the OCR-memory toggle.
 void CScraper::ApplyBetMemory(int chair) {
 	if (!g_ocr_memory || chair < 0 || chair >= kMaxNumberOfPlayers) return;
 	double bet = p_table_state->Player(chair)->_bet.GetValue();
-	double stack_ref = _mem_balance[chair];   // last-good stack (before betting)
-	if (bet > 0.01 && stack_ref > 0.01 && bet > stack_ref + 0.01) {
+	double stack_ref = _mem_balance[chair];   // last-good stack (before betting) = one hard ceiling
+
+	// The OTHER hard ceiling, and the one that actually catches the "1 BB" -> "11 BB" misread:
+	// A SINGLE BET CANNOT EXCEED THE TOTAL POT, because the total pot CONTAINS every bet on the
+	// table. c0pot0 scrapes the client's "TOTAL POT" line, so this is exact.
+	//
+	// The stack bound alone is too weak: a hero with an 11.3 BB stack whose 1 BB blind OCRs as
+	// "11 BB" passes it (11 <= 11.3) and the bad value sails through. But the pot at that moment
+	// was 8.66 BB, so an 11 BB bet is flatly impossible -- while a GENUINE 11 BB bet would have
+	// pushed the pot to at least 11 and is therefore never touched. That is the difference between
+	// a heuristic and a hard-code. [Emrald: "if the person didn't have a chance to bet yet, it
+	// can't be that"]
+	//
+	// The pot here is last heartbeat's (ScrapePots runs after ScrapeBetsAndBalances), which is
+	// conservative in the safe direction: a slightly stale pot is only ever SMALLER, never larger.
+	double ceiling = stack_ref;
+	double pot_total = (p_table_state != NULL) ? p_table_state->Pot(0) : 0.0;
+	if (pot_total > 0.01 && (ceiling <= 0.01 || pot_total < ceiling)) {
+		ceiling = pot_total;
+	}
+
+	if (bet > 0.01 && ceiling > 0.01 && bet > ceiling + 0.01) {
+		bool repaired = false;
+		double fixed_bet = RepairImpossibleBet(bet, ceiling, &repaired);
+		if (repaired) {
+			p_table_state->Player(chair)->_bet.SetValue(fixed_bet);
+			_mem_bet[chair] = fixed_bet;
+			write_log(k_always_log_errors,
+				"[CScraper] bet-repair: chair %d scraped %.2f -- impossible (stack %.2f, total pot "
+				"%.2f), so a digit was mis-read. Corrected to %.2f.\n",
+				chair, bet, stack_ref, pot_total, fixed_bet);
+			return;
+		}
 		p_table_state->Player(chair)->_bet.SetValue(_mem_bet[chair]);
 		g_capture_suspect_request = true;
 		g_capture_suspect_reason = "bet_exceeds_stack";
