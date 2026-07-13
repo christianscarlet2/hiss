@@ -98,7 +98,9 @@ def gather(cur, since_ms):
     summary["players"] = players
     brain = {}
     try:
-        cur.execute("SELECT brain FROM brain_state WHERE id=1")
+        # brain_state is keyed by Hiss port (one row per instance); the bard narrates the machine as a
+        # whole, so it takes the freshest brain rather than the retired shared id=1.
+        cur.execute("SELECT brain FROM brain_state ORDER BY ts_ms DESC LIMIT 1")
         b = (cur.fetchone() or [None])[0] or {}
         intu = b.get("intuition", {}) or {}
         obs = b.get("observer_strategy", {}) or {}

@@ -110,9 +110,12 @@ AILS = [
     {"name": "odometer", "label": "Odometer (hand results)", "icon": "\U0001F4CF",
      "desc": "Records EVERY hand's win/loss into hand_results (hero stack delta across the hand boundary). Independent of the brain -- measure_live.py, the A/B gate and the AIL all read this. Leave it ON.",
      "args": ["odometer.py"], "logs": ["odometer*.out.log"]},
+    # --bot-url is EXPLICIT (it used to default to 27654 implicitly). Every brain process must carry its
+    # bot's port on the command line, because that is how brain_kill tells one instance's brain from
+    # another's -- an untagged synapse could not be killed per-instance. [Emrald: per-instance brain]
     {"name": "synapse", "label": "Synapse Harmonizer", "icon": "\U0001F9EC",
      "desc": "Unifies every signal/knob/mode/output into one node+synapse graph; writes synapse_state + per-hand hand_results (AIL step 1b).",
-     "args": ["synapse_map.py", "--watch"], "logs": ["synapse_*.out.log"]},
+     "args": ["synapse_map.py", "--bot-url", "http://127.0.0.1:27654", "--watch"], "logs": ["synapse_*.out.log"]},
     {"name": "observe", "label": "Observational Learning", "icon": "\U0001F441",
      "desc": "While observing, mines villain exploits / table reads / session trend into observations; drives the HUD aggregator (AIL step 1c).",
      "args": ["observe_learn.py", "--watch"], "logs": ["observe_learn.out.log"]},
@@ -445,8 +448,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/decision":
                 # The brain's CURRENT DECIDED ACTION, crash-safe (a plain DB read of brain_state -- never
                 # re-evaluates the OHF / prwin, so the React overlay can poll it freely). Drives the
-                # RED DECISION "on fire" overlay on the table view.
-                return self._send(200, latest_decision())
+                # RED DECISION "on fire" overlay on the table view. Per-instance: ?port= selects which
+                # bot's brain we report, so two tables don't show each other's decision.
+                return self._send(200, latest_decision((q.get("port") or ["27654"])[0]))
             if path == "/brain-source":
                 # Local vs server brain. React's Synapse-tab "Brain: Local/Server" toggle sets v=local|server;
                 # synapse_map reads this and, when "server", offloads the observer/introspection/mischief
@@ -470,20 +474,24 @@ _brain_global = []   # [Popen]                (aggregators + brain_service + dee
 _brain_lock = threading.Lock()
 BRAIN_PG = os.environ.get("HISS_PG_DSN", "host=127.0.0.1 port=5432 dbname=hiss user=postgres password=dbpass")
 
-_dec_cache = {"ts": 0.0, "val": None}
+_dec_cache = {}      # port(str) -> {"ts": float, "val": dict}
 
 
-def latest_decision():
+def latest_decision(port):
     """The brain's CURRENT DECIDED ACTION from brain_state (DB read only -- never touches the OHF/prwin
-    on the HTTP thread, so the React overlay can poll it safely). Cached ~0.4s to shield postgres."""
+    on the HTTP thread, so the React overlay can poll it safely). Cached ~0.4s to shield postgres.
+    Keyed by the Hiss PORT: each instance shows ITS OWN brain's decision, not the other table's."""
+    port = str(port)
     now = time.time()
-    if _dec_cache["val"] is not None and now - _dec_cache["ts"] < 0.4:
-        return _dec_cache["val"]
+    cc = _dec_cache.get(port)
+    if cc and cc["val"] is not None and now - cc["ts"] < 0.4:
+        return cc["val"]
     out = {"ok": False, "action": None}
     try:
         import psycopg2
         c = psycopg2.connect(BRAIN_PG); cur = c.cursor()
-        cur.execute("SELECT ts_ms, handnumber, betround, villain, brain FROM brain_state WHERE id=1")
+        cur.execute("SELECT ts_ms, handnumber, betround, villain, brain FROM brain_state WHERE id=%s",
+                    (int(port),))
         r = cur.fetchone(); c.close()
         if r:
             b = r[4] or {}
@@ -499,7 +507,7 @@ def latest_decision():
                    "energy": (b.get("pineal", {}) or {}).get("energy")}
     except Exception as e:
         out = {"ok": False, "action": None, "error": str(e)[:120]}
-    _dec_cache.update(ts=now, val=out)
+    _dec_cache[port] = {"ts": now, "val": out}
     return out
 
 
@@ -510,7 +518,7 @@ def _brain_spawn(args):
                             stderr=subprocess.STDOUT, creationflags=LAUNCH_FLAGS, startupinfo=no_window_si())
 
 
-_brain_run_cache = {"ts": 0.0, "val": False}
+_brain_run_cache = {}   # port(str) -> {"ts": float, "val": bool}
 
 
 def brain_running(port):
@@ -518,24 +526,30 @@ def brain_running(port):
     # (ail_toggle / engage_brain.bat / manual): engaged if we launched the per-port daemons here OR
     # brain_state is being written fresh (the synapse ticks every few seconds). CACHED ~2s and we HOLD the
     # last-known state on a transient DB hiccup, so the button doesn't flicker under postgres load. [Emrald]
+    #
+    # Both the freshness row AND the cache are keyed by PORT. They were global: brain_state was read at the
+    # shared id=1 and the cache had no port key, so a live brain on ONE instance made EVERY instance's
+    # button light up "engaged" -- and a status read for port A could be served from a cached read of B.
+    port = str(port)
     with _brain_lock:
-        pp = [p for p in _brain.get(str(port), []) if p.poll() is None]
+        pp = [p for p in _brain.get(port, []) if p.poll() is None]
     if pp:
-        _brain_run_cache.update(ts=time.time(), val=True)
+        _brain_run_cache[port] = {"ts": time.time(), "val": True}
         return True
     now = time.time()
-    if now - _brain_run_cache["ts"] < 2.0:
-        return _brain_run_cache["val"]
-    val = _brain_run_cache["val"]
+    cc = _brain_run_cache.get(port)
+    if cc and now - cc["ts"] < 2.0:
+        return cc["val"]
+    val = cc["val"] if cc else False
     try:
         import psycopg2
         c = psycopg2.connect(BRAIN_PG, connect_timeout=2); cur = c.cursor()
-        cur.execute("SELECT ts_ms FROM brain_state WHERE id=1")
+        cur.execute("SELECT ts_ms FROM brain_state WHERE id=%s", (int(port),))
         r = cur.fetchone(); c.close()
         val = bool(r and (time.time() * 1000 - r[0]) < 10000)   # fresh < 10s -> the harmonizer is live
     except Exception:
         pass                                                     # transient DB hiccup -> keep last-known state
-    _brain_run_cache.update(ts=now, val=val)
+    _brain_run_cache[port] = {"ts": now, "val": val}
     return val
 
 
@@ -561,16 +575,35 @@ def brain_launch(port):
     return True, "brain engaged for %s" % bot
 
 
-_BRAIN_DECISION_SCRIPTS = ["synapse_map.py", "decision_advisor.py", "deep_thought.py", "growth.py",
-                           "brain_service.py", "progression_bard.py"]
+# PER-PORT: one brain per Hiss instance. These carry --bot-url http://127.0.0.1:<port>, so they can be
+# matched (and killed) for one instance without touching the other's.
+_BRAIN_PORT_SCRIPTS   = ["synapse_map.py", "decision_advisor.py"]
+# SHARED: one set for the whole machine (they serve every instance). Only the LAST instance to disengage
+# may stop these -- killing them while another bot still has its brain engaged would lobotomise it.
+_BRAIN_GLOBAL_SCRIPTS = ["deep_thought.py", "growth.py", "brain_service.py", "progression_bard.py"]
+
+# The port the AIL 'synapse' switch is bound to (see the AILS registry). Disengaging the brain on THIS
+# port must also flip the AIL switch off, or the reconcile loop revives the daemon and the button won't
+# stick. Disengaging any OTHER port must leave the switch alone -- that is this instance's brain, not theirs.
+AIL_SYNAPSE_PORT = "27654"
 
 
-def _kill_brain_processes():
-    """Terminate every brain DECISION daemon by command line, however it was launched (ail_toggle /
-    engage_brain.bat / manual). Data feeds (hud / introspect aggregators) are AIL-managed and left alone."""
-    like = " -or ".join("$_.CommandLine -like '*%s*'" % sc for sc in _BRAIN_DECISION_SCRIPTS)
+def _kill_brain_processes(scripts, port=None):
+    """Terminate brain daemons by COMMAND LINE, however they were launched (ail_toggle / engage_brain.bat /
+    manual). When `port` is given, only processes bound to THAT bot are killed -- this used to sweep every
+    matching python process regardless of port, so disengaging the brain on one Hiss instance killed the
+    brain of every other instance too. [Emrald: per-instance brain]
+    Data feeds (hud / introspect aggregators) are AIL-managed and left alone."""
+    if not scripts:
+        return
+    like = " -or ".join("$_.CommandLine -like '*%s*'" % sc for sc in scripts)
+    cond = "(%s)" % like
+    if port:
+        # A brain is bound to its bot by --bot-url http://127.0.0.1:<port>. Match the ":<port>" so we only
+        # ever kill the daemons steering THIS instance.
+        cond += " -and $_.CommandLine -like '*:%s*'" % port
     ps = ("Get-CimInstance Win32_Process -Filter \"Name='python.exe' or Name='pythonw.exe'\" | "
-          "Where-Object { %s } | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force } catch {} }" % like)
+          "Where-Object { %s } | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force } catch {} }" % cond)
     try:
         subprocess.run(["powershell", "-NoProfile", "-Command", ps],
                        creationflags=CREATE_NO_WINDOW, startupinfo=no_window_si(), timeout=15)
@@ -587,21 +620,28 @@ def brain_kill(port):
             except Exception:
                 pass
         _brain[port] = []
-        if not any(any(x.poll() is None for x in v) for v in _brain.values()):   # last one out -> stop globals
+        last_one_out = not any(any(x.poll() is None for x in v) for v in _brain.values())
+        if last_one_out:
             for p in _brain_global:
                 try:
                     p.terminate()
                 except Exception:
                     pass
             _brain_global[:] = []
-    # DISENGAGE must truly STOP the brain: kill every brain decision daemon however it was launched, and
-    # disable the AIL 'synapse' switch so the reconcile loop never revives it -- otherwise brain_state keeps
-    # ticking and brain_running (freshness) reports the button as still engaged. [Emrald]
-    _kill_brain_processes()
-    _state["enabled"]["synapse"] = False
-    save_state("synapse")   # ONLY the brain switch. The odometer is a separate AIL precisely so that
-                            # disengaging the brain -- which every Hiss restart does -- can no longer
-                            # take the hand-result recording down with it. Never disable it here.
+    # DISENGAGE must truly STOP this bot's brain, however it was launched -- but ONLY this bot's. The
+    # per-port sweep is scoped to :<port>; the shared daemons go only when no instance has a brain left.
+    _kill_brain_processes(_BRAIN_PORT_SCRIPTS, port=port)
+    if last_one_out:
+        _kill_brain_processes(_BRAIN_GLOBAL_SCRIPTS)
+    # The AIL 'synapse' switch drives exactly one bot (AIL_SYNAPSE_PORT). Flip it off only when THAT is the
+    # bot being disengaged, otherwise the reconcile loop revives its daemon and the button won't stick --
+    # and flipping it for any other port would silently disengage the wrong instance's brain.
+    if port == AIL_SYNAPSE_PORT:
+        _state["enabled"]["synapse"] = False
+        save_state("synapse")   # ONLY the brain switch. The odometer is a separate AIL precisely so that
+                                # disengaging the brain -- which every Hiss restart does -- can no longer
+                                # take the hand-result recording down with it. Never disable it here.
+    _brain_run_cache.pop(port, None)   # don't serve a stale "engaged" for ~2s after we just killed it
     return True, "brain disengaged for %s" % port
 
 

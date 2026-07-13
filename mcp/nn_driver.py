@@ -20,7 +20,7 @@ swiftsnake DB can't stall the NN. Run the bot with the AUTOPLAYER OFF so the NN 
   python nn_driver.py            # live: NN plays
   python nn_driver.py --dry-run  # read + decide + print, but DON'T click (safe test)
 """
-import os, sys, json, math, time, subprocess, urllib.parse, urllib.request
+import os, sys, re, json, math, time, subprocess, urllib.parse, urllib.request
 
 def _argval(flag, default):
     if flag in sys.argv:
@@ -51,6 +51,13 @@ BOT    = _argval("--bot-url", os.environ.get("NN_BOT_URL") or _discover_bot_url(
 NN     = os.environ.get("NN_URL",        "http://192.168.1.39:8088/nn-decide")
 POLL   = float(os.environ.get("NN_POLL_S", "0.6"))
 DRY    = "--dry-run" in sys.argv
+
+
+def _bot_port():
+    """The Hiss instance we drive. brain_state is keyed by it, so we read OUR bot's brain, not the
+    other instance's (see brain_override)."""
+    m = re.search(r":(\d+)", BOT)
+    return int(m.group(1)) if m else 27654
 
 # The infoset the NN was trained on (features.py NUMERIC_SYMBOLS). The LIVE bot resolves all of
 # these locally via /api/symbols, so we read the sym straight from the bot -- fast and reliable --
@@ -228,7 +235,10 @@ def brain_override(do, amount, sv):
         # every decision. A TCP connect + auth inside the act-now path is latency the bot spends while
         # a clock is running, and it silently swallowed every failure -- if psycopg2 was missing or PG
         # was down, the brain simply never fired and nothing anywhere said so.
-        r = _pg_query_one("SELECT ts_ms, handnumber, brain FROM brain_state WHERE id=1")
+        # brain_state is keyed by the Hiss PORT (one brain row per instance). Reading the old shared id=1
+        # made two instances read each OTHER's brain: the row carried the other table's handnumber, the
+        # same-hand gate below rejected it, and the brain silently stopped steering this bot.
+        r = _pg_query_one("SELECT ts_ms, handnumber, brain FROM brain_state WHERE id=%s", (_bot_port(),))
         if not r:
             return do, amount, ""
         ts, hn, b = r
@@ -315,12 +325,12 @@ def _pg_exec(sql, params):
         _pg_drop()
 
 
-def _pg_query_one(sql):
+def _pg_query_one(sql, params=None):
     """Read one row on the pooled connection. Used by brain_override, which runs INSIDE the decision
     path -- so it must never open a fresh connection there, and must never fail silently forever."""
     try:
         with _pg_conn().cursor() as cur:
-            cur.execute(sql)
+            cur.execute(sql, params)
             return cur.fetchone()
     except Exception as e:
         if not _PG["read_warned"]:

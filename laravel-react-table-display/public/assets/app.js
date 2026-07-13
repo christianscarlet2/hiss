@@ -558,13 +558,21 @@ function OddsPanel(props) {
 // ---- PERSISTENT decision chip in the topbar: ALWAYS shows the latest OHF/brain decision (so it's never
 // missed even when the bot is quietly folding); glows red when the decision is fresh (<10s). The on-fire
 // DecisionOverlay below the board is the dramatic flash; this is the always-on readout. [Emrald]
+// Each Hiss instance serves its own copy of this UI on its own port, so window.location.port IS the bot
+// we belong to. Pass it to /decision: brain_state is keyed per instance, and without the port both tables
+// showed the SAME (id=1) decision. [Emrald: per-instance brain]
+function decisionUrl() {
+  var port = window.location.port || '27654';
+  return window.location.protocol + '//' + window.location.hostname + ':7900/decision?port=' + port;
+}
+
 function DecisionChip() {
   var dPair = useState(null), dec = dPair[0], setDec = dPair[1];
   var nPair = useState(0), setNow = nPair[1];
   useEffect(function () {
     var alive = true;
     function poll() {
-      fetch(window.location.protocol + '//' + window.location.hostname + ':7900/decision')
+      fetch(decisionUrl())
         .then(function (r) { return r.json(); }).then(function (d) { if (alive) setDec(d); }).catch(function () {});
     }
     poll();
@@ -601,7 +609,7 @@ function DecisionOverlay() {
   useEffect(function () {
     var alive = true;
     function poll() {
-      fetch(window.location.protocol + '//' + window.location.hostname + ':7900/decision')
+      fetch(decisionUrl())
         .then(function (r) { return r.json(); })
         .then(function (d) { if (alive) setDec(d); }).catch(function () {});
     }

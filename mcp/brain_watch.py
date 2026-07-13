@@ -35,7 +35,10 @@ def main():
     while True:
         try:
             cur = c.cursor()
-            cur.execute("SELECT ts_ms, handnumber, betround, villain, brain FROM brain_state WHERE id=1")
+            # brain_state is keyed by Hiss port (one row per instance). This watcher has no instance of its
+            # own, so it tails whichever brain last thought -- the freshest row, not the retired id=1.
+            cur.execute("SELECT ts_ms, handnumber, betround, villain, brain FROM brain_state "
+                        "ORDER BY ts_ms DESC LIMIT 1")
             r = cur.fetchone(); c.commit()
             if r and r[0] != last:
                 last = r[0]

@@ -26,7 +26,7 @@ The AIL reads this each cycle (see Release/logs/AIL_PLAYBOOK.md): the knob catal
 lever it can pull; the synapse graph tells it what each lever moves; the ghost inferences and pending
 voice feedback tell it what to improve. The feature spec connects it all to NN training.
 """
-import sys, os, json, time, urllib.request
+import sys, os, re, json, time, urllib.request
 
 try:
     import deep_thought                      # async LLM "deep thought" for any synapse point (over the bus)
@@ -48,6 +48,15 @@ _dt_last_key = None                          # dedup: one deep thought per (hand
 
 BOT = "http://127.0.0.1:27654"
 DSN = os.environ.get("HISS_PG_DSN", "host=127.0.0.1 port=5432 dbname=hiss user=postgres password=dbpass")
+
+
+def bot_port():
+    """The Hiss instance this brain serves. brain_state is KEYED BY IT: two Hiss instances each run their
+    own synapse (--bot-url :27654 / :27655) and used to clobber a single shared row (id=1), so instance B's
+    read overwrote instance A's and whichever one lost had its brain silently abstain (nn_driver's
+    brain_override gates on handnumber). One row per port = one brain per bot. [Emrald: per-instance brain]"""
+    m = re.search(r":(\d+)", BOT)
+    return int(m.group(1)) if m else 27654
 OUT_DIR = os.environ.get("HISS_SYNAPSE_DIR", r"C:\www\openholdembot_old\Release\logs")
 LILITH = r"C:\www\openholdembot_old\Release\lilith.exe"
 
@@ -904,10 +913,10 @@ def store_brain(b, history=True):
         cur.execute("CREATE TABLE IF NOT EXISTS brain_state (id int primary key, ts_ms bigint, "
                     "handnumber text, betround int, villain text, brain jsonb)")
         cur.execute("INSERT INTO brain_state (id,ts_ms,handnumber,betround,villain,brain) "
-                    "VALUES (1,%s,%s,%s,%s,%s) ON CONFLICT (id) DO UPDATE SET ts_ms=EXCLUDED.ts_ms,"
+                    "VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT (id) DO UPDATE SET ts_ms=EXCLUDED.ts_ms,"
                     "handnumber=EXCLUDED.handnumber,betround=EXCLUDED.betround,villain=EXCLUDED.villain,"
                     "brain=EXCLUDED.brain",
-                    (b["ts_ms"], b["handnumber"], b["betround"], b["villain"], json.dumps(b)))
+                    (bot_port(), b["ts_ms"], b["handnumber"], b["betround"], b["villain"], json.dumps(b)))
         if history:
             cur.execute("CREATE TABLE IF NOT EXISTS brain_log (id bigserial primary key, ts_ms bigint, "
                         "handnumber text, betround int, villain text, action text, exploit text, "
