@@ -106,18 +106,23 @@ def main():
             avg = hero_stack
         stacks = [hero_stack] + [avg] * max(0, rem - 1)
         hero = 0
-        method = "mc-approx"
+        method = "exact-homogeneous"
 
     n = len(stacks)
     if n == 0 or not payouts:
         print(json.dumps({"error": "need stacks and payouts"})); return
 
-    eq = mc_equities(stacks, payouts, sims, hero)
-    e0 = eq[hero]
-
-    # equity if the hero doubles (win a chip-EV race) vs busts (0)
-    dbl = list(stacks); dbl[hero] = stacks[hero] * 2.0
-    e_up = mc_equities(dbl, payouts, max(8000, sims // 2), hero)[hero]
+    if method == "exact-homogeneous":
+        # Closed form -- no simulation. See homogeneous_equity(): the MC path is O(sims*places*field)
+        # and does not finish on a big field (593 players, 184 paid).
+        n_field = n - 1
+        e0   = homogeneous_equity(stacks[hero], avg, n_field, payouts)
+        e_up = homogeneous_equity(stacks[hero] * 2.0, avg, n_field, payouts)
+    else:
+        eq = mc_equities(stacks, payouts, sims, hero)
+        e0 = eq[hero]
+        dbl = list(stacks); dbl[hero] = stacks[hero] * 2.0
+        e_up = mc_equities(dbl, payouts, max(8000, sims // 2), hero)[hero]
     e_bust = 0.0
 
     total_chips = sum(stacks)

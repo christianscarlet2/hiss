@@ -71,6 +71,13 @@ NUMERIC_SYMBOLS = ("handrank169,f$BoardWet,f$BoardDry,f$ScaryBoard,f$BoardHighCa
     "exploit_honest_raischair,intro_known_raischair,intro_foldpress_raischair,intro_tilt_raischair,"
     "intro_contfreq_raischair,intro_rangestrength_raischair,openai_knob_openrange,"
     "openai_knob_aggro,openai_knob_bluff,"
+    # The TRUE opponent count. features.py computes hand equity as `hole vs nopponents`, defaulting to
+    # 1 when it isn't sent -- so the bot has been acting on HEADS-UP equity in a nine-handed game.
+    # AJo reads ~0.55 when its true five-way equity is ~0.25: every marginal hand overvalued.
+    # Safe to send today: nn_decide clamps it back to 1 unless the champion was actually TRAINED on a
+    # real opponent count (the SIGHTED marker), so the current heads-up-trained champion is unaffected
+    # and multiway equity switches on by itself the day a sighted champion is promoted.
+    "nopponents,"
     "validator_ok,validator_confidence,"
     # Not a model feature -- the driver's own ICM sizing multiplier. Pulled in the SAME request rather
     # than a second mid-decision /api/symbols call on Hiss's symbol-evaluating HTTP thread.

@@ -102,6 +102,35 @@ def _slug(s):
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
 
+# How long a CONFIRMED table sighting keeps counting. The table-name region OCRs to junk between
+# hands ('0.a|FONFPENTRPAI'), and junk still looks alphabetic -- so you cannot tell "garbled" from
+# "different tournament" by inspecting one read. What you CAN do is remember the last read that
+# positively MATCHED the lobby: while that is recent we are still at that table and a junk read means
+# nothing. Once it goes stale (we really did move tables), the match must be re-earned.
+TABLE_CONFIRM_TTL_S = 300      # a sighting stops counting after 5 min
+TABLE_MAX_MISSES    = 4        # ...and after 4 CONSECUTIVE non-matching reads (~2 min at TICK_S)
+_confirm = {"name": "", "ts": 0.0, "misses": 0}
+
+
+def table_matches(ts, lobby_name):
+    """(ok, seen) -- ok: treat the live table as this tournament. seen: what we actually read.
+
+    Junk reads are INTERMITTENT; a real table/tournament change is PERSISTENT. So a mismatch is
+    forgiven only while the last positive sighting is recent AND the mismatches have not piled up.
+    That tolerates OCR noise without letting a genuine move (bust out, re-register elsewhere) keep
+    speaking the old tournament's equity."""
+    seen = _slug(ts.get("table"))
+    if not lobby_name:
+        return True, seen
+    if seen and lobby_name in seen:                       # positive sighting
+        _confirm.update(name=lobby_name, ts=time.time(), misses=0)
+        return True, seen
+    _confirm["misses"] += 1
+    fresh = (_confirm["name"] == lobby_name
+             and (time.time() - _confirm["ts"]) < TABLE_CONFIRM_TTL_S)
+    return (fresh and _confirm["misses"] <= TABLE_MAX_MISSES), seen
+
+
 def lobby_info():
     """settings.lobby_info + its age in seconds. This is the tournament structure the icm-chip-value
     skill wrote after lobby_fetch.sh (Claude vision on the lobby screens)."""
@@ -165,12 +194,12 @@ def structure(ts):
     if not lob:
         return None, "no lobby_info -- run lobby_fetch + the icm-chip-value skill"
 
-    table = _slug(ts.get("table"))
-    name  = _slug(lob.get("tournament"))
     # OCR mangles the table string ("oldem354821|50GTDFreerollTable31N"), so match on the NAME, which
     # survives it, rather than the tourney id (whose digits get truncated).
-    if name and table and name not in table:
-        return None, "lobby_info is for '%s' but we are at '%s'" % (lob.get("tournament"), ts.get("table"))
+    name = _slug(lob.get("tournament"))
+    ok, seen = table_matches(ts, name)
+    if not ok:
+        return None, "lobby_info is for '%s' but we are at '%s'" % (lob.get("tournament"), seen)
     if age > LOBBY_MAX_AGE_S:
         return None, "lobby_info is %.0f min old" % (age / 60.0)
 
@@ -247,7 +276,8 @@ def run_icm(hero_bb, st):
 
 
 def main():
-    log("icm chip daemon up. structure source = settings.lobby_info; math = icm.py (monte-carlo)")
+    log("icm chip daemon up. structure source = settings.lobby_info; math = icm.py "
+        "(exact closed form mid-field, monte-carlo at the final table)")
     last_say = 0.0
     last_level = None
     warned = None
