@@ -14,6 +14,7 @@
 #include "StdAfx.h"
 #include "CTablemapDB.h"
 
+#include <map>
 #include <set>
 #include <vector>
 #include "libpq-fe.h"
@@ -366,6 +367,29 @@ static CString EscapeJsonString(const CString &value) {
 }
 
 CString CTablemapDB::GetSettingString(const CString key, const CString field) {
+	// CACHED. This is called several times per HEARTBEAT (parallel_workers/hiss_ocr,
+	// scrape_tuning/pixel_delta + min_pixels, parallel_workers/num_cpus + workers_per_cpu ...), on
+	// the heartbeat thread, INSIDE cs_update_in_progress -- so every one of them was unbounded
+	// blocking database I/O sitting on the bot's hot path, holding the lock that every /api reader
+	// needs. On a healthy local postgres that is only a few ms; during a vacuum, a replication
+	// hiccup or a connection storm it becomes a direct bot stall. (This is the same lock whose
+	// contention wedged /api/symbols.)
+	//
+	// These values change only when a HUMAN edits them in the trainer, so a short TTL is plenty:
+	// worst case a settings edit takes effect one heartbeat later than it used to.
+	static std::map<CString, CString> s_cache;
+	static std::map<CString, DWORD>   s_cached_at;
+	const DWORD kSettingsCacheMs = 2000;
+
+	CString cache_key = key + "\x1f" + field;   // \x1f: cannot occur in a key or field name
+	{
+		CSLock lock(_db_cs);
+		std::map<CString, DWORD>::const_iterator age = s_cached_at.find(cache_key);
+		if (age != s_cached_at.end() && (GetTickCount() - age->second) < kSettingsCacheMs) {
+			return s_cache[cache_key];
+		}
+	}
+
 	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
 	CString result;
 	if (!Connect()) return result;
@@ -378,6 +402,8 @@ CString CTablemapDB::GetSettingString(const CString key, const CString field) {
 		result = PgVal(res, 0, 0);
 	}
 	if (res) PQclear(res);
+	s_cache[cache_key] = result;
+	s_cached_at[cache_key] = GetTickCount();
 	return result;
 }
 
@@ -515,6 +541,97 @@ bool CTablemapDB::GetHudPlayerStats(const CString &player, const CString &gamety
 	}
 	PQclear(res);
 	return out->found;
+}
+
+// Fill one SHudDbStats from a result row whose FIRST stat column is `c0`.
+// Shared by the single and batched fetches, so the two can never drift apart.
+static void FillHudStatsFromRow(PGresult *res, int row, int c0, SHudDbStats *out) {
+	int c = c0;
+	out->hands = atoi(PgVal(res, row, c++));
+	double vpip_n = atof(PgVal(res, row, c++)), vpip_d = atof(PgVal(res, row, c++));
+	double pfr_n = atof(PgVal(res, row, c++)), pfr_d = atof(PgVal(res, row, c++));
+	double threeb_n = atof(PgVal(res, row, c++)), threeb_d = atof(PgVal(res, row, c++));
+	double f3b_n = atof(PgVal(res, row, c++)), f3b_d = atof(PgVal(res, row, c++));
+	double cbet_n = atof(PgVal(res, row, c++)), cbet_d = atof(PgVal(res, row, c++));
+	double ftc_n = atof(PgVal(res, row, c++)), ftc_d = atof(PgVal(res, row, c++));
+	double steal_n = atof(PgVal(res, row, c++)), steal_d = atof(PgVal(res, row, c++));
+	double fts_n = atof(PgVal(res, row, c++)), fts_d = atof(PgVal(res, row, c++));
+	double aggr = atof(PgVal(res, row, c++)), call = atof(PgVal(res, row, c++));
+	double wtsd_n = atof(PgVal(res, row, c++)), wtsd_d = atof(PgVal(res, row, c++));
+	double fourb_n = atof(PgVal(res, row, c++)), fourb_d = atof(PgVal(res, row, c++));
+	double fiveb_n = atof(PgVal(res, row, c++)), fiveb_d = atof(PgVal(res, row, c++));
+	double f4b_n = atof(PgVal(res, row, c++)), f4b_d = atof(PgVal(res, row, c++));
+	out->found  = (out->hands > 0);
+	out->vpip   = vpip_d   > 0 ? 100.0 * vpip_n / vpip_d     : -1.0;
+	out->pfr    = pfr_d    > 0 ? 100.0 * pfr_n / pfr_d       : -1.0;
+	out->threeb = threeb_d > 0 ? 100.0 * threeb_n / threeb_d : -1.0;
+	out->fourb  = fourb_d  > 0 ? 100.0 * fourb_n / fourb_d   : -1.0;
+	out->fiveb  = fiveb_d  > 0 ? 100.0 * fiveb_n / fiveb_d   : -1.0;
+	out->f3b    = f3b_d    > 0 ? 100.0 * f3b_n / f3b_d       : -1.0;
+	out->f4b    = f4b_d    > 0 ? 100.0 * f4b_n / f4b_d       : -1.0;
+	out->cbet   = cbet_d   > 0 ? 100.0 * cbet_n / cbet_d     : -1.0;
+	out->ftc    = ftc_d    > 0 ? 100.0 * ftc_n / ftc_d       : -1.0;
+	out->steal  = steal_d  > 0 ? 100.0 * steal_n / steal_d   : -1.0;
+	out->fts    = fts_d    > 0 ? 100.0 * fts_n / fts_d       : -1.0;
+	out->wtsd   = wtsd_d   > 0 ? 100.0 * wtsd_n / wtsd_d     : -1.0;
+	out->af     = call     > 0 ? aggr / call : (aggr > 0 ? aggr : -1.0);
+}
+
+// ALL seated players' HUD stats in ONE round trip.
+//
+// RefreshIfNeeded used to call GetHudPlayerStats once PER SEATED CHAIR -- up to ten serial postgres
+// round trips, on the heartbeat thread, inside cs_update_in_progress. It is correctly throttled to
+// 2.5 s, so it is a spike rather than a constant drag, but it is a spike that holds the lock every
+// /api reader (and the NN driver) needs, and it grows with the number of players. One query, grouped
+// by player, costs the same as the cheapest of the ten did.
+bool CTablemapDB::GetHudPlayerStatsBatch(const std::vector<CString> &players,
+                                         const CString &gametype,
+                                         std::map<CString, SHudDbStats> *out) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
+	if (out == NULL) return false;
+	out->clear();
+	if (players.empty() || !Connect()) return false;
+
+	CString in_list;
+	for (size_t i = 0; i < players.size(); ++i) {
+		if (players[i].IsEmpty()) continue;
+		if (!in_list.IsEmpty()) in_list += ",";
+		in_list += "'" + EscapeSqlLiteral(players[i]) + "'";
+	}
+	if (in_list.IsEmpty()) return false;
+
+	CString where;
+	if (gametype.IsEmpty())
+		where.Format("player IN (%s)", in_list.GetString());
+	else
+		where.Format("player IN (%s) AND gametype = '%s'",
+			in_list.GetString(), EscapeSqlLiteral(gametype).GetString());
+
+	CString sql;
+	sql.Format(
+		"SELECT player, sum(hands), sum(vpip_n), sum(vpip_d), sum(pfr_n), sum(pfr_d), sum(threeb_n), sum(threeb_d),"
+		" sum(f3b_n), sum(f3b_d), sum(cbet_n), sum(cbet_d), sum(ftc_n), sum(ftc_d), sum(steal_n), sum(steal_d),"
+		" sum(fts_n), sum(fts_d), sum(aggr_actions), sum(call_actions), sum(wtsd_n), sum(wtsd_d),"
+		" sum(fourb_n), sum(fourb_d), sum(fiveb_n), sum(fiveb_d), sum(f4b_n), sum(f4b_d)"
+		" FROM hud_player_stats WHERE %s GROUP BY player", where.GetString());
+
+	PGresult *res = PQexec((PGconn *)_conn, sql.GetString());
+	if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+		_last_error.Format("SQL error: %s", PQerrorMessage((PGconn *)_conn));
+		if (res) PQclear(res);
+		return false;
+	}
+	for (int row = 0; row < PQntuples(res); ++row) {
+		CString name = PgVal(res, row, 0);
+		SHudDbStats st;
+		st.found = false; st.hands = 0;
+		st.vpip = st.pfr = st.threeb = st.fourb = st.fiveb = st.f3b = st.f4b = st.af
+			= st.cbet = st.ftc = st.steal = st.fts = st.wtsd = -1.0;
+		FillHudStatsFromRow(res, row, 1, &st);
+		(*out)[name] = st;
+	}
+	PQclear(res);
+	return true;
 }
 
 // Per-opponent introspection profile (opponent_profile), gametype-matched. Fed by introspect_aggregator.py.

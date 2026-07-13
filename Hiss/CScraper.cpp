@@ -472,7 +472,19 @@ bool CScraper::EvaluateRegion(CString name, CString *result) {
     ++total_region_counter;
     // ProcessRegion() captures the region's pixels and returns TRUE when they
     // changed since the previous frame, FALSE when identical.
-    bool region_changed = ProcessRegion(r_iter);
+    //
+    // ...unless PreOcrParallel already did exactly that for this region THIS cycle. It runs first
+    // (CLazyScraper::DoScrape) and captures every 'A' region, so calling ProcessRegion again here
+    // re-pays the whole GDI capture + pixel compare for nothing -- and it could only ever answer
+    // "identical", because the prepass already promoted cur_bmp into last_bmp. cur_bmp still holds
+    // this frame's pixels, which is all the transform below needs. [H5]
+    bool region_changed;
+    std::map<CString, bool>::const_iterator pre = _prepass_changed.find(name);
+    if (pre != _prepass_changed.end()) {
+      region_changed = pre->second;              // reuse the prepass's answer; capture nothing
+    } else {
+      region_changed = ProcessRegion(r_iter);
+    }
     if (region_changed) {
       write_log(Preferences()->debug_scraper(),
         "[CScraper] Region %s NOT identical\n", name);
@@ -566,6 +578,7 @@ void CScraper::InvalidateParallelOcrEngines() {
 // its own independent CAutoOcr engine.
 void CScraper::PreOcrParallel() {
 	_ocr_cache.clear();
+	_prepass_changed.clear();   // see EvaluateRegion: what we capture here is NOT captured again
 	if (!HissParallelOcrEnabled() || p_tablemap == NULL) return;
 
 	// Size the worker pool from settings, split across running Hiss instances.
@@ -606,6 +619,9 @@ void CScraper::PreOcrParallel() {
 		int rh = it->second.bottom - it->second.top + 1;
 		if (rw <= 0 || rh <= 0 || it->second.cur_bmp == NULL) continue;
 		bool region_changed = ProcessRegion(it);   // capture + tolerance-aware change check
+		// Remember it, so EvaluateRegion does NOT capture and compare this same region all over
+		// again a few milliseconds later (H5). cur_bmp already holds this frame's pixels.
+		_prepass_changed[it->second.name] = region_changed;
 		// Unchanged region with a known prior result: serve the cached text and
 		// skip OCR entirely (the whole point of the speed-up). Only freshly-changed
 		// or never-seen regions get shipped to a worker below.

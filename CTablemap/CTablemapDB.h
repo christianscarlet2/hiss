@@ -136,6 +136,10 @@ public:
 	// into their NLH read; the legacy overload sums across gametypes (back-compat).
 	bool GetHudPlayerStats(const CString &player, SHudDbStats *out);
 	bool GetHudPlayerStats(const CString &player, const CString &gametype, SHudDbStats *out);
+	// Every seated player in ONE round trip, instead of one query per chair on the heartbeat
+	// thread inside the update lock. See the definition for why that mattered.
+	bool GetHudPlayerStatsBatch(const std::vector<CString> &players, const CString &gametype,
+	                            std::map<CString, SHudDbStats> *out);
 	// Per-opponent introspection profile (opponent_profile), gametype-matched.
 	bool GetOpponentProfile(const CString &player, const CString &gametype, SOppProfile *out);
 	// Durable per-action timing rows (latency tells) -> opponent_timing. One batched INSERT,
