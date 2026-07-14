@@ -74,6 +74,10 @@ class CScraper : public CSpaceOptimizedGlobalObject {
 	void ScrapeButtons(CString area_name, CString needed_buttons);
 	void ScrapeActionButtons();
 	void ScrapeActionButtonLabels();
+	// Read the amount printed ON the Call button ("10.56 BB / Call") into g_call_button_amount.
+	// The table states what we owe; every other source infers it from the bet pills. See the
+	// definition for why that inference kept freezing the bot.
+	void ScrapeCallButtonAmount();
 	void ScrapeInterfaceButtons();
 	void ScrapeBetpotButtons();
 	void ClearAllPlayerNames();
@@ -231,6 +235,10 @@ extern int g_mcp_action_betround;      // betround it was decided for (<0 = unch
 // Manual game-type override (React badge menu -> /api/gametype). See CScraper.cpp for why.
 // AUTO means "detect it"; anything else is a human stating the truth, and the symbols, the strategy
 // dispatch and the TABLEMAP all obey it until it is cleared.
+// The amount printed ON the Call button, in the table's displayed units (BB here).
+// <0 = no call button / unreadable. NEVER confuse that with "zero to call".
+extern double g_call_button_amount;
+
 const int kGametypeOverrideAuto = -1;
 const int kGametypeOverrideNLH  = 0;
 const int kGametypeOverridePLO  = 1;

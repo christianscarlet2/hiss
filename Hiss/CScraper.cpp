@@ -1827,6 +1827,84 @@ void CScraper::ScrapeBalance(int chair) {
   }
 }
 
+// THE CALL BUTTON PRINTS WHAT WE OWE.
+//
+// The button reads "10.56 BB / Call". Everything else about the amount to call is INFERRED --
+// _call = (largest opponent bet - my bet), built from the bet pills, which are the flakiest thing we
+// scrape. One bad pill collapses largest_bet, _call becomes 0, the strategy concludes "it's free ->
+// check", and the bar it's looking at is Fold | Call with no Check button. Hiss then refuses to click
+// a button that isn't there and the bot just SITS THERE until it times out. Measured: that guard
+// fired 319 times in one session and every single time it had no clean read to fall back on.
+//
+// So stop inferring. The table is printing the number on the button. Read it.
+//
+// <0 means "no call button / unreadable", never "zero to call" -- those must not be confused.
+double g_call_button_amount = -1.0;
+
+void CScraper::ScrapeCallButtonAmount() {
+	g_call_button_amount = -1.0;
+	if (p_tablemap == NULL) {
+		return;
+	}
+	if (p_tablemap->r$()->find("i2amount") == p_tablemap->r$()->end()) {
+		return;   // tablemap has no call-amount region -> stay on the inferred value
+	}
+	// ONLY read it while a Call button is actually up. With an empty bar that rectangle is just felt,
+	// and OCR happily returns noise from it ("0.0842B" observed). A number nobody asked for is worse
+	// than no number: it would sit in the global waiting to be mistaken for a real amount to call.
+	if (p_casino_interface == NULL
+	    || !p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_call)->IsClickable()) {
+		return;
+	}
+	CString text;
+	if (!EvaluateRegion("i2amount", &text)) {
+		return;
+	}
+	// Log the RAW OCR text every time a Call button is up. The scrape-dump lands a heartbeat after the
+	// buttons vanish, so dumping was showing an empty rect and telling us nothing; this is Hiss's own
+	// pipeline reporting exactly what it read, at the moment it mattered.
+	write_log(k_always_log_basic_information,
+		"[CScraper] i2amount OCR raw = \"%s\"\n", text.GetString());
+	// "10.56 BB" -> 10.56. Take the leading number and stop at the first character after it, so the
+	// "BB" suffix can't smuggle stray digits in.
+	CString digits;
+	bool seen_dot = false;
+	for (int i = 0; i < text.GetLength(); ++i) {
+		char c = (char)text[i];
+		if (c >= '0' && c <= '9') {
+			digits += c;
+		} else if ((c == '.' || c == ',') && !seen_dot && !digits.IsEmpty()) {
+			digits += '.';
+			seen_dot = true;
+		} else if (!digits.IsEmpty()) {
+			break;
+		}
+	}
+	if (digits.IsEmpty()) {
+		return;
+	}
+	double value = atof(digits.GetString());
+	if (value <= 0.0) {
+		return;
+	}
+	// PLAUSIBILITY. This value can become the amount-to-call the strategy decides on, so a misread
+	// must not slip through: we can never be asked to put in more than we HAVE (the table caps the
+	// call at our stack, and the button prints the capped figure). Anything above that is OCR noise,
+	// not a call -- discard it and fall back rather than hand the strategy a fiction.
+	if (p_table_state != NULL && p_table_state->User() != NULL) {
+		double full_stack = p_table_state->User()->_bet.GetValue()
+		                  + p_table_state->User()->_balance.GetValue();
+		if (full_stack > 0.0 && value > full_stack + 0.01) {
+			write_log(k_always_log_errors,
+				"[CScraper] i2amount read %.2f but our whole stack is only %.2f -- impossible, so it is a "
+				"mis-read. Discarding it (the call amount falls back to the bet scrape).\n",
+				value, full_stack);
+			return;
+		}
+	}
+	g_call_button_amount = value;
+}
+
 void CScraper::ScrapeBet(int chair) {
   RETURN_IF_OUT_OF_RANGE (chair, p_tablemap->LastChair())
 

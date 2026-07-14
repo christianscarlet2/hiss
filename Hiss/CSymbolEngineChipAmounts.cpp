@@ -202,7 +202,22 @@ void CSymbolEngineChipAmounts::CalculateAmountsToCallToRaise() {
       _last_good_call_betround = this_round;
     } else if (call_button && !check_button && _call <= 0.005) {
       // The contradiction. The pills say "free", the table says "you owe".
-      if (_last_good_call > 0.005 && _last_good_call_betround == this_round) {
+      //
+      // Order of trust, best first:
+      //   1. THE BUTTON ITSELF. It prints the amount ("10.56 BB / Call"). It is not an inference,
+      //      it is the table stating the number, and it is right even on the FIRST frame of a new
+      //      street -- which is exactly when the old fallback had nothing and the bot froze.
+      //   2. The last clean read on this street (the OCR-memory principle used for the bets).
+      //   3. Nothing. Refuse to call it free, and wait for a good scrape.
+      if (g_call_button_amount > 0.005) {
+        write_log(k_always_log_errors,
+          "[CSymbolEngineChipAmounts] CALL BUTTON LIVE, NO CHECK BUTTON, but the bet scrape says "
+          "call=0.00 -- a mis-read bet pill. The CALL BUTTON says %.2f; believing the button.\n",
+          g_call_button_amount);
+        _call = g_call_button_amount;
+        _last_good_call = _call;
+        _last_good_call_betround = this_round;
+      } else if (_last_good_call > 0.005 && _last_good_call_betround == this_round) {
         write_log(k_always_log_errors,
           "[CSymbolEngineChipAmounts] CALL BUTTON LIVE, NO CHECK BUTTON, but the bet scrape says "
           "call=0.00 -- a mis-read bet pill. Restoring this street's last good call=%.2f rather than "
@@ -210,9 +225,9 @@ void CSymbolEngineChipAmounts::CalculateAmountsToCallToRaise() {
         _call = _last_good_call;
       } else {
         write_log(k_always_log_errors,
-          "[CSymbolEngineChipAmounts] CALL BUTTON LIVE, NO CHECK BUTTON, but the bet scrape says "
-          "call=0.00 and there is no clean read on this street yet. NOT pretending it is free; "
-          "waiting for a good scrape.\n");
+          "[CSymbolEngineChipAmounts] CALL BUTTON LIVE, NO CHECK BUTTON, the bet scrape says call=0.00 "
+          "AND the call button's amount is unreadable (i2amount). NOT pretending it is free; waiting "
+          "for a good scrape. If this repeats, recalibrate i2amount.\n");
       }
     }
     if (this_round != _last_good_call_betround) {

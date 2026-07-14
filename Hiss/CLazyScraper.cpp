@@ -170,6 +170,9 @@ void CLazyScraper::DoScrape() {
 		if (NeedActionbuttons()) {
 			p_scraper->ScrapeActionButtons();
 			p_scraper->ScrapeActionButtonLabels();
+			// The Call button prints what we owe. Read it while the buttons are fresh -- the symbol
+			// engine uses it when the bet pills mis-scrape and _call collapses to a bogus 0.
+			p_scraper->ScrapeCallButtonAmount();
 		}
 		if (NeedInterfaceButtons())	{
 			p_scraper->ScrapeInterfaceButtons();
