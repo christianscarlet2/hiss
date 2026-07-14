@@ -52,6 +52,12 @@ NN     = os.environ.get("NN_URL",        "http://192.168.1.39:8088/nn-decide")
 POLL   = float(os.environ.get("NN_POLL_S", "0.6"))
 DRY    = "--dry-run" in sys.argv
 
+# Must match kDesperationStackBB / kDesperationRaiseBB in Shared/MagicNumbers/MagicNumbers.h -- the
+# OHF autoplayer and this driver have to behave the same way at this depth, or "which engine was
+# driving" silently becomes a strategy difference.
+DESPERATION_STACK_BB = 2.0    # below this many BB: never fold
+DESPERATION_RAISE_BB = 3.0    # what to shove; the table caps it at our stack
+
 
 def _bot_port():
     """The Hiss instance we drive. brain_state is keyed by it, so we read OUR bot's brain, not the
@@ -479,6 +485,42 @@ def decide_and_act(gs):
     sv = seat_view(gs)
     if not sv:
         return False                       # hole not scraped yet -> retry, don't consume the turn
+
+    # DESPERATION: UNDER 2 BB WE NEVER FOLD.  [Emrald: "if my bb is under 2, bet 3 or call anything"]
+    #
+    # Mirrors CAutoplayer::ExecuteDesperationShoveOrCall so the NN driver and the OHF autoplayer
+    # behave identically at this depth. Below 2 BB there is nothing left to protect -- the blinds take
+    # the stack next orbit whether we fold or not -- so folding is the one move that cannot win.
+    #
+    # We do NOT ask the NN. This is not a decision to be weighed; it is the decision. Skipping the
+    # model also means it cannot talk us out of it with a fold, and it saves a round trip.
+    #
+    # The shove is sent as raise-to-3 even though we hold less than 2: the table accepts an over-bet
+    # and caps it at our real stack, so with 1.4 BB behind "raise to 3" simply IS an all-in -- and it
+    # stays right even if the stack scraped a little wrong.
+    _bbl = float(sv.get("bblind", 1) or 1)
+    if _bbl > 0:
+        _stack_bb = (float(sv.get("stack", 0) or 0) + float(sv.get("bet", 0) or 0)) / _bbl
+        if 0 < _stack_bb < DESPERATION_STACK_BB:
+            _f = (gs.get("fckra") or "").upper()
+            if "R" in _f or "A" in _f:
+                _do, _amt = "raise", DESPERATION_RAISE_BB    # Hiss caps it at our stack -> a jam
+            elif "C" in _f:
+                _do, _amt = "call", 0                        # call anything
+            elif "K" in _f:
+                _do, _amt = "check", 0                       # nothing to call; never worse than folding
+            else:
+                _do, _amt = None, 0
+            if _do:
+                print("[nn_driver] %s DESPERATION: %.2f BB left (< %.1f) -- never fold. -> %s%s  [btns=%s]"
+                      % (sv["_handnumber"], _stack_bb, DESPERATION_STACK_BB, _do.upper(),
+                         (" to %.0fbb (table caps it -> all-in)" % _amt) if _amt else "", _f or "-"),
+                      flush=True)
+                record_decision(sv["_handnumber"], gs.get("betround"), _do, _amt, "desperation <2bb")
+                if not DRY:
+                    click(_do, _amt, hand=sv.get("_handnumber"), betround=gs.get("betround"))
+                return True
+
     # Sym straight from the live bot (local, DB-free) -- not swiftsnake's /decide.
     sym = _get(BOT + "/api/symbols?names=" + NUMERIC_SYMBOLS)
 
