@@ -302,6 +302,13 @@ bool CAutoplayer::ExecutePrimaryFormulasIfNecessary() {
 		return false;
 	}
 	PrepareActionSequence();
+	// FIRST, before the strategy gets a vote: under 2 BB we never fold. Placed at the very top
+	// because every path below it can decide to fold, and at this depth folding is the only move
+	// that cannot win. [Emrald: "if my bb is under 2, automatically bet 3 or call anything"]
+	if (ExecuteDesperationShoveOrCall()) {
+		APTrace("ExecutePrimaryFormulas -> handled by the sub-2BB desperation rule");
+		return true;
+	}
 	if (p_function_collection->EvaluateAutoplayerFunction(k_autoplayer_function_allin))	{
 		if (DoAllin()) {
 			APTrace("ExecutePrimaryFormulas -> handled by DoAllin()");
@@ -329,7 +336,7 @@ bool CAutoplayer::ExecutePrimaryFormulasIfNecessary() {
 	return ExecuteRaiseCallCheckFold();
 }
 
-bool CAutoplayer::HandleTwoSuccessiveClicksBetRaise() {
+bool CAutoplayer::HandleTwoSuccessiveClicksBetRaise(double forced_bb) {
 	if (p_two_successive_clicks == NULL || p_function_collection == NULL) {
 		return false;
 	}
@@ -351,7 +358,10 @@ bool CAutoplayer::HandleTwoSuccessiveClicksBetRaise() {
 	bool wants_allin = (p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_allin]) != 0);
 	// Fire on a BET, RAISE or ALL-IN decision (phone tables expose a keypad rather than a
 	// betsize textbox, so we click the two configured region-centres to open it).
-	if (!wants_raise && !wants_allin && f_betsize <= 0 && decision_bb <= 0) {
+	// A forced size means we are shoving regardless of what the strategy wanted, so this early-out
+	// must not swallow it: with the desperation rule the OHF may well be saying "fold", which is
+	// exactly the decision we are overriding.
+	if (forced_bb <= 0.0 && !wants_raise && !wants_allin && f_betsize <= 0 && decision_bb <= 0) {
 		return false;
 	}
 	// Keypad amount: PREFER the raw big-blind decision (decision_bb). f$betsize is
@@ -361,6 +371,13 @@ bool CAutoplayer::HandleTwoSuccessiveClicksBetRaise() {
 	// amount directly, so type decision_bb (e.g. RaiseTo 3 -> 3); only fall back to
 	// f$betsize if the OpenPPL decision somehow isn't a positive bet/raise size.
 	double betsize = (decision_bb > 0) ? decision_bb : f_betsize;
+	// A FORCED size (the sub-2BB desperation rule) beats everything the strategy computed. It is not
+	// a suggestion to be weighed against f$betsize -- it is the whole point of the override.
+	if (forced_bb > 0.0) {
+		betsize = forced_bb;
+		wants_raise = true;
+		wants_allin = false;
+	}
 	// ALL-IN / RaiseMax: f$preflop returns the all-in action code, NOT a numeric RaiseTo
 	// size, so decision_bb and f$betsize are both 0. On a phone table with no AllIn button
 	// (DoAllin's button/slider/swag all fail), the jam must be typed on the keypad -- so
@@ -447,6 +464,71 @@ bool CAutoplayer::HandleTwoSuccessiveClicksBetRaise() {
 	p_casino_interface->EnterBetsizeNumpadRaw(betsize);
 	action_sequence_needs_to_be_finished = true;
 	return true;
+}
+
+// "IF MY BB IS UNDER 2, AUTOMATICALLY BET 3 OR CALL ANYTHING." [Emrald]
+//
+// Below 2 big blinds there is nothing left to protect. Folding does not save the stack -- the blinds
+// take it next orbit regardless -- so folding is the ONE move that cannot win. Get the chips in.
+//
+// This deliberately overrides the strategy tree, the hand strength, position, everything. At this
+// depth none of it is worth the fold equity we throw away by folding, and the OHF's own push/fold
+// logic has repeatedly folded these spots (it evaluates a "raise" it cannot afford and gives up).
+//
+// The shove is typed as 3 BB even though we hold less than 2. That is the point: the table accepts an
+// over-bet and caps it at our real stack, so "bet 3" with 1.4 BB behind simply IS an all-in, and it
+// stays correct even if the stack scraped a little wrong.
+bool CAutoplayer::ExecuteDesperationShoveOrCall() {
+	if (p_table_state == NULL || p_table_state->User() == NULL
+	    || p_engine_container == NULL || p_casino_interface == NULL) {
+		return false;
+	}
+	double bb = p_engine_container->symbol_engine_tablelimits()->bblind();
+	if (bb <= 0.0) {
+		return false;   // no reliable blind -> cannot judge depth, so don't gamble the stack on it
+	}
+	// The full committable stack: what is already out in front of us plus what is behind.
+	double stack_bb = (p_table_state->User()->_balance.GetValue()
+	                 + p_table_state->User()->_bet.GetValue()) / bb;
+	if (stack_bb <= 0.0 || stack_bb >= kDesperationStackBB) {
+		return false;
+	}
+
+	write_log(k_always_log_basic_information,
+		"[Desperation] stack is %.2f BB (< %.1f) -- nothing left to protect, so NEVER FOLD. "
+		"Shoving (typing %.0f BB; the table caps it at our stack) or calling anything.\n",
+		stack_bb, kDesperationStackBB, kDesperationRaiseBB);
+
+	// 1) SHOVE via the keypad. Typing 3 BB with <2 BB behind is an all-in by construction.
+	if (HandleTwoSuccessiveClicksBetRaise(kDesperationRaiseBB)) {
+		write_log(k_always_log_basic_information, "[Desperation] shoved via the bet keypad.\n");
+		return true;
+	}
+	// 2) No keypad path on this bar? Take the All-In button if the table offers one.
+	if (DoAllin()) {
+		write_log(k_always_log_basic_information, "[Desperation] shoved via the All-In button.\n");
+		return true;
+	}
+	// 3) CALL ANYTHING. We cannot raise, so put the last chips in rather than fold them away.
+	CAutoplayerButton *call_button =
+		p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_call);
+	if (call_button != NULL && call_button->IsClickable() && call_button->Click()) {
+		p_engine_container->UpdateAfterAutoplayerAction(k_autoplayer_function_call);
+		write_log(k_always_log_basic_information, "[Desperation] called (any price).\n");
+		return true;
+	}
+	// 4) Nothing to call -> take the free card. (Checking is never worse than folding.)
+	CAutoplayerButton *check_button =
+		p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_check);
+	if (check_button != NULL && check_button->IsClickable() && check_button->Click()) {
+		p_engine_container->UpdateAfterAutoplayerAction(k_autoplayer_function_check);
+		write_log(k_always_log_basic_information, "[Desperation] checked (nothing to call).\n");
+		return true;
+	}
+	write_log(k_always_log_errors,
+		"[Desperation] stack is %.2f BB but NO usable button (no raise/allin/call/check) -- falling "
+		"through to the normal strategy path.\n", stack_bb);
+	return false;
 }
 
 bool CAutoplayer::ExecuteRaiseCallCheckFold() {

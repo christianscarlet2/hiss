@@ -209,6 +209,18 @@ const double k_hand_history_rake = 0.05;
 // the same all-in.
 const double kAllinOvershoot = 1.0;
 
+// DESPERATION [Emrald: "if my bb is under 2, automatically bet 3 or call anything"].
+//
+// Below this many big blinds there is nothing left to protect. Folding a sub-2BB stack does not save
+// it -- the blinds take it next orbit anyway -- so the only losing move is to fold. Get the chips in:
+// shove, or call whatever is in front of us. This OVERRIDES the strategy tree entirely.
+//
+// The raise is typed as 3 BB, which is MORE than the stack it is being made with. That is deliberate:
+// the table accepts an over-bet and caps it at our real stack (see kAllinOvershoot), so "bet 3" with
+// 1.4 BB behind simply IS an all-in, and it is robust to the stack scraping a little wrong.
+const double kDesperationStackBB = 2.0;   // act on stacks strictly below this, in big blinds
+const double kDesperationRaiseBB = 3.0;   // what to type; the table caps it to our stack -> a jam
+
 //  File accessable?
 //  (<unistd.h> is not contained in MSCVPP)
 const int F_OK = 0;

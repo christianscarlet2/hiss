@@ -66,7 +66,11 @@ private:
 	bool ExecuteRaiseCallCheckFold();
 	// Two-successive-clicks bet/raise (phone keypad), run from the primary-formula
 	// path so it is gated by ismyturn + isfinalanswer like the other actions.
-	bool HandleTwoSuccessiveClicksBetRaise();
+	// forced_bb > 0 bypasses the strategy's own sizing and types exactly that many big blinds.
+	// Used by the sub-2BB desperation rule, which must not be able to be talked out of shoving.
+	bool HandleTwoSuccessiveClicksBetRaise(double forced_bb = 0.0);
+	// "If my bb is under 2, automatically bet 3 or call anything." Overrides the strategy tree.
+	bool ExecuteDesperationShoveOrCall();
 	bool ExecuteBeep();
 	bool AnyPrimaryFormulaTrue();
 	bool AnySecondaryFormulaTrue();
