@@ -94,6 +94,7 @@ static void SetButtonIconFromExe(HWND button, const char *exe_path) {
 #define IDC_OPEN_ADVREPLAY_LOCAL_BUTTON 1020
 #define IDC_OPEN_BRASS_SERPENT_BUTTON 1021
 #define IDC_OPEN_EYES_BUTTON 1022
+#define IDC_OPEN_SCRCPY_EMU 1023
 
 #define TIMER_WINDOW_MONITOR 2001
 
@@ -130,6 +131,7 @@ static HWND g_rec_scrcpy_button = NULL;
 static HWND g_close_all_button = NULL;
 static HWND g_open_brass_serpent_button = NULL;
 static HWND g_open_eyes_button = NULL;
+static HWND g_open_scrcpy_emu_button = NULL;
 static HWND g_build_progress = NULL;
 static HWND g_alert_text = NULL;
 static HBRUSH g_alert_brush = NULL;
@@ -1206,6 +1208,7 @@ struct ScrcpyDevice { const char *serial; const char *title; const char *field; 
 static const ScrcpyDevice kScrcpyDevices[] = {
   { "R58M50TB3BY", "S10", "scrcpy_s10" },   // Galaxy S10+ (SM-G975U1)
   { "R5GL205FT7Y", "A17", "scrcpy_a17" },   // Galaxy A17  (SM-A176U1)
+  { "emulator-5554", "EMU", "scrcpy_emu" }, // Android Studio AVD (sdk_gphone16k_x86_64)
 };
 
 // Optional connection override at HKCU\Software\Hiss\Trainer "hiss_conn" (shared with
@@ -1569,7 +1572,12 @@ static void CreateChildControls(HWND hwnd) {
 
   g_open_eyes_button = CreateWindow("BUTTON", "eyes",
     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-    186, 298, 160, 28, hwnd, (HMENU)IDC_OPEN_EYES_BUTTON, g_instance, NULL);
+    186, 298, 90, 28, hwnd, (HMENU)IDC_OPEN_EYES_BUTTON, g_instance, NULL);
+
+  // EMU: Android Studio emulator (adb serial emulator-5554), opened via scrcpy like S10/A17.
+  g_open_scrcpy_emu_button = CreateWindow("BUTTON", "EMU",
+    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+    282, 298, 64, 28, hwnd, (HMENU)IDC_OPEN_SCRCPY_EMU, g_instance, NULL);
 
   // App icons on the launch buttons.
   SetButtonIcon(g_open_openholdem_button, kSnakeIcoPath);   // Hiss
@@ -1630,6 +1638,10 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARA
     }
     if (LOWORD(wparam) == IDC_OPEN_SCRCPY_A17) {
       OpenScrcpyForDevice(kScrcpyDevices[1]);   // Galaxy A17
+      return 0;
+    }
+    if (LOWORD(wparam) == IDC_OPEN_SCRCPY_EMU) {
+      OpenScrcpyForDevice(kScrcpyDevices[2]);   // Android Studio emulator
       return 0;
     }
     if (LOWORD(wparam) == IDC_OPEN_BRASS_SERPENT_BUTTON) {
