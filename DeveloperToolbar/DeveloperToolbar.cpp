@@ -32,6 +32,9 @@ static const char kEyeIcoPath[]     = "C:\\www\\openholdembot_old\\Vision\\res\\
 static const char kBarbellIcoPath[] = "C:\\www\\openholdembot_old\\trainer\\res\\trainer.ico";
 static const char kFeatherIcoPath[] = "C:\\www\\openholdembot_old\\learner\\res\\learner.ico";
 static const char kReplayerIcoPath[] = "C:\\www\\openholdembot_old\\OHReplay\\replayer.ico";
+// Icons for the separate brass_serpent project's apps (gift box = brass_serpent, serpent-eye = eyes).
+static const char kBrassSerpentIcoPath[] = "C:\\www\\brass_serpent\\brass_serpent\\res\\OpenHoldem.ico";
+static const char kEyesIcoPath[]         = "C:\\www\\brass_serpent\\eyes\\res\\OpenScrape.ico";
 
 // Attach an HICON to a button via its image list (icon sits left of the text).
 static void SetButtonIconHandle(HWND button, HICON icon) {
@@ -89,6 +92,8 @@ static void SetButtonIconFromExe(HWND button, const char *exe_path) {
 #define IDC_OPEN_REPLAYER_BUTTON 1018
 #define IDC_OPEN_ADVREPLAY_BUTTON 1019
 #define IDC_OPEN_ADVREPLAY_LOCAL_BUTTON 1020
+#define IDC_OPEN_BRASS_SERPENT_BUTTON 1021
+#define IDC_OPEN_EYES_BUTTON 1022
 
 #define TIMER_WINDOW_MONITOR 2001
 
@@ -123,6 +128,8 @@ static HWND g_open_advreplay_button = NULL;
 static HWND g_open_advreplay_local_button = NULL;
 static HWND g_rec_scrcpy_button = NULL;
 static HWND g_close_all_button = NULL;
+static HWND g_open_brass_serpent_button = NULL;
+static HWND g_open_eyes_button = NULL;
 static HWND g_build_progress = NULL;
 static HWND g_alert_text = NULL;
 static HBRUSH g_alert_brush = NULL;
@@ -1409,11 +1416,24 @@ static void LaunchScrcpyWithArgs(const char *args) {
     MessageBox(g_main_window, message, kAppTitle, MB_OK | MB_ICONWARNING | MB_TOPMOST);
     return;
   }
-  HINSTANCE result = ShellExecute(g_main_window, "open", kScrcpyPath, args,
-    ParentDirectory(kScrcpyPath).c_str(), SW_SHOWNORMAL);
-  if ((INT_PTR)result <= 32) {
+  // scrcpy is a console app: ShellExecute spawns a visible terminal window alongside the mirror.
+  // Launch via CreateProcess with CREATE_NO_WINDOW so NO console/terminal ever appears -- scrcpy's
+  // SDL mirror window still opens normally.
+  std::string command = std::string("\"") + kScrcpyPath + "\" " + (args ? args : "");
+  std::vector<char> mutable_command(command.begin(), command.end());
+  mutable_command.push_back('\0');
+  const std::string work_dir = ParentDirectory(kScrcpyPath);
+  STARTUPINFO si = {0};
+  si.cb = sizeof(si);
+  PROCESS_INFORMATION pi = {0};
+  BOOL created = CreateProcess(NULL, &mutable_command[0], NULL, NULL, FALSE,
+    CREATE_NO_WINDOW, NULL, work_dir.c_str(), &si, &pi);
+  if (!created) {
     MessageBox(g_main_window, "Could not open scrcpy.", kAppTitle, MB_OK | MB_ICONERROR | MB_TOPMOST);
+    return;
   }
+  CloseHandle(pi.hThread);
+  CloseHandle(pi.hProcess);   // fire-and-forget; scrcpy runs on its own
 }
 
 // Open scrcpy for one phone (-s <serial>), tag its window (--window-title) so it can be found,
@@ -1542,6 +1562,15 @@ static void CreateChildControls(HWND hwnd) {
     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
     16, 262, 330, 28, hwnd, (HMENU)IDC_OPEN_ADVREPLAY_LOCAL_BUTTON, g_instance, NULL);
 
+  // Launch the separate brass_serpent project's apps (in C:\www\brass_serpent).
+  g_open_brass_serpent_button = CreateWindow("BUTTON", "brass_serpent",
+    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+    16, 298, 160, 28, hwnd, (HMENU)IDC_OPEN_BRASS_SERPENT_BUTTON, g_instance, NULL);
+
+  g_open_eyes_button = CreateWindow("BUTTON", "eyes",
+    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+    186, 298, 160, 28, hwnd, (HMENU)IDC_OPEN_EYES_BUTTON, g_instance, NULL);
+
   // App icons on the launch buttons.
   SetButtonIcon(g_open_openholdem_button, kSnakeIcoPath);   // Hiss
   SetButtonIcon(g_open_openscrape_button, kEyeIcoPath);     // Vision
@@ -1551,21 +1580,23 @@ static void CreateChildControls(HWND hwnd) {
   SetButtonIcon(g_open_replayer_button,  kReplayerIcoPath); // Replayer (green felt + red play)
   SetButtonIcon(g_open_advreplay_button, kReplayerIcoPath); // Advanced Replayer (web UI)
   SetButtonIcon(g_open_advreplay_local_button, kReplayerIcoPath); // Advanced Replayer (local server)
+  SetButtonIcon(g_open_brass_serpent_button, kBrassSerpentIcoPath); // brass_serpent (gift box)
+  SetButtonIcon(g_open_eyes_button,          kEyesIcoPath);         // eyes (serpent-eye)
 
   g_build_progress = CreateWindowEx(0, PROGRESS_CLASS, "",
     WS_CHILD | WS_VISIBLE,
-    16, 302, 330, 18, hwnd, (HMENU)IDC_BUILD_PROGRESS, g_instance, NULL);
+    16, 338, 330, 18, hwnd, (HMENU)IDC_BUILD_PROGRESS, g_instance, NULL);
   SendMessage(g_build_progress, PBM_SETRANGE, 0, MAKELPARAM(0, 100));
   SendMessage(g_build_progress, PBM_SETPOS, 0, 0);
 
   g_alert_text = CreateWindow("STATIC", "",
     WS_CHILD | SS_CENTER,
-    16, 338, 330, 36, hwnd, (HMENU)IDC_ALERT_TEXT, g_instance, NULL);
+    16, 374, 330, 36, hwnd, (HMENU)IDC_ALERT_TEXT, g_instance, NULL);
   ShowWindow(g_alert_text, SW_HIDE);
 
   g_status_text = CreateWindow("STATIC", "Enter size, then click Pick Window.",
     WS_CHILD | WS_VISIBLE,
-    16, 382, 340, 54, hwnd, (HMENU)IDC_STATUS_TEXT, g_instance, NULL);
+    16, 418, 340, 54, hwnd, (HMENU)IDC_STATUS_TEXT, g_instance, NULL);
   LoadDefaultTablemapSize();
 }
 
@@ -1599,6 +1630,14 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARA
     }
     if (LOWORD(wparam) == IDC_OPEN_SCRCPY_A17) {
       OpenScrcpyForDevice(kScrcpyDevices[1]);   // Galaxy A17
+      return 0;
+    }
+    if (LOWORD(wparam) == IDC_OPEN_BRASS_SERPENT_BUTTON) {
+      OpenExternalExecutable("C:\\www\\brass_serpent\\Release\\brass_serpent.exe", "brass_serpent");
+      return 0;
+    }
+    if (LOWORD(wparam) == IDC_OPEN_EYES_BUTTON) {
+      OpenExternalExecutable("C:\\www\\brass_serpent\\Release\\eyes.exe", "eyes");
       return 0;
     }
     if (LOWORD(wparam) == IDC_REC_SCRCPY_BUTTON) {
@@ -1741,7 +1780,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show_command) {
 
   HWND hwnd = CreateWindowEx(WS_EX_TOPMOST, kWindowClassName, kAppTitle,
     WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-    CW_USEDEFAULT, CW_USEDEFAULT, 380, 497,
+    CW_USEDEFAULT, CW_USEDEFAULT, 380, 533,
     NULL, NULL, instance, NULL);
   if (hwnd == NULL) {
     return 1;
