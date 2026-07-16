@@ -2,45 +2,45 @@
 <Project>
   <ProjectOutputs>
     <ProjectOutput>
-      <FullPath>C:\www\openholdembot_old\Release\PokerTracker_Query_Definitions.dll</FullPath>
+      <FullPath>c:\www\openholdembot_old\Release\PokerTracker_Query_Definitions.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\www\openholdembot_old\Release\Reference Keyboard DLL.dll</FullPath>
+      <FullPath>c:\www\openholdembot_old\Release\Reference Keyboard DLL.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\www\openholdembot_old\Release\Reference Mouse DLL.dll</FullPath>
+      <FullPath>c:\www\openholdembot_old\Release\Reference Mouse DLL.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\www\openholdembot_old\Release\Files.dll</FullPath>
+      <FullPath>c:\www\openholdembot_old\Release\Files.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\www\openholdembot_old\Release\Debug.dll</FullPath>
+      <FullPath>c:\www\openholdembot_old\Release\Debug.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\www\openholdembot_old\Release\string_functions.dll</FullPath>
+      <FullPath>c:\www\openholdembot_old\Release\string_functions.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\www\openholdembot_old\Release\window_functions.dll</FullPath>
+      <FullPath>c:\www\openholdembot_old\Release\window_functions.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\www\openholdembot_old\Release\Preferences.dll</FullPath>
+      <FullPath>c:\www\openholdembot_old\Release\Preferences.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\www\openholdembot_old\Release\globals.dll</FullPath>
+      <FullPath>c:\www\openholdembot_old\Release\globals.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\www\openholdembot_old\Release\Reference User DLL.dll</FullPath>
+      <FullPath>c:\www\openholdembot_old\Release\Reference User DLL.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\www\openholdembot_old\Release\GamestateValidation.dll</FullPath>
+      <FullPath>c:\www\openholdembot_old\Release\GamestateValidation.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\www\openholdembot_old\Release\Hiss.exe</FullPath>
+      <FullPath>c:\www\openholdembot_old\Release\Hiss.exe</FullPath>
     </ProjectOutput>
   </ProjectOutputs>
   <ContentFiles>
     <ContentFile>
-      <FullPath>C:\www\openholdembot_old\##_Hiss_Release_Directory_##\License_GPLv3.htm</FullPath>
+      <FullPath>c:\www\openholdembot_old\##_Hiss_Release_Directory_##\License_GPLv3.htm</FullPath>
     </ContentFile>
   </ContentFiles>
   <SatelliteDlls />

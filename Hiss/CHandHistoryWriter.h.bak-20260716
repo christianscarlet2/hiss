@@ -76,8 +76,6 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
   CString FmtName(int chair);          // returns a per-chair token, resolved at flush
   CString FmtStack(int chair);
   CString FmtMoney(double v);
-  static double ReconstructStack(double v);   // shift decimal left until a plausible BB stack
-  static bool   StackScrapeIsClean(double raw);// a raw read trustworthy as last-known-good
   CString FmtHoleCards(int chair);
   CString BoardTokens(int upto_count);   // "Ah Kd 2c" for the first upto_count cards
   CString BoardCard(int idx);            // single card token at board index (0-based)
@@ -89,6 +87,7 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
   bool    AnySeatRegion(const char *suffix);
   bool    RegionExists(const CString &name);
   void    AddLine(const CString &line);
+  void    EnsureOutputPath();
   // ---- ACR-format helpers ----
   int     AcrSeat(int chair) { return chair + 1; }   // ACR seats are 1-based
   CString AcrTimestampUtc();                          // "YYYY/MM/DD HH:MM:SS"
@@ -97,8 +96,8 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
 
  private:
   // ---- output ----
-  // (the old handhistory\complete\ + \incomplete\ file paths were removed 2026-07-16 -- the writer
-  //  now persists ONLY to hiss_log_hands via p_log_writer, which feeds pt4_accumulate -> PT4)
+  CString _output_complete;      // <exedir>\handhistory\complete\...   (PT4-import folder)
+  CString _output_incomplete;    // <exedir>\handhistory\incomplete\... (review folder)
   // Tournament identity, scraped once and kept for the whole session.
   CString _tourney_title;        // c0tourney_title (commas stripped)
   CString _tourney_id;           // c0tourney_id    (parentheses stripped)
@@ -119,9 +118,6 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
   // Best real name seen per seat, persisted across hands (NOT reset each hand) so
   // a transient "ANTE"/"posts SB" overlay never becomes the player's name.
   CString _known_name[kMaxNumberOfPlayers];
-  // last SANE scraped stack per seat (0 < v < 1e7); shields the HH from OCR garbage
-  // (a timestamp read as a stack) -- PT4 chokes on billion-chip stacks. [scrape sanitize 2026-07-16]
-  double  _known_stack[kMaxNumberOfPlayers];
   // Snapshot at the start of the hand.
   CString _seat_name[kMaxNumberOfPlayers];
   double  _seat_stack[kMaxNumberOfPlayers];

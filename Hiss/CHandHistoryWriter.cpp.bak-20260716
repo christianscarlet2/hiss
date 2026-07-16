@@ -72,10 +72,12 @@ static std::string s_last_handnumber;
 CHandHistoryWriter::CHandHistoryWriter() {
   // This engine collects data from the table-state and the other engines
   // and therefore must be executed after all the rest (it is registered last).
+  _output_complete = "";
+  _output_incomplete = "";
   _tourney_title = "";
   _tourney_id = "";
   _table_name = "";
-  for (int i = 0; i < kMaxNumberOfPlayers; ++i) { _known_name[i] = ""; _known_stack[i] = 0.0; }
+  for (int i = 0; i < kMaxNumberOfPlayers; ++i) _known_name[i] = "";
   ResetHand();
 }
 
@@ -317,11 +319,7 @@ void CHandHistoryWriter::CaptureMetadata() {
     bool in_hand = ((dealtbits & (1 << i)) != 0) || p_table_state->Player(i)->active();
     _seat_in_hand[i] = in_hand;
     _seat_name[i]    = FmtName(i);
-    double raw       = p_table_state->Player(i)->stack();
-    _seat_stack[i]   = ReconstructStack(raw);
-    // Only a CLEAN read from a seat actually in the hand updates the last-known-good. A sitting-out
-    // seat (not in hand) keeps its prior sitting-in stack; a garbage/reconstructed read is not trusted.
-    if (in_hand && StackScrapeIsClean(raw)) _known_stack[i] = raw;
+    _seat_stack[i]   = p_table_state->Player(i)->stack();
     _street_bet[i]   = 0.0;
     _prev_balance[i] = -1.0;
     _folded[i]       = false;
@@ -584,6 +582,7 @@ void CHandHistoryWriter::ObserveResult() {
 
 void CHandHistoryWriter::Flush() {
   if (!_meta_captured || !_hand_dirty) return;
+  EnsureOutputPath();
 
   // ---- ACR-format hand history (Americas Cardroom layout, for PokerTracker 4) --
   CString out;
@@ -670,16 +669,26 @@ void CHandHistoryWriter::Flush() {
                      ? _hole[_hero] : FmtHoleCards(_hero);
   out.Replace("\x01HOLE\x01", hero_cards);
 
-  // ---- persist the finished hand to the DB (hiss_log_hands) ----
-  // This is the SOLE output path now: hiss_log_hands feeds pt4_accumulate.py -> C:\HissHandHistories\
-  // -> PokerTracker 4. The old handhistory\complete\ + \incomplete\ FILE generator was removed
-  // 2026-07-16 (superseded by the DB->cron->folder pipeline). [remove old HH generator]
+  // ---- route to complete\ or incomplete\ depending on import quality ----
   bool complete = HandLooksComplete();
+  // Replay logging: store the full ACR hand text as a hiss_log_hands row (background writer).
   if (p_log_writer != NULL && p_log_writer->Enabled()) {
     FILETIME ft; GetSystemTimeAsFileTime(&ft);
     ULARGE_INTEGER u; u.LowPart = ft.dwLowDateTime; u.HighPart = ft.dwHighDateTime;
     long long ms = (long long)((u.QuadPart - 116444736000000000ULL) / 10000ULL);
     p_log_writer->LogHand(ms, CStringA(_hand_number).GetString(), complete, CStringA(out).GetString());
+  }
+  CString path = complete ? _output_complete : _output_incomplete;
+  if (path.IsEmpty()) { _hand_dirty = false; return; }
+
+  FILE *fp = NULL;
+  if (fopen_s(&fp, path.GetString(), "a") == 0 && fp != NULL) {
+    fwrite(out.GetString(), 1, out.GetLength(), fp);
+    fclose(fp);
+    write_log(k_always_log_basic_information,
+              "[CHandHistoryWriter] Wrote hand #%s (%s) to %s\n",
+              _hand_number.IsEmpty() ? "?" : _hand_number.GetString(),
+              complete ? "complete" : "incomplete", path.GetString());
   }
   _hand_dirty = false;
 }
@@ -816,27 +825,6 @@ void CHandHistoryWriter::ScrapeTourneyInfo() {
   }
 }
 
-// Reject OCR fragments (BF, ne, y, lL, TE) so a garbled one-frame read never becomes a player's name.
-// Mirrors name_stabilize.plausibility on the linux side. No <cctype> dependency. [scrape sanitize 2026-07-16]
-static bool PlausibleName(CString n) {
-  n.Trim();
-  int L = n.GetLength();
-  if (L < 3) return false;                       // 1-2 char reads are almost never real usernames
-  int alpha = 0, vowel = 0;
-  for (int i = 0; i < L; ++i) {
-    char c = (char)n[i];
-    bool up = (c >= 'A' && c <= 'Z'), lo = (c >= 'a' && c <= 'z');
-    if (up || lo) {
-      alpha++;
-      char u = lo ? (char)(c - 32) : c;
-      if (u=='A'||u=='E'||u=='I'||u=='O'||u=='U') vowel++;
-    }
-  }
-  if (alpha < 2) return false;                    // mostly symbols/digits -> not a name
-  double vr = (double)vowel / alpha;
-  return (vr >= 0.10 && vr <= 0.85);              // 'lL','Bh','TE' fail (no/implausible vowels)
-}
-
 void CHandHistoryWriter::ObserveNames() {
   if (p_tablemap == NULL || p_table_state == NULL) return;
   int n = p_tablemap->nchairs();
@@ -844,8 +832,8 @@ void CHandHistoryWriter::ObserveNames() {
   for (int i = 0; i < n; ++i) {
     CString nm = p_table_state->Player(i)->name();
     nm.Trim();
-    if (!nm.IsEmpty() && !LooksLikeStatus(nm) && PlausibleName(nm)) {
-      _known_name[i] = nm;   // remember the latest real (plausible, non-overlay) name
+    if (!nm.IsEmpty() && !LooksLikeStatus(nm)) {
+      _known_name[i] = nm;   // remember the latest real (non-overlay) name
     }
   }
 }
@@ -859,36 +847,12 @@ CString CHandHistoryWriter::ResolveName(int chair) {
   return s;
 }
 
-// A real big-blind-denominated stack is at most a few thousand BB. The balance OCR intermittently
-// drops the decimal (image "102.32 BB" -> "10232") or spikes on a greyed sit-out display (-> 1.4M).
-// Shift the decimal left until the value is plausible so a garbled read never enters the history or
-// poisons the last-known-good stack. [stack sanitize 2026-07-16]
-const double kMaxPlausibleStack = 2000.0;
-
-double CHandHistoryWriter::ReconstructStack(double v) {
-  if (!(v > 0.0)) return 0.0;
-  int guard = 0;
-  while (v > kMaxPlausibleStack && guard++ < 12) v /= 10.0;
-  return v;
-}
-
-bool CHandHistoryWriter::StackScrapeIsClean(double raw) {
-  // A raw read we trust as last-known-good: positive and already in range (needed NO reconstruction).
-  return raw > 0.0 && raw <= kMaxPlausibleStack;
-}
-
 CString CHandHistoryWriter::FmtStack(int chair) {
   if (!_have_balance) return "?";
-  double v = _seat_stack[chair];                  // already reconstructed at capture
-  if (!(v > 0.0)) v = _known_stack[chair];        // no usable read this hand -> last clean stack
-  return FmtMoney(v);
+  return FmtMoney(_seat_stack[chair]);
 }
 
 CString CHandHistoryWriter::FmtMoney(double v) {
-  // Defensive bound so NO money field (stack/pot/bet) can ever emit a PT4-breaking value -- an OCR
-  // timestamp scraped as a pot printed 411 TRILLION and blew up PT4's import. [scrape sanitize 2026-07-16]
-  if (!(v > 0.0)) v = 0.0;                              // NaN / inf / negative
-  else if (v >= 1e7) v = 1e7;                           // above any real micro-stakes chip amount
   CString s;
   s.Format("%.2f", v);
   return s;
@@ -1057,6 +1021,36 @@ bool CHandHistoryWriter::AnySeatRegion(const char *suffix) {
 bool CHandHistoryWriter::RegionExists(const CString &name) {
   if (p_tablemap == NULL) return false;
   return p_tablemap->ItemExists(name);
+}
+
+void CHandHistoryWriter::EnsureOutputPath() {
+  if (!_output_complete.IsEmpty() && !_output_incomplete.IsEmpty()) return;
+  CString root = OpenHoldemDirectory() + "\\handhistory";
+  CreateDirectory(root, NULL);
+  // Complete (PT4-import) and incomplete (review) hands are kept in separate
+  // subfolders so PokerTracker 4 can be pointed at the clean folder only.
+  CString complete_dir   = root + "\\complete";
+  CString incomplete_dir = root + "\\incomplete";
+  CreateDirectory(complete_dir, NULL);
+  CreateDirectory(incomplete_dir, NULL);
+  int sid = (p_sessioncounter != NULL) ? p_sessioncounter->session_id() : 0;
+  // ACR-style filename so PokerTracker's ACR importer recognises it. The tournament
+  // NAME goes in the "TN-" field (where PT4 reads it); fall back when not scraped.
+  CString tn = _tourney_title;
+  tn.Trim();
+  if (tn.IsEmpty()) tn = "ScarletBeast";
+  CString tbl = _table_name;
+  tbl.Trim();
+  if (tbl.IsEmpty()) tbl.Format("T%d", sid);
+  // Strip characters that are illegal in a Windows filename.
+  const char *illegal = "\\/:*?\"<>|";
+  for (const char *p = illegal; *p; ++p) { tn.Remove(*p); tbl.Remove(*p); }
+  SYSTEMTIME st; GetSystemTime(&st);
+  CString fname;
+  fname.Format("HH%04d%02d%02d %s TN-%s GAMETYPE-Hold'em LIMIT-no CUR-REAL.txt",
+               st.wYear, st.wMonth, st.wDay, tbl.GetString(), tn.GetString());
+  _output_complete.Format("%s\\%s", complete_dir.GetString(), fname.GetString());
+  _output_incomplete.Format("%s\\%s", incomplete_dir.GetString(), fname.GetString());
 }
 
 // ---------------------------------------------------------------------------
