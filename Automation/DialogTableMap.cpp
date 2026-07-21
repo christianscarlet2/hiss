@@ -4760,7 +4760,9 @@ void CDlgTableMap::OnBnClickedNew() {
 		dlgregions.labeltext = "Record name:";
 		dlgregions.name = "";
 		dlgregions.strings.RemoveAll();
-		assert(list_of_regions[list_of_regions.size() - 1] != "");
+		// .size()-1 on an EMPTY vector is size_t underflow -> a wild index. list_of_regions is
+		// legitimately empty for map types that name every region ad hoc, so check emptiness first.
+		assert(list_of_regions.empty() || list_of_regions[list_of_regions.size() - 1] != "");
 		for (int i = 0; i < list_of_regions.size(); i++) {
 			// Ignore empty strings
 			// This should no longer happen with the new way we build lists
@@ -4783,12 +4785,11 @@ void CDlgTableMap::OnBnClickedNew() {
 				dlgregions.strings.Add(list_of_regions[i]);
 		}
 
-		// Show dialog if there are any strings left to add
-		if (dlgregions.strings.GetSize() == 0)
-		{
-			MessageBox("All Region records are already present.");
-		}
-		else
+		// ALWAYS open the dialog. The list above is a convenience, not a constraint: IDC_NAME is
+		// CBS_DROPDOWN (editable) and automation regions are named per process step, so a map
+		// legitimately needs names this binary has never heard of. Refusing to open when the list
+		// was exhausted -- or empty, as it was for every automation map -- left no way to add a
+		// region by name at all, which is exactly the symptom reported for automation_a17.
 		{
 			if (dlgregions.DoModal() == IDOK && dlgregions.name != "")
 			{

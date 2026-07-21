@@ -1636,6 +1636,47 @@ static bool IsConfiguredUsername(const CString &name) {
 	return false;
 }
 
+static int NameEditDistance(const CString &a, const CString &b, int give_up);
+
+// Which SEATED chair carries one of the user's own usernames? -1 when none does.
+//
+// This is the only trustworthy "that seat is mine" signal. userchair cannot be used for it:
+// CalculateUserChair latches onto the first seat showing known cards, so while RAILING a table it
+// happily flags an opponent as the hero -- observed live at an observed table, userchair=3 pointing
+// at "CrowdStanding" with the scraper's observer flag still false. Deciding "seated" from that would
+// have reported a seat we do not occupy.
+//
+// Names are OCR'd, so an exact compare is followed by a tight fuzzy pass (edit distance <= 2 against
+// names of 8+ characters). "christianbeast" survives a couple of misread glyphs; nothing as different
+// as "CrowdStanding" comes close.
+int HeroChairByName() {
+	if (p_table_state == NULL || p_tablemap == NULL) return -1;
+	int fuzzy_hit = -1;
+	for (int i = 0; i < p_tablemap->nchairs(); ++i) {
+		CPlayer *pl = p_table_state->Player(i);
+		if (pl == NULL || !pl->seated()) continue;
+		CString n = pl->name(); n.Trim();
+		if (n.IsEmpty()) continue;
+		if (IsConfiguredUsername(n)) return i;              // exact match wins immediately
+		if (fuzzy_hit >= 0) continue;
+		// Tight fuzzy pass over the same token list (defaults + the configured names).
+		CString lower = n; lower.MakeLower();
+		CString list = g_my_usernames; list.MakeLower();
+		list += " scarletchrist christianbeast";
+		int pos = 0;
+		while (pos < list.GetLength()) {
+			while (pos < list.GetLength() && strchr(",;| \t", list[pos])) ++pos;
+			int start = pos;
+			while (pos < list.GetLength() && !strchr(",;| \t", list[pos])) ++pos;
+			if (pos <= start) continue;
+			CString tok = list.Mid(start, pos - start); tok.Trim();
+			if (tok.GetLength() < 8) continue;              // short names are too easy to collide with
+			if (NameEditDistance(lower, tok, 2) <= 2) { fuzzy_hit = i; break; }
+		}
+	}
+	return fuzzy_hit;
+}
+
 // Levenshtein edit distance for short strings (status-indicator fuzzy match).
 // Early-out: the |length difference| lower-bounds the distance, so a long real name
 // is never "close" to a short status keyword.

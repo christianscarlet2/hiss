@@ -289,7 +289,12 @@
             if(!seat||!d||!d.ok) return;
             var secs=Math.floor((d.stable_ms||0)/1000);
             var age=secs<90?(secs+'s'):(Math.floor(secs/60)+'m');
-            seat.textContent='seat: '+d.state.replace(/_/g,' ')+' · '+age;
+            // OBSV = railing a table without a seat. It is a legitimate "at a table" state -- the
+            // automation must not restart the client for it -- so it gets its own label and colour
+            // rather than being lumped in with "no table".
+            var label = d.state==='seated' ? 'SEATED'
+                      : d.state==='observing' ? 'OBSV' : 'NO TABLE';
+            seat.textContent='seat: '+label+' · '+age;
             var col = d.state==='seated' ? '#3fb950' : d.state==='observing' ? '#d29922' : '#8b949e';
             seat.style.color=col;
             seat.style.borderColor = d.state==='seated' ? 'rgba(63,185,80,.45)'

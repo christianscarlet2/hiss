@@ -38,6 +38,10 @@ class CHeartbeatThread /*: public CSpaceOptimizedGlobalObject */{
 	// it and later blew up the heartbeat inside RtlEnterCriticalSection (crash_hiss_23456).
 	// Off-thread users MUST check this before Enter/Leave.
 	static volatile LONG cs_update_ready;
+	// Count of threads currently past the gate and using the lock. The dtor closes the gate and then
+	// waits for this to reach 0 before DeleteCriticalSection -- the gate alone cannot protect a
+	// thread that already tested it and is about to Enter.
+	static volatile LONG cs_update_users;
  private:
 	// private functions and variables - not available via accessors or mutators
 	static UINT HeartbeatThreadFunction(LPVOID pParam);

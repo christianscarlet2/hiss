@@ -392,6 +392,34 @@ TOOLS = [
         "title": {"type": "string", "description": "exact window title to capture, e.g. 'S10'. Exact because 'EMU' is a prefix of 'EMU2'."},
         "hwnd": {"type": "integer", "description": "window handle, if you already have it from a listing"},
         "clear": {"type": "boolean", "description": "release the manual pin and go back to automatic table selection"}}}},
+
+    # ---- automation maps: the region maps for PROCESSES the bot drives on a phone
+    # mirror (logging in, joining a freeroll) rather than for the felt itself. They live
+    # in the automation.* schema, separate from the playing tablemaps.
+    {"name": "automation_enabled", "description": "Is the AUTOMATION button on for an instance? Reads the same automation_api.enabled_<port> setting the toolbar tile and the tournament-join poller use, straight from the running Hiss. Omit port to report every live instance.",
+     "inputSchema": {"type": "object", "properties": {
+        "port": {"type": "integer", "description": "terminal port of one instance; omit for the whole fleet"},
+        "set": {"type": "boolean", "description": "turn automation on/off for that instance (port required)"}}}},
+    {"name": "automation_map_capture", "description": "Screenshot a phone mirror's scrcpy window (client area) and return the image. Use before placing regions so you can SEE where they belong. Runs the capture in the logged-on desktop session automatically when called from a session that owns no windows (ssh/service).",
+     "inputSchema": {"type": "object", "properties": {
+        "window": {"type": "string", "description": "window title substring, e.g. 'A17' or 'S10'"},
+        "out": {"type": "string", "description": "png path to write (default C:\\tmp\\<window>.png)"}},
+        "required": ["window"]}},
+    {"name": "automation_map_set_regions", "description": "Define the regions of an automation map for one process/step, draw them onto the reference screenshot, and store that annotated image in the map. Creates the map if it does not exist. Each region: {name, rect:[l,t,r,b], transform?} -- transform 'autoocr0' makes Hiss OCR it. Pass the screenshot you captured with automation_map_capture.",
+     "inputSchema": {"type": "object", "properties": {
+        "map": {"type": "string", "description": "automation map name, e.g. automation_a17"},
+        "window": {"type": "string", "description": "scrcpy window title for this mirror (used when creating the map)"},
+        "process": {"type": "string", "description": "the process these regions belong to, e.g. 'login'"},
+        "step": {"type": "integer", "default": 1},
+        "shot": {"type": "string", "description": "path of the reference screenshot to draw on"},
+        "label": {"type": "string"},
+        "regions": {"type": "array", "description": "[{name, rect:[l,t,r,b], transform}]", "items": {"type": "object"}}},
+        "required": ["map", "process", "regions"]}},
+    {"name": "automation_map_show", "description": "List an automation map's regions, and decode the stored reference screenshot for a process/step back out of the database so you can check the boxes really sit where you meant.",
+     "inputSchema": {"type": "object", "properties": {
+        "map": {"type": "string"}, "process": {"type": "string"}, "step": {"type": "integer", "default": 1},
+        "image": {"type": "boolean", "description": "also return the stored screenshot (default true)"}},
+        "required": ["map"]}},
 ]
 
 def _card_region(position, slot):
@@ -401,7 +429,75 @@ def _card_region(position, slot):
     p = p.replace("p", "")
     return "p%dcardface%d" % (int(p), int(slot))
 
+# --- automation maps --------------------------------------------------------
+# The heavy lifting (capture, postgres, drawing) lives in automation_map.py so the
+# same code serves the MCP tools, the command line, and the interactive-session
+# capture task. This is just the adapter.
+def _automation_map():
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import automation_map
+    return automation_map
+
+
 def call_tool(name, args):
+    if name == "automation_enabled":
+        port = args.get("port")
+        if args.get("set") is not None:
+            if not port:
+                return [{"type": "text", "text": "port is required when setting automation on/off."}]
+            return [{"type": "text", "text": hiss_get_on(
+                port, "/api/automation-enabled?on=" + ("1" if args["set"] else "0"))}]
+        if port:
+            return [{"type": "text", "text": hiss_get_on(port, "/api/automation-enabled")}]
+        out = []
+        for p in live_hiss_ports():
+            try:
+                out.append("%d: %s" % (p, hiss_get_on(p, "/api/automation-enabled").strip()))
+            except Exception as e:
+                out.append("%d: unreachable (%s)" % (p, e))
+        return [{"type": "text", "text": "\n".join(out) or "no live Hiss instances"}]
+
+    if name == "automation_map_capture":
+        am = _automation_map()
+        window = args["window"]
+        out = args.get("out") or (r"C:\tmp\%s.png" % window)
+        status = am.capture(window, out)
+        return [{"type": "text", "text": "%s -> %s" % (status, out)}, image_content(out)]
+
+    if name == "automation_map_set_regions":
+        am = _automation_map()
+        process, step = args["process"], int(args.get("step", 1))
+        tm = am.map_id(args["map"], create_with=(args.get("window") or args["map"], "wpn"))
+        for r in args["regions"]:
+            am.set_region(tm, r["name"], tuple(int(v) for v in r["rect"]),
+                          process, step, r.get("transform"))
+        written = am.regions(tm, process, step)
+        shot = args.get("shot")
+        if not shot:
+            return [{"type": "text", "text": "regions written (no shot given, nothing drawn):\n" +
+                     "\n".join(str(r) for r in written)}]
+        drawn = os.path.splitext(shot)[0] + "_regions.png"
+        am.draw_regions(shot, drawn, written)
+        w, h = am.store_screenshot(tm, process, step, args.get("label") or ("%s step %d" % (process, step)), drawn)
+        return [{"type": "text", "text": "map %s (id %d): %d regions on %s step %d, reference image %dx%d stored" %
+                 (args["map"], tm, len(written), process, step, w, h)}, image_content(drawn)]
+
+    if name == "automation_map_show":
+        am = _automation_map()
+        tm = am.map_id(args["map"])
+        process = args.get("process")
+        step = int(args.get("step", 1))
+        rows = am.regions(tm, process, step if process else None)
+        text = "map %s (id %d)\n" % (args["map"], tm) + "\n".join(str(r) for r in rows)
+        if process and args.get("image", True):
+            out = r"C:\tmp\_show_%s_%s_%d.png" % (args["map"], process, step)
+            try:
+                am.load_screenshot(tm, process, step, out)
+                return [{"type": "text", "text": text}, image_content(out)]
+            except SystemExit as e:
+                text += "\n(no stored screenshot: %s)" % e
+        return [{"type": "text", "text": text}]
+
     if name == "set_capture_window":
         port = args.get("port")
         try:

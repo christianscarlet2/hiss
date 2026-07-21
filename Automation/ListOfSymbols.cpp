@@ -66,18 +66,26 @@ CString ListOfSymbols() {
 }
 
 CString ListOfRegions() {
-  // AUTOMATION: deliberately EMPTY.
+  // AUTOMATION vocabulary -- deliberately NOT the ~119 poker regions Vision seeds
+  // (c0cardface*, i%ibutton, p%ibalance, ...). An automation map describes a click-through PROCESS
+  // on the ACR client -- login fields, dismissible pullouts, tournament rows, register/confirm
+  // buttons -- and shares none of those names, so offering them would bury the handful that matter.
   //
-  // Vision seeds this with ~119 poker regions (c0cardface*, i%ibutton, p%ibalance, ...) so the
-  // region picker offers the vocabulary a poker tablemap must implement. An automation map
-  // describes a click-through PROCESS on the ACR lobby -- tournament rows, register/confirm
-  // buttons, password fields -- which shares none of those names. Leaving them in would fill the
-  // picker with ~119 entries that can never match anything on screen, and make the handful of
-  // real automation regions impossible to find.
+  // This was previously EMPTY, on the reasoning that automation regions are named ad hoc per step.
+  // That had an unintended consequence: the "New Region record" picker short-circuits to
+  // "All Region records are already present." when it has nothing to offer, so an empty list made
+  // it impossible to add a region by name at all.
   //
-  // Empty means regions are created ad hoc, named per process step, which is exactly how the
-  // automation maps are built. The vocabulary lives in the map itself, not in this binary.
-  return CString();
+  // These are the steps the automation scripts actually drive (mcp/automation_login.py,
+  // mcp/automation_map.py). IDC_NAME is CBS_DROPDOWN (editable), so this is a CONVENIENCE list and
+  // not a restriction -- a new process step is still named by typing it in.
+  CString list;
+  list += "acr_email ";
+  list += "acr_password ";
+  list += "acr_login_button ";
+  list += "use_saved_password ";
+  list += "pullout_dismiss ";
+  return list;
 }
 
 

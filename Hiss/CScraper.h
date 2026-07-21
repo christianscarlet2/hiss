@@ -292,6 +292,9 @@ const long kSeatEvHeroCards  = 0x040;   // the hero holds known cards
 const long kSeatEvHand       = 0x080;   // a hand number is present
 const long kSeatEvButtons    = 0x100;   // autoplayer buttons are visible (we can act)
 const long kSeatEvObserver   = 0x200;   // the scraper's observer mode is active
+// The seated chair holding one of the user's own usernames, or -1. The ONLY reliable "I occupy that
+// seat" test -- userchair latches onto an opponent while railing a table. See CScraper.cpp.
+int HeroChairByName();
 extern volatile long g_seat_state;
 extern volatile long g_seat_evidence;
 extern volatile long g_seat_since_tick;

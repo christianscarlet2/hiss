@@ -283,6 +283,7 @@ static void SyncSuperstitionLiveness() {
 CHeartbeatThread	 *p_heartbeat_thread = NULL;
 CRITICAL_SECTION	 CHeartbeatThread::cs_update_in_progress;
 volatile LONG      CHeartbeatThread::cs_update_ready = 0;   // see CHeartbeatThread.h
+volatile LONG      CHeartbeatThread::cs_update_users = 0;   // in-flight holders; dtor drains before delete
 long int			     CHeartbeatThread::_heartbeat_counter = 0;
 CHeartbeatThread   *CHeartbeatThread::pParent = NULL;
 CHeartbeatDelay    CHeartbeatThread::_heartbeat_delay;
@@ -311,6 +312,14 @@ CHeartbeatThread::~CHeartbeatThread() {
 	// Close the gate BEFORE destroying the lock, so an in-flight /api/symbols on the HTTP thread
 	// can't enter a critical section that is about to be (or has been) deleted.
 	InterlockedExchange(&cs_update_ready, 0);
+	// ...then WAIT for anyone already past the gate to finish. The WaitForSingleObject above is
+	// bounded at 5s, so it returns while a stalled heartbeat is still mid-cycle; deleting the lock
+	// under it is what crashed the process (crash_hiss_17224). Closing the gate alone does not help
+	// a thread that tested it before the close. Drain, then destroy.
+	for (int spins = 0; spins < 300; ++spins) {
+		if (InterlockedCompareExchange(&cs_update_users, 0, 0) == 0) break;
+		Sleep(10);                                  // up to 3s; then fall through rather than hang exit
+	}
 	DeleteCriticalSection(&cs_update_in_progress);
 	p_heartbeat_thread = NULL;
 }
@@ -459,12 +468,18 @@ void CHeartbeatThread::UpdateSeatStatus() {
   if (p_engine_container != NULL
       && p_engine_container->symbol_engine_userchair()->userchair_confirmed()) {
     userchair = p_engine_container->symbol_engine_userchair()->userchair();
-    ev |= kSeatEvHeroChair;
+    ev |= kSeatEvHeroChair;      // reported as evidence only -- deliberately NOT decisive, see below
   }
-  if (userchair >= 0 && userchair < nchairs && p_table_state != NULL) {
-    CPlayer *hero = p_table_state->Player(userchair);
+  // WHOSE seat is it? By NAME, not by userchair. userchair is set by CalculateUserChair from the
+  // first seat showing known cards, which while RAILING a table points at an opponent: observed live
+  // with userchair=3 on "CrowdStanding" and the observer flag false. Deciding from that would report
+  // "seated" at a table we are only watching -- and the automation would then never restart a client
+  // that had wandered off. The user's own username list is the real discriminator.
+  int my_chair = HeroChairByName();
+  if (my_chair >= 0 && my_chair < nchairs && p_table_state != NULL) {
+    ev |= kSeatEvHeroNamed;
+    CPlayer *hero = p_table_state->Player(my_chair);
     if (hero != NULL) {
-      if (!hero->name().IsEmpty())        ev |= kSeatEvHeroNamed;
       if (hero->_balance.GetValue() > 0)  ev |= kSeatEvHeroStack;
       if (hero->HasKnownCards())          ev |= kSeatEvHeroCards;
     }
@@ -484,28 +499,37 @@ void CHeartbeatThread::UpdateSeatStatus() {
   const bool at_a_real_table =
       (ev & kSeatEvIdentity) && (ev & kSeatEvBlinds) && (ev & kSeatEvSeats);
 
-  // SEATED needs the hero's own seat to exist and to look occupied by us: the seat is confirmed,
-  // it carries our name, and it has either chips or cards. Buttons alone are not enough (they can
-  // linger) and cards alone are not enough (card templates can mismatch and read as backs).
+  // SEATED needs OUR name at a seat, and that seat to look occupied -- chips or cards. Chips alone
+  // suffice because card templates can mismatch and read as backs; cards alone suffice because a
+  // stack can scrape as 0 mid-allin. The observer flag, when the scraper does raise it, vetoes.
   const bool hero_present =
-      (ev & kSeatEvHeroChair) && (ev & kSeatEvHeroNamed)
-      && ((ev & kSeatEvHeroStack) || (ev & kSeatEvHeroCards));
+      (ev & kSeatEvHeroNamed) && ((ev & kSeatEvHeroStack) || (ev & kSeatEvHeroCards));
 
   long state = kSeatNotAtTable;
   if (at_a_real_table && hero_present && !(ev & kSeatEvObserver)) {
     state = kSeatSeated;
-  } else if (at_a_real_table && ((ev & kSeatEvObserver) || (ev & kSeatEvHand))) {
-    // Railing a table: a real table is on screen and hands are running, but it is not our seat.
+  } else if (at_a_real_table) {
+    // A real table is on screen but no seat carries our name: we are RAILING it. This is an
+    // "at a table" state -- the automation must not restart the client for it. It is also the
+    // safe landing spot if our own name ever OCRs too badly to match, which is deliberate: a
+    // missed name costs a mislabel, never a restart that drops us out of a live seat.
     state = kSeatObserving;
   }
 
-  if (state != g_seat_state) {
+  // Stamp the clock on the very first evaluation as well as on every change. Without this the
+  // opening state -- not_at_table, which is also the zero the global initialises to -- never looks
+  // like a "change", g_seat_since_tick stays 0, and stable_ms silently becomes the machine's uptime.
+  // A just-started instance would then present a 13-hour-stable "no table" and the automation would
+  // restart its poker client immediately, before the client had even finished loading.
+  static bool s_seeded = false;
+  if (state != g_seat_state || !s_seeded) {
+    s_seeded = true;
     g_seat_state = state;
     g_seat_since_tick = (long)GetTickCount();
     write_log(k_always_log_basic_information,
-      "[SeatStatus] state -> %s (evidence 0x%03x, %d named seats, userchair %d)\n",
+      "[SeatStatus] state -> %s (evidence 0x%03x, %d named seats, my_chair %d, userchair %d)\n",
       state == kSeatSeated ? "seated" : state == kSeatObserving ? "observing" : "not_at_table",
-      ev, named_seats, userchair);
+      ev, named_seats, my_chair, userchair);
   }
   g_seat_evidence = ev;
 }
@@ -515,7 +539,22 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
 	if (!p_autoconnector->IsVirtualConnection()) {
 		p_table_positioner->AlwaysKeepPositionIfEnabled();
 	}
-	// This critical section lets other threads know that the internal state is being updated
+	// This critical section lets other threads know that the internal state is being updated.
+	//
+	// The gate is checked HERE TOO, not just by off-thread users. ~CHeartbeatThread waits only
+	// k_max_time_to_wait_for_thread_to_shutdown (5s) for this thread and then deletes the lock
+	// regardless -- and a stalled scrape overruns 5s easily (the suspect-capture storm used to stall
+	// it far longer). The heartbeat then entered a DESTROYED critical section and faulted inside
+	// RtlEnterCriticalSection: crash_hiss_17224, ScrapeEvaluateAct+0x46.
+	//
+	// Registering as an in-flight user before the gate test, and having the dtor drain that count
+	// before DeleteCriticalSection, closes the check-then-use window rather than just narrowing it.
+	if (pParent == NULL) return;
+	InterlockedIncrement(&cs_update_users);
+	if (InterlockedCompareExchange(&cs_update_ready, 1, 1) == 0) {
+		InterlockedDecrement(&cs_update_users);   // shutting down: end the cycle, touch nothing
+		return;
+	}
 	EnterCriticalSection(&pParent->cs_update_in_progress);
 
 	////////////////////////////////////////////////////////////////////////////////////////////
@@ -551,6 +590,7 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
 	// Reply-frames no longer here in the heartbeat.
   // we have a "ReplayFrameController for that.
   LeaveCriticalSection(&pParent->cs_update_in_progress);
+  InterlockedDecrement(&cs_update_users);   // paired with the increment above; single exit path
 
   // ---- MCP / API control requests (run on this thread, where the autoplayer acts) ----
   // One-time restore of persisted modes (ULTRA / superstition) once the terminal port is bound, so

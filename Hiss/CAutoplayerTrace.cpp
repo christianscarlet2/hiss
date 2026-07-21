@@ -311,10 +311,19 @@ void CAutoplayerTrace::LogPlayers() {
   // starting at userchair (hero), so that we can easily see all raises behind him
   int	userchair = p_engine_container->symbol_engine_userchair()->userchair();
   int nchairs = p_tablemap->nchairs();
+  if (nchairs <= 0 || p_table_state == NULL) return;
+  // userchair is kUndefined (-1) whenever the hero seat is not confirmed -- routine while railing a
+  // table, between hands, or before the first deal. C++ gives a NEGATIVE result for (-1 + 0) % n, so
+  // this indexed Player(-1) and dereferenced whatever came back: crash_hiss_14288, an access
+  // violation inside LogPlayers reached from ExecuteRaiseCallCheckFold. With no hero to centre on,
+  // just start the dump at chair 0.
+  if (userchair < 0 || userchair >= nchairs) userchair = 0;
   for (int i = 0; i < nchairs; ++i) {
     int chair = (userchair + i) % nchairs;
+    CPlayer *player = p_table_state->Player(chair);
+    if (player == NULL) continue;
     CString data;
-    data.Format("Chair %2i  %s\n", chair, p_table_state->Player(chair)->DataDump());
+    data.Format("Chair %2i  %s\n", chair, player->DataDump());
    write_log(k_always_log_basic_information, data.GetBuffer());
   }
   write_log_separator(k_always_log_basic_information, "");
