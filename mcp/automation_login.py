@@ -42,7 +42,10 @@ CLEAR_PRESSES = int(os.environ.get("AUTOMATION_CLEAR_PRESSES", "60"))
 
 
 def adb(serial, *args, timeout=30):
+    # errors="replace": dumpsys emits bytes that the console codepage cannot decode, and
+    # a UnicodeDecodeError here would take down a login half-way through.
     r = subprocess.run([ADB, "-s", serial] + list(args), capture_output=True, text=True,
+                       encoding="utf-8", errors="replace",
                        timeout=timeout, creationflags=NO_WINDOW)
     if r.returncode:
         raise RuntimeError("adb %s: %s" % (" ".join(args), (r.stderr or r.stdout).strip()))
@@ -149,16 +152,28 @@ def restore_prompts(serial):
         print("   %s restored to %s" % (key, was))
 
 
-def hide_keyboard(serial, dry):
-    """Put the soft keyboard away without touching the IME.
+def keyboard_showing(serial):
+    """Is the IME actually up? BACK is only safe to send when it is."""
+    try:
+        out = adb(serial, "shell", "dumpsys", "input_method", timeout=30) or ""
+    except (RuntimeError, subprocess.TimeoutExpired):
+        return False                              # unknown -> assume down, never send BACK
+    m = re.search(r"mInputShown=(\w+)", out)
+    return bool(m) and m.group(1).lower() == "true"
 
-    Tapping a field raises the keyboard, which slides the page and can cover the login
-    button. BACK closes the keyboard when it is up and does not navigate -- the gentle
-    version of what disabling the IME was meant to achieve.
+
+def hide_keyboard(serial, dry):
+    """Put the soft keyboard away -- and ONLY that.
+
+    BACK closes the keyboard when it is showing. When it is NOT showing, BACK is a
+    navigation: in this WebAPK it walks out of the app to the launcher, which is how a
+    run ended up typing into the home screen (and, earlier, into the Play Store). So
+    check first and send nothing if there is no keyboard to dismiss.
     """
-    if not dry:
-        adb(serial, "shell", "input", "keyevent", "111")   # ESCAPE: closes the IME
-        adb(serial, "shell", "input", "keyevent", "4")     # BACK: same, for IMEs that ignore ESC
+    if dry or not keyboard_showing(serial):
+        return
+    adb(serial, "shell", "input", "keyevent", "4")
+    time.sleep(0.4)
 
 
 def tap(serial, xy, dry):
@@ -231,6 +246,46 @@ def open_app(port, dry=False, settle=20):
     time.sleep(settle)
 
 
+TESSERACT = os.environ.get("HISS_TESSERACT",
+                           r"C:\www\openholdembot_old\tesseract-demo\tesseract\tesseract.exe")
+
+
+def grab_region(title, rect, pad=2):
+    """Fresh capture of the mirror, cropped to one region."""
+    shot = os.path.join(os.environ.get("TEMP", "/tmp"), "_verify_probe.png")
+    AM.capture(title, shot)
+    from PIL import Image
+    l, t, r, b = (int(round(v)) for v in rect)
+    with Image.open(shot) as im:
+        return im.convert("RGB").crop((l + pad, t + pad, r - pad, b - pad))
+
+
+def ocr_region(title, rect):
+    """What does this field actually say? Used to CHECK what was typed, not to guess."""
+    crop = grab_region(title, rect)
+    png = os.path.join(os.environ.get("TEMP", "/tmp"), "_verify_crop.png")
+    crop.save(png)
+    r = subprocess.run([TESSERACT, png, "stdout", "--psm", "7", "-l", "eng"],
+                       capture_output=True, text=True, timeout=60, creationflags=NO_WINDOW)
+    return " ".join((r.stdout or "").split()).strip()
+
+
+def field_ink(title, rect):
+    """How many glyph clusters are in the box? Counts a masked password's dots, which OCR
+    cannot read, and answers 'is this field empty' for either field."""
+    crop = grab_region(title, rect).convert("L")
+    import numpy as np
+    a = np.asarray(crop).astype(int)
+    dark = (a < 128).sum(axis=0)                 # ink per column, on the white field
+    clusters, run = 0, False
+    for v in dark:
+        if v > 0 and not run:
+            clusters += 1; run = True
+        elif v == 0:
+            run = False
+    return clusters
+
+
 def pullout_showing(title, rect):
     """Is Google's saved-password sheet up?
 
@@ -249,34 +304,170 @@ def pullout_showing(title, rect):
     return bright > 0.05
 
 
-def enter_credentials(serial, m, rows, email, password, dry, settle):
-    print("email field:")
-    hide_keyboard(serial, dry)                 # start from the un-scrolled layout
-    time.sleep(settle * 0.5)
-    tap(serial, m.centre(rows["acr_email"]["rect"]), dry); time.sleep(settle)
-    clear_field(serial, dry)
-    type_text(serial, email, dry)
-    time.sleep(settle)
+def fill_field(serial, title, m, region, text, dry, settle, secret, label, tries=3):
+    """Focus, clear, type -- then READ THE FIELD BACK and only accept it if it took.
 
-    # Put the keyboard away BEFORE aiming at the next field. With it up the page is
-    # scrolled, so a tap computed from the un-scrolled reference capture lands on the
-    # wrong input -- which is exactly how the email and password ended up in each
-    # other's boxes. TAB was tried instead and does not move focus in this WebView.
-    hide_keyboard(serial, dry)
-    time.sleep(settle)
+    The page autofills a previously SAVED (and, from an early failed attempt, scrambled)
+    credential on load, and a tap does not always move focus. Both faults are invisible
+    until you look at the field, so every step here is checked against a fresh capture
+    rather than assumed.
+    """
+    for attempt in range(1, tries + 1):
+        print("   %s: attempt %d" % (label, attempt))
+        hide_keyboard(serial, dry)
+        time.sleep(settle * 0.5)
+        tap(serial, m.centre(region["rect"]), dry)
+        time.sleep(settle)
+        clear_field(serial, dry)
+        time.sleep(settle * 0.5)
 
-    print("password field:")
-    tap(serial, m.centre(rows["acr_password"]["rect"]), dry)
-    time.sleep(settle)
-    clear_field(serial, dry)
-    type_text(serial, password, dry, secret=True)
-    time.sleep(settle)
+        if not dry:
+            hide_keyboard(serial, dry); time.sleep(settle * 0.5)
+            left = field_ink(title, region["rect"])
+            if left > 2:                          # a stray cursor artefact is 1-2 clusters
+                print("      still %d glyphs after clearing -- clearing again" % left)
+                tap(serial, m.centre(region["rect"]), dry); time.sleep(settle * 0.5)
+                clear_field(serial, dry, presses=CLEAR_PRESSES)
+                time.sleep(settle * 0.5)
+
+        type_text(serial, text, dry, secret=secret)
+        time.sleep(settle)
+        if dry:
+            return True
+
+        hide_keyboard(serial, dry)
+        time.sleep(settle * 0.6)
+        if secret:
+            got = field_ink(title, region["rect"])
+            ok = abs(got - len(text)) <= 2        # one mask glyph per character
+            print("      %d mask glyphs (expected ~%d) -> %s" % (got, len(text), "ok" if ok else "WRONG"))
+        else:
+            got = ocr_region(title, region["rect"])
+            ok = got.replace(" ", "").lower() == text.replace(" ", "").lower()
+            print("      reads %r -> %s" % (got, "ok" if ok else "WRONG"))
+        if ok:
+            return True
+    return False
+
+
+def enter_credentials(serial, m, rows, email, password, dry, settle, title=None):
+    if not fill_field(serial, title, m, rows["acr_email"], email, dry, settle, False, "email"):
+        return False
+    if not fill_field(serial, title, m, rows["acr_password"], password, dry, settle, True, "password"):
+        return False
 
     hide_keyboard(serial, dry)
     time.sleep(0.6)
-
     print("login button:")
     tap(serial, m.centre(rows["acr_login_button"]["rect"]), dry)
+    return True
+
+
+def fetch_credentials(port):
+    """The bot's own ACR login, from the site, using THIS instance's token."""
+    raw = AM.psql("SELECT value::jsonb->>'api_token_%d' FROM settings WHERE key='automation_api'" % port)
+    token = raw.strip()
+    base = AM.psql("SELECT value::jsonb->>'api_base' FROM settings WHERE key='automation_api'").strip()
+    if not token:
+        raise SystemExit("no api_token_%d in settings.automation_api" % port)
+    req = urllib.request.Request(base.rstrip("/") + "/api/v1/automation/credentials",
+                                 headers={"Authorization": "Bearer " + token,
+                                          "Accept": "application/json",
+                                          # Cloudflare 403s the default python-urllib agent;
+                                          # match what hiss.exe's WinHTTP client sends.
+                                          "User-Agent": "Hiss-Automation/1.0"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        body = json.loads(r.read().decode("utf-8"))
+    if not body.get("ok"):
+        raise SystemExit("site returned no credentials: %s" % body.get("error"))
+    return body["acr"]["email"], body["acr"]["password"]
+
+
+def open_app(port, dry=False, settle=20):
+    """(Re)start the ACR client on this phone.
+
+    NOT `monkey -p <pkg> -c LAUNCHER`: the WebAPK shell has no launcher activity of the
+    kind monkey wants, so that silently opened the Play Store instead. And the shell's
+    SplashActivity is not exported, so it cannot be started by component either. What
+    works is a VIEW deep link at the app's own URL, restricted to its package -- the
+    system then hands it to Chrome's SameTaskWebApkActivity, which IS how the app runs.
+    """
+    serial, entry = device_for_port(port)
+    url = entry.get("launch_url") or "https://app.acrpoker.eu/"
+    pkg = entry.get("launch_package")
+    print("opening %s on %s" % (url, serial))
+    if dry:
+        return
+    for target in (entry.get("kill_package"), pkg):
+        if target:
+            try:
+                adb(serial, "shell", "am", "force-stop", target)
+            except RuntimeError:
+                pass
+    time.sleep(2)
+    args = ["shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", url]
+    if pkg:
+        args += ["-p", pkg]
+    adb(serial, *args, timeout=60)
+    time.sleep(settle)
+
+
+TESSERACT = os.environ.get("HISS_TESSERACT",
+                           r"C:\www\openholdembot_old\tesseract-demo\tesseract\tesseract.exe")
+
+
+def grab_region(title, rect, pad=2):
+    """Fresh capture of the mirror, cropped to one region."""
+    shot = os.path.join(os.environ.get("TEMP", "/tmp"), "_verify_probe.png")
+    AM.capture(title, shot)
+    from PIL import Image
+    l, t, r, b = (int(round(v)) for v in rect)
+    with Image.open(shot) as im:
+        return im.convert("RGB").crop((l + pad, t + pad, r - pad, b - pad))
+
+
+def ocr_region(title, rect):
+    """What does this field actually say? Used to CHECK what was typed, not to guess."""
+    crop = grab_region(title, rect)
+    png = os.path.join(os.environ.get("TEMP", "/tmp"), "_verify_crop.png")
+    crop.save(png)
+    r = subprocess.run([TESSERACT, png, "stdout", "--psm", "7", "-l", "eng"],
+                       capture_output=True, text=True, timeout=60, creationflags=NO_WINDOW)
+    return " ".join((r.stdout or "").split()).strip()
+
+
+def field_ink(title, rect):
+    """How many glyph clusters are in the box? Counts a masked password's dots, which OCR
+    cannot read, and answers 'is this field empty' for either field."""
+    crop = grab_region(title, rect).convert("L")
+    import numpy as np
+    a = np.asarray(crop).astype(int)
+    dark = (a < 128).sum(axis=0)                 # ink per column, on the white field
+    clusters, run = 0, False
+    for v in dark:
+        if v > 0 and not run:
+            clusters += 1; run = True
+        elif v == 0:
+            run = False
+    return clusters
+
+
+def pullout_showing(title, rect):
+    """Is Google's saved-password sheet up?
+
+    hiss.exe answers this with autoocr0 over use_saved_password. Here -- outside the bot,
+    with no OCR engine -- the same region answers it structurally: the sheet is a light
+    slab, so its bright-pixel fraction jumps from ~nothing to a large share of the box.
+    """
+    shot = os.path.join(os.environ.get("TEMP", "/tmp"), "_pullout_probe.png")
+    AM.capture(title, shot)
+    from PIL import Image
+    with Image.open(shot) as im:
+        crop = im.convert("L").crop((rect[0], rect[1], rect[2] + 1, rect[3] + 1))
+    px = list(crop.getdata())
+    bright = sum(1 for v in px if v > 165) / float(len(px) or 1)
+    print("   pullout probe: %.1f%% bright in use_saved_password" % (bright * 100))
+    return bright > 0.05
 
 
 def login(port, map_name=None, process="login", step=1, dry=False, settle=1.2, attempts=3):
@@ -322,7 +513,9 @@ def login(port, map_name=None, process="login", step=1, dry=False, settle=1.2, a
     suppress_prompts(serial, dry)
     for attempt in range(1, attempts + 1):
         print("-- attempt %d --" % attempt)
-        enter_credentials(serial, m, rows, email, password, dry, settle)
+        if not enter_credentials(serial, m, rows, email, password, dry, settle, title):
+            print("could not get the fields to hold what was typed")
+            return False
         time.sleep(settle * 2)
 
         if dry or "use_saved_password" not in guard or "pullout_dismiss" not in guard:

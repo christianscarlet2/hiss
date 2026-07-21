@@ -67,6 +67,29 @@ def _find_bash():
 BASH = _find_bash()
 
 
+# While we drive a client through the lobby it is, by design, NOT at a table -- and that is exactly
+# the condition automation_daemon.py restarts the poker client for. Without a hand-off the automation
+# would force-stop the app mid-scrape and strand it. This flag marks "navigation in progress" for one
+# port; the daemon stands down while it is fresh. It carries a timestamp rather than relying on
+# deletion, so a driver that dies mid-navigation cannot disable automation permanently.
+NAV_FLAG = r"C:\tmp\icm_navigating_%d.flag"
+
+
+def nav_begin(port):
+    try:
+        with open(NAV_FLAG % port, "w") as f:
+            f.write(str(int(time.time())))
+    except OSError as e:
+        log("[%d] could not write nav flag (%s) -- automation is NOT suppressed for this scrape" % (port, e))
+
+
+def nav_end(port):
+    try:
+        os.remove(NAV_FLAG % port)
+    except OSError:
+        pass
+
+
 def paths(port):
     """Per-port capture files -- two tables scraped in one firing must not overwrite each other."""
     return (r"C:\tmp\lobby_%d_main.png" % port,
@@ -95,12 +118,29 @@ def table_state(port, timeout=3):
         return None
 
 
+def _ports_from_settings():
+    """settings.icm_ports -- an explicit allow-list of ports this driver may NAVIGATE.
+
+    Navigation is only safe where the lobby buttons are correctly placed for that phone's layout:
+    a mis-placed goto_lobby_button opens the notification shade instead of the lobby and strands the
+    client in another app. That is device-specific, so which ports may be driven has to be data, not
+    a hard-coded list -- and editable without a redeploy while a map is being fixed.
+    Absent/empty => every live port, the original behaviour."""
+    raw = psql("SELECT value->>'list' FROM settings WHERE key='icm_ports';")
+    out = []
+    for tok in (raw or "").replace(";", ",").split(","):
+        tok = tok.strip()
+        if tok.isdigit():
+            out.append(int(tok))
+    return out
+
+
 def live_ports():
-    """Every Hiss instance that answers right now. One firing serves them all."""
+    """Every Hiss instance that answers right now AND is cleared for navigation."""
     if PORTS_ENV.strip():
         want = [int(p) for p in PORTS_ENV.replace(";", ",").split(",") if p.strip()]
     else:
-        want = PROBE_PORTS
+        want = _ports_from_settings() or PROBE_PORTS
     return [p for p in want if table_state(p) is not None]
 
 
@@ -369,6 +409,17 @@ def acquire():
 
 def scrape_one(port, tbl_name):
     """Navigate, parse, and store this table's structure. Returns True if a row was written."""
+    # Hold off the automation for the WHOLE call, not just the clicking: the client is still off the
+    # felt while claude parses the captures, and it is the seat-status reading during that window
+    # that would otherwise look like a wandered client and trigger a restart.
+    nav_begin(port)
+    try:
+        return _scrape_one_inner(port, tbl_name)
+    finally:
+        nav_end(port)          # every exit path, including the early "NOT writing" returns
+
+
+def _scrape_one_inner(port, tbl_name):
     m, mo, pay = gather(port)
     if tbl_name:
         m["_scrape_table"] = tbl_name            # record the table we were at (icm_serve tourney-match)

@@ -116,6 +116,23 @@ def ail_enabled():
         return True
 
 
+# icm_lobby_driver.py drives a client OFF the felt and through the lobby to read the tournament
+# structure. During that the client is legitimately "not at a table" -- indistinguishable, from
+# seat-status alone, from a client that has wandered off and needs restarting. Restarting it
+# mid-scrape would kill the navigation and strand the app, so the driver raises a per-port flag and
+# we stand down while it is fresh. Freshness (not mere existence) is the test: a driver killed
+# mid-navigation leaves the flag behind, and a stale file must not disable automation forever.
+NAV_FLAG = r"C:\tmp\icm_navigating_%d.flag"
+NAV_FLAG_MAX_AGE_S = int(os.environ.get("AUTOMATION_NAV_MAX_AGE", "300"))
+
+
+def lobby_navigating(port):
+    try:
+        return (time.time() - os.path.getmtime(NAV_FLAG % port)) < NAV_FLAG_MAX_AGE_S
+    except OSError:
+        return False
+
+
 def foreground(serial):
     rc, out, _ = adb(serial, "shell",
                      "dumpsys window 2>/dev/null | grep -m1 -oE 'mCurrentFocus=Window\\{[^}]*\\}'")
@@ -173,6 +190,14 @@ def main():
             auto = get(port, "/api/automation-enabled") or {}
             if not auto.get("enabled"):
                 streak.pop(port, None)
+                continue
+
+            # An ICM lobby scrape is driving this client right now: it is off the felt on purpose.
+            # Clear the streak too, so the readings taken during navigation cannot be counted
+            # towards a restart the moment the flag clears.
+            if lobby_navigating(port):
+                if streak.pop(port, None):
+                    log("[%d] lobby scrape in progress -- stand down" % port)
                 continue
 
             state = seat.get("state")
