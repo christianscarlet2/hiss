@@ -77,6 +77,23 @@ PROMPT_MORE = (
 )
 
 
+TOURNEY_KEYS = ("freeroll", "gtd", "tourney", "tournament", "sit", "sng")
+
+def should_scrape():
+    """Gate: only navigate (which pulls the bot off the felt ~25s) when we are in a TOURNAMENT and the
+    hero is not currently to act. Returns (ok, reason)."""
+    try:
+        st = json.loads(urlget("/api/table-state", timeout=3))
+    except Exception as e:
+        return False, "no table-state (%s)" % e
+    tbl = (st.get("table") or "").lower()
+    if not (any(k in tbl for k in TOURNEY_KEYS) or st.get("tourney_id")):
+        return False, "not a tournament (table=%r)" % (st.get("table") or "")
+    if st.get("ismyturn") or st.get("toact") == st.get("userchair"):
+        return False, "hero to act -- not navigating mid-decision"
+    return True, "tournament=%r idle" % (st.get("table") or "")
+
+
 def gather():
     log("lobby_fetch (navigate + capture) ...")
     try:
@@ -144,6 +161,10 @@ def main():
     if not acquire():
         log("another run holds the lock -- skip"); return
     try:
+        ok, why = should_scrape()
+        if not ok:
+            log("skip: %s" % why); return
+        log("gate ok: %s" % why)
         m, mo = gather()
         log("main=%s more=%s" % (json.dumps(m)[:200], json.dumps(mo)[:120]))
         info = build_lobby_info(m, mo)
