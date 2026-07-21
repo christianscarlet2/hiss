@@ -1,4 +1,4 @@
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.7.1.23011
 MinimumVisualStudioVersion = 18.0.0.0
@@ -13,6 +13,12 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Hiss", "Hiss\Hiss.vcxproj",
 	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Vision", "Vision\Vision.vcxproj", "{24FC33AE-EECA-44F8-924C-D3658612C383}"
+	ProjectSection(ProjectDependencies) = postProject
+		{9A3A25E1-3045-4EC3-BE51-5BD55F1F94B9} = {9A3A25E1-3045-4EC3-BE51-5BD55F1F94B9}
+		{E87D7887-ADDE-41DB-AA09-3DDAB950FAA5} = {E87D7887-ADDE-41DB-AA09-3DDAB950FAA5}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Automation", "Automation\Automation.vcxproj", "{2FED4A97-2B28-4F9F-8A22-1392DAD1B7E2}"
 	ProjectSection(ProjectDependencies) = postProject
 		{9A3A25E1-3045-4EC3-BE51-5BD55F1F94B9} = {9A3A25E1-3045-4EC3-BE51-5BD55F1F94B9}
 		{E87D7887-ADDE-41DB-AA09-3DDAB950FAA5} = {E87D7887-ADDE-41DB-AA09-3DDAB950FAA5}
@@ -109,7 +115,18 @@ Global
 		{24FC33AE-EECA-44F8-924C-D3658612C383}.Release - Optimized|Win32.Build.0 = Release|Win32
 		{24FC33AE-EECA-44F8-924C-D3658612C383}.Release|Any CPU.ActiveCfg = Release|Win32
 		{24FC33AE-EECA-44F8-924C-D3658612C383}.Release|Win32.ActiveCfg = Release|Win32
-		{24FC33AE-EECA-44F8-924C-D3658612C383}.Release|Win32.Build.0 = Release|Win32
+		{24FC33AE-EECA-44F8-924C-D3658612C383}.Release|Win32.Build.0 = Release|Win32
+		{2FED4A97-2B28-4F9F-8A22-1392DAD1B7E2}.Debug|Any CPU.ActiveCfg = Debug|Win32
+		{2FED4A97-2B28-4F9F-8A22-1392DAD1B7E2}.Debug|Any CPU.Build.0 = Debug|Win32
+		{2FED4A97-2B28-4F9F-8A22-1392DAD1B7E2}.Debug|Win32.ActiveCfg = Release|Win32
+		{2FED4A97-2B28-4F9F-8A22-1392DAD1B7E2}.Debug|Win32.Build.0 = Release|Win32
+		{2FED4A97-2B28-4F9F-8A22-1392DAD1B7E2}.Release - Optimized|Any CPU.ActiveCfg = Template|Win32
+		{2FED4A97-2B28-4F9F-8A22-1392DAD1B7E2}.Release - Optimized|Any CPU.Build.0 = Template|Win32
+		{2FED4A97-2B28-4F9F-8A22-1392DAD1B7E2}.Release - Optimized|Win32.ActiveCfg = Release|Win32
+		{2FED4A97-2B28-4F9F-8A22-1392DAD1B7E2}.Release - Optimized|Win32.Build.0 = Release|Win32
+		{2FED4A97-2B28-4F9F-8A22-1392DAD1B7E2}.Release|Any CPU.ActiveCfg = Release|Win32
+		{2FED4A97-2B28-4F9F-8A22-1392DAD1B7E2}.Release|Win32.ActiveCfg = Release|Win32
+		{2FED4A97-2B28-4F9F-8A22-1392DAD1B7E2}.Release|Win32.Build.0 = Release|Win32
 		{912CBD08-CFC5-4E5C-A6B5-FD18379467F2}.Debug|Any CPU.ActiveCfg = Debug|Win32
 		{912CBD08-CFC5-4E5C-A6B5-FD18379467F2}.Debug|Any CPU.Build.0 = Debug|Win32
 		{912CBD08-CFC5-4E5C-A6B5-FD18379467F2}.Debug|Win32.ActiveCfg = Release|Win32

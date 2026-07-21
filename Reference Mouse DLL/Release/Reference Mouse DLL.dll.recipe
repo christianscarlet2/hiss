@@ -2,7 +2,7 @@
 <Project>
   <ProjectOutputs>
     <ProjectOutput>
-      <FullPath>c:\www\openholdembot_old\Release\Reference Mouse DLL.dll</FullPath>
+      <FullPath>C:\www\openholdembot_old\Release\Reference Mouse DLL.dll</FullPath>
     </ProjectOutput>
   </ProjectOutputs>
   <ContentFiles />

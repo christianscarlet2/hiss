@@ -1,4 +1,6 @@
 #include "stdafx.h"
+#include <winhttp.h>
+#pragma comment(lib, "winhttp.lib")
 #include "ChatTerminalServer.h"
 #include "ChatTerminalWindow.h"
 #include "CEngineContainer.h"
@@ -21,7 +23,10 @@
 #include "COCRNameMapping.h"
 #include "HudManager.h"
 #include "..\CTablemap\CTablemap.h"
+#include "..\CTablemap\CTablemapDB.h"   // p_tablemap_db: automation-prefs storage
 #include "..\DLLs\Files_DLL\Files.h"
+#include "CAutoconnector.h"   // attached_hwnd(), for the manual window override
+#include "CSharedMem.h"       // PokerWindowAttached(), to flag windows another instance serves
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -30,6 +35,7 @@
 // cs_update_in_progress, so a reader can no longer stall the bot.
 #include <map>
 #include <set>
+#include <vector>
 
 static std::map<CStringA, CStringA> g_symbols_snapshot;  // name -> JSON value fragment
 static std::set<CStringA>           g_symbols_wanted;    // only what someone actually reads
@@ -54,8 +60,239 @@ static CRITICAL_SECTION *SymbolsCs() {
 
 static void EnsureSymbolsCs() { SymbolsCs(); }
 
+// ---------------------------------------------------------------------------------------------
+// Top-level window enumeration, for the toolbar's "connect to window" picker.
+//
+// Nothing reusable existed: WindowFunctions_DLL has no enumerator, and Hiss's own STableList is
+// compiled without the title/rect fields (they only exist in the Vision project), so the picker
+// needs its own collector.
+// ---------------------------------------------------------------------------------------------
+struct SPickableWindow {
+  HWND    hwnd;
+  CString title;
+  CString cls;
+  int     width;
+  int     height;
+};
+
+static BOOL CALLBACK EnumPickableWindows(HWND hwnd, LPARAM lparam) {
+  std::vector<SPickableWindow> *out = (std::vector<SPickableWindow> *)lparam;
+  if (out == NULL) return FALSE;
+  // The autoconnector can only ever attach to a visible, non-degenerate window
+  // (CAutoConnector.cpp:184), so anything else would be an unselectable entry in the list.
+  if (!::IsWindowVisible(hwnd)) return TRUE;
+  RECT r = { 0, 0, 0, 0 };
+  if (!::GetWindowRect(hwnd, &r)) return TRUE;
+  const int w = r.right - r.left;
+  const int h = r.bottom - r.top;
+  if (w <= 0 || h <= 0) return TRUE;
+  char title[512] = { 0 };
+  ::GetWindowTextA(hwnd, title, sizeof(title) - 1);
+  if (title[0] == '\0') return TRUE;   // untitled: nothing for a human to pick by
+  char cls[128] = { 0 };
+  ::GetClassNameA(hwnd, cls, sizeof(cls) - 1);
+  SPickableWindow info;
+  info.hwnd   = hwnd;
+  info.title  = CString(title);
+  info.cls    = CString(cls);
+  info.width  = w;
+  info.height = h;
+  out->push_back(info);
+  return TRUE;
+}
+
 // CChatTerminalServer::JsonEscape is a member; these helpers are free functions (the heartbeat calls
 // them without an instance), so they carry their own.
+// ---- Automation preferences (toolbar gear -> /automation-prefs/) ---------------------------
+//
+// Stored in the shared `settings` table under key "automation_api".
+//
+// NOT "automation_prefs": Automation.exe (the region mapper) already owns that key for its own
+// UI preferences. Two different programs writing one settings row would quietly overwrite each
+// other's fields.
+//
+// These are the credentials Hiss uses to reach the tournament console at
+// poker.scarletbeast.com/automation. The bot POLLS that API; each authenticated call also stamps
+// users.bot_seen_at server-side, which is what makes this instance appear as a live, selectable
+// bot in the console's dropdown.
+static const char *kAutomationPrefsKey = "automation_api";
+
+// The fields the React page reads and writes. Kept in one place so GET, POST and the connection
+// test can never drift apart on spelling.
+static const char *kAutomationPrefsFields[] = {
+	"api_base", "api_token", "bot_name", "poll_seconds", "join_window_minutes", "enabled"
+};
+
+// PER-INSTANCE vs MACHINE-WIDE.
+//
+// Several Hiss instances run at once, one per scrcpy mirror, and each is a SEPARATE bot on
+// /automation -- that is the whole point of picking a bot there: the tournament gets joined on
+// that mirror's client. So the identity fields are stored per TERMINAL PORT (api_token_27655,
+// ...), which is the only stable per-instance handle we have. Stored under one shared key they
+// would all authenticate as the same user and collapse into a single row in the dropdown,
+// making the choice meaningless.
+//
+// The rest genuinely IS machine-wide -- same site, same cadence -- so it stays unsuffixed and is
+// edited once from any instance's gear.
+static bool AutomationFieldIsPerInstance(const char *field) {
+	return (strcmp(field, "api_token") == 0)
+		|| (strcmp(field, "bot_name") == 0)
+		|| (strcmp(field, "enabled") == 0);
+}
+
+static CString AutomationPrefField(const char *field) {
+	extern int g_terminal_port;
+	if (!AutomationFieldIsPerInstance(field) || g_terminal_port <= 0) {
+		return CString(field);
+	}
+	CString out;
+	out.Format("%s_%d", field, g_terminal_port);
+	return out;
+}
+
+// Is this key actually present in the query string? QueryValue() cannot answer that: it
+// returns "" for an absent key and for "key=" alike. The prefs POST needs the distinction so a
+// caller can save one field without blanking the rest.
+static bool AutomationQueryHas(const CStringA &query, const char *name) {
+	int start = 0;
+	CStringA want(name);
+	while (start <= query.GetLength()) {
+		int end = query.Find('&', start);
+		CStringA pair = end >= 0 ? query.Mid(start, end - start) : query.Mid(start);
+		int equals = pair.Find('=');
+		CStringA key = equals >= 0 ? pair.Left(equals) : pair;
+		if (key.CompareNoCase(want) == 0) {
+			return true;
+		}
+		if (end < 0) break;
+		start = end + 1;
+	}
+	return false;
+}
+
+static DWORD AutomationApiGet(const CStringA &base_url, const CStringA &path,
+                              const CStringA &token, CStringA *body) {
+	if (body != NULL) *body = "";
+	CStringA host = base_url;
+	host.Replace("https://", "");
+	host.Replace("http://", "");
+	int slash = host.Find('/');
+	if (slash >= 0) host = host.Left(slash);
+	host.Trim();
+	if (host.IsEmpty()) return 0;
+
+	CStringW hostw(host), pathw(path);
+	HINTERNET session = WinHttpOpen(L"Hiss-Automation/1.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+		WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+	if (session == NULL) return 0;
+	WinHttpSetTimeouts(session, 3000, 3000, 3000, 5000);
+
+	HINTERNET connect = WinHttpConnect(session, hostw.GetString(), INTERNET_DEFAULT_HTTPS_PORT, 0);
+	if (connect == NULL) { WinHttpCloseHandle(session); return 0; }
+
+	HINTERNET request = WinHttpOpenRequest(connect, L"GET", pathw.GetString(), NULL,
+		WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
+	if (request == NULL) {
+		WinHttpCloseHandle(connect); WinHttpCloseHandle(session);
+		return 0;
+	}
+
+	CStringW headers = L"Accept: application/json\r\n";
+	if (!token.IsEmpty()) {
+		headers += L"Authorization: Bearer " + CStringW(token) + L"\r\n";
+	}
+	DWORD status = 0;
+	if (WinHttpSendRequest(request, headers.GetString(), (DWORD)-1,
+			WINHTTP_NO_REQUEST_DATA, 0, 0, 0)
+		&& WinHttpReceiveResponse(request, NULL)) {
+		DWORD size = sizeof(status);
+		WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+			WINHTTP_HEADER_NAME_BY_INDEX, &status, &size, WINHTTP_NO_HEADER_INDEX);
+		if (body != NULL) {
+			DWORD avail = 0;
+			while (WinHttpQueryDataAvailable(request, &avail) && avail > 0) {
+				if (avail > 8192) avail = 8192;
+				char *buf = new char[avail + 1];
+				DWORD read = 0;
+				if (WinHttpReadData(request, buf, avail, &read) && read > 0) {
+					buf[read] = '\0';
+					*body += buf;
+				}
+				delete[] buf;
+				if (body->GetLength() > 65536) break;   // a sane cap; we only need the first object
+			}
+		}
+	}
+	WinHttpCloseHandle(request);
+	WinHttpCloseHandle(connect);
+	WinHttpCloseHandle(session);
+	return status;
+}
+
+// ---- Automation heartbeat/poller ----------------------------------------------------------
+//
+// Calls the tournament console's /api/v1/automation/poll on an interval. Two jobs in one call:
+//   * PRESENCE -- the server stamps users.bot_seen_at on any authenticated request, and the
+//     console marks a bot "active" when that is within 10 minutes. This poll IS what makes this
+//     instance appear, and stay lit, in the bot dropdown on /automation.
+//   * WORK -- the response carries any join jobs queued for this bot inside their registration
+//     window.
+//
+// ON ITS OWN THREAD, deliberately. The obvious place would be the heartbeat, but a network call
+// there stalls the bot for the request's duration: this file's header records exactly that
+// failure ("a hung request used to freeze the whole bot ~31s per cycle"). The poker loop must
+// never wait on poker.scarletbeast.com being reachable.
+//
+// Preferences are re-read every cycle rather than cached, so an edit in the gear's page takes
+// effect on the next tick with no restart.
+static volatile bool g_automation_poll_stop = false;
+
+static UINT AutomationPollThread(LPVOID) {
+	int wait_seconds = 30;
+	while (!g_automation_poll_stop) {
+		CStringA base, token, enabled;
+		if (p_tablemap_db != NULL) {
+			base    = CStringA(p_tablemap_db->GetSettingString(kAutomationPrefsKey, AutomationPrefField("api_base")));
+			token   = CStringA(p_tablemap_db->GetSettingString(kAutomationPrefsKey, AutomationPrefField("api_token")));
+			enabled = CStringA(p_tablemap_db->GetSettingString(kAutomationPrefsKey, AutomationPrefField("enabled")));
+			int parsed = atoi(CStringA(p_tablemap_db->GetSettingString(kAutomationPrefsKey, AutomationPrefField("poll_seconds"))));
+			// Floor of 5s: a mis-typed 0 would spin this loop against the site as fast as the
+			// network allows.
+			wait_seconds = (parsed >= 5) ? parsed : 30;
+		}
+		bool on = (enabled.CompareNoCase("on") == 0 || enabled == "1");
+		if (on && !base.IsEmpty() && !token.IsEmpty()) {
+			CStringA resp;
+			DWORD status = AutomationApiGet(base, "/api/v1/automation/poll", token, &resp);
+			// Log only on CHANGE. A 30s poll logging every cycle adds ~2900 lines a day saying
+			// nothing; the transitions (came up / went 401 / went dark) are what matter.
+			static DWORD s_last_status = 0xFFFFFFFF;
+			if (status != s_last_status) {
+				s_last_status = status;
+				if (status == 200) {
+					write_log(k_always_log_basic_information,
+						"[Automation] poll OK -- this bot is live on /automation.\n");
+				} else if (status == 401) {
+					write_log(k_always_log_errors,
+						"[Automation] poll REJECTED (401): wrong API token. Fix it in the gear's preferences.\n");
+				} else if (status == 0) {
+					write_log(k_always_log_errors,
+						"[Automation] poll could not reach %s -- this bot will not appear on /automation.\n",
+						base.GetString());
+				} else {
+					write_log(k_always_log_errors, "[Automation] poll returned HTTP %lu.\n", status);
+				}
+			}
+			// The job list only becomes actionable once automation.exe can drive the client;
+			// until then the poll still serves its presence purpose. Left intentionally unparsed.
+		}
+		for (int i = 0; i < wait_seconds * 4 && !g_automation_poll_stop; ++i) {
+			Sleep(250);   // short slices so shutdown is prompt, not up to a full interval
+		}
+	}
+	return 0;
+}
+
 static CStringA JsonEscapeFree(const CString &value) {
   CStringA out;
   CStringA in(value);
@@ -239,6 +476,19 @@ bool CChatTerminalServer::Start(unsigned short port)
 	_thread->ResumeThread();
 
 	CString ready;
+	// Automation presence/work poller (own thread -- see AutomationPollThread).
+	// EXACTLY ONE per process. Start() can run more than once in a process (a port-bind retry, a
+	// server restart), and each extra call used to spawn another poller: redundant HTTP calls to
+	// the same endpoint on overlapping schedules, and a shared "log only on change" static that
+	// several threads then defeat -- which is precisely how this was noticed, as the same 401
+	// repeating every ~20s instead of once.
+	static bool s_poller_started = false;
+	if (!s_poller_started) {
+		s_poller_started = true;
+		g_automation_poll_stop = false;
+		AfxBeginThread(AutomationPollThread, NULL, THREAD_PRIORITY_BELOW_NORMAL);
+	}
+
 	ready.Format("Terminal API server listening on http://127.0.0.1:%u", _port);
 	ChatTerminalAppend(kChatTerminalContext, ready);
 	// Publish the chosen port so the MCP server (and any external tool) can attach
@@ -257,6 +507,9 @@ bool CChatTerminalServer::Start(unsigned short port)
 void CChatTerminalServer::Stop(void)
 {
 	_stop = true;
+	// Signal the automation poller too. It wakes in 250ms slices, so it exits promptly instead
+	// of leaving a thread mid-WinHTTP-call while the process tears down around it.
+	g_automation_poll_stop = true;
 	if (_listen_socket != INVALID_SOCKET) {
 		closesocket(_listen_socket);
 		_listen_socket = INVALID_SOCKET;
@@ -306,7 +559,38 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		return;
 	}
 	buffer[received] = 0;
-	CStringA request(buffer);
+	CStringA request(buffer, received);
+
+	// READ THE WHOLE BODY, not just whatever the first packet happened to carry.
+	//
+	// A single recv() returns what has ARRIVED, which for a POST is frequently the headers plus
+	// only part of the body -- TCP is free to split them. Every earlier endpoint took its input
+	// from the query string, so nothing depended on the body and the truncation was invisible.
+	// The automation-prefs POST is the first body-driven endpoint, and it silently received 54 of
+	// 62 bytes: valid-looking JSON with the opening of the first key sliced off, so the field
+	// parsed empty and the save became a no-op that still answered {"ok":true}.
+	// Keep reading until Content-Length bytes of body are in hand (or the peer stops sending).
+	{
+		int hdr_end = request.Find("\r\n\r\n");
+		if (hdr_end >= 0) {
+			int content_length = 0;
+			int cl = request.Find("Content-Length:");
+			if (cl < 0) cl = request.Find("content-length:");
+			if (cl >= 0 && cl < hdr_end) {
+				content_length = atoi(request.Mid(cl + 15).Trim());
+			}
+			int have = request.GetLength() - (hdr_end + 4);
+			// Bound the wait so a malformed/hostile Content-Length cannot hang this thread, which
+			// serves the whole terminal API.
+			int guard = 0;
+			while (have < content_length && guard++ < 64) {
+				int more = recv(client, buffer, sizeof(buffer) - 1, 0);
+				if (more <= 0) break;
+				request += CStringA(buffer, more);
+				have += more;
+			}
+		}
+	}
 
 	int line_end = request.Find("\r\n");
 	CStringA first_line = line_end >= 0 ? request.Left(line_end) : request;
@@ -347,6 +631,96 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 	}
 
 	// --- Browser-extended Terminal: page, live state poll, and prompt input -----
+	// --- Automation preferences: read / write / connection-test ---------------------------
+	// GET  /api/automation-prefs        -> {"ok":true,"prefs":{...}}
+	// POST /api/automation-prefs        -> save the six flat fields from the JSON body
+	// POST /api/automation-prefs/test   -> live call to the configured API, proving the token works
+	if (path.CompareNoCase("/api/automation-prefs/test") == 0) {
+		CStringA base, token;
+		if (p_tablemap_db != NULL) {
+			base  = CStringA(p_tablemap_db->GetSettingString(kAutomationPrefsKey, AutomationPrefField("api_base")));
+			token = CStringA(p_tablemap_db->GetSettingString(kAutomationPrefsKey, AutomationPrefField("api_token")));
+		}
+		CStringA body;
+		if (base.IsEmpty() || token.IsEmpty()) {
+			body = "{\"ok\":false,\"error\":\"Set the API base URL and token first, then Save.\"}";
+		} else {
+			CStringA resp;
+			// /poll is the right probe: it is side-effect free, it requires the bot token, and a
+			// 200 means the server has just stamped bot_seen_at -- i.e. this bot is now live in
+			// the console's dropdown. Anything else and we report the status rather than guess.
+			DWORD status = AutomationApiGet(base, "/api/v1/automation/poll", token, &resp);
+			if (status == 200) {
+				CStringA name;
+				if (p_tablemap_db != NULL) {
+					name = CStringA(p_tablemap_db->GetSettingString(kAutomationPrefsKey, AutomationPrefField("bot_name")));
+				}
+				body.Format("{\"ok\":true,\"bot\":\"%s\"}", JsonEscapeFree(CString(name)).GetString());
+			} else if (status == 401) {
+				body = "{\"ok\":false,\"error\":\"The API rejected the token (401). Check the bot token.\"}";
+			} else if (status == 0) {
+				body = "{\"ok\":false,\"error\":\"Could not reach the API. Check the base URL and this machine's internet access.\"}";
+			} else {
+				body.Format("{\"ok\":false,\"error\":\"API returned HTTP %lu.\"}", status);
+			}
+		}
+		CStringA response;
+		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+			body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	if (path.CompareNoCase("/api/automation-prefs") == 0) {
+		CStringA body;
+		const int n_fields = sizeof(kAutomationPrefsFields) / sizeof(kAutomationPrefsFields[0]);
+		bool is_post = (request.Left(4).CompareNoCase("POST") == 0);
+		if (is_post && p_tablemap_db != NULL) {
+			// Fields come in as QUERY PARAMETERS, not a JSON body -- the same way every other
+			// endpoint on this server takes its input. QueryValue/UrlDecode already exist and are
+			// well exercised, so there is no body parsing to get wrong.
+			for (int i = 0; i < n_fields; ++i) {
+				// QueryValue returns "" for BOTH an absent key and an explicitly empty one, so
+				// presence is tested separately: only a parameter the caller actually sent is
+				// written. Without this, saving one field would blank the other five -- and
+				// clearing the token by omission is exactly the kind of silent damage that is
+				// painful to notice.
+				if (!AutomationQueryHas(query, kAutomationPrefsFields[i])) {
+					continue;
+				}
+				CStringA v = UrlDecode(QueryValue(query, kAutomationPrefsFields[i]));
+				p_tablemap_db->SetSettingString(kAutomationPrefsKey,
+					AutomationPrefField(kAutomationPrefsFields[i]), CString(v));
+			}
+			body = "{\"ok\":true}";
+		} else if (p_tablemap_db != NULL) {
+			body = "{\"ok\":true,\"prefs\":{";
+			for (int i = 0; i < n_fields; ++i) {
+				CString v = p_tablemap_db->GetSettingString(kAutomationPrefsKey, AutomationPrefField(kAutomationPrefsFields[i]));
+				CStringA piece;
+				piece.Format("%s\"%s\":\"%s\"", (i ? "," : ""), kAutomationPrefsFields[i],
+					JsonEscapeFree(v).GetString());
+				body += piece;
+			}
+			body += "}}";
+		} else {
+			body = "{\"ok\":false,\"error\":\"No database connection.\"}";
+		}
+		CStringA response;
+		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+			body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	// Automation preferences page (toolbar gear -> CMainFrame::OnAutomation).
+	if (path.CompareNoCase("/automation-prefs") == 0 || path.CompareNoCase("/automation-prefs/") == 0) {
+		ServeFile(client, "automation-prefs.html");
+		return;
+	}
+
 	if (path.CompareNoCase("/terminal") == 0 || path.CompareNoCase("/terminal/") == 0) {
 		ServeFile(client, "terminal.html");
 		return;
@@ -560,6 +934,73 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 
 	// Turn the autoplayer on/off:  /api/autoplayer?on=1  or  ?on=0 . With NO ?on= it just REPORTS
 	// the current engaged state (a bare GET must never silently disengage -- that was a footgun).
+	// List every pickable top-level window, for the toolbar's "connect to window" picker.
+	// "served" marks windows another Hiss instance already owns (the autoconnector refuses those,
+	// CAutoConnector.cpp:198), and "attached" marks the one THIS instance is on.
+	if (path.CompareNoCase("/api/windows") == 0) {
+		std::vector<SPickableWindow> wins;
+		::EnumWindows(EnumPickableWindows, (LPARAM)&wins);
+		HWND mine = (p_autoconnector != NULL) ? p_autoconnector->attached_hwnd() : NULL;
+		CStringA body = "{\"ok\":true,\"windows\":[";
+		for (size_t i = 0; i < wins.size(); ++i) {
+			const bool served = (p_sharedmem != NULL && p_sharedmem->PokerWindowAttached(wins[i].hwnd));
+			CStringA item;
+			item.Format("%s{\"hwnd\":%lld,\"title\":\"%s\",\"class\":\"%s\",\"w\":%d,\"h\":%d,"
+				"\"served\":%s,\"attached\":%s}",
+				(i ? "," : ""),
+				(long long)(intptr_t)wins[i].hwnd,
+				JsonEscapeFree(wins[i].title).GetString(),
+				JsonEscapeFree(wins[i].cls).GetString(),
+				wins[i].width, wins[i].height,
+				served ? "true" : "false",
+				(wins[i].hwnd == mine) ? "true" : "false");
+			body += item;
+		}
+		body += "]}";
+		CStringA response;
+		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+			body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	// Manual window override. Bare GET reports state; ?hwnd=<n> pins that window; ?clear=1 releases
+	// the pin and restores automatic table selection. The actual connect happens on the heartbeat
+	// thread (CHeartbeatThread.cpp), so this only records the request.
+	if (path.CompareNoCase("/api/connect-window") == 0) {
+		CStringA hwnd_s = QueryValue(query, "hwnd");
+		CStringA clear_s = QueryValue(query, "clear");
+		const bool want_clear = (clear_s == "1") || (clear_s.CompareNoCase("true") == 0);
+		if (want_clear) {
+			g_manual_connect_request = 0;
+		} else if (!hwnd_s.IsEmpty()) {
+			g_manual_connect_hwnd = _atoi64(hwnd_s.GetString());
+			g_manual_connect_request = 1;
+			g_manual_connect_status = "connecting...";
+		}
+		HWND pinned = (HWND)(intptr_t)g_manual_connect_hwnd;
+		char pinned_title[512] = { 0 };
+		if (pinned != NULL && ::IsWindow(pinned)) {
+			::GetWindowTextA(pinned, pinned_title, sizeof(pinned_title) - 1);
+		}
+		HWND mine = (p_autoconnector != NULL) ? p_autoconnector->attached_hwnd() : NULL;
+		CStringA body;
+		body.Format("{\"ok\":true,\"override\":%s,\"hwnd\":%lld,\"title\":\"%s\","
+			"\"attached_hwnd\":%lld,\"status\":\"%s\"}",
+			(g_manual_connect_hwnd != 0) ? "true" : "false",
+			(long long)g_manual_connect_hwnd,
+			JsonEscapeFree(CString(pinned_title)).GetString(),
+			(long long)(intptr_t)mine,
+			JsonEscapeFree(g_manual_connect_status).GetString());
+		CStringA response;
+		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+			body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
 	if (path.CompareNoCase("/api/autoplayer") == 0) {
 		CStringA on = QueryValue(query, "on");
 		CStringA body;

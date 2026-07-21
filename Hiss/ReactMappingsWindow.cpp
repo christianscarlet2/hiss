@@ -115,6 +115,17 @@ void CReactMappingsWindow::ResizeBrowser(void)
 	_controller->put_Bounds(bounds);
 }
 
+// Navigate this embedded browser to any path on the local terminal server.
+void CReactMappingsWindow::NavigateToPath(unsigned short port, const CString &path) {
+	if (_webview == NULL) {
+		return;
+	}
+	CString url;
+	url.Format("http://127.0.0.1:%u%s", port, path.GetString());
+	CStringW urlw(url);
+	_webview->Navigate(urlw);
+}
+
 void CReactMappingsWindow::NavigateToMappings(unsigned short port)
 {
 	if (_webview == NULL || port == 0) {

@@ -29,6 +29,16 @@
 
 const int kMaxLines = 256;
 
+// Name stabilization. The per-seat "main name" is the MODE of the last
+// kNameStabilityWindow plausible OCR reads, and is only (re)committed once that
+// mode reaches kNameStabilityVotes occurrences. This stops a single garbled-but-
+// plausible frame (e.g. "gcarletchrist"/"scarletchristl" for "scarletchrist") from
+// redesignating a seat's identity -- which used to fragment a player's HUD stats
+// across OCR variants. ~10 heartbeats is a few seconds at the scrape rate.
+// [name-stabilize 2026-07-20]
+const int kNameStabilityWindow = 10;
+const int kNameStabilityVotes  = 6;
+
 class CHandHistoryWriter: public CVirtualSymbolEngine {
  public:
 	CHandHistoryWriter();
@@ -45,17 +55,10 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
 	// Public accessors
 	bool EvaluateSymbol(const CString name, double *result, bool log = false);
   CString SymbolsProvided();
- public:
-  // Kept for source-compatibility with the (now neutered) sibling engines.
-  void AddMessage(CString message);
-  void PostsSmallBlind(int chair);
-  void PostsBigBlind(int chair);
-  void PostsAnte(int chair);
-  void Checks(int chair);
-  void Folds(int chair);
-  void Calls(int chair);
-  void Raises(int chair);
-  void WinsUncontested(int chair);
+  // The stabilized per-seat "main name" (majority vote over the last N heartbeats),
+  // or "" until one is committed. Used by the HUD so its stats lookup keys off the
+  // same consistent identity the hand history records. [name-stabilize 2026-07-20]
+  CString StableName(int chair) const;
 
  private:
   // ---- recorder lifecycle ----
@@ -75,7 +78,8 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
   // ---- formatting (placeholder-aware) ----
   CString FmtName(int chair);          // returns a per-chair token, resolved at flush
   CString FmtStack(int chair);
-  CString FmtMoney(double v);
+  CString FmtMoney(double v);       // scraped BB-denominated money -> dollars (x _bb)
+  CString FmtMoneyRaw(double v);    // already-dollar value (header sb/bb) -> formatted, no scaling
   static double ReconstructStack(double v);   // shift decimal left until a plausible BB stack
   static bool   StackScrapeIsClean(double raw);// a raw read trustworthy as last-known-good
   CString FmtHoleCards(int chair);
@@ -119,6 +123,12 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
   // Best real name seen per seat, persisted across hands (NOT reset each hand) so
   // a transient "ANTE"/"posts SB" overlay never becomes the player's name.
   CString _known_name[kMaxNumberOfPlayers];
+  // Rolling window of the last kNameStabilityWindow plausible name reads per seat.
+  // _known_name (the committed main name) is derived from this by majority vote
+  // instead of latching whatever the newest frame happened to OCR. [name-stabilize]
+  CString _name_hist[kMaxNumberOfPlayers][kNameStabilityWindow];
+  int     _name_hist_count[kMaxNumberOfPlayers];   // filled slots (0..window)
+  int     _name_hist_pos[kMaxNumberOfPlayers];     // ring write index
   // last SANE scraped stack per seat (0 < v < 1e7); shields the HH from OCR garbage
   // (a timestamp read as a stack) -- PT4 chokes on billion-chip stacks. [scrape sanitize 2026-07-16]
   double  _known_stack[kMaxNumberOfPlayers];

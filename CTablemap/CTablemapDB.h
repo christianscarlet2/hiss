@@ -80,6 +80,12 @@ public:
 	// credentials (Hiss) or a localhost fallback, always with dbname=hiss.
 	static CString DefaultConnString();
 	static void    SetConnString(const CString &conn_str);
+	// Postgres schema this process's tablemaps live in. Empty (the default) means plain `public`,
+	// which is what Hiss and Vision want. Automation.exe sets "automation" so its click-through
+	// maps land in their OWN tablemaps/tm_* tables instead of Hiss's.
+	// MUST be called BEFORE the first Connect(): the search_path is applied on connect, and
+	// EnsureSchema() runs immediately after it.
+	static void    SetSchema(const CString &schema);
 	bool    Connect();
 	void    Disconnect();
 	bool    IsConnected();
@@ -143,15 +149,49 @@ public:
 	bool EmitOpponentTiming(const CString &gametype, const CString &handnumber,
 		const std::vector<SOppTimingRow> &rows);
 
+public:
+	// ---- Automation process screenshots (automation.process_screenshots) --------------------
+	// Used ONLY by Automation.exe, which runs with search_path=automation; the identical calls
+	// from Hiss would hit a public.process_screenshots that does not exist, so nothing else
+	// should call these. Nine screenshots per (map, process), one per step of the click-through.
+	// `pixels` is the tm_images encoding: one %08x per pixel, rows joined by '\n'.
+	bool SaveProcessScreenshot(long tablemap_id, const CString &process, int step,
+		const CString &label, int width, int height, const CString &pixels);
+	// Returns false when that step has no screenshot yet -- the normal case for an unfilled step,
+	// NOT an error, so callers must not treat it as one.
+	bool LoadProcessScreenshot(long tablemap_id, const CString &process, int step,
+		int *width, int *height, CString *pixels, CString *label);
+	// Which steps of this process already have a screenshot, so the bar can show at a glance
+	// how far the mapped flow goes.
+	bool ListProcessSteps(long tablemap_id, const CString &process, std::vector<int> *out);
+	bool DeleteProcessScreenshot(long tablemap_id, const CString &process, int step);
+	long TablemapIdByName(const CString name) { return GetTablemapId(name); }
+
+	// REGION SCOPE (Automation.exe only). When set, tm_regions reads and writes are confined to
+	// one (process, step) screenshot: the load filters to that pair, and the save deletes only
+	// that pair's rows before re-inserting.
+	// This matters because SaveTablemapToDB() wipes every child table and rewrites it -- with
+	// nine steps sharing one tablemap, an unscoped save while editing step 3 would delete the
+	// regions of the other eight steps. Hiss and Vision never call this, so their tm_regions
+	// (which has no process/step columns at all) is untouched by the scoped SQL.
+	void SetRegionScope(const CString &process, int step);
+	void ClearRegionScope();
+
 private:
 	long GetTablemapId(const CString name);   // -1 if not found / error
 	bool ExecCommand(const CString &sql);      // expects PGRES_COMMAND_OK
 	static CString NameFromPath(const CString path);
 
 private:
+	// Region scope, off by default so Hiss/Vision behaviour is unchanged. See SetRegionScope().
+	bool    _region_scope_on;
+	CString _region_process;
+	int     _region_step;
+
 	void   *_conn;          // PGconn* (opaque so libpq stays out of the header)
 	CString _last_error;
 	static CString s_conn_str;
+	static CString s_schema;
 	// libpq is NOT thread-safe on a single connection. Hiss touches this shared
 	// connection from the heartbeat thread (scrape + settings live-reload probe)
 	// and from the GUI/autoconnector, so every method that uses _conn serialises

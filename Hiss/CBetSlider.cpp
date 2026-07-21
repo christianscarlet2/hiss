@@ -14,6 +14,7 @@
 #include "stdafx.h"
 #include "CBetSlider.h"
 
+#include "CAdbInput.h"
 #include "CAutoConnector.h"
 #include "CAutoplayerTrace.h"
 #include "CBetsizeInputBox.h"
@@ -76,7 +77,10 @@ bool CBetSlider::SlideAllin() {
         write_log(Preferences()->debug_autoplayer(), "[BetSlider] Slider : Calling mouse.dll to jam from %d,%d to %d,%d\n", drag_region.left, drag_region.top, drag_region.right, drag_region.bottom);
         // Not really (0, 0), but (-1, -1), out of the screen
         POINT	point_null = { kUndefined, kUndefined };
-        (theApp._dll_mouse_click_drag) (p_autoconnector->attached_hwnd(), drag_region, is_horizontal_slider);
+        // adb swipe drags the handle inside the guest; falls back to the mouse DLL off-mirror.
+        if (!AdbInput::SwipeRect(p_autoconnector->attached_hwnd(), drag_region, 300)) {
+            (theApp._dll_mouse_click_drag) (p_autoconnector->attached_hwnd(), drag_region, is_horizontal_slider);
+        }
 
         write_log(Preferences()->debug_autoplayer(), "[BetSlider] Sleeping %d ms\n.", Preferences()->swag_delay_3());
         Sleep(Preferences()->swag_delay_3());
@@ -199,7 +203,10 @@ bool CBetSlider::SlideBetsize(double betsize, double betsize_for_allin) {
         write_log(Preferences()->debug_autoplayer(), "[BetSlider] Slider : Calling mouse.dll to jam from %d,%d to %d,%d\n", drag_region.left, drag_region.top, drag_region.right, drag_region.bottom);
         // Not really (0, 0), but (-1, -1), out of the screen
         POINT	point_null = { kUndefined, kUndefined };
-        (theApp._dll_mouse_click_drag) (p_autoconnector->attached_hwnd(), drag_region, is_horizontal_slider);
+        // adb swipe drags the handle inside the guest; falls back to the mouse DLL off-mirror.
+        if (!AdbInput::SwipeRect(p_autoconnector->attached_hwnd(), drag_region, 300)) {
+            (theApp._dll_mouse_click_drag) (p_autoconnector->attached_hwnd(), drag_region, is_horizontal_slider);
+        }
 
         write_log(Preferences()->debug_autoplayer(), "[BetSlider] Sleeping %d ms\n.", Preferences()->swag_delay_3());
         Sleep(Preferences()->swag_delay_3());

@@ -40,6 +40,7 @@
 #include "CFunctionCollection.h"
 #include "CScarletBeast.h"
 #include "CScraper.h"
+#include "CSharedMem.h"   // PokerWindowAttached(), to explain a failed manual pin
 #include "CHandresetDetector.h"
 #include "HudManager.h"
 #include "HudOverlayWindow.h"
@@ -163,6 +164,7 @@ static void WriteModeReg(const char *value, DWORD data) {
 // console so its decisions stay visible) and disengages the autoplayer; disengaging kills it.
 static void *g_nn_driver_proc = NULL;   // HANDLE of the launched nn_driver.py (NULL = none)
 static void ApplyNNDriverEngage(bool want_on) {
+  WriteModeReg("NNDriverEngaged", want_on ? 1 : 0);   // persist intent across restarts [Emrald]
   if (want_on) {
     if (g_nn_driver_engaged) return;
     // NEW DRIVER MODEL [Emrald]: NN and the autoplayer are NOT mutually exclusive any more. The
@@ -454,15 +456,46 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
     s_modes_restored = true;
     DWORD want_ultra = ReadModeReg("UltraEngaged", 0);
     DWORD want_superstition = ReadModeReg("SuperstitionEngaged", 0);
+    // Autoplayer + NN driver restore with the same mechanism. Default 0 (OFF) so a FIRST-EVER run,
+    // or one after the registry is cleared, never starts playing on its own -- only a state the
+    // user actually selected is restored.
+    DWORD want_autoplayer = ReadModeReg("AutoplayerEngaged", 0);
+    DWORD want_nn_driver  = ReadModeReg("NNDriverEngaged", 0);
     if (want_ultra && g_mcp_ultra_request < 0) g_mcp_ultra_request = 1;
     if (want_superstition && g_mcp_superstition_request < 0) g_mcp_superstition_request = 1;
+    if (want_autoplayer && g_mcp_autoplayer_request < 0) g_mcp_autoplayer_request = 1;
+    if (want_nn_driver && g_mcp_nn_driver_request < 0) g_mcp_nn_driver_request = 1;
     write_log(k_always_log_basic_information,
-      "[restore] persisted modes -> ultra=%lu superstition=%lu\n", want_ultra, want_superstition);
+      "[restore] persisted modes -> ultra=%lu superstition=%lu autoplayer=%lu nn_driver=%lu\n",
+      want_ultra, want_superstition, want_autoplayer, want_nn_driver);
+    // Reclaim the window this instance was last on. Done HERE, in the same one-shot block, because
+    // it needs g_terminal_port to be bound -- the port is what identifies the instance, and the
+    // memory is keyed by it. If the window is gone this leaves the override off and the
+    // autoconnector picks a table normally. See RestoreRememberedWindow in CAutoConnector.cpp.
+    extern void RestoreRememberedWindow();
+    RestoreRememberedWindow();
+  }
+  // Keep the window memory current. Called every heartbeat rather than only from
+  // set_attached_hwnd because that fires BEFORE the terminal port is bound, and the memory is
+  // keyed by port -- an attach-time-only save recorded everything under port 0. Cheap: it
+  // returns immediately unless the port+title actually changed.
+  if (g_terminal_port > 0 && p_autoconnector != NULL) {
+    extern void RememberAttachedWindow(HWND window);
+    HWND att = p_autoconnector->attached_hwnd();
+    if (att != NULL && ::IsWindow(att)) {
+      RememberAttachedWindow(att);
+    }
   }
   if (g_mcp_autoplayer_request >= 0 && p_autoplayer != NULL) {
     bool want_on = (g_mcp_autoplayer_request == 1);
     g_mcp_autoplayer_request = -1;
     write_log(k_always_log_basic_information, "[MCP] Autoplayer -> %s (API request)\n", want_on ? "ON" : "OFF");
+    // Persist the intent, like ULTRA/superstition already do. A restarted instance used to come up
+    // with the autoplayer DISENGAGED while looking perfectly healthy -- attached, scraping, frames
+    // logging -- so it silently sat out every hand. That cost a live session on 2026-07-19 after a
+    // rebuild. Written HERE (on change) rather than at exit, because instances are routinely
+    // force-killed for rebuilds and an exit-only save would never run. [Emrald]
+    WriteModeReg("AutoplayerEngaged", want_on ? 1 : 0);
     p_autoplayer->EngageAutoplayer(want_on);
   }
   if (g_mcp_nn_driver_request >= 0) {
@@ -479,6 +512,47 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
     bool superstition_on = (g_mcp_superstition_request == 1);
     g_mcp_superstition_request = -1;
     ApplySuperstitionEngage(superstition_on);
+  }
+  // MANUAL WINDOW OVERRIDE, requested by /api/connect-window (the toolbar button). Applied here
+  // rather than on the HTTP thread because Connect() loads a tablemap and resets the whole
+  // connection lifecycle -- that belongs on the thread that already owns it.
+  if (g_manual_connect_request >= 0) {
+    int req = g_manual_connect_request;
+    g_manual_connect_request = -1;
+    if (req == 0) {
+      g_manual_connect_hwnd = 0;
+      g_manual_connect_status = "automatic selection restored";
+      write_log(k_always_log_basic_information, "[MCP] Manual window override CLEARED -> automatic selection\n");
+    } else {
+      HWND want = (HWND)(intptr_t)g_manual_connect_hwnd;
+      // Move off the current table first -- the point of the override is to go somewhere else,
+      // and Connect() is only reached from the not-connected branch.
+      if (p_autoconnector->IsConnectedToAnything() && p_autoconnector->attached_hwnd() != want) {
+        p_autoconnector->Disconnect("manual window override");
+      }
+      if (p_autoconnector->IsConnectedToAnything()) {
+        g_manual_connect_status = "connected";   // already on the requested window
+      } else if (p_autoconnector->Connect(want)) {
+        g_manual_connect_status = "connected";
+      } else {
+        // Connect() returns a bare false for several distinct reasons. Work out which, so the
+        // toolbar can say something useful instead of just failing.
+        if (!::IsWindow(want)) {
+          g_manual_connect_status = "that window no longer exists";
+        } else if (!::IsWindowVisible(want)) {
+          g_manual_connect_status = "that window is hidden (only visible windows can be attached)";
+        } else if (p_sharedmem != NULL && p_sharedmem->PokerWindowAttached(want)) {
+          g_manual_connect_status = "already served by another Hiss instance";
+        } else {
+          g_manual_connect_status = "no tablemap matches that window (size / title / tablepoints)";
+        }
+        // A failed pin must not silently strand the instance with no table: drop back to
+        // automatic so the bot keeps working while the user picks again.
+        g_manual_connect_hwnd = 0;
+      }
+      write_log(k_always_log_basic_information, "[MCP] Manual window override -> hwnd=0x%p: %s\n",
+                want, g_manual_connect_status.GetString());
+    }
   }
   SyncSuperstitionLiveness();   // clear the engaged flag if the oracle died, so the indicator stays honest [Emrald]
   if (g_mcp_action_request >= 0 && p_casino_interface != NULL) {
@@ -528,6 +602,32 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
       g_mcp_action_force = false;
       g_mcp_action_hand = "";
       g_mcp_action_betround = -1;
+      // Publish the action to the on-table RED decision overlay (HudOverlayWindow).
+      //
+      // The OHF autoplayer publishes its own decision in CAutoplayer.cpp -- but that path is
+      // deliberately BYPASSED whenever the NN driver is engaged on NLH (CAutoplayer::DoAutoplayer
+      // defers the primary decision to the NN to avoid double-acting), and the NN acts through
+      // /api/action, i.e. right here. So with the NN driving, the overlay never updated: it showed
+      // nothing, or worse, kept trailing whatever the OHF last decided. Publish from whichever
+      // path actually ACTS, so the red decision reflects the bot that is really playing. [Emrald]
+      //
+      // Amounts on this path are in BIG BLINDS (that is what /api/action takes and what the
+      // two-successive-clicks/numpad path types), so label them bb rather than implying dollars.
+      {
+        CStringA decision;
+        if      (code == k_autoplayer_function_fold)  decision = "FOLD";
+        else if (code == k_autoplayer_function_check) decision = "CHECK";
+        else if (code == k_autoplayer_function_call)  decision = "CALL";
+        else if (code == k_autoplayer_function_allin) decision = "ALL-IN";
+        else if (code == k_autoplayer_function_raise) {
+          if (amount > 0) decision.Format("RAISE %.2fbb", amount);
+          else            decision = "RAISE";
+        }
+        if (!decision.IsEmpty()) {
+          strcpy_s(g_hero_decision_text, sizeof(g_hero_decision_text), decision.GetString());
+          g_hero_decision_tick = GetTickCount();
+        }
+      }
       // Return the cursor to where the user left it after the WHOLE sequence.
       CCursorRestorer _cursor_restorer;
       // Sized bet/raise AND ALL-IN: go through the autoplayer's two-successive-clicks +
@@ -574,6 +674,85 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
         write_log(k_always_log_basic_information, "[MCP] Manual raise %.2fbb: two-clicks N/A, clicked raise button.\n", amount);
       } else {
         CAutoplayerButton *btn = p_casino_interface->LogicalAutoplayerButton(code);
+        // ALL-IN REQUESTED, NO ALL-IN BUTTON -> PRESS CALL.
+        //
+        // Facing a shove these phone maps show only Fold | Call: there is no dedicated All-In
+        // button, and no Bet/Raise Options panel either, so HandleCycle() above returns false and
+        // we land here. The old code then hunted for an all-in button that does not exist and
+        // logged "[MCP] Manual FCKRA code 1: button not clickable yet; keeping pending." on every
+        // heartbeat for the whole turn -- while CSymbolEngineChipAmounts was simultaneously
+        // logging "CALL BUTTON LIVE" -- and the bot sat the hand out. Observed on hand
+        // 2782511829: the NN asked for all-in three times against a shove and never acted.
+        //
+        // Calling a bet that covers our stack IS the all-in, so this is the intended action, not
+        // an approximation. GUARDED so it cannot turn an intended OPEN-JAM into a limp/flat: we
+        // only do it when there is no way to raise at all (no clickable raise button and the
+        // two-clicks panel did not match). If a raise is possible we never reach here -- the
+        // sized/all-in numpad path above handles it.
+        if (code == k_autoplayer_function_allin && (btn == NULL || !btn->IsClickable())) {
+          CAutoplayerButton *raise_btn =
+            p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_raise);
+          CAutoplayerButton *call_btn =
+            p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_call);
+          bool can_raise = (raise_btn != NULL && raise_btn->IsClickable());
+          if (!can_raise && call_btn != NULL && call_btn->IsClickable()) {
+            write_log(k_always_log_basic_information,
+              "[MCP] ALL-IN requested but no clickable all-in button and no raise available; "
+              "the CALL button is live -- calling instead (facing a shove, call IS the all-in).\n");
+            btn = call_btn;
+          }
+        }
+        // PASSIVE ACTION REQUESTED, NO PASSIVE BUTTON -> FOLD.
+        //
+        // The mirror image of the all-in case above. Facing a shove that our stack covers, these
+        // phone maps sometimes show a bare Fold | All-In bar -- no Check, no Call, no Raise Options.
+        // A driver that asked for check/call then had no button to press, so we re-armed the request
+        // and logged "button not clickable yet; keeping pending" every heartbeat until the 25 s
+        // expiry, the driver re-decided, and the loop repeated until the table timed us out. Observed
+        // on hand 2782903775 (5d Jd on the button): the NN asked to call twelve times over 90 s
+        // against MrFalkom805's 15.1bb jam and never acted; ACR auto-folded us on the flop.
+        //
+        // FOLD is the right answer, not All-In. Wanting to check or flat means we did NOT want to
+        // commit the stack; the only two things the table offers are giving up and jamming, so
+        // giving up is what the decision actually meant. Clicking the All-In next to it would turn
+        // a fold-equity-free flat into a stack-off -- the single worst way to be wrong here.
+        //
+        // GUARDED THREE WAYS, because folding a hand we could have checked for free is a real cost:
+        //   1. the FOLD button must itself be clickable -- that proves the bar is rendered and
+        //      scraped, so we are reading a genuine two-button spot and not a half-drawn frame;
+        //   2. neither Check nor Call may be clickable -- if either is live the normal path takes it;
+        //   3. it must hold for kBeatsBeforeGivingUp consecutive heartbeats. The all-in->call case
+        //      can fire on the first frame because being wrong there still jams, which is what was
+        //      asked for. Here a transient mis-scrape would throw away a free check, so we make the
+        //      table say it twice more before believing it.
+        static int s_no_passive_beats = 0;
+        static const int kBeatsBeforeGivingUp = 3;
+        if ((code == k_autoplayer_function_check || code == k_autoplayer_function_call)
+            && (btn == NULL || !btn->IsClickable())) {
+          CAutoplayerButton *check_btn =
+            p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_check);
+          CAutoplayerButton *call_btn =
+            p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_call);
+          CAutoplayerButton *fold_btn =
+            p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_fold);
+          bool passive_live = (check_btn != NULL && check_btn->IsClickable())
+                           || (call_btn  != NULL && call_btn->IsClickable());
+          bool can_fold = (fold_btn != NULL && fold_btn->IsClickable());
+          if (!passive_live && can_fold) {
+            if (++s_no_passive_beats >= kBeatsBeforeGivingUp) {
+              write_log(k_always_log_basic_information,
+                "[MCP] %s requested but the bar has no Check and no Call for %d heartbeats -- only "
+                "Fold and All-In. FOLDING: a passive decision never meant commit the stack.\n",
+                (code == k_autoplayer_function_check) ? "CHECK" : "CALL", s_no_passive_beats);
+              btn = fold_btn;
+              s_no_passive_beats = 0;
+            }
+          } else {
+            s_no_passive_beats = 0;   // buttons still settling, or a passive option really is live
+          }
+        } else {
+          s_no_passive_beats = 0;
+        }
         if (btn != NULL && btn->IsClickable()) {
           // Log WHICH region we are about to click, its OCR'd label, and its rect -- not just the
           // action code. Buttons are matched to actions purely by their scraped LABEL, and the phone
@@ -731,6 +910,27 @@ void CHeartbeatThread::AutoConnect() {
 		if (p_formula_parser != NULL && !p_formula_parser->IsParsing()
 			&& p_function_collection != NULL && p_function_collection->OpenPPLLibraryLoaded()) {
 			p_autoconnector->ConnectVirtual();
+		}
+		return;
+	}
+	// MANUAL WINDOW OVERRIDE: while pinned, offer the autoconnector that ONE window and nothing
+	// else, so a reconnect (table briefly gone, instance restarted) can only ever land back on the
+	// user's chosen window -- never on whatever the automatic first-match rule would have grabbed.
+	// The cross-instance failure throttle is deliberately still honoured: it exists to stop several
+	// instances fighting over the same table, and a manual pin is not a reason to opt out of that.
+	if (g_manual_connect_hwnd != 0) {
+		HWND pinned = (HWND)(intptr_t)g_manual_connect_hwnd;
+		if (!::IsWindow(pinned)) {
+			static DWORD s_gone_log = 0; DWORD now_gone = ::GetTickCount();
+			if (now_gone - s_gone_log > 5000) {
+				s_gone_log = now_gone;
+				write_log(Preferences()->debug_autoconnector(),
+					"[CHeartbeatThread] pinned window 0x%p is gone; holding the pin (not auto-selecting)\n", pinned);
+			}
+			return;
+		}
+		if (p_autoconnector->SecondsSinceLastFailedAttemptToConnect() > 1 /* seconds */) {
+			p_autoconnector->Connect(pinned);
 		}
 		return;
 	}

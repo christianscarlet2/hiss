@@ -213,6 +213,10 @@ extern int g_mcp_nn_driver_request;    // -1 idle, 0 = disengage, 1 = engage (ap
 extern bool g_nn_driver_engaged;       // current NN-driver state (read by /api/nn-driver + the UIs)
 extern int g_mcp_ultra_request;        // -1 idle, 0 = disengage, 1 = engage ULTRA (applied by heartbeat)
 extern bool g_ultra_engaged;           // current ULTRA-mode state (read by /api/ultra + the UIs)
+// Manual window override -- see the comment on the definitions in CScraper.cpp.
+extern long long g_manual_connect_hwnd;  // 0 = automatic selection; non-zero = pinned window
+extern int g_manual_connect_request;     // -1 idle, 0 = clear override, 1 = apply g_manual_connect_hwnd
+extern CString g_manual_connect_status;  // last result, surfaced to /api/connect-window
 extern int g_mcp_superstition_request; // -1 idle, 0 = disengage, 1 = engage superstition (heartbeat)
 extern bool g_superstition_engaged;    // current superstition/omen state (read by /api/superstition + UIs)
 extern double g_beast_favor;           // 666 Card Oracle resonance 0..1 (pushed via /api/beast)

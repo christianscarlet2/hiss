@@ -22,10 +22,6 @@
 #include "CCasinoInterface.h"
 #include "CFormulaParser.h"
 #include "CFunctionCollection.h"
-#include "CHandHistoryAction.h"
-#include "CHandHistoryDealPhase.h"
-#include "CHandHistoryShowdown.h"
-#include "CHandHistoryUncontested.h"
 #include "CHandHistoryWriter.h"
 #include "CHandresetDetector.h"
 #include "CParseErrors.h"
@@ -301,19 +297,8 @@ void CEngineContainer::CreateSymbolEngines() {
   // After all real symbol-engines have been handled
   // we can add the hand-history-generator modules.
   // Order of insertion has order of later usage.
-  // CHandHistoryDealPhase
-  p_handhistory_deal_phase = new CHandHistoryDealPhase;
-  AddSymbolEngine(p_handhistory_deal_phase);
-  // CHandHistoryAction
-  p_handhistory_action = new CHandHistoryAction;
-  AddSymbolEngine(p_handhistory_action);
-  // CHandHistoryUncontested
-  p_handhistory_uncontested = new CHandHistoryUncontested;
-  AddSymbolEngine(p_handhistory_uncontested);
-  // CHandHistoryShowdown
-  p_handhistory_showdown = new CHandHistoryShowdown;
-  AddSymbolEngine(p_handhistory_showdown);
-  // CHandHistoryWriter
+  // CHandHistoryWriter (the 4 legacy no-op sibling engines -- DealPhase/Action/Uncontested/Showdown
+  // -- were removed 2026-07-16; this is the sole hand-history engine).
   p_handhistory_writer = new CHandHistoryWriter;
   AddSymbolEngine(p_handhistory_writer);
   // CSymbolEngineFormulaSwitching

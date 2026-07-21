@@ -41,8 +41,13 @@ static const COLORREF kHudBalance   = RGB(60, 255, 90);   // bright green: playe
 
 // HUD overlay opacity (layered-window global alpha, 0..255). Kept FAINT by default so the HUD never
 // obscures the table; holding CTRL makes it SOLID for reading. [Emrald request]
-static const BYTE kHudAlphaFaint = 90;    // ~35% opaque -- table shows clearly through the boxes
+static const BYTE kHudAlphaFaint = 31;    // 12% opacity per request (alpha = 0.12*255) -- faint at rest
 static const BYTE kHudAlphaSolid = 235;   // ~92% opaque -- crisp for reading while CTRL is held
+
+// RED decision overlay opacity. Its own constant, NOT kHudAlphaSolid: the decision sits directly
+// over the table (above the hero's cards), so at 92% it blotted out the felt underneath. 20%
+// opaque per request -- readable as a flash without hiding the cards/board it covers. [Emrald]
+static const BYTE kActionAlpha = 51;      // 0.20 * 255
 
 static const int kHudBoxWidth = 210;   // wide enough for two |-separated stat lines
 static const int kHudLineH    = 13;
@@ -151,17 +156,38 @@ void CHudOverlayWindow::TrackTableWindow() {
 	UINT flags = SWP_NOACTIVATE;
 	if (!IsWindowVisible()) flags |= SWP_SHOWWINDOW;
 	SetWindowPos(&wndTopMost, tl.x, tl.y, w, h, flags);
+	bool ctrl_held = (::GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+	// Click-through gate: the overlay is hit-test-transparent by DEFAULT so every click (the bot's own
+	// autoplayer clicks and the user's) passes through to scrcpy. WS_EX_TRANSPARENT does that at a level
+	// BELOW WM_NCHITTEST, so while it is set OnNcHitTest never runs and a box can never be grabbed. Drop
+	// it only while CTRL is held -- then OnNcHitTest is consulted and returns HTCLIENT over a box (for
+	// left-drag) / right-click (context menu), HTTRANSPARENT everywhere else. [task #15: CTRL+drag HUD]
+	//
+	// This MUST run BEFORE the opacity block below: changing GWL_EXSTYLE on a layered window makes
+	// Windows discard the attributes set by SetLayeredWindowAttributes. Done in the other order, every
+	// CTRL press set the alpha solid and then immediately clobbered it -- and since the cache below had
+	// already recorded "solid", it never re-applied and the tiles stayed faint the whole time CTRL was
+	// held. Hence exstyle_changed, which forces the alpha to be re-applied after any style change.
+	static int s_clickthrough = -1;               // -1 unknown; 1 = transparent set; 0 = capturing
+	int want_ct = ctrl_held ? 0 : 1;
+	bool exstyle_changed = false;
+	if (want_ct != s_clickthrough) {
+		LONG ex = ::GetWindowLong(GetSafeHwnd(), GWL_EXSTYLE);
+		if (want_ct) ex |= WS_EX_TRANSPARENT; else ex &= ~WS_EX_TRANSPARENT;
+		::SetWindowLong(GetSafeHwnd(), GWL_EXSTYLE, ex);
+		s_clickthrough = want_ct;
+		exstyle_changed = true;
+	}
 	// HUD opacity: faint by default, solid while CTRL is held (so it never obscures the table unless
-	// Emrald wants to read it). Only re-applies when the level actually changes. [Emrald request]
+	// Emrald wants to read it). Only re-applies when the level actually changes, or when the ex-style
+	// change above dropped the layered attributes. [Emrald request]
 	static BYTE s_hud_alpha = 0;
-	// While a RED decision is trailing (~10s after the bot acts), force the overlay SOLID so the action
-	// is clearly visible WITHOUT holding CTRL -- the text then color-fades to transparent and the window
-	// drops back to faint once the 10s window passes. [Emrald: "I don't see the RED DECISION stay + trail"]
-	bool decision_active = (g_hero_decision_text[0] != '\0'
-		&& (GetTickCount() - g_hero_decision_tick) < 10000);
-	BYTE want_alpha = ((::GetAsyncKeyState(VK_CONTROL) & 0x8000) || decision_active)
-		? kHudAlphaSolid : kHudAlphaFaint;
-	if (want_alpha != s_hud_alpha) {
+	// A trailing RED decision no longer forces this window solid. It used to, so the action would read
+	// without holding CTRL -- but this window's alpha is GLOBAL, so it dragged every HUD tile opaque with
+	// it and hid the table underneath. The decision now renders in its own always-solid CHudActionWindow,
+	// leaving the tiles faint unless CTRL is held. [Emrald: "leave the HUD tiles transparent"]
+	BYTE want_alpha = ctrl_held ? kHudAlphaSolid : kHudAlphaFaint;
+	if (want_alpha != s_hud_alpha || exstyle_changed) {
 		::SetLayeredWindowAttributes(GetSafeHwnd(), kHudColorKey, want_alpha, LWA_COLORKEY | LWA_ALPHA);
 		s_hud_alpha = want_alpha;
 	}
@@ -307,75 +333,8 @@ void CHudOverlayWindow::OnPaint() {
 		}
 	}
 
-	// On-table RED decision overlay: the bot's action drawn BIG + BOLD RED above the hero's box (above the
-	// hole cards) with the table name under it. Unlike the per-hand HUD (which just updates), this TRAILS
-	// ~10s after the decision and FADES out: solid for kDecisionHoldMs, then the red lerps to the colour
-	// key (=> transparent) by kDecisionTotalMs. The 200ms TrackTableWindow timer repaints it so the fade
-	// animates smoothly. [Emrald]
-	const DWORD kDecisionHoldMs = 6000, kDecisionTotalMs = 10000;   // stay solid ~6s, then fade out by 10s [Emrald]
-	DWORD dec_elapsed = GetTickCount() - g_hero_decision_tick;
-	if (g_hero_decision_text[0] != '\0' && dec_elapsed < kDecisionTotalMs) {
-		double t = (dec_elapsed <= kDecisionHoldMs) ? 0.0
-			: (double)(dec_elapsed - kDecisionHoldMs) / (double)(kDecisionTotalMs - kDecisionHoldMs);
-		if (t < 0.0) t = 0.0; else if (t > 1.0) t = 1.0;
-		// Lerp bright red RGB(255,0,0) -> colour key RGB(1,1,1) (which is transparent) as it ages.
-		COLORREF dec_color = RGB((int)(255 + (1 - 255) * t), (int)(1 * t), (int)(1 * t));
-		int hero = (p_engine_container != NULL && p_engine_container->symbol_engine_userchair() != NULL)
-			? p_engine_container->symbol_engine_userchair()->userchair() : -1;
-		if (hero >= 0 && hero < kMaxNumberOfPlayers) {
-			// Anchor on the hero's HUD box if it exists, else on the tablemap hero-seat position so the RED
-			// decision ALWAYS shows on scrcpy -- it must NOT depend on HUD samples existing (a fresh account
-			// like scarletchrist has none, and the action still needs to flash). [Emrald: decision across scrcpy]
-			CRect hb;
-			if (_box_visible[hero]) {
-				hb = _box_rect[hero];
-			} else {
-				double fx = _fx[hero], fy = _fy[hero];
-				if (fx < 0.0 || fy < 0.0) {
-					int nch = (p_tablemap != NULL) ? p_tablemap->nchairs() : 0;
-					DefaultFractionForChair(hero, nch, cw, ch, &fx, &fy);
-				}
-				int hx = (int)(fx * cw), hy = (int)(fy * ch);
-				hb = CRect(hx, hy, hx + kHudBoxWidth, hy + kHudLineH);
-			}
-			int ctrx = hb.CenterPoint().x;
-			CString tname = g_table_identity;            // table name = part after the '|'
-			int bar = tname.Find('|'); if (bar >= 0) tname = tname.Mid(bar + 1);
-			LOGFONT af; ZeroMemory(&af, sizeof(af));
-			af.lfHeight = -46; af.lfWeight = FW_HEAVY; af.lfQuality = CLEARTYPE_QUALITY;
-			strcpy_s(af.lfFaceName, 32, "Arial Black");
-			CFont bigf; bigf.CreateFontIndirect(&af);
-			CFont *prevf = mem.SelectObject(&bigf);
-			mem.SetTextColor(dec_color);                 // faded red
-			CRect ar(ctrx - 220, hb.top - 118, ctrx + 220, hb.top - 70);   // well above the box -> above the hole cards
-			mem.DrawText(CString(g_hero_decision_text), -1, &ar, DT_CENTER | DT_SINGLELINE | DT_NOCLIP);
-			LOGFONT tf; ZeroMemory(&tf, sizeof(tf));
-			tf.lfHeight = -16; tf.lfWeight = FW_BOLD; tf.lfQuality = CLEARTYPE_QUALITY;
-			strcpy_s(tf.lfFaceName, 32, "Segoe UI");
-			CFont tnf; tnf.CreateFontIndirect(&tf);
-			mem.SelectObject(&tnf);
-			mem.SetTextColor(dec_color);                 // table name fades with the action
-			CRect tr(ctrx - 220, hb.top - 70, ctrx + 220, hb.top - 52);    // table name just under the action
-			mem.DrawText(tname, -1, &tr, DT_CENTER | DT_SINGLELINE | DT_NOCLIP | DT_END_ELLIPSIS);
-			// Brain detail lines (exploit / branch / vs-villain / confidence / mischief), pushed by the Python
-			// brain via /api/decision-detail. Multi-line ('\n'-separated), small, fading with the action so the
-			// scrcpy mirror carries the SAME rich context the React table view shows. [Emrald: more lines on scrcpy]
-			extern char g_hero_decision_detail[256];
-			extern DWORD g_hero_decision_detail_tick;
-			if (g_hero_decision_detail[0] != '\0' && (GetTickCount() - g_hero_decision_detail_tick) < 12000) {
-				LOGFONT df; ZeroMemory(&df, sizeof(df));
-				df.lfHeight = -13; df.lfWeight = FW_SEMIBOLD; df.lfQuality = CLEARTYPE_QUALITY;
-				strcpy_s(df.lfFaceName, 32, "Segoe UI");
-				CFont detf; detf.CreateFontIndirect(&df);
-				mem.SelectObject(&detf);
-				mem.SetTextColor(dec_color);              // same fading red as the action
-				CRect dr(ctrx - 230, hb.top - 50, ctrx + 230, hb.top - 50 + 84);  // up to ~5 lines under the table name
-				mem.DrawText(CString(g_hero_decision_detail), -1, &dr,
-					DT_CENTER | DT_NOPREFIX | DT_NOCLIP | DT_WORDBREAK);
-			}
-			mem.SelectObject(prevf);
-		}
-	}
+	// NOTE: the on-table RED decision is NOT drawn here any more -- it lives in CHudActionWindow so it
+	// can be solid while these tiles stay faint. See CHudActionWindow::OnPaint below.
 
 	dc.BitBlt(0, 0, cw, ch, &mem, 0, 0, SRCCOPY);
 	mem.SelectObject(oldfont);
@@ -514,4 +473,185 @@ void CHudOverlayWindow::SavePositions() {
 	}
 	out += "}";
 	p_tablemap_db->SetSettingString("hud_positions", PositionsField(), out);
+}
+
+// Anchor the RED decision on the hero's HUD box if it exists, else on the tablemap hero-seat
+// position, so the decision ALWAYS shows on scrcpy -- it must NOT depend on HUD samples existing
+// (a fresh account like scarletchrist has none, and the action still needs to flash).
+// [Emrald: decision across scrcpy]
+bool CHudOverlayWindow::HeroAnchorRect(int client_w, int client_h, CRect *out) {
+	if (out == NULL || client_w <= 0 || client_h <= 0) return false;
+	int hero = (p_engine_container != NULL && p_engine_container->symbol_engine_userchair() != NULL)
+		? p_engine_container->symbol_engine_userchair()->userchair() : -1;
+	if (hero < 0 || hero >= kMaxNumberOfPlayers) return false;
+	// The action window paints independently of the HUD window, so the box rects may not have been
+	// recomputed for this size yet. Cheap and idempotent -- just recompute.
+	ComputeBoxRects(client_w, client_h);
+	if (_box_visible[hero]) {
+		*out = _box_rect[hero];
+		return true;
+	}
+	double fx = _fx[hero], fy = _fy[hero];
+	if (fx < 0.0 || fy < 0.0) {
+		int nch = (p_tablemap != NULL) ? p_tablemap->nchairs() : 0;
+		DefaultFractionForChair(hero, nch, client_w, client_h, &fx, &fy);
+	}
+	int hx = (int)(fx * client_w), hy = (int)(fy * client_h);
+	*out = CRect(hx, hy, hx + kHudBoxWidth, hy + kHudLineH);
+	return true;
+}
+
+// ===========================================================================
+// CHudActionWindow -- the RED decision, on its own always-solid layered window
+// ===========================================================================
+
+CHudActionWindow *p_hud_action_window = NULL;
+
+IMPLEMENT_DYNAMIC(CHudActionWindow, CWnd)
+
+BEGIN_MESSAGE_MAP(CHudActionWindow, CWnd)
+	ON_WM_CREATE()
+	ON_WM_PAINT()
+	ON_WM_ERASEBKGND()
+END_MESSAGE_MAP()
+
+CHudActionWindow::CHudActionWindow() { _owner = NULL; }
+CHudActionWindow::~CHudActionWindow() {}
+
+BOOL CHudActionWindow::Create(CWnd *owner) {
+	_owner = owner;
+	CString class_name = AfxRegisterWndClass(
+		CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW,
+		AfxGetApp()->LoadStandardCursor(IDC_ARROW),
+		NULL,   // no background brush -- we paint everything
+		NULL);
+	// Same flags as the HUD overlay. WS_EX_TRANSPARENT is set PERMANENTLY here (unlike the HUD, which
+	// drops it while CTRL is held so boxes can be dragged): this window is purely visual, is never
+	// interacted with, and must never eat the bot's own autoplayer clicks on the table beneath.
+	return CreateEx(
+		WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
+		class_name, _T("HissAction"),
+		WS_POPUP,
+		0, 0, 100, 100,
+		owner == NULL ? NULL : owner->GetSafeHwnd(),
+		NULL);
+}
+
+int CHudActionWindow::OnCreate(LPCREATESTRUCT lpCreateStruct) {
+	if (CWnd::OnCreate(lpCreateStruct) == -1) return -1;
+	// Colour-key for the transparent background + a FIXED alpha. This window carries only the
+	// decision text, so it never needs the HUD's faint/solid switching; the text additionally fades
+	// by lerping its colour toward the colour key as it ages (see OnPaint).
+	::SetLayeredWindowAttributes(GetSafeHwnd(), kHudColorKey, kActionAlpha, LWA_COLORKEY | LWA_ALPHA);
+	return 0;
+}
+
+BOOL CHudActionWindow::OnEraseBkgnd(CDC * /*pDC*/) {
+	return TRUE;   // fully painted in OnPaint (double-buffered)
+}
+
+void CHudActionWindow::TrackTableWindow() {
+	if (!::IsWindow(GetSafeHwnd())) return;
+	HWND table = (p_autoconnector != NULL) ? p_autoconnector->attached_hwnd() : NULL;
+	bool table_visible = (table != NULL && ::IsWindow(table)
+		&& ::IsWindowVisible(table) && !::IsIconic(table));
+	// Unlike the HUD this window is shown ONLY while a decision is trailing, so it is not left sitting
+	// topmost-and-empty over scrcpy the rest of the time. It is also independent of the HUD being
+	// enabled: the action must still flash when the HUD is switched off.
+	bool decision_active = (g_hero_decision_text[0] != '\0'
+		&& (GetTickCount() - g_hero_decision_tick) < 10000);
+	if (!table_visible || !decision_active) {
+		if (IsWindowVisible()) ShowWindow(SW_HIDE);
+		return;
+	}
+	RECT cr = { 0 };
+	::GetClientRect(table, &cr);
+	POINT tl = { cr.left, cr.top };
+	POINT br = { cr.right, cr.bottom };
+	::ClientToScreen(table, &tl);
+	::ClientToScreen(table, &br);
+	int w = br.x - tl.x;
+	int h = br.y - tl.y;
+	if (w <= 0 || h <= 0) {
+		if (IsWindowVisible()) ShowWindow(SW_HIDE);
+		return;
+	}
+	UINT flags = SWP_NOACTIVATE;
+	if (!IsWindowVisible()) flags |= SWP_SHOWWINDOW;
+	// Covers the same client area as the HUD overlay, so the hero anchor rect carries over unchanged.
+	// MainFrm ticks this AFTER the HUD, so this window ends up above it and the action is never drawn
+	// behind a tile.
+	SetWindowPos(&wndTopMost, tl.x, tl.y, w, h, flags);
+	Invalidate(FALSE);
+}
+
+// On-table RED decision: the bot's action drawn BIG + BOLD RED above the hero's box (above the hole
+// cards) with the table name under it. It TRAILS ~10s after the decision and FADES out: solid for
+// kDecisionHoldMs, then the red lerps to the colour key (=> transparent) by kDecisionTotalMs. The
+// 200ms TrackTableWindow timer repaints it so the fade animates smoothly. [Emrald]
+void CHudActionWindow::OnPaint() {
+	CPaintDC dc(this);
+	CRect client;
+	GetClientRect(&client);
+	int cw = client.Width(), ch = client.Height();
+	if (cw <= 0 || ch <= 0) return;
+
+	CDC mem;
+	mem.CreateCompatibleDC(&dc);
+	CBitmap bmp;
+	bmp.CreateCompatibleBitmap(&dc, cw, ch);
+	CBitmap *oldbmp = mem.SelectObject(&bmp);
+	mem.FillSolidRect(0, 0, cw, ch, kHudColorKey);   // transparent background
+	mem.SetBkMode(TRANSPARENT);
+
+	const DWORD kDecisionHoldMs = 6000, kDecisionTotalMs = 10000;   // stay solid ~6s, then fade out by 10s [Emrald]
+	DWORD dec_elapsed = GetTickCount() - g_hero_decision_tick;
+	CRect hb;
+	if (g_hero_decision_text[0] != '\0' && dec_elapsed < kDecisionTotalMs
+		&& p_hud_overlay_window != NULL && p_hud_overlay_window->HeroAnchorRect(cw, ch, &hb)) {
+		double t = (dec_elapsed <= kDecisionHoldMs) ? 0.0
+			: (double)(dec_elapsed - kDecisionHoldMs) / (double)(kDecisionTotalMs - kDecisionHoldMs);
+		if (t < 0.0) t = 0.0; else if (t > 1.0) t = 1.0;
+		// Lerp bright red RGB(255,0,0) -> colour key RGB(1,1,1) (which is transparent) as it ages.
+		COLORREF dec_color = RGB((int)(255 + (1 - 255) * t), (int)(1 * t), (int)(1 * t));
+		int ctrx = hb.CenterPoint().x;
+		CString tname = g_table_identity;            // table name = part after the '|'
+		int bar = tname.Find('|'); if (bar >= 0) tname = tname.Mid(bar + 1);
+		LOGFONT af; ZeroMemory(&af, sizeof(af));
+		af.lfHeight = -46; af.lfWeight = FW_HEAVY; af.lfQuality = CLEARTYPE_QUALITY;
+		strcpy_s(af.lfFaceName, 32, "Arial Black");
+		CFont bigf; bigf.CreateFontIndirect(&af);
+		CFont *prevf = mem.SelectObject(&bigf);
+		mem.SetTextColor(dec_color);                 // faded red
+		CRect ar(ctrx - 220, hb.top - 118, ctrx + 220, hb.top - 70);   // well above the box -> above the hole cards
+		mem.DrawText(CString(g_hero_decision_text), -1, &ar, DT_CENTER | DT_SINGLELINE | DT_NOCLIP);
+		LOGFONT tf; ZeroMemory(&tf, sizeof(tf));
+		tf.lfHeight = -16; tf.lfWeight = FW_BOLD; tf.lfQuality = CLEARTYPE_QUALITY;
+		strcpy_s(tf.lfFaceName, 32, "Segoe UI");
+		CFont tnf; tnf.CreateFontIndirect(&tf);
+		mem.SelectObject(&tnf);
+		mem.SetTextColor(dec_color);                 // table name fades with the action
+		CRect tr(ctrx - 220, hb.top - 70, ctrx + 220, hb.top - 52);    // table name just under the action
+		mem.DrawText(tname, -1, &tr, DT_CENTER | DT_SINGLELINE | DT_NOCLIP | DT_END_ELLIPSIS);
+		// Brain detail lines (exploit / branch / vs-villain / confidence / mischief), pushed by the Python
+		// brain via /api/decision-detail. Multi-line ('\n'-separated), small, fading with the action so the
+		// scrcpy mirror carries the SAME rich context the React table view shows. [Emrald: more lines on scrcpy]
+		extern char g_hero_decision_detail[256];
+		extern DWORD g_hero_decision_detail_tick;
+		if (g_hero_decision_detail[0] != '\0' && (GetTickCount() - g_hero_decision_detail_tick) < 12000) {
+			LOGFONT df; ZeroMemory(&df, sizeof(df));
+			df.lfHeight = -13; df.lfWeight = FW_SEMIBOLD; df.lfQuality = CLEARTYPE_QUALITY;
+			strcpy_s(df.lfFaceName, 32, "Segoe UI");
+			CFont detf; detf.CreateFontIndirect(&df);
+			mem.SelectObject(&detf);
+			mem.SetTextColor(dec_color);              // same fading red as the action
+			CRect dr(ctrx - 230, hb.top - 50, ctrx + 230, hb.top - 50 + 84);  // up to ~5 lines under the table name
+			mem.DrawText(CString(g_hero_decision_detail), -1, &dr,
+				DT_CENTER | DT_NOPREFIX | DT_NOCLIP | DT_WORDBREAK);
+		}
+		mem.SelectObject(prevf);
+	}
+
+	dc.BitBlt(0, 0, cw, ch, &mem, 0, 0, SRCCOPY);
+	mem.SelectObject(oldbmp);
 }

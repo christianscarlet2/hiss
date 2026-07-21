@@ -503,7 +503,14 @@ def decide_and_act(gs):
         _stack_bb = (float(sv.get("stack", 0) or 0) + float(sv.get("bet", 0) or 0)) / _bbl
         if 0 < _stack_bb < DESPERATION_STACK_BB:
             _f = (gs.get("fckra") or "").upper()
-            if "R" in _f or "A" in _f:
+            if "A" in _f:
+                # A dedicated All-In button is on the bar (short-stack Fold|All-In). Send do=allin so
+                # the executor clicks THAT button. Sending "raise 3" here silently no-ops: the raise
+                # branch needs a Raise/Bet-Options button, which a Fold|All-In bar does NOT have, so the
+                # jam never lands and we blind out with the All-In button right on screen. Cost hand
+                # 2783045015 (Tc2h at 0.82 BB on A17): desperation asked to jam 11x over 55s, did nothing.
+                _do, _amt = "allin", 0
+            elif "R" in _f:
                 _do, _amt = "raise", DESPERATION_RAISE_BB    # Hiss caps it at our stack -> a jam
             elif "C" in _f:
                 _do, _amt = "call", 0                        # call anything
@@ -570,7 +577,15 @@ def decide_and_act(gs):
     #     raise_to = highest_bet + frac * (pot + amount_to_call)
     # i.e. the standard pot-fraction raise. Everything downstream (depth x ICM sizing, the legal-min
     # clamp, the allin check) then operates on an actual raise-TO, as it always assumed it did.
-    if do == "raise" and amount > 0:
+    _betround = float(sym.get("betround", 0) or 0)
+    _preflop  = _betround <= 1
+    # PREFLOP is the exception to the pot-fraction contract: nn_decide's SANE_SIZING already returns a
+    # FINISHED preflop raise-TO (~OPEN_BB bb for a first-in, 3x-tocall for a 3-bet), not a pot fraction.
+    # Re-deriving a raise-to from it double-converts a 2.5bb open into ~5bb, and the deep-stack leverage
+    # multiplier below then balloons it further -- hand 2783107039 opened A9o UTG to 7bb @196bb deep
+    # (2.5 -> pot-frac 1.69x -> 5.19 -> x1.35 depth -> 7.0). Postflop f$betsize IS a pot fraction, so the
+    # reconversion + leverage stay there. [preflop-open-sizing 2026-07-21]
+    if do == "raise" and amount > 0 and not _preflop:
         _bbl0   = float(sv.get("bblind", 1) or 1) or 1.0
         _pot    = float(sym.get("PotSize", 0) or 0) / _bbl0        # money -> bb
         _tocall = float(sym.get("AmountToCall", 0) or 0) / _bbl0
@@ -588,7 +603,11 @@ def decide_and_act(gs):
         _eff_bb = (float(sv.get("bet", 0) or 0) + float(sv.get("stack", 0) or 0)) / _bbl
         if _eff_bb <= 12:
             do, amount, note = "allin", 0, "  (<=12bb eff -> jam, not a small raise)"
-        else:
+        elif not _preflop:
+            # DEPTH x ICM LEVERAGE -- POSTFLOP ONLY. A deep stack does not OPEN bigger preflop; applying
+            # this multiplier to a preflop open oversizes it (2.5bb -> 7bb @196bb, hand 2783107039).
+            # Preflop open sizing is flat (nn_decide's OPEN_BB); leverage is a postflop concept. The
+            # <=12bb short-stack jam above still applies on every street. [preflop-open-sizing 2026-07-21]
             _dm = 1.50 if _eff_bb >= 250 else 1.35 if _eff_bb >= 150 else 1.20 if _eff_bb >= 100 else 1.10 if _eff_bb >= 60 else 1.0
             # ICM chip-value multiplier: the SAME f$ICM_SizeMult the OHF uses (light symbol, no prwin/pt_)
             # -> the NN now sizes by depth x ICM, matching the OHF. 1.0 in cash/freeroll/early.
@@ -622,10 +641,25 @@ def decide_and_act(gs):
         stack   = float(sv.get("stack", 0) or 0) / bbl                # money -> bb
         pot     = float(sym.get("PotSize", 0) or 0) / bbl             # money -> bb
 
-        highest = my_bet + to_call                    # current highest bet, relative to hero (bb)
-        min_raise_to = highest + max(1.0, to_call)    # last increment ~ to_call; never < one bb
-        if highest <= 1.0 + 1e-6:                     # only the blinds are in -> opening raise
-            min_raise_to = max(min_raise_to, 2.0)
+        # HIGHEST BET + LEGAL MIN-RAISE, robust to a mis-scraped AmountToCall. AmountToCall is derived
+        # from the opponents' bet pills (see the reconciliation block below) and ONE bad pill deflates it
+        # -- which made min_raise_to too small, so the driver emitted an UNDER-min raise the table silently
+        # rejects: the Raise panel opens, never confirms, and the bot cannot act (hand 2783127816 served
+        # 4.5bb into a >6bb minimum and stalled). Take `highest` from EVERY player's posted bet (table
+        # state, not one fragile symbol), and floor the raise at 2*highest -- an upper bound on the true
+        # NLHE minimum raise-TO in every spot (preflop open, 3-bet, postflop bet/raise), because the bet
+        # raised-over is >= 0. Over-raising the minimum is always legal; under-raising is what stalls.
+        # [legal-raise 2026-07-21]
+        try:
+            _bets_bb = [float((pp or {}).get("bet", 0) or 0) / bbl for pp in (gs.get("players") or [])]
+        except Exception:
+            _bets_bb = []
+        highest = max([my_bet + to_call] + _bets_bb)  # current highest bet on the table (bb)
+        _raises = float(sym.get("Raises", 0) or 0)
+        if highest <= 1.0 + 1e-6 and _raises < 1:     # no raise/bet yet -> an OPEN, not a re-raise
+            min_raise_to = 2.0 if _preflop else 1.0   # preflop open >= 2bb; postflop open bet >= 1bb
+        else:                                         # facing a bet/raise -> legal-safe floor
+            min_raise_to = 2.0 * highest
         eff_max = my_bet + stack                      # a full shove, in bb
 
         # A raise with NO SIZE is a silent no-op: click("raise", 0) sends /api/action?do=raise with no

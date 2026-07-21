@@ -52,6 +52,7 @@ struct OHSharedState {
   int    size_of_dense_list_of_attached_poker_windows;
   int    CRC_of_main_mutexname;
   int    openholdem_PIDs[MAX_SESSION_IDS];                         // watchdog / popup-blocker / session IDs
+  time_t timestamps_openholdem_alive[MAX_SESSION_IDS];             // watchdog: per-instance heartbeat
 };
 
 // Returns the process-shared state, lazily creating/opening the mapping on first use. Pagefile-
@@ -63,7 +64,7 @@ static OHSharedState *SharedState() {
   if (cached != NULL) return cached;
   // "Local\\" namespace = shared within the user session (all Hiss instances run there).
   HANDLE map = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
-    0, sizeof(OHSharedState), "Local\\HissAutoConnectorSharedState_v1");
+    0, sizeof(OHSharedState), "Local\\HissAutoConnectorSharedState_v2");
   if (map != NULL) {
     OHSharedState *view = (OHSharedState *)MapViewOfFile(map, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(OHSharedState));
     if (view != NULL) {
@@ -88,6 +89,7 @@ static OHSharedState *SharedState() {
 #define size_of_dense_list_of_attached_poker_windows       (SharedState()->size_of_dense_list_of_attached_poker_windows)
 #define CRC_of_main_mutexname                              (SharedState()->CRC_of_main_mutexname)
 #define openholdem_PIDs                                    (SharedState()->openholdem_PIDs)
+#define timestamps_openholdem_alive                        (SharedState()->timestamps_openholdem_alive)
 
 ///////////////////////////////////////////////////////////////////////////////////
 //
@@ -446,5 +448,26 @@ int CSharedMem::OpenHoldemProcessID() {
   assert(p_sessioncounter != NULL);
   int my_session_ID = p_sessioncounter->session_id();
   return openholdem_PIDs[my_session_ID];
+}
+
+// Watchdog heartbeats. These deliberately live in the SAME file mapping as
+// openholdem_PIDs. They used to sit in the legacy .ohshmem data_seg, which is
+// private per process on this toolchain (see the note at the top of this file).
+// That made the two halves of the watchdog disagree: OpenHoldemProcessID(i) is
+// genuinely shared, so every instance saw its siblings, but their heartbeats were
+// never visible, so every sibling looked permanently frozen. CWatchdog no longer
+// kills on that verdict, but it still logged the freeze and its freeze detection
+// was meaningless. Keeping both halves in one mapping is what makes
+// WatchForFrozenProcesses() judge other instances on real data.
+time_t CSharedMem::AliveTimestamp(int session_ID) {
+  assert(session_ID >= 0);
+  assert(session_ID < MAX_SESSION_IDS);
+  return timestamps_openholdem_alive[session_ID];
+}
+
+void CSharedMem::SetAliveTimestamp(int session_ID, time_t when) {
+  assert(session_ID >= 0);
+  assert(session_ID < MAX_SESSION_IDS);
+  timestamps_openholdem_alive[session_ID] = when;
 }
 // flood-throttle applied

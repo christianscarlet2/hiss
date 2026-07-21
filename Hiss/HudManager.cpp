@@ -4,6 +4,7 @@
 #include <math.h>
 #include <float.h>
 #include "CPokerTrackerThread.h"
+#include "CHandHistoryWriter.h"         // p_handhistory_writer -> stabilized per-seat "main name"
 #include "CEngineContainer.h"           // p_engine_container -> current gametype for per-gametype HUD
 #include "CSymbolEngineIsOmaha.h"
 #include "CTableState.h"
@@ -415,8 +416,17 @@ void CHudManager::RefreshIfNeeded(CString hand_number, bool force)
 		_chair_samples[chair] = -1;
 		_chair_stats[chair].clear();
 		if (!p_table_state->Player(chair)->seated()) continue;
-		CString name = p_table_state->Player(chair)->name();
+		// Prefer the STABILIZED per-seat name (majority vote over the last N heartbeats)
+		// so the HUD keys off the same consistent identity the hand-history writer
+		// records, and a single jittery frame never misses the row or hits an
+		// OCR-fragment identity. Fall back to the live scrape until one is committed.
+		CString name;
+		if (p_handhistory_writer != NULL) name = p_handhistory_writer->StableName(chair);
 		name.Trim();
+		if (name.IsEmpty()) {
+			name = p_table_state->Player(chair)->name();
+			name.Trim();
+		}
 		if (name.IsEmpty()) continue;
 
 		SHudDbStats st;

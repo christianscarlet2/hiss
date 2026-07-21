@@ -8,6 +8,8 @@
 #include "stdafx.h"
 #include "COcrWorker.h"
 
+#include <set>
+
 #include "CAutoOcr.h"
 #include "..\CTablemap\CTablemap.h"
 #include "..\CTablemap\CTablemapDB.h"
@@ -16,6 +18,33 @@
 // Set true in InitInstance when "--ocr-worker" is present (before singletons are
 // built). Consulted by CSharedMem so workers stay out of the shared PID table.
 bool g_ocr_worker_mode = false;
+
+// PIDs of the OCR workers THIS process spawned.
+//
+// Shutdown used to identify workers by descendancy -- "any Hiss.exe child of ours is a worker".
+// That is false: COpenHoldemStarter launches additional BOT instances with ShellExecute, so a real
+// bot can be our child too, and the terminate sweep killed it. Closing one table took others down
+// with it. A worker is now identified by the only thing that actually distinguishes it: we started
+// it, and we remember its pid.
+static CCritSec g_own_worker_cs;
+static std::set<DWORD> g_own_worker_pids;
+
+static void RememberOwnWorkerPid(DWORD pid) {
+  if (pid == 0) return;
+  CSLock lock(g_own_worker_cs);
+  g_own_worker_pids.insert(pid);
+}
+
+static void ForgetOwnWorkerPid(DWORD pid) {
+  if (pid == 0) return;
+  CSLock lock(g_own_worker_cs);
+  g_own_worker_pids.erase(pid);
+}
+
+bool IsOwnOcrWorkerPid(DWORD pid) {
+  CSLock lock(g_own_worker_cs);
+  return g_own_worker_pids.count(pid) > 0;
+}
 
 // Wire protocol over the duplex byte pipe (length-prefixed, little-endian):
 //   request : u32 region_name_len, name bytes, i32 width, i32 height,
@@ -204,7 +233,9 @@ void COcrWorkerPool::StartOne(int index) {
   }
   _pipes[index] = pipe;
   _procs[index] = pi.hProcess;
-  write_log(k_always_log_basic_information, "[OcrWorker] worker %d started\n", index);
+  RememberOwnWorkerPid(pi.dwProcessId);   // so shutdown can tell our workers from sibling bots
+  write_log(k_always_log_basic_information, "[OcrWorker] worker %d started (pid %lu)\n",
+            index, (unsigned long)pi.dwProcessId);
 }
 
 void COcrWorkerPool::StopOne(int index) {
@@ -216,6 +247,7 @@ void COcrWorkerPool::StopOne(int index) {
     _pipes[index] = NULL;
   }
   if (_procs[index] != NULL) {
+    ForgetOwnWorkerPid(GetProcessId(_procs[index]));
     if (WaitForSingleObject(_procs[index], 1500) == WAIT_TIMEOUT) {
       TerminateProcess(_procs[index], 1);
     }

@@ -75,7 +75,10 @@ CHandHistoryWriter::CHandHistoryWriter() {
   _tourney_title = "";
   _tourney_id = "";
   _table_name = "";
-  for (int i = 0; i < kMaxNumberOfPlayers; ++i) { _known_name[i] = ""; _known_stack[i] = 0.0; }
+  for (int i = 0; i < kMaxNumberOfPlayers; ++i) {
+    _known_name[i] = ""; _known_stack[i] = 0.0;
+    _name_hist_count[i] = 0; _name_hist_pos[i] = 0;
+  }
   ResetHand();
 }
 
@@ -733,7 +736,7 @@ CString CHandHistoryWriter::AcrHeader() {
   CString s;
   s.Format("Game Hand #%s - %s - Holdem (No Limit) - Level %s (%s/%s) - %s UTC",
            hid.GetString(), tourney.GetString(), level.GetString(),
-           FmtMoney(_sb).GetString(), FmtMoney(_bb).GetString(),
+           FmtMoneyRaw(_sb).GetString(), FmtMoneyRaw(_bb).GetString(),
            AcrTimestampUtc().GetString());
   return s;
 }
@@ -842,10 +845,46 @@ void CHandHistoryWriter::ObserveNames() {
   int n = p_tablemap->nchairs();
   if (n <= 0 || n > kMaxNumberOfPlayers) n = kMaxNumberOfPlayers;
   for (int i = 0; i < n; ++i) {
+    // An empty seat starts the window fresh so a NEW occupant's name, once stable,
+    // replaces the previous one within one window instead of being diluted by the
+    // departed player's reads. _known_name itself is preserved (it bridges a brief
+    // sit-out / status overlay -- the whole reason names are cached across hands).
+    if (!p_table_state->Player(i)->seated()) {
+      _name_hist_count[i] = 0;
+      _name_hist_pos[i] = 0;
+      continue;
+    }
     CString nm = p_table_state->Player(i)->name();
     nm.Trim();
-    if (!nm.IsEmpty() && !LooksLikeStatus(nm) && PlausibleName(nm)) {
-      _known_name[i] = nm;   // remember the latest real (plausible, non-overlay) name
+    // Only a plausible, non-overlay read is a candidate. A heartbeat with no usable
+    // read leaves the rolling window untouched, so a "posts SB" overlay or a blank
+    // frame never erodes a committed name.
+    if (nm.IsEmpty() || LooksLikeStatus(nm) || !PlausibleName(nm)) continue;
+
+    // Push this read into the per-seat ring of the last kNameStabilityWindow reads.
+    _name_hist[i][_name_hist_pos[i]] = nm;
+    _name_hist_pos[i] = (_name_hist_pos[i] + 1) % kNameStabilityWindow;
+    if (_name_hist_count[i] < kNameStabilityWindow) ++_name_hist_count[i];
+
+    // The stable "main name" is the MODE of the window -- the read that recurs. A
+    // single garbled-but-plausible frame is a 1-in-window minority and never wins;
+    // the true name, read consistently, does. Only (re)commit when the winner
+    // reaches a clear majority (kNameStabilityVotes), so a transient read can never
+    // redesignate a seat's identity, yet a genuinely changed name takes over within
+    // ~one window. This is the "validated over ~10 heartbeats" gate. [name-stabilize]
+    CString best; int best_count = 0;
+    for (int a = 0; a < _name_hist_count[i]; ++a) {
+      int c = 0;
+      for (int b = 0; b < _name_hist_count[i]; ++b) {
+        if (_name_hist[i][b] == _name_hist[i][a]) ++c;
+      }
+      if (c > best_count) { best_count = c; best = _name_hist[i][a]; }
+    }
+    if (best_count >= kNameStabilityVotes && best != _known_name[i]) {
+      write_log(Preferences()->debug_scraper(),
+        "[HH] name-stabilize: chair %d main name '%s' -> '%s' (%d/%d reads)\n",
+        i, _known_name[i].GetString(), best.GetString(), best_count, _name_hist_count[i]);
+      _known_name[i] = best;   // promote the stably-read name to this seat's main name
     }
   }
 }
@@ -857,6 +896,14 @@ CString CHandHistoryWriter::ResolveName(int chair) {
   CString s;
   s.Format("Seat %d", AcrSeat(chair));   // ACR-style 1-based fallback
   return s;
+}
+
+// The stabilized per-seat main name (majority-voted over the rolling window), or
+// "" until one is committed. Consumed by the HUD so its stats lookup keys off the
+// same identity the hand history records. [name-stabilize 2026-07-20]
+CString CHandHistoryWriter::StableName(int chair) const {
+  if (chair >= 0 && chair < kMaxNumberOfPlayers) return _known_name[chair];
+  return "";
 }
 
 // A real big-blind-denominated stack is at most a few thousand BB. The balance OCR intermittently
@@ -884,7 +931,7 @@ CString CHandHistoryWriter::FmtStack(int chair) {
   return FmtMoney(v);
 }
 
-CString CHandHistoryWriter::FmtMoney(double v) {
+CString CHandHistoryWriter::FmtMoneyRaw(double v) {
   // Defensive bound so NO money field (stack/pot/bet) can ever emit a PT4-breaking value -- an OCR
   // timestamp scraped as a pot printed 411 TRILLION and blew up PT4's import. [scrape sanitize 2026-07-16]
   if (!(v > 0.0)) v = 0.0;                              // NaN / inf / negative
@@ -892,6 +939,16 @@ CString CHandHistoryWriter::FmtMoney(double v) {
   CString s;
   s.Format("%.2f", v);
   return s;
+}
+
+CString CHandHistoryWriter::FmtMoney(double v) {
+  // Scraped money (stacks, bets, blinds-posted, pot) is BIG-BLIND-denominated -- the phone shows every
+  // amount as "X BB". Convert to DOLLARS so the body matches the dollar header blinds: 1 BB = _bb dollars
+  // (_bb is the vision-pushed dollar big blind). If _bb isn't a sane dollar value yet, fall back to NO
+  // scaling (stay in BB, which is self-consistent with a BB-frame header). The header's own sb/bb are
+  // already dollars and are formatted with FmtMoneyRaw (no scaling). [BB->$ 2026-07-16]
+  double scale = (_bb > 0.0 && _bb < 1000.0) ? _bb : 1.0;
+  return FmtMoneyRaw(v * scale);
 }
 
 CString CHandHistoryWriter::FmtHoleCards(int chair) {
@@ -1058,21 +1115,6 @@ bool CHandHistoryWriter::RegionExists(const CString &name) {
   if (p_tablemap == NULL) return false;
   return p_tablemap->ItemExists(name);
 }
-
-// ---------------------------------------------------------------------------
-// Legacy public API, kept so the (now neutered) sibling engines still compile.
-// These are intentionally no-ops: all recording happens in this engine.
-// ---------------------------------------------------------------------------
-
-void CHandHistoryWriter::AddMessage(CString message)    {}
-void CHandHistoryWriter::PostsSmallBlind(int chair)     {}
-void CHandHistoryWriter::PostsBigBlind(int chair)       {}
-void CHandHistoryWriter::PostsAnte(int chair)           {}
-void CHandHistoryWriter::Checks(int chair)              {}
-void CHandHistoryWriter::Folds(int chair)               {}
-void CHandHistoryWriter::Calls(int chair)               {}
-void CHandHistoryWriter::Raises(int chair)              {}
-void CHandHistoryWriter::WinsUncontested(int chair)     {}
 
 bool CHandHistoryWriter::EvaluateSymbol(const CString name, double *result, bool log /* = false */) {
   // No symbols provided

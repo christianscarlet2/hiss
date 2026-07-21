@@ -1,0 +1,2019 @@
+﻿//******************************************************************************
+//
+// This file is part of the OpenHoldem project
+//    Source code:           https://github.com/OpenHoldem/openholdembot/
+//    Forums:                http://www.maxinmontreal.com/forums/index.php
+//    Licensed under GPL v3: http://www.gnu.org/licenses/gpl.html
+//
+//******************************************************************************
+//
+// Purpose:
+//
+//******************************************************************************
+
+
+// MainFrm.cpp : implementation of the CMainFrame class
+//
+
+#ifndef VC_EXTRALEAN
+#define VC_EXTRALEAN		// Exclude rarely-used stuff from Windows headers
+#include <windows.h>
+
+#include "stdafx.h"
+#include "MainFrm.h"
+
+#include <gdiplus.h>
+#include "../CTablemap/CTablemapDB.h"
+#include "CRegionCloner.h"
+#include "DialogCopyRegion.h"
+#include "DialogEdit.h"
+#include "DialogSelectTable.h"
+#include "global.h"
+#include "ListOfSymbols.h"
+#include "OpenScrape.h"
+#include "OpenScrapeDoc.h"
+#include "OpenScrapeView.h"
+#include "registry.h"
+#include "..\Shared\WindowCapture.h"
+
+#ifdef _DEBUG
+#define new DEBUG_NEW
+#endif
+
+// CMainFrame
+
+const int kHotkeyRefresh = 1234;
+const int kTableMapDockLeft = 0;
+const int kTableMapDockRight = 1;
+
+IMPLEMENT_DYNCREATE(CMainFrame, CFrameWnd)
+
+BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
+	ON_WM_CREATE()
+	// Automation process bar. The step buttons are a CONTIGUOUS id block so one range handler
+	// covers all nine; keep IDC_PROCESS_STEP1..9 adjacent in resource.h or this silently
+	// stops routing the tail of the range.
+	ON_COMMAND(IDC_PROCESS_SAVE, &CMainFrame::OnProcessSave)
+	ON_UPDATE_COMMAND_UI(IDC_PROCESS_SAVE, &CMainFrame::OnUpdateProcessSave)
+	ON_CBN_SELCHANGE(IDC_PROCESS_COMBO, &CMainFrame::OnProcessComboChanged)
+	ON_COMMAND_RANGE(IDC_PROCESS_STEP1, IDC_PROCESS_STEP9, &CMainFrame::OnProcessStep)
+	ON_UPDATE_COMMAND_UI_RANGE(IDC_PROCESS_STEP1, IDC_PROCESS_STEP9, &CMainFrame::OnUpdateProcessStep)
+	ON_COMMAND(ID_VIEW_CONNECTTOWINDOW, &CMainFrame::OnViewConnecttowindow)
+	ON_BN_CLICKED(ID_MAIN_TOOLBAR_GREENCIRCLE, &CMainFrame::OnViewConnecttowindow)
+	ON_COMMAND(ID_VIEW_REFRESH, &CMainFrame::OnViewRefresh)
+	ON_BN_CLICKED(ID_MAIN_TOOLBAR_REFRESH, &CMainFrame::OnViewRefresh)
+	ON_COMMAND(ID_VIEW_PREV, &CMainFrame::OnViewPrev)
+	ON_BN_CLICKED(ID_MAIN_TOOLBAR_PREV, &CMainFrame::OnViewPrev)
+	ON_COMMAND(ID_VIEW_NEXT, &CMainFrame::OnViewNext)
+	ON_BN_CLICKED(ID_MAIN_TOOLBAR_NEXT, &CMainFrame::OnViewNext)
+	ON_COMMAND(ID_MAIN_TOOLBAR_TRAINING, &CMainFrame::OnTrainingData)
+	ON_BN_CLICKED(ID_MAIN_TOOLBAR_TRAINING, &CMainFrame::OnTrainingData)
+	ON_UPDATE_COMMAND_UI(ID_MAIN_TOOLBAR_TRAINING, &CMainFrame::OnUpdateTrainingData)
+	ON_COMMAND(ID_AUTO_CAPTURE, &CMainFrame::OnAutoCapture)
+	ON_UPDATE_COMMAND_UI(ID_AUTO_CAPTURE, &CMainFrame::OnUpdateAutoCapture)
+	ON_COMMAND(ID_VIEW_PAUSESCREENSHOT, &CMainFrame::OnPauseScreenshot)
+	ON_UPDATE_COMMAND_UI(ID_VIEW_PAUSESCREENSHOT, &CMainFrame::OnUpdatePauseScreenshot)
+	ON_COMMAND(ID_AUTO_CAPTURE_BACK, &CMainFrame::OnAutoCaptureBack)
+	ON_COMMAND(ID_AUTO_CAPTURE_NEXT, &CMainFrame::OnAutoCaptureNext)
+	ON_COMMAND(ID_AUTO_CAPTURE_CLEAR, &CMainFrame::OnAutoCaptureClear)
+	ON_COMMAND(ID_AUTO_CAPTURE_REFRESH, &CMainFrame::OnAutoCaptureRefresh)
+	ON_UPDATE_COMMAND_UI(ID_AUTO_CAPTURE_BACK, &CMainFrame::OnUpdateAutoCaptureNav)
+	ON_UPDATE_COMMAND_UI(ID_AUTO_CAPTURE_NEXT, &CMainFrame::OnUpdateAutoCaptureNav)
+	ON_UPDATE_COMMAND_UI(ID_AUTO_CAPTURE_CLEAR, &CMainFrame::OnUpdateAutoCaptureNav)
+	ON_COMMAND(ID_TOOLS_CLONEREGIONS, &CMainFrame::OnToolsCloneRegions)
+	ON_COMMAND(ID_TOOLS_SHIFTREGIONS, &CMainFrame::OnToolsShiftRegions)
+
+	ON_COMMAND(ID_EDIT_UPDATEHASHES, &CMainFrame::OnEditUpdatehashes)
+	ON_WM_TIMER()
+	ON_WM_MOVE()
+	ON_WM_SIZE()
+	ON_WM_GETMINMAXINFO()
+	ON_UPDATE_COMMAND_UI(ID_VIEW_CURRENTWINDOWSIZE, &CMainFrame::OnUpdateViewCurrentwindowsize)
+	ON_COMMAND(ID_EDIT_DUPLICATEREGION, &CMainFrame::OnEditDuplicateregion)
+	ON_UPDATE_COMMAND_UI(ID_EDIT_DUPLICATEREGION, &CMainFrame::OnUpdateEditDuplicateregion)
+	ON_COMMAND(ID_GROUPREGIONS_BYTYPE, &CMainFrame::OnGroupregionsBytype)
+	ON_COMMAND(ID_GROUPREGIONS_BYNAME, &CMainFrame::OnGroupregionsByname)
+	ON_UPDATE_COMMAND_UI(ID_GROUPREGIONS_BYTYPE, &CMainFrame::OnUpdateGroupregionsBytype)
+	ON_UPDATE_COMMAND_UI(ID_GROUPREGIONS_BYNAME, &CMainFrame::OnUpdateGroupregionsByname)
+END_MESSAGE_MAP()
+
+static UINT openscrape_indicators[] =
+{
+	ID_SEPARATOR,           // status line indicator
+//	ID_INDICATOR_CAPS,
+//	ID_INDICATOR_NUM,
+//	ID_INDICATOR_SCRL,
+};
+
+/////////////////////////////////////////////////////
+//
+// CMainFrame construction/destruction
+//
+/////////////////////////////////////////////////////
+
+// The six automation flows, in the order they appear in the combo. Stored verbatim in the DB --
+// see the warning on kProcessTypes in MainFrm.h before touching these strings.
+const char *CMainFrame::kProcessTypes[] = {
+	"private freeroll",
+	"freeroll",
+	"observe cash game",
+	"observe tourney",
+	"cash game",
+	"tournament",
+};
+int CMainFrame::kProcessTypeCount = sizeof(CMainFrame::kProcessTypes) / sizeof(CMainFrame::kProcessTypes[0]);
+
+CMainFrame::CMainFrame() {
+	_process = "";
+	_step = 1;
+	_steps_refreshed_once = false;
+	memset(_captured_steps, 0, sizeof(_captured_steps));
+	_docking_tablemap = false;
+	_window_size_locked = false;
+	_locked_window_size = CSize(0, 0);
+	_tablemap_dock_side = kTableMapDockLeft;
+	// Save startup directory
+  ::GetCurrentDirectory(sizeof(_startup_path) - 1, _startup_path);
+  // https://msdn.microsoft.com/en-us/library/windows/desktop/ms646309%28v=vs.85%29.aspx
+  // http://www.cplusplus.com/forum/windows/47266/
+  // http://www.codeproject.com/Articles/2213/Beginner-s-Tutorial-Using-global-hotkeys
+  RegisterHotKey(NULL, 
+    kHotkeyRefresh,
+    MOD_CONTROL,
+    // https://msdn.microsoft.com/en-us/library/windows/desktop/dd375731%28v=vs.85%29.aspx
+    0x52);   // 'r'
+}
+
+CMainFrame::~CMainFrame() {
+  UnregisterHotKey(NULL, kHotkeyRefresh);
+}
+
+/////////////////////////////////////////////////////
+//
+// Creation of main freame
+//
+/////////////////////////////////////////////////////
+
+// ---------------------------------------------------------------------------
+// Modern toolbar icons, drawn at runtime with GDI+ (anti-aliased, 32-bpp alpha)
+// instead of the old 4-bpp Toolbar.bmp. One clever glyph per command, in the same
+// order as the IDR_MAINFRAME TOOLBAR resource (image index == button position).
+// ---------------------------------------------------------------------------
+namespace {
+	using namespace Gdiplus;
+
+	const Color kInk(255, 52, 58, 68);      // primary stroke (dark slate)
+	const Color kGreen(255, 46, 170, 90);   // connect / go
+	const Color kBlue(255, 40, 120, 210);   // navigation
+	const Color kAmber(255, 235, 150, 30);  // files / energy
+	const Color kRed(255, 214, 69, 69);     // destructive
+
+	static Pen *MakePen(const Color &c, REAL w) {
+		Pen *p = new Pen(c, w);
+		p->SetStartCap(LineCapRound);
+		p->SetEndCap(LineCapRound);
+		p->SetLineJoin(LineJoinRound);
+		return p;
+	}
+	static void Poly(Graphics &g, const Color &fill, const Color &stroke,
+			REAL sw, const PointF *pts, int n) {
+		GraphicsPath path;
+		path.AddLines(pts, n);
+		path.CloseFigure();
+		SolidBrush b(fill);
+		g.FillPath(&b, &path);
+		if (sw > 0) { Pen *p = MakePen(stroke, sw); g.DrawPath(p, &path); delete p; }
+	}
+	static void Chevron(Graphics &g, const Color &c, REAL x0, REAL x1, REAL ymid) {
+		Pen *p = MakePen(c, 2.0f);
+		PointF pts[3] = { PointF(x1, 3.5f), PointF(x0, ymid), PointF(x1, 12.5f) };
+		g.DrawLines(p, pts, 3);
+		delete p;
+	}
+	static void CircularArrow(Graphics &g, const Color &c) {
+		Pen *p = MakePen(c, 1.7f);
+		g.DrawArc(p, 3.2f, 3.2f, 9.6f, 9.6f, 35.0f, 275.0f);   // open at the top-right
+		// arrowhead at the arc's end (~35 deg)
+		PointF head[3] = { PointF(12.6f, 3.4f), PointF(13.4f, 6.6f), PointF(10.2f, 5.6f) };
+		SolidBrush b(c);
+		GraphicsPath hp; hp.AddLines(head, 3); hp.CloseFigure();
+		g.FillPath(&b, &hp);
+		delete p;
+	}
+
+	// Draw glyph `which` into a 16x16 Graphics already cleared to transparent.
+	static void RenderToolbarGlyph(Graphics &g, int which) {
+		switch (which) {
+		case 0: {   // FILE_NEW: page with a folded corner + green plus
+			PointF page[6] = { PointF(3,2), PointF(9,2), PointF(12,5),
+				PointF(12,14), PointF(3,14), PointF(3,2) };
+			Poly(g, Color(255,245,247,250), kInk, 1.3f, page, 6);
+			Pen *fold = MakePen(kInk, 1.1f);
+			PointF f[3] = { PointF(9,2), PointF(9,5), PointF(12,5) };
+			g.DrawLines(fold, f, 3); delete fold;
+			Pen *pl = MakePen(kGreen, 1.7f);
+			g.DrawLine(pl, 7.5f, 8.5f, 7.5f, 12.0f);
+			g.DrawLine(pl, 5.8f, 10.25f, 9.2f, 10.25f); delete pl;
+			break; }
+		case 1: {   // FILE_OPEN: open folder
+			PointF back[6] = { PointF(2,5), PointF(6,5), PointF(7.2f,6.3f),
+				PointF(13,6.3f), PointF(13,12), PointF(2,12) };
+			Poly(g, kAmber, kInk, 1.1f, back, 6);
+			PointF flap[4] = { PointF(3,12), PointF(5,8), PointF(14.5f,8), PointF(12.5f,12) };
+			Poly(g, Color(255,250,200,110), kInk, 1.1f, flap, 4);
+			break; }
+		case 2: {   // FILE_SAVE: down arrow into a tray
+			Pen *tray = MakePen(kInk, 1.6f);
+			PointF t[4] = { PointF(3.5f,10.5f), PointF(3.5f,13), PointF(12.5f,13), PointF(12.5f,10.5f) };
+			g.DrawLines(tray, t, 4); delete tray;
+			Pen *arr = MakePen(kBlue, 1.8f);
+			g.DrawLine(arr, 8.0f, 2.5f, 8.0f, 9.3f);
+			PointF h[3] = { PointF(5.3f,6.8f), PointF(8,9.6f), PointF(10.7f,6.8f) };
+			g.DrawLines(arr, h, 3); delete arr;
+			break; }
+		case 3: {   // CONNECT: green dot with a white check
+			SolidBrush gb(kGreen);
+			g.FillEllipse(&gb, 2.5f, 2.5f, 11.0f, 11.0f);
+			Pen *chk = MakePen(Color(255,255,255,255), 1.8f);
+			PointF c[3] = { PointF(5.4f,8.4f), PointF(7.3f,10.4f), PointF(10.8f,5.7f) };
+			g.DrawLines(chk, c, 3); delete chk;
+			break; }
+		case 4:   // PREV window: left chevron
+			Chevron(g, kBlue, 5.5f, 10, 8); break;
+		case 5:   // REFRESH: blue circular arrow
+			CircularArrow(g, kBlue); break;
+		case 6:   // NEXT window: right chevron
+			Chevron(g, kBlue, 10.5f, 6, 8); break;
+		case 7: {   // ABOUT: the all-seeing eye (matches Vision's app icon)
+			Pen *eye = MakePen(kInk, 1.4f);
+			g.DrawEllipse(eye, 2.5f, 5.0f, 11.0f, 6.0f);
+			delete eye;
+			SolidBrush ib(kInk);
+			g.FillEllipse(&ib, 6.4f, 5.9f, 3.2f, 3.2f);
+			SolidBrush hl(Color(255,255,255,255));
+			g.FillEllipse(&hl, 7.3f, 6.5f, 1.1f, 1.1f);
+			break; }
+		case 8: {   // TRAINING: a target
+			Pen *o = MakePen(kInk, 1.5f);
+			g.DrawEllipse(o, 2.7f, 2.7f, 10.6f, 10.6f);
+			g.DrawEllipse(o, 5.4f, 5.4f, 5.2f, 5.2f); delete o;
+			SolidBrush rb(kRed);
+			g.FillEllipse(&rb, 6.9f, 6.9f, 2.2f, 2.2f);
+			break; }
+		case 9: {   // AUTO: lightning bolt (auto-capture energy)
+			PointF bolt[6] = { PointF(9,2), PointF(4.5f,9), PointF(7.3f,9),
+				PointF(6.5f,14), PointF(11.5f,6.5f), PointF(8.4f,6.5f) };
+			Poly(g, kAmber, Color(255,180,110,10), 1.0f, bolt, 6);
+			break; }
+		case 10: {  // AUTO back: media-previous |<
+			Pen *bar = MakePen(kInk, 1.8f);
+			g.DrawLine(bar, 5.0f, 4.0f, 5.0f, 12.0f); delete bar;
+			PointF tri[3] = { PointF(11.5f,4), PointF(11.5f,12), PointF(6.6f,8) };
+			Poly(g, kInk, kInk, 0, tri, 3);
+			break; }
+		case 11: {  // AUTO next: media-next >|
+			PointF tri[3] = { PointF(4.5f,4), PointF(4.5f,12), PointF(9.4f,8) };
+			Poly(g, kInk, kInk, 0, tri, 3);
+			Pen *bar = MakePen(kInk, 1.8f);
+			g.DrawLine(bar, 11.0f, 4.0f, 11.0f, 12.0f); delete bar;
+			break; }
+		case 12: {  // AUTO clear: trash can
+			Pen *p = MakePen(kRed, 1.5f);
+			g.DrawLine(p, 3.4f, 4.6f, 12.6f, 4.6f);              // lid
+			PointF handle[4] = { PointF(6.4f,4.6f), PointF(6.4f,3), PointF(9.6f,3), PointF(9.6f,4.6f) };
+			g.DrawLines(p, handle, 4);
+			PointF body[4] = { PointF(4.6f,4.6f), PointF(5.4f,13), PointF(10.6f,13), PointF(11.4f,4.6f) };
+			g.DrawLines(p, body, 4);
+			g.DrawLine(p, 8.0f, 6.6f, 8.0f, 11.2f);              // centre slat
+			delete p;
+			break; }
+		case 13:   // AUTO refresh detection: green circular arrow
+			CircularArrow(g, kGreen); break;
+		default: break;
+		}
+	}
+}  // namespace
+
+// Build the 32-bpp alpha image list of GDI+ glyphs and attach it to the toolbar.
+void CMainFrame::BuildToolbarImageList()
+{
+	const int S = 16;
+	const int N = 14;   // number of BUTTONs in IDR_MAINFRAME, in resource order
+	if (m_ToolbarImages.GetSafeHandle() != NULL) {
+		m_ToolbarImages.DeleteImageList();
+	}
+	if (!m_ToolbarImages.Create(S, S, ILC_COLOR32, N, 0)) {
+		return;
+	}
+	for (int i = 0; i < N; ++i) {
+		BITMAPINFO bi;
+		ZeroMemory(&bi, sizeof(bi));
+		bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+		bi.bmiHeader.biWidth = S;
+		bi.bmiHeader.biHeight = -S;          // top-down
+		bi.bmiHeader.biPlanes = 1;
+		bi.bmiHeader.biBitCount = 32;
+		bi.bmiHeader.biCompression = BI_RGB;
+		void *bits = NULL;
+		HBITMAP dib = CreateDIBSection(NULL, &bi, DIB_RGB_COLORS, &bits, NULL, 0);
+		if (dib == NULL) continue;
+		{
+			// Premultiplied ARGB so the image list blends the alpha correctly.
+			Gdiplus::Bitmap bmp(S, S, S * 4, PixelFormat32bppPARGB, (BYTE *)bits);
+			Gdiplus::Graphics g(&bmp);
+			g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+			g.Clear(Gdiplus::Color(0, 0, 0, 0));
+			RenderToolbarGlyph(g, i);
+			g.Flush();
+		}
+		// CImageList::Add has no HBITMAP overload; use the Win32 API so the 32-bpp
+		// alpha channel is honoured (no mask, ILC_COLOR32).
+		ImageList_Add(m_ToolbarImages.GetSafeHandle(), dib, NULL);
+		DeleteObject(dib);
+	}
+	m_wndToolBar.GetToolBarCtrl().SetImageList(&m_ToolbarImages);
+}
+
+// ---- Automation process bar ----------------------------------------------------------------
+
+// Width of one pixel in the stored text encoding ("%08x"). Shared by the save and load paths so
+// they cannot drift apart -- a mismatch here silently shreds every stored screenshot.
+static const int kCharsPerPixelConst = 8;
+
+bool CMainFrame::CreateProcessBar()
+{
+	// CBRS_TOP docks it under the main toolbar. A CDialogBar (not a second CToolBar) because the
+	// bar hosts a real combo box: embedding one in a CToolBar means reserving a separator slot and
+	// hand-positioning the control, which then has to be re-positioned on every resize.
+	if (!m_wndProcessBar.Create(this, IDD_PROCESS_BAR,
+			CBRS_TOP | CBRS_TOOLTIPS | CBRS_FLYBY, IDD_PROCESS_BAR)) {
+		return false;
+	}
+	CComboBox *combo = (CComboBox *)m_wndProcessBar.GetDlgItem(IDC_PROCESS_COMBO);
+	if (combo != NULL) {
+		for (int i = 0; i < kProcessTypeCount; ++i) {
+			combo->AddString(kProcessTypes[i]);
+		}
+		// Default to the first flow so the bar is never in a "no process chosen" state that
+		// would make Save and the step buttons silently do nothing.
+		combo->SetCurSel(0);
+		_process = kProcessTypes[0];
+	}
+	_step = 1;
+	// Scope the DB layer from the outset. Without this the FIRST save of a fresh session would
+	// write regions unscoped (process='', step=1) and they would never be found again under the
+	// flow the operator thought they were editing.
+	if (p_tablemap_db != NULL && !_process.IsEmpty()) {
+		p_tablemap_db->SetRegionScope(_process, _step);
+	}
+	// NOT RefreshCapturedSteps() here: it needs the document, which does not exist until after
+	// OnCreate returns. The first idle picks it up instead (see OnUpdateProcessSave).
+	_steps_refreshed_once = false;
+	return true;
+}
+
+long CMainFrame::CurrentTablemapId()
+{
+	// Regions and screenshots hang off the tablemap row, so an unsaved map has nowhere to store
+	// them. Returns -1 until the map has been saved once.
+	if (p_tablemap_db == NULL) return -1;
+	// COpenScrapeDoc::GetDocument() dereferences AfxGetApp()->m_pMainWnd WITHOUT a null check,
+	// and m_pMainWnd is not set until after CMainFrame::OnCreate returns. Calling it from
+	// anything that runs during frame creation is an instant access violation (0xC0000005).
+	CWinApp *app = AfxGetApp();
+	if (app == NULL || app->m_pMainWnd == NULL) return -1;
+	COpenScrapeDoc *pDoc = COpenScrapeDoc::GetDocument();
+	if (pDoc == NULL) return -1;
+	if (pDoc->m_tm_name.IsEmpty()) return -1;
+	return p_tablemap_db->TablemapIdByName(pDoc->m_tm_name);
+}
+
+void CMainFrame::RefreshCapturedSteps()
+{
+	memset(_captured_steps, 0, sizeof(_captured_steps));
+	long id = CurrentTablemapId();
+	if (id < 0 || _process.IsEmpty() || p_tablemap_db == NULL) return;
+	std::vector<int> steps;
+	if (!p_tablemap_db->ListProcessSteps(id, _process, &steps)) return;
+	for (size_t i = 0; i < steps.size(); ++i) {
+		int s = steps[i];
+		if (s >= 1 && s <= 9) _captured_steps[s] = true;
+	}
+}
+
+bool CMainFrame::StepIsCaptured(int step) const
+{
+	if (step < 1 || step > 9) return false;
+	return _captured_steps[step];
+}
+
+void CMainFrame::OnProcessComboChanged()
+{
+	CComboBox *combo = (CComboBox *)m_wndProcessBar.GetDlgItem(IDC_PROCESS_COMBO);
+	if (combo == NULL) return;
+	int sel = combo->GetCurSel();
+	if (sel < 0 || sel >= kProcessTypeCount) return;
+	_process = kProcessTypes[sel];
+	// Switching flow resets to step 1: step N of "freeroll" and step N of "tournament" are
+	// unrelated screens, so carrying the step number across would show a mismatched image.
+	RefreshCapturedSteps();
+	LoadStepIntoView(1);
+}
+
+void CMainFrame::OnProcessStep(UINT nID)
+{
+	int step = (int)(nID - IDC_PROCESS_STEP1) + 1;   // contiguous id block -> 1-based step
+	if (step < 1 || step > 9) return;
+	LoadStepIntoView(step);   // commits _step itself, unless the user cancels the switch
+}
+
+void CMainFrame::OnUpdateProcessStep(CCmdUI *pCmdUI)
+{
+	if (pCmdUI == NULL) return;
+	int step = (int)(pCmdUI->m_nID - IDC_PROCESS_STEP1) + 1;
+	// Mark the step that is currently being edited. A captured step is additionally flagged in
+	// its caption ("3*") so the operator can see how far the flow has been mapped without
+	// clicking through all nine.
+	pCmdUI->SetCheck((step == _step) ? 1 : 0);
+	CWnd *btn = m_wndProcessBar.GetDlgItem(pCmdUI->m_nID);
+	if (btn != NULL) {
+		CString want;
+		want.Format("%d%s", step, StepIsCaptured(step) ? "*" : "");
+		CString cur;
+		btn->GetWindowText(cur);
+		if (cur != want) btn->SetWindowText(want);   // only on change: avoids flicker on every idle
+	}
+}
+
+void CMainFrame::OnProcessSave()
+{
+	long id = CurrentTablemapId();
+	if (id < 0) {
+		MessageBox("Save the tablemap to the database first -- process screenshots hang off the "
+			"tablemap row and there is nowhere to store them until it exists.",
+			"Automation", MB_OK | MB_ICONINFORMATION);
+		return;
+	}
+	if (_process.IsEmpty()) return;
+	COpenScrapeDoc *pDoc = COpenScrapeDoc::GetDocument();
+	if (pDoc == NULL || pDoc->attached_pBits == NULL) {
+		MessageBox("No screenshot to save -- connect to a window first.",
+			"Automation", MB_OK | MB_ICONINFORMATION);
+		return;
+	}
+	const int width  = pDoc->attached_rect.right;
+	const int height = pDoc->attached_rect.bottom;
+	// Diagnostic trail: this handler has several early exits and a silent one is impossible to
+	// tell apart from "nothing happened" in a GUI. Cheap, append-only, one line per attempt.
+	{
+		FILE *f = NULL;
+		if (fopen_s(&f, "C:\\www\\openholdembot_old\\Release\\logs\\automation_process.log", "a") == 0 && f) {
+			fprintf(f, "[save] process='%s' step=%d id=%ld pBits=%p rect=(%ld,%ld,%ld,%ld) w=%d h=%d\n",
+				_process.GetString(), _step, id, (void *)pDoc->attached_pBits,
+				pDoc->attached_rect.left, pDoc->attached_rect.top,
+				pDoc->attached_rect.right, pDoc->attached_rect.bottom, width, height);
+			fclose(f);
+		}
+	}
+	if (width <= 0 || height <= 0) return;
+
+	// Same encoding as tm_images: one %08x per pixel in the internal ABGR packing, rows joined
+	// by '\n'. Built into a preallocated buffer rather than by repeated CString += because a
+	// 540x1170 mirror is ~630k pixels and the naive concatenation reallocates for every one.
+	CString pixels;
+	const int kCharsPerPixel = 8;
+	pixels.Preallocate(height * (width * kCharsPerPixel + 1) + 1);
+	char cell[16];
+	for (int y = 0; y < height; ++y) {
+		for (int x = 0; x < width; ++x) {
+			const int base = y * width * 4 + x * 4;
+			const BYTE blue  = pDoc->attached_pBits[base + 0];
+			const BYTE green = pDoc->attached_pBits[base + 1];
+			const BYTE red   = pDoc->attached_pBits[base + 2];
+			const BYTE alpha = pDoc->attached_pBits[base + 3];
+			const unsigned int abgr =
+				((unsigned int)alpha << 24) | ((unsigned int)blue << 16) |
+				((unsigned int)green << 8) | (unsigned int)red;
+			sprintf_s(cell, sizeof(cell), "%08x", abgr);
+			pixels += cell;
+		}
+		if (y < height - 1) pixels += "\n";
+	}
+
+	CString label;
+	label.Format("%s step %d", _process.GetString(), _step);
+	{
+		FILE *f = NULL;
+		if (fopen_s(&f, "C:\\www\\openholdembot_old\\Release\\logs\\automation_process.log", "a") == 0 && f) {
+			fprintf(f, "[save] serialised %d chars, writing to DB...\n", pixels.GetLength());
+			fclose(f);
+		}
+	}
+	if (!p_tablemap_db->SaveProcessScreenshot(id, _process, _step, label, width, height, pixels)) {
+		CString msg;
+		msg.Format("Could not save the screenshot for step %d.\n\n%s",
+			_step, p_tablemap_db->LastError().GetString());
+		MessageBox(msg, "Automation", MB_OK | MB_ICONERROR);
+		return;
+	}
+	RefreshCapturedSteps();
+	{
+		FILE *f = NULL;
+		if (fopen_s(&f, "C:\\www\\openholdembot_old\\Release\\logs\\automation_process.log", "a") == 0 && f) {
+			fprintf(f, "[save] OK -- %s step %d (%dx%d)\n", _process.GetString(), _step, width, height);
+			fclose(f);
+		}
+	}
+	CString status;
+	status.Format("Saved %s step %d (%dx%d).", _process.GetString(), _step, width, height);
+	m_wndStatusBar.SetWindowText(status);
+}
+
+void CMainFrame::LoadStepIntoView(int step)
+{
+	COpenScrapeDoc *pDoc = COpenScrapeDoc::GetDocument();
+	if (pDoc == NULL) return;
+	long id = CurrentTablemapId();
+
+	// Point the DB layer at this screenshot BEFORE reloading, so the reload pulls only the
+	// regions drawn on it and any later save writes back under the same (process, step).
+	if (p_tablemap_db != NULL && !_process.IsEmpty()) {
+		// Region edits live in memory until the map is saved. Switching steps reloads the map,
+		// which would discard them silently -- ask instead of quietly throwing away work.
+		if (pDoc->IsModified()) {
+			int answer = MessageBox(
+				"Save the regions on the current step before switching?\n\n"
+				"Yes  - save, then switch\n"
+				"No   - discard the changes and switch\n"
+				"Cancel - stay on this step",
+				"Automation", MB_YESNOCANCEL | MB_ICONQUESTION);
+			if (answer == IDCANCEL) {
+				return;   // _step is only committed below, so we are still on the old step
+			}
+			if (answer == IDYES) {
+				pDoc->SaveCurrentToDb(pDoc->m_tm_name);
+			}
+			pDoc->SetModifiedFlag(FALSE);
+		}
+		p_tablemap_db->SetRegionScope(_process, step);
+		if (id >= 0 && !pDoc->m_tm_name.IsEmpty()) {
+			pDoc->LoadFromDbByName(pDoc->m_tm_name);   // r$ now holds only this step's regions
+		}
+	}
+	// Commit the step only once the switch is going ahead (past the Cancel above), so a cancelled
+	// switch leaves _step, the checked button and the loaded regions all consistent.
+	_step = step;
+	int width = 0, height = 0;
+	CString pixels, label;
+	if (id < 0 || _process.IsEmpty()
+			|| !p_tablemap_db->LoadProcessScreenshot(id, _process, step, &width, &height, &pixels, &label)
+			|| width <= 0 || height <= 0) {
+		// Nothing captured for this step yet. Leave the LIVE view running rather than blanking
+		// it: an empty step is where the operator is about to capture, so they need to see the
+		// window they are about to grab.
+		{
+			FILE *f = NULL;
+			if (fopen_s(&f, "C:\\www\\openholdembot_old\\Release\\logs\\automation_process.log", "a") == 0 && f) {
+				fprintf(f, "[load] step %d of '%s': nothing stored -- staying live\n",
+					step, _process.GetString());
+				fclose(f);
+			}
+		}
+		COpenScrapeView *pView = COpenScrapeView::GetView();
+		if (pView != NULL) pView->SetPaused(false);
+		ForceRedraw();
+		return;
+	}
+
+	// Rebuild a 32bpp top-down DIB from the stored pixels and hand it to the document, so every
+	// existing region-editing path (which reads attached_pBits / attached_bitmap) works against
+	// the stored screenshot with no further changes.
+	BITMAPINFO bmi;
+	memset(&bmi, 0, sizeof(bmi));
+	bmi.bmiHeader.biSize        = sizeof(bmi.bmiHeader);
+	bmi.bmiHeader.biWidth       = width;
+	bmi.bmiHeader.biHeight      = -height;   // negative => top-down, matching the capture path
+	bmi.bmiHeader.biPlanes      = 1;
+	bmi.bmiHeader.biBitCount    = 32;
+	bmi.bmiHeader.biCompression = BI_RGB;
+
+	void *bits = NULL;
+	HDC hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL);
+	HBITMAP dib = CreateDIBSection(hdcScreen, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
+	DeleteDC(hdcScreen);
+	if (dib == NULL || bits == NULL) {
+		if (dib != NULL) DeleteObject(dib);
+		return;
+	}
+
+	BYTE *dst = new BYTE[(size_t)width * height * 4];
+	memset(dst, 0, (size_t)width * height * 4);
+	// Parse row by row. A short or malformed row leaves the remainder of the image zeroed rather
+	// than running off the end of the buffer -- stored pixel text is data, not a trusted format.
+	int y = 0;
+	int pos = 0;
+	while (y < height && pos <= pixels.GetLength()) {
+		int nl = pixels.Find('\n', pos);
+		CString row = (nl < 0) ? pixels.Mid(pos) : pixels.Mid(pos, nl - pos);
+		const int avail = row.GetLength() / kCharsPerPixelConst;
+		const int n = (avail < width) ? avail : width;
+		for (int x = 0; x < n; ++x) {
+			unsigned int abgr = 0;
+			sscanf_s(row.Mid(x * kCharsPerPixelConst, kCharsPerPixelConst).GetString(), "%8x", &abgr);
+			const BYTE alpha = (BYTE)((abgr >> 24) & 0xff);
+			const BYTE blue  = (BYTE)((abgr >> 16) & 0xff);
+			const BYTE green = (BYTE)((abgr >> 8)  & 0xff);
+			const BYTE red   = (BYTE)(abgr & 0xff);
+			const int base = y * width * 4 + x * 4;
+			dst[base + 0] = blue;
+			dst[base + 1] = green;
+			dst[base + 2] = red;
+			dst[base + 3] = alpha;
+		}
+		++y;
+		if (nl < 0) break;
+		pos = nl + 1;
+	}
+	memcpy(bits, dst, (size_t)width * height * 4);
+
+	// Swap into the document, freeing whatever was there.
+	if (pDoc->attached_bitmap != NULL) DeleteObject(pDoc->attached_bitmap);
+	if (pDoc->attached_pBits  != NULL) delete[] pDoc->attached_pBits;
+	pDoc->attached_bitmap = dib;
+	pDoc->attached_pBits  = dst;
+	pDoc->attached_rect.left   = 0;
+	pDoc->attached_rect.top    = 0;
+	pDoc->attached_rect.right  = width;
+	pDoc->attached_rect.bottom = height;
+
+	// PAUSE, or the next live grab (auto-capture, reconnect, timer) overwrites the stored
+	// screenshot the operator is mapping against and their region work lands on the wrong image.
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	if (pView != NULL) pView->SetPaused(true);
+	ForceRedraw();
+
+	{
+		FILE *f = NULL;
+		if (fopen_s(&f, "C:\\www\\openholdembot_old\\Release\\logs\\automation_process.log", "a") == 0 && f) {
+			fprintf(f, "[load] step %d of '%s': displayed stored screenshot %dx%d (view paused)\n",
+				step, _process.GetString(), width, height);
+			fclose(f);
+		}
+	}
+	CString status;
+	status.Format("%s step %d (%dx%d) -- stored screenshot, view paused.",
+		_process.GetString(), step, width, height);
+	m_wndStatusBar.SetWindowText(status);
+}
+
+void CMainFrame::OnUpdateProcessSave(CCmdUI *pCmdUI)
+{
+	if (pCmdUI == NULL) return;
+	long id = CurrentTablemapId();
+	// Deferred one-shot refresh: the captured-step flags need the document, which does not exist
+	// during OnCreate. First idle after a map is available is the earliest safe moment.
+	if (!_steps_refreshed_once && id >= 0) {
+		_steps_refreshed_once = true;
+		RefreshCapturedSteps();
+	}
+	// Nothing to save until the map exists in the DB and a flow is selected.
+	pCmdUI->Enable((id >= 0 && !_process.IsEmpty()) ? TRUE : FALSE);
+}
+
+bool CMainFrame::CreateToolbar()
+{
+	if (!(m_wndToolBar.CreateEx(this, NULL,
+			WS_CHILD | WS_VISIBLE | CBRS_TOP
+			| CBRS_GRIPPER | CBRS_TOOLTIPS | CBRS_FLYBY | CBRS_SIZE_DYNAMIC)
+			&& m_wndToolBar.LoadToolBar(IDR_MAINFRAME))) {
+		return false;
+	}
+	// Swap the old 4-bpp bitmap for the GDI+-rendered modern icon set.
+	BuildToolbarImageList();
+	return true;
+}
+
+bool CMainFrame::CreateStatusBar()
+{
+	return (m_wndStatusBar.Create(this) 
+		&& m_wndStatusBar.SetIndicators(openscrape_indicators, 
+			sizeof(openscrape_indicators)/sizeof(UINT)));
+}
+
+int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct)
+{
+	TBBUTTONINFO	tbi;
+	tbi.cbSize = sizeof(TBBUTTONINFO);
+	tbi.dwMask = TBIF_STYLE;
+	tbi.fsStyle = TBSTYLE_CHECK;
+
+	if (CFrameWnd::OnCreate(lpCreateStruct) == -1)
+	{
+		return -1;
+	}
+	if (!CreateToolbar())
+	{
+		TRACE0("Failed to create toolbar\n");
+		return -1;      // fail to create
+	}
+	if (!CreateProcessBar())
+	{
+		TRACE0("Failed to create automation process bar\n");
+		return -1;      // fail to create
+	}
+	if (!CreateStatusBar())
+	{
+		TRACE0("Failed to create status bar\n");
+		return -1;      // fail to create
+	}
+	// "i/N" current capture index, centred in a tight reserved slot between the arrows.
+	{
+		int backIdx = m_wndToolBar.CommandToIndex(ID_AUTO_CAPTURE_BACK);
+		if (backIdx >= 0) {
+			int sepIdx = backIdx + 1;   // the SEPARATOR placed after BACK in the resource
+			const int kSlotWidth = 30;
+			m_wndToolBar.SetButtonInfo(sepIdx, IDC_CAPTURE_INDEX, TBBS_SEPARATOR, kSlotWidth);
+			CRect rc;
+			m_wndToolBar.GetItemRect(sepIdx, &rc);
+			rc.left += 7;   // nudge the (centred) label right so it reads centred in the slot
+			// Centre the label within the reserved slot.
+			m_CaptureIndex.Create("-/-", WS_CHILD | WS_VISIBLE | SS_CENTER | SS_CENTERIMAGE,
+				rc, &m_wndToolBar, IDC_CAPTURE_INDEX);
+		}
+	}
+
+	// Non-clickable blue "(N)" captured-screenshot count, placed just after the last
+	// toolbar button (the auto-capture Clear button).
+	{
+		CToolBarCtrl &tb = m_wndToolBar.GetToolBarCtrl();
+		int n = tb.GetButtonCount();
+		CRect last(0, 0, 0, 0);
+		if (n > 0) tb.GetItemRect(n - 1, &last);
+		CRect rc(last.right + 6, last.top + 1, last.right + 60, last.bottom - 1);
+		m_CaptureCount.Create("(0)", WS_CHILD | WS_VISIBLE | SS_NOTIFY,
+			rc, &m_wndToolBar, IDC_CAPTURE_COUNT);
+	}
+
+	// Start timer that blinks selected region
+	SetTimer(BLINKER_TIMER, 500, 0);
+	return 0;
+}
+
+BOOL CMainFrame::PreCreateWindow(CREATESTRUCT& cs)
+{
+	if( !CFrameWnd::PreCreateWindow(cs) )
+		return FALSE;
+
+	Registry	reg;
+	int			max_x, max_y;
+
+	WNDCLASS wnd;
+	HINSTANCE hInst = AfxGetInstanceHandle();
+
+	// Set class name
+	if (!(::GetClassInfo(hInst, "OpenScrape", &wnd)))
+	{
+		wnd.style            = CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW;
+		wnd.lpfnWndProc      = ::DefWindowProc;
+		wnd.cbClsExtra       = wnd.cbWndExtra = 0;
+		wnd.hInstance        = hInst;
+		wnd.hIcon            = AfxGetApp()->LoadIcon(IDI_ICON1);
+		wnd.hCursor          = AfxGetApp()->LoadStandardCursor(IDC_ARROW);
+		wnd.hbrBackground    = (HBRUSH) (COLOR_3DFACE + 1);
+		wnd.lpszMenuName     = NULL;
+		wnd.lpszClassName    = "OpenScrape";
+
+		AfxRegisterClass( &wnd );
+	}  
+	cs.lpszClass = "OpenScrape";
+
+	// Restore window location and size
+	reg.read_reg();
+	max_x = GetSystemMetrics(SM_CXSCREEN) - GetSystemMetrics(SM_CXICON);
+	max_y = GetSystemMetrics(SM_CYSCREEN) - GetSystemMetrics(SM_CYICON);
+	cs.x = min(reg.main_x, max_x);
+	cs.y = min(reg.main_y, max_y);
+	cs.cx = reg.main_dx;
+	cs.cy = reg.main_dy;
+
+	return true;
+}
+
+/////////////////////////////////////////////////////
+//
+// CMainFrame diagnostics
+//
+/////////////////////////////////////////////////////
+
+#ifdef _DEBUG
+void CMainFrame::AssertValid() const
+{
+	CFrameWnd::AssertValid();
+}
+
+void CMainFrame::Dump(CDumpContext& dc) const
+{
+	CFrameWnd::Dump(dc);
+}
+
+#endif //_DEBUG
+
+/////////////////////////////////////////////////////
+//
+// CMainFrame message handlers
+//
+/////////////////////////////////////////////////////
+
+BOOL CMainFrame::DestroyWindow()
+{
+	Registry		reg;
+	WINDOWPLACEMENT wp;
+
+	// Save window position
+	reg.read_reg();
+	GetWindowPlacement(&wp);
+
+	reg.main_x = wp.rcNormalPosition.left;
+	reg.main_y = wp.rcNormalPosition.top;
+	reg.main_dx = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
+	reg.main_dy = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
+	reg.write_reg();
+
+	// Remember the session (last tablemap + connected window) to the hiss DB so the
+	// next launch reopens the same map and reconnects to the same window. Done before
+	// the doc/window tear-down so attached_hwnd is still valid.
+	SaveSessionToDb();
+
+	// Close the TableMap dialog here so it can save its position properly
+	if (theApp.m_TableMapDlg)  theApp.m_TableMapDlg->DestroyWindow();
+
+	return CFrameWnd::DestroyWindow();
+}
+
+void CMainFrame::UpdateTableMapDockSide()
+{
+	if (!theApp.m_TableMapDlg || !::IsWindow(theApp.m_TableMapDlg->GetSafeHwnd())) {
+		return;
+	}
+
+	CRect main_rect;
+	CRect tablemap_rect;
+	GetWindowRect(&main_rect);
+	theApp.m_TableMapDlg->GetWindowRect(&tablemap_rect);
+
+	int tablemap_center = tablemap_rect.left + (tablemap_rect.Width() / 2);
+	int main_center = main_rect.left + (main_rect.Width() / 2);
+	_tablemap_dock_side = (tablemap_center < main_center) ? kTableMapDockLeft : kTableMapDockRight;
+}
+
+void CMainFrame::DockTableMapWindow(bool update_dock_side)
+{
+	if (_docking_tablemap) {
+		return;
+	}
+	if (!theApp.m_TableMapDlg || !::IsWindow(theApp.m_TableMapDlg->GetSafeHwnd())) {
+		return;
+	}
+	if (!::IsWindowVisible(theApp.m_TableMapDlg->GetSafeHwnd())) {
+		return;
+	}
+	if (IsIconic()) {
+		return;
+	}
+
+	if (update_dock_side) {
+		UpdateTableMapDockSide();
+	}
+
+	CRect main_rect;
+	CRect tablemap_rect;
+	GetWindowRect(&main_rect);
+	theApp.m_TableMapDlg->GetWindowRect(&tablemap_rect);
+
+	int tablemap_width = tablemap_rect.Width();
+	int tablemap_height = tablemap_rect.Height();
+	int tablemap_x = (_tablemap_dock_side == kTableMapDockLeft)
+		? main_rect.left - tablemap_width
+		: main_rect.right;
+	int tablemap_y = main_rect.top;
+
+	_docking_tablemap = true;
+	theApp.m_TableMapDlg->SetWindowPos(this, tablemap_x, tablemap_y,
+		tablemap_width, tablemap_height,
+		SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOOWNERZORDER);
+	_docking_tablemap = false;
+}
+
+void CMainFrame::OnMove(int x, int y)
+{
+	CFrameWnd::OnMove(x, y);
+	DockTableMapWindow(false);
+}
+
+void CMainFrame::OnSize(UINT nType, int cx, int cy)
+{
+	CFrameWnd::OnSize(nType, cx, cy);
+	DockTableMapWindow(false);
+}
+
+void CMainFrame::OnGetMinMaxInfo(MINMAXINFO* lpMMI)
+{
+	CFrameWnd::OnGetMinMaxInfo(lpMMI);
+	if (_window_size_locked && _locked_window_size.cx > 0 && _locked_window_size.cy > 0) {
+		lpMMI->ptMinTrackSize.x = _locked_window_size.cx;
+		lpMMI->ptMinTrackSize.y = _locked_window_size.cy;
+		lpMMI->ptMaxTrackSize.x = _locked_window_size.cx;
+		lpMMI->ptMaxTrackSize.y = _locked_window_size.cy;
+	}
+}
+
+// TODO: Callers might need to be refactored
+void CMainFrame::ForceRedraw()
+{
+	theApp.m_pMainWnd->Invalidate(true);
+	theApp.m_TableMapDlg->Invalidate(true);
+}
+
+void CMainFrame::AttachToTableCandidate(const STableList &candidate)
+{
+	COpenScrapeDoc *pDoc = COpenScrapeDoc::GetDocument();
+	if (pDoc == NULL) {
+		return;
+	}
+
+	pDoc->attached_hwnd = candidate.hwnd;
+	pDoc->attached_rect.left = candidate.crect.left;
+	pDoc->attached_rect.top = candidate.crect.top;
+	pDoc->attached_rect.right = candidate.crect.right;
+	pDoc->attached_rect.bottom = candidate.crect.bottom;
+
+	SaveBmpPbits();
+	ResizeWindow(pDoc);
+	if (theApp.m_TableMapDlg) {
+		theApp.m_TableMapDlg->update_display();
+	}
+}
+
+static bool CStringContainsNoCase(CString haystack, CString needle)
+{
+	haystack.Trim();
+	needle.Trim();
+	if (needle == "") {
+		return false;
+	}
+	haystack.MakeLower();
+	needle.MakeLower();
+	return haystack.Find(needle) >= 0;
+}
+
+static bool GetTablemapSize(CString size_name, int *width, int *height)
+{
+	if (p_tablemap == NULL || width == NULL || height == NULL) {
+		return false;
+	}
+
+	ZMapCI size_iter = p_tablemap->z$()->find(size_name);
+	if (size_iter == p_tablemap->z$()->end()) {
+		return false;
+	}
+
+	*width = size_iter->second.width;
+	*height = size_iter->second.height;
+	return true;
+}
+
+static bool TableCandidateFitsTablemapSize(const STableList &candidate)
+{
+	int min_width = 0;
+	int min_height = 0;
+	int max_width = 0;
+	int max_height = 0;
+	if (!GetTablemapSize("clientsizemin", &min_width, &min_height)) {
+		return true;
+	}
+	if (!GetTablemapSize("clientsizemax", &max_width, &max_height)) {
+		max_width = min_width;
+		max_height = min_height;
+	}
+
+	RECT rect = {0};
+	if (!GetClientWindowCaptureRect(candidate.hwnd, &rect)) {
+		::GetClientRect(candidate.hwnd, &rect);
+	}
+	int width = rect.right - rect.left;
+	int height = rect.bottom - rect.top;
+	return width >= min_width && width <= max_width && height >= min_height && height <= max_height;
+}
+
+bool CMainFrame::TableCandidateMatchesTitleText(const STableList &candidate)
+{
+	CString title = candidate.title;
+	for (int i = -1; i < k_max_number_of_titletexts; ++i) {
+		CString symbol_name;
+		symbol_name.Format(i < 0 ? "!titletext" : "!titletext%d", i);
+		CString excluded_title = p_tablemap->GetTMSymbol(symbol_name);
+		if (CStringContainsNoCase(title, excluded_title)) {
+			return false;
+		}
+	}
+
+	for (int i = -1; i < k_max_number_of_titletexts; ++i) {
+		CString symbol_name;
+		symbol_name.Format(i < 0 ? "titletext" : "titletext%d", i);
+		CString wanted_title = p_tablemap->GetTMSymbol(symbol_name);
+		if (CStringContainsNoCase(title, wanted_title)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool CMainFrame::AutoConnectToTablemapTitleText()
+{
+	if (p_tablemap == NULL || p_tablemap->filename() == "") {
+		return false;
+	}
+
+	g_tlist.RemoveAll();
+	EnumWindows(EnumProcTopLevelWindowList, NULL);
+
+	int first_title_match = -1;
+	for (int i = 0; i < g_tlist.GetSize(); ++i) {
+		if (TableCandidateMatchesTitleText(g_tlist[i])) {
+			if (first_title_match < 0) {
+				first_title_match = i;
+			}
+			if (TableCandidateFitsTablemapSize(g_tlist[i])) {
+				AttachToTableCandidate(g_tlist[i]);
+				ForceRedraw();
+				BringOpenScrapeBackToFront();
+				return true;
+			}
+		}
+	}
+
+	if (first_title_match >= 0) {
+		AttachToTableCandidate(g_tlist[first_title_match]);
+		ForceRedraw();
+		BringOpenScrapeBackToFront();
+		return true;
+	}
+
+	return false;
+}
+
+void CMainFrame::OnViewConnecttowindow()
+{
+	LPARAM				lparam;
+	CDlgSelectTable		cstd;
+
+	// Manually connecting is an explicit "go live" action -> resume if paused.
+	{
+		COpenScrapeView *pView = COpenScrapeView::GetView();
+		if (pView != NULL) pView->SetPaused(false);
+	}
+
+	// Clear global list for holding table candidates
+	g_tlist.RemoveAll();
+
+	// Populate global candidate table list
+	lparam = NULL;
+	EnumWindows(EnumProcTopLevelWindowList, lparam);
+
+	// Put global candidate table list in table select dialog variables
+	int number_of_tablemaps = (int) g_tlist.GetSize();
+	if (number_of_tablemaps==0) 
+	{
+		MessageBox("No valid windows found", "Cannot find window", MB_OK);
+	}
+	else 
+	{
+		for (int i=0; i<number_of_tablemaps; i++) 
+		{
+			cstd.tlist.Add(g_tlist[i]);
+		}
+
+		// Display table select dialog
+		if (cstd.DoModal() == IDOK) 
+		{
+			AttachToTableCandidate(g_tlist[cstd.selected_item]);
+		}
+	}
+	ForceRedraw();
+}
+
+// Restore the previous session on startup: load the last-used tablemap from the
+// hiss DB and reconnect to the last connected window (matched by its title, since
+// HWNDs are not stable across runs). Falls back to title/size auto-connect.
+void CMainFrame::RestoreSessionFromDb()
+{
+	if (p_tablemap_db == NULL) {
+		return;
+	}
+	COpenScrapeDoc *pDoc = COpenScrapeDoc::GetDocument();
+
+	// 1) Last tablemap (DB key).
+	CString tm = p_tablemap_db->GetSettingString("automation_session", "tablemap");
+	tm.Trim();
+	if (tm != "" && pDoc != NULL) {
+		pDoc->LoadFromDbByName(tm);
+	}
+
+	// 2) Last connected window, matched by remembered title.
+	CString want_title = p_tablemap_db->GetSettingString("automation_session", "window_title");
+	want_title.Trim();
+	bool reconnected = false;
+	if (want_title != "") {
+		g_tlist.RemoveAll();
+		EnumWindows(EnumProcTopLevelWindowList, NULL);
+		int exact = -1, partial = -1;
+		for (int i = 0; i < g_tlist.GetSize(); ++i) {
+			CString title = g_tlist[i].title;
+			title.Trim();
+			if (title == want_title) { exact = i; break; }
+			if (partial < 0 && title != "" && title.Find(want_title) >= 0) { partial = i; }
+		}
+		int pick = (exact >= 0) ? exact : partial;
+		if (pick >= 0) {
+			AttachToTableCandidate(g_tlist[pick]);
+			ForceRedraw();
+			BringOpenScrapeBackToFront();
+			reconnected = true;
+		}
+	}
+
+	// Fallback: connect via the tablemap's titletext/size rules.
+	if (!reconnected) {
+		AutoConnectToTablemapTitleText();
+	}
+
+	// Restore the persisted auto-capture screenshots from the previous run.
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	if (pView != NULL) pView->LoadCapturesFromDisk();
+}
+
+// Persist the current session (called on exit): the loaded tablemap name and the
+// title of the window we are attached to, into the hiss DB "settings" table.
+void CMainFrame::SaveSessionToDb()
+{
+	// Persist the auto-capture screenshots to disk (independent of the DB).
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	if (pView != NULL) pView->SaveCapturesToDisk();
+
+	if (p_tablemap_db == NULL) {
+		return;
+	}
+	COpenScrapeDoc *pDoc = COpenScrapeDoc::GetDocument();
+
+	CString tm = (pDoc != NULL) ? pDoc->m_tm_name : CString("");
+	tm.Trim();
+	p_tablemap_db->SetSettingString("automation_session", "tablemap", tm);
+
+	CString window_title;
+	if (pDoc != NULL && pDoc->attached_hwnd != NULL && ::IsWindow(pDoc->attached_hwnd)) {
+		char title[256] = { 0 };
+		::GetWindowText(pDoc->attached_hwnd, title, sizeof(title) - 1);
+		window_title = title;
+	}
+	window_title.Trim();
+	p_tablemap_db->SetSettingString("automation_session", "window_title", window_title);
+}
+
+void CMainFrame::OnEditUpdatehashes()
+{
+	int		ret;
+
+	COpenScrapeDoc	*pDoc = COpenScrapeDoc::GetDocument();
+	CMainFrame		*pMyMainWnd  = (CMainFrame *) (theApp.m_pMainWnd);
+
+	ret = p_tablemap->UpdateHashes(pMyMainWnd->GetSafeHwnd(), _startup_path);
+
+	// Redraw the tree
+	theApp.m_TableMapDlg->update_tree("");
+
+	if (ret == SUCCESS)  
+		MessageBox("Hashes updated successfully.", "Success", MB_OK);
+}
+
+void CMainFrame::OnEditDuplicateregion()
+{
+	COpenScrapeDoc		*pDoc = COpenScrapeDoc::GetDocument();
+	RMapCI				sel_region = p_tablemap->r$()->end();
+	HTREEITEM			parent = NULL;
+	CString				sel = "", selected_parent_text = "";
+		
+	// Get name of currently selected item
+	if (theApp.m_TableMapDlg->m_TableMapTree.GetSelectedItem())
+	{
+		sel = theApp.m_TableMapDlg->m_TableMapTree.GetItemText(theApp.m_TableMapDlg->m_TableMapTree.GetSelectedItem());
+		parent = theApp.m_TableMapDlg->m_TableMapTree.GetParentItem(theApp.m_TableMapDlg->m_TableMapTree.GetSelectedItem());
+	}
+
+	// Get name of currently selected item's parent
+	if (parent != NULL) 
+		selected_parent_text = theApp.m_TableMapDlg->m_TableMapTree.GetItemText(parent);
+	else
+		return;
+
+
+	// Get iterator for selected region
+	sel_region = p_tablemap->set_r$()->find(sel.GetString());
+
+	// Exit if we can't find the region record
+	if (sel_region == p_tablemap->r$()->end())
+		return;
+
+	// Present multi-selector region dialog
+	CDlgCopyRegion  dlgcopyregion;
+	dlgcopyregion.source_region = sel;
+	dlgcopyregion.candidates.RemoveAll();
+
+	// Figure out which related regions to provide as copy destination options
+	CString	target="";
+	if (sel.Mid(0,1)=="p" || sel.Mid(0,1)=="u")
+		target=sel.Mid(2);
+	else if (sel.Mid(0,1)=="c" && sel.Mid(2,8)=="cardface")
+		target=sel.Mid(2,8);
+	else if (sel.Mid(0,1)=="c" && sel.Mid(2,10)=="handnumber")
+		target=sel.Mid(2,10);
+	else if (sel.Mid(0,1)=="c" && sel.Mid(2,3)=="pot")
+		target=sel.Mid(2,3);
+	else if (sel.Mid(0,1)=="c" && sel.Mid(2,6)=="limits")
+		target=sel.Mid(2,6);
+	else if (sel.Mid(0,1)=="i" && sel.Mid(1,2)!="86")
+		target=sel.Mid(2);
+	else if (sel.Mid(0,1)=="i" && sel.Mid(2,2)=="86")
+	{
+		if (sel.Mid(3,1)>="0" && sel.Mid(3,1)<="9")
+			target=sel.Mid(4);
+		else
+			target=sel.Mid(3);
+	}
+
+	// Add them to the dialog
+	for (int i=0; i<list_of_regions.size(); i++)
+	{
+		bool add_it = (strstr(list_of_regions[i], target.GetString())!=NULL);
+
+		CString s = list_of_regions[i];
+		for (RMapCI r_iter=p_tablemap->r$()->begin(); r_iter!=p_tablemap->r$()->end(); r_iter++)
+		{
+			if (r_iter->second.name == s)  
+				add_it = false;
+		}
+
+		if (add_it)
+			dlgcopyregion.candidates.Add(list_of_regions[i]);
+	}
+
+	// Show dialog if there are any strings left to add
+	if (dlgcopyregion.candidates.GetSize() == 0)
+	{
+		MessageBox("All related region records are already present.");
+	}
+	else
+	{
+		if (dlgcopyregion.DoModal() == IDOK)
+		{
+			bool added_at_least_one = false;
+
+			// Add new records to internal structure
+			for (int i=0; i<dlgcopyregion.selected.GetSize(); i++)
+			{
+				//MessageBox(dlgcopyregion.selected[i]);
+				STablemapRegion new_region;
+				new_region.name = dlgcopyregion.selected[i];
+				new_region.left = sel_region->second.left + (5*i);
+				new_region.top = sel_region->second.top + (5*i);
+				new_region.right = sel_region->second.right + (5*i);
+				new_region.bottom = sel_region->second.bottom + (5*i);
+				new_region.color = sel_region->second.color;
+				new_region.radius = sel_region->second.radius;
+				new_region.transform = sel_region->second.transform;
+
+				// Insert the new record in the existing array of z$ records
+				if (p_tablemap->r$_insert(new_region))
+				{
+					added_at_least_one = true;
+
+					// Add new record to tree
+					HTREEITEM new_hti = theApp.m_TableMapDlg->m_TableMapTree.InsertItem(
+						new_region.name, parent ? parent : theApp.m_TableMapDlg->m_TableMapTree.GetSelectedItem());
+
+					theApp.m_TableMapDlg->m_TableMapTree.SortChildren(parent ? parent : 
+						theApp.m_TableMapDlg->m_TableMapTree.GetSelectedItem());
+
+					theApp.m_TableMapDlg->m_TableMapTree.SelectItem(new_hti);
+				}
+			}
+
+			if (added_at_least_one)
+			{
+				pDoc->SetModifiedFlag(true);
+				Invalidate(false);
+			}
+		}
+	}
+
+}
+
+void CMainFrame::OnTimer(UINT_PTR nIDEvent)
+{
+	COpenScrapeDoc			*pDoc = COpenScrapeDoc::GetDocument();
+	COpenScrapeView			*pView = COpenScrapeView::GetView();
+  if (!pDoc) {
+    return;
+  }
+  if (!pView) {
+    return;
+  }
+	if (nIDEvent == BLINKER_TIMER) 
+	{
+		pDoc->blink_on = !pDoc->blink_on;
+		pView->blink_rect();
+
+	}
+	CFrameWnd::OnTimer(nIDEvent);
+}
+
+void CMainFrame::SetTablemapSizeIfUnknown(int size_x, int size_y)
+{
+	return;
+	if ((size_x > 0) && (size_y > 0)) //!! and tm loaded!
+	{
+		CString	text;
+		text.Format("z$clientsize not yet defined.\nSetting it automatically to (%d, %d).",
+			size_x, size_y);
+		if (MessageBox(text, "Info: z$clientsize", MB_YESNO) == IDYES)
+		{
+			//z$clientsize
+
+		}
+	}
+}
+
+void CMainFrame::BringOpenScrapeBackToFront()
+{
+	::SetFocus(AfxGetApp()->m_pMainWnd->GetSafeHwnd());
+	::SetForegroundWindow(AfxGetApp()->m_pMainWnd->GetSafeHwnd());
+	::SetActiveWindow(AfxGetApp()->m_pMainWnd->GetSafeHwnd());
+}
+
+LRESULT CMainFrame::OnHotKey(WPARAM wParam, LPARAM lParam) {
+  MessageBox("A", "Debug", 0);
+  if(wParam == kHotkeyRefresh) {
+    MessageBox("B", "Debug", 0);
+		OnViewRefresh();
+    return true;
+	}
+  return CallNextHookEx(NULL, WM_HOTKEY, wParam,lParam);
+}
+
+CSize CMainFrame::CalculateFrameSizeForScreenshot(COpenScrapeDoc *pDoc)
+{
+	int screenshot_width = pDoc->attached_rect.right - pDoc->attached_rect.left;
+	int screenshot_height = pDoc->attached_rect.bottom - pDoc->attached_rect.top;
+	if (screenshot_width <= 0 || screenshot_height <= 0) {
+		return CSize(0, 0);
+	}
+
+	COpenScrapeView *view = COpenScrapeView::GetView();
+	if (view == NULL || !::IsWindow(view->GetSafeHwnd())) {
+		CRect frame_adjust(0, 0, screenshot_width, screenshot_height);
+		AdjustWindowRectEx(&frame_adjust, GetStyle(), TRUE, GetExStyle());
+		return CSize(frame_adjust.Width(), frame_adjust.Height());
+	}
+
+	CRect frame_rect;
+	CRect view_rect;
+	GetWindowRect(&frame_rect);
+	view->GetClientRect(&view_rect);
+
+	return CSize(
+		frame_rect.Width() + screenshot_width - view_rect.Width(),
+		frame_rect.Height() + screenshot_height - view_rect.Height());
+}
+
+void CMainFrame::ResizeWindow(COpenScrapeDoc *pDoc)
+{
+	CSize frame_size = CalculateFrameSizeForScreenshot(pDoc);
+	if (frame_size.cx <= 0 || frame_size.cy <= 0) {
+		return;
+	}
+
+	_locked_window_size = frame_size;
+	_window_size_locked = true;
+
+	// Set the frame so the view's client area exactly matches the captured screenshot.
+	theApp.m_pMainWnd->SetWindowPos(NULL, 0, 0, frame_size.cx, frame_size.cy, SWP_NOMOVE | SWP_NOZORDER);
+	DockTableMapWindow(false);
+}
+
+// Blue read-only "(N)" count painted on the toolbar.
+BEGIN_MESSAGE_MAP(CBlueStatic, CStatic)
+	ON_WM_PAINT()
+END_MESSAGE_MAP()
+
+void CBlueStatic::OnPaint()
+{
+	CPaintDC dc(this);
+	CRect rc; GetClientRect(&rc);
+	dc.FillSolidRect(&rc, ::GetSysColor(COLOR_BTNFACE));   // blend with the toolbar
+	CString s; GetWindowText(s);
+	dc.SetBkMode(TRANSPARENT);
+	dc.SetTextColor(RGB(0, 0, 210));                       // blue
+	CFont *old = dc.SelectObject(CFont::FromHandle((HFONT)::GetStockObject(DEFAULT_GUI_FONT)));
+	dc.DrawText(s, &rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+	dc.SelectObject(old);
+}
+
+// --- Auto card capture toolbar buttons (delegate to the view, which owns the loop) -
+void CMainFrame::OnAutoCapture()
+{
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	if (pView) pView->ToggleAutoCapture();
+}
+
+void CMainFrame::OnPauseScreenshot()
+{
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	if (pView) pView->TogglePause();
+}
+void CMainFrame::OnUpdatePauseScreenshot(CCmdUI *pCmdUI)
+{
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	pCmdUI->SetCheck((pView && pView->IsPaused()) ? 1 : 0);
+}
+void CMainFrame::OnUpdateAutoCapture(CCmdUI *pCmdUI)
+{
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	pCmdUI->SetCheck((pView && pView->IsAutoCapture()) ? 1 : 0);
+	// Refresh the blue "(N)" captured-screenshot count (idle hook).
+	if (m_CaptureCount.GetSafeHwnd() != NULL) {
+		CString s; s.Format("(%d)", pView ? pView->CaptureCount() : 0);
+		CString cur; m_CaptureCount.GetWindowText(cur);
+		if (cur != s) { m_CaptureCount.SetWindowText(s); m_CaptureCount.Invalidate(FALSE); }
+	}
+	// Refresh the "i/N" current-capture index between the arrows.
+	if (m_CaptureIndex.GetSafeHwnd() != NULL) {
+		int total = pView ? pView->CaptureCount() : 0;
+		int idx = pView ? pView->CaptureIndex() : -1;
+		CString s;
+		if (total <= 0) s = "-/-";
+		else s.Format("%d/%d", (idx < 0 ? 0 : idx + 1), total);
+		CString cur; m_CaptureIndex.GetWindowText(cur);
+		if (cur != s) { m_CaptureIndex.SetWindowText(s); m_CaptureIndex.Invalidate(FALSE); }
+	}
+}
+void CMainFrame::OnAutoCaptureBack()
+{
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	if (pView) pView->NavigateCapture(-1);
+}
+void CMainFrame::OnAutoCaptureNext()
+{
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	if (pView) pView->NavigateCapture(+1);
+}
+void CMainFrame::OnAutoCaptureClear()
+{
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	if (pView) pView->ClearCaptures();
+}
+void CMainFrame::OnAutoCaptureRefresh()
+{
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	if (pView) pView->RefreshCurrentScreenshot();
+}
+void CMainFrame::OnUpdateAutoCaptureNav(CCmdUI *pCmdUI)
+{
+	COpenScrapeView *pView = COpenScrapeView::GetView();
+	pCmdUI->Enable(pView && pView->HasCaptures());
+}
+
+void CMainFrame::OnViewRefresh()
+{
+	COpenScrapeDoc		*pDoc = COpenScrapeDoc::GetDocument();
+	RECT				crect;
+
+	// Refresh is an explicit "go live" action -> resume if paused.
+	{
+		COpenScrapeView *pView = COpenScrapeView::GetView();
+		if (pView != NULL) pView->SetPaused(false);
+	}
+
+	if (pDoc->attached_hwnd && IsWindow(pDoc->attached_hwnd))
+	{
+		// bring attached window to front
+		::SetFocus(pDoc->attached_hwnd);
+		::SetForegroundWindow(pDoc->attached_hwnd);
+		::SetActiveWindow(pDoc->attached_hwnd);
+
+		SaveBmpPbits();
+
+		// Update saved rect
+		if (!GetClientWindowCaptureRect(pDoc->attached_hwnd, &crect)) {
+			::GetClientRect(pDoc->attached_hwnd, &crect);
+		}
+		pDoc->attached_rect.left = crect.left;
+		pDoc->attached_rect.top = crect.top;
+		pDoc->attached_rect.right = crect.right;
+		pDoc->attached_rect.bottom = crect.bottom;
+
+		ResizeWindow(pDoc);			
+
+		// Instruct table-map dialog to update
+		theApp.m_TableMapDlg->update_display();
+
+		ForceRedraw();		
+		BringOpenScrapeBackToFront();
+	}
+
+	else 
+	{
+		OnViewConnecttowindow();
+	}
+}
+
+void CMainFrame::CheckIfOHReplayRunning() {
+  // Just a quick and dirty test if a process named "OHReplay.exe" exists.
+  // Even some experienced botters didn't know what OHReplay
+  // and these buttons are good for.
+  //!!!!
+  return;
+  {
+    MessageBox("Unable to switch to preious / next replay-frame.\n"
+      "Not connected to OHReplay\n",
+      "Warning", 0);
+  }
+}
+
+void CMainFrame::OnViewPrev()
+{
+	COpenScrapeDoc		*pDoc = COpenScrapeDoc::GetDocument();
+	RECT				crect;
+  CheckIfOHReplayRunning();
+	if (pDoc->attached_hwnd && IsWindow(pDoc->attached_hwnd))
+	{
+		// bring attached window to front
+		::SetFocus(pDoc->attached_hwnd);
+		::SetForegroundWindow(pDoc->attached_hwnd);
+		::SetActiveWindow(pDoc->attached_hwnd);
+
+		// check if its OHreplay
+		char className[20];
+		::GetClassName(pDoc->attached_hwnd,className, 20);
+		if(strcmp("OHREPLAY", className)==0) 
+		{
+			// if OHreplay send a tab keypress to goto next screen
+			KEYBDINPUT  kb={0};  
+			INPUT    Input={0};
+
+			kb.wVk  = VK_SHIFT; 
+			Input.type  = INPUT_KEYBOARD;
+			Input.ki  = kb;
+			::SendInput(1,&Input,sizeof(Input));
+			::ZeroMemory(&kb,sizeof(KEYBDINPUT));
+			::ZeroMemory(&Input,sizeof(INPUT));
+
+			kb.wVk  = VK_TAB; 
+			Input.type  = INPUT_KEYBOARD;
+			Input.ki  = kb;
+			::SendInput(1,&Input,sizeof(Input)); 
+			::ZeroMemory(&kb,sizeof(KEYBDINPUT));
+			::ZeroMemory(&Input,sizeof(INPUT));
+			
+			// generate up 		
+			kb.dwFlags  =  KEYEVENTF_KEYUP;
+			kb.wVk  = VK_TAB; 
+			Input.type  =  INPUT_KEYBOARD;
+			Input.ki  =  kb;
+			::SendInput(1,&Input,sizeof(Input));
+			::ZeroMemory(&kb,sizeof(KEYBDINPUT));
+			::ZeroMemory(&Input,sizeof(INPUT));
+
+			kb.dwFlags  =  KEYEVENTF_KEYUP;
+			kb.wVk  = VK_SHIFT; 
+			Input.type  =  INPUT_KEYBOARD;
+			Input.ki  =  kb;
+			::SendInput(1,&Input,sizeof(Input));
+		}
+
+		Sleep(100); // little time to allow for redraw
+		SaveBmpPbits();
+
+		// Update saved rect
+		if (!GetClientWindowCaptureRect(pDoc->attached_hwnd, &crect)) {
+			::GetClientRect(pDoc->attached_hwnd, &crect);
+		}
+		pDoc->attached_rect.left = crect.left;
+		pDoc->attached_rect.top = crect.top;
+		pDoc->attached_rect.right = crect.right;
+		pDoc->attached_rect.bottom = crect.bottom;
+
+		ResizeWindow(pDoc);	
+
+		// Instruct table-map dialog to update
+		theApp.m_TableMapDlg->update_display();
+		ForceRedraw();
+		BringOpenScrapeBackToFront();
+	}
+
+	else 
+	{
+		OnViewConnecttowindow();
+	}
+}
+
+void CMainFrame::OnViewNext()
+{
+	COpenScrapeDoc		*pDoc = COpenScrapeDoc::GetDocument();
+	RECT				crect;
+  CheckIfOHReplayRunning();
+	if (pDoc->attached_hwnd && IsWindow(pDoc->attached_hwnd))
+	{
+		// bring attached window to front
+		::SetFocus(pDoc->attached_hwnd);
+		::SetForegroundWindow(pDoc->attached_hwnd);
+		::SetActiveWindow(pDoc->attached_hwnd);
+
+		// check if its OHreplay
+		char className[20];
+		::GetClassName(pDoc->attached_hwnd,className, 20);
+		if(strcmp("OHREPLAY", className)==0) 
+		{
+			// if OHreplay send a tab keypress to goto next screen
+			KEYBDINPUT  kb={0};  
+			INPUT    Input={0};
+			kb.wVk  = VK_TAB; 
+			Input.type  = INPUT_KEYBOARD;
+			Input.ki  = kb;
+			::SendInput(1,&Input,sizeof(Input));
+			// generate up 
+			::ZeroMemory(&kb,sizeof(KEYBDINPUT));
+			::ZeroMemory(&Input,sizeof(INPUT));
+			kb.dwFlags  =  KEYEVENTF_KEYUP;
+			kb.wVk  = VK_TAB; 
+			Input.type  =  INPUT_KEYBOARD;
+			Input.ki  =  kb;
+			::SendInput(1,&Input,sizeof(Input));
+		}
+
+		Sleep(100); // little time to allow for redraw
+		SaveBmpPbits();
+
+		// Update saved rect
+		if (!GetClientWindowCaptureRect(pDoc->attached_hwnd, &crect)) {
+			::GetClientRect(pDoc->attached_hwnd, &crect);
+		}
+		pDoc->attached_rect.left = crect.left;
+		pDoc->attached_rect.top = crect.top;
+		pDoc->attached_rect.right = crect.right;
+		pDoc->attached_rect.bottom = crect.bottom;
+
+		// Set
+		int size_x = crect.right - crect.left + 1;
+		int size_y = crect.bottom - crect.top + 1;
+		SetTablemapSizeIfUnknown(size_x, size_y);
+
+		ResizeWindow(pDoc);	
+
+		// Instruct table-map dialog to update
+		theApp.m_TableMapDlg->update_display();
+		ForceRedraw();
+		BringOpenScrapeBackToFront();
+	}
+
+	else
+	{
+		OnViewConnecttowindow();
+	}
+}
+
+void CMainFrame::OnTrainingData()
+{
+	COpenScrapeDoc *pDoc = COpenScrapeDoc::GetDocument();
+	COpenScrapeView *view = (COpenScrapeView *)GetActiveView();
+	if (view == NULL) {
+		return;
+	}
+	if (pDoc == NULL || pDoc->attached_bitmap == NULL) {
+		AfxMessageBox("Connect to a window first so there is a screenshot to capture from.",
+			MB_ICONINFORMATION);
+		return;
+	}
+	// Enter training-capture mode: region overlays hide, the user drags one box,
+	// types the value, and a cropped image + .txt are written to training\.
+	view->SetTrainingMode(true);
+	BringOpenScrapeBackToFront();
+}
+
+void CMainFrame::OnUpdateTrainingData(CCmdUI *pCmdUI)
+{
+	COpenScrapeView *view = (COpenScrapeView *)GetActiveView();
+	pCmdUI->SetCheck(view != NULL && view->training_mode());
+}
+
+void CMainFrame::OnToolsCloneRegions()
+{
+	CRegionCloner *p_region__cloner = new(CRegionCloner);
+	p_region__cloner->CloneRegions();
+	delete(p_region__cloner);
+}
+
+static unsigned int ShiftCoordinateClamped(unsigned int value, int delta)
+{
+	int result = (int)value + delta;
+	return result < 0 ? 0 : (unsigned int)result;
+}
+
+void CMainFrame::OnToolsShiftRegions()
+{
+	COpenScrapeDoc *pDoc = COpenScrapeDoc::GetDocument();
+	if (pDoc == NULL || p_tablemap == NULL) {
+		return;
+	}
+
+	// Default offset converts coordinates that were placed against the old
+	// full-window screenshot into client-area coordinates, i.e. subtract the
+	// attached window's non-client area (title bar + borders).
+	int default_dx = 0;
+	int default_dy = 0;
+	if (pDoc->attached_hwnd != NULL && ::IsWindow(pDoc->attached_hwnd)) {
+		RECT window_rect = {0};
+		RECT client_rect = {0};
+		if (WindowCapture::GetFullWindowScreenRect(pDoc->attached_hwnd, &window_rect)
+				&& WindowCapture::GetClientScreenRect(pDoc->attached_hwnd, &client_rect)) {
+			default_dx = -(client_rect.left - window_rect.left);
+			default_dy = -(client_rect.top - window_rect.top);
+		}
+	}
+
+	CDlgEdit dlg;
+	dlg.m_titletext = "Shift all regions by dx,dy (pixels). Negative moves up/left.";
+	dlg.m_result.Format("%d,%d", default_dx, default_dy);
+	if (dlg.DoModal() != IDOK) {
+		return;
+	}
+
+	int dx = 0;
+	int dy = 0;
+	if (sscanf_s(dlg.m_result.GetString(), "%d , %d", &dx, &dy) != 2) {
+		MessageBox("Could not parse the shift. Enter two integers like \"-8,-31\".",
+			"Shift all regions", MB_OK | MB_ICONERROR);
+		return;
+	}
+	if (dx == 0 && dy == 0) {
+		return;
+	}
+
+	CString confirm;
+	confirm.Format("Shift %d region(s) and %d template(s) by (%d, %d)?\n\n"
+		"Coordinates are clamped to 0 at the top/left edge.",
+		(int)p_tablemap->r$()->size(), (int)p_tablemap->tpl$()->size(), dx, dy);
+	if (MessageBox(confirm, "Shift all regions", MB_OKCANCEL | MB_ICONQUESTION) != IDOK) {
+		return;
+	}
+
+	for (RMapI r_iter = p_tablemap->set_r$()->begin(); r_iter != p_tablemap->set_r$()->end(); ++r_iter) {
+		r_iter->second.left = ShiftCoordinateClamped(r_iter->second.left, dx);
+		r_iter->second.right = ShiftCoordinateClamped(r_iter->second.right, dx);
+		r_iter->second.top = ShiftCoordinateClamped(r_iter->second.top, dy);
+		r_iter->second.bottom = ShiftCoordinateClamped(r_iter->second.bottom, dy);
+	}
+	for (TPLMapI tpl_iter = p_tablemap->set_tpl$()->begin(); tpl_iter != p_tablemap->set_tpl$()->end(); ++tpl_iter) {
+		tpl_iter->second.left = ShiftCoordinateClamped(tpl_iter->second.left, dx);
+		tpl_iter->second.right = ShiftCoordinateClamped(tpl_iter->second.right, dx);
+		tpl_iter->second.top = ShiftCoordinateClamped(tpl_iter->second.top, dy);
+		tpl_iter->second.bottom = ShiftCoordinateClamped(tpl_iter->second.bottom, dy);
+	}
+
+	// Color-preset sample points are stored as absolute pixel coordinates in
+	// "oscolorip<n>pointx"/"pointy" symbols (the relative pointrelx/pointrely
+	// variants are left untouched).
+	for (SMapI s_iter = p_tablemap->s$()->begin(); s_iter != p_tablemap->s$()->end(); ++s_iter) {
+		CString name = s_iter->second.name;
+		if (name.Left(9) != "oscolorip") {
+			continue;
+		}
+		int delta;
+		if (name.Right(6) == "pointx") {
+			delta = dx;
+		} else if (name.Right(6) == "pointy") {
+			delta = dy;
+		} else {
+			continue;
+		}
+		int value = atoi(s_iter->second.text.GetString()) + delta;
+		if (value < 0) {
+			value = 0;
+		}
+		s_iter->second.text.Format("%d", value);
+	}
+
+	pDoc->SetModifiedFlag(true);
+	if (theApp.m_TableMapDlg != NULL) {
+		theApp.m_TableMapDlg->update_display();
+		theApp.m_TableMapDlg->Invalidate(false);
+	}
+	ForceRedraw();
+}
+
+void CMainFrame::OnGroupregionsBytype()
+{
+	Registry		reg;
+	reg.read_reg();
+	reg.region_grouping = BY_TYPE;
+	reg.write_reg();
+
+	theApp.m_TableMapDlg->region_grouping = BY_TYPE;
+	theApp.m_TableMapDlg->UngroupRegions();
+	theApp.m_TableMapDlg->GroupRegions();
+
+	HTREEITEM hRegionNode = theApp.m_TableMapDlg->GetTypeNode("Regions");
+	theApp.m_TableMapDlg->m_TableMapTree.SortChildren(hRegionNode);
+}
+
+void CMainFrame::OnGroupregionsByname()
+{
+	Registry		reg;
+	reg.read_reg();
+	reg.region_grouping = BY_NAME;
+	reg.write_reg();
+
+	theApp.m_TableMapDlg->region_grouping = BY_NAME;
+	theApp.m_TableMapDlg->UngroupRegions();
+	theApp.m_TableMapDlg->GroupRegions();
+
+	HTREEITEM hRegionNode = theApp.m_TableMapDlg->GetTypeNode("Regions");
+	theApp.m_TableMapDlg->m_TableMapTree.SortChildren(hRegionNode);
+}
+
+void CMainFrame::OnUpdateViewCurrentwindowsize(CCmdUI *pCmdUI)
+{
+	COpenScrapeDoc		*pDoc = COpenScrapeDoc::GetDocument();
+	CString				text;
+
+	if (pDoc->attached_hwnd)
+	{
+		text.Format("Current size: %dx%d", pDoc->attached_rect.right - pDoc->attached_rect.left, 
+										   pDoc->attached_rect.bottom - pDoc->attached_rect.top);
+		pCmdUI->SetText(text.GetString());
+		pCmdUI->Enable(true);
+	}
+
+	else
+	{
+		pCmdUI->SetText("Current size: 0x0");
+		pCmdUI->Enable(false);
+	}
+}
+
+void CMainFrame::OnUpdateEditDuplicateregion(CCmdUI *pCmdUI)
+{
+	COpenScrapeDoc		*pDoc = COpenScrapeDoc::GetDocument();
+	HTREEITEM			parent = NULL;
+	CString				sel = "", selected_parent_text = "";
+		
+	// Get name of currently selected item
+	if (theApp.m_TableMapDlg->m_TableMapTree.GetSelectedItem())
+	{
+		sel = theApp.m_TableMapDlg->m_TableMapTree.GetItemText(theApp.m_TableMapDlg->m_TableMapTree.GetSelectedItem());
+		parent = theApp.m_TableMapDlg->m_TableMapTree.GetParentItem(theApp.m_TableMapDlg->m_TableMapTree.GetSelectedItem());
+	}
+
+	// Get name of currently selected item's parent
+	if (parent != NULL) 
+		selected_parent_text = theApp.m_TableMapDlg->m_TableMapTree.GetItemText(parent);
+
+	pCmdUI->Enable(selected_parent_text == "Regions");
+}
+
+void CMainFrame::OnUpdateGroupregionsBytype(CCmdUI *pCmdUI)
+{
+	pCmdUI->SetCheck(theApp.m_TableMapDlg->region_grouping==BY_TYPE);
+}
+
+void CMainFrame::OnUpdateGroupregionsByname(CCmdUI *pCmdUI)
+{
+	pCmdUI->SetCheck(theApp.m_TableMapDlg->region_grouping==BY_NAME);
+}
+
+void CMainFrame::SaveBmpPbits(bool force)
+{
+	COpenScrapeDoc		*pDoc = COpenScrapeDoc::GetDocument();
+	int					width, height;
+
+	// Screenshot paused: keep the currently displayed frame frozen unless this is an
+	// explicit user grab (force = Refresh / Connect / Resume).
+	{
+		COpenScrapeView *pView = COpenScrapeView::GetView();
+		if (!force && pView != NULL && pView->IsPaused()) {
+			return;
+		}
+	}
+
+	// Clean up from a previous connect, if needed
+	if (pDoc->attached_bitmap != NULL)
+	{
+		DeleteObject(pDoc->attached_bitmap);
+		pDoc->attached_bitmap = NULL;
+	}
+
+	if (pDoc->attached_pBits) 
+	{
+		delete []pDoc->attached_pBits;
+		pDoc->attached_pBits = NULL;
+	}
+
+	// Save bitmap of connected window
+	pDoc->attached_bitmap = CaptureCompositedClientBitmap(pDoc->attached_hwnd, &width, &height);
+	if (pDoc->attached_bitmap == NULL) {
+		MessageBox("Unable to capture the attached window.", "Screen scrape failed", MB_OK | MB_ICONERROR);
+		return;
+	}
+	pDoc->attached_rect.left = 0;
+	pDoc->attached_rect.top = 0;
+	pDoc->attached_rect.right = width;
+	pDoc->attached_rect.bottom = height;
+
+	// Get pBits of connected window
+	// Allocate heap space for BITMAPINFO
+	BITMAPINFO	*bmi;
+	int			info_len = sizeof(BITMAPINFOHEADER) + 1024;
+	bmi = (BITMAPINFO *) ::HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, info_len);
+
+	// Populate BITMAPINFOHEADER
+	bmi->bmiHeader.biSize = sizeof(bmi->bmiHeader);
+	bmi->bmiHeader.biBitCount = 0;
+	HDC hdcScreen = CreateDC("DISPLAY", NULL, NULL, NULL);
+	HDC hdcCompatible = CreateCompatibleDC(hdcScreen);
+	HBITMAP old_bitmap = (HBITMAP) SelectObject(hdcCompatible, pDoc->attached_bitmap);
+	::GetDIBits(hdcCompatible, pDoc->attached_bitmap, 0, 0, NULL, bmi, DIB_RGB_COLORS);
+
+	// Get the actual argb bit information
+	bmi->bmiHeader.biHeight = -bmi->bmiHeader.biHeight;
+	bmi->bmiHeader.biBitCount = 32;
+	bmi->bmiHeader.biCompression = BI_RGB;
+	bmi->bmiHeader.biSizeImage = width * height * 4;
+	pDoc->attached_pBits = new BYTE[bmi->bmiHeader.biSizeImage];
+	::GetDIBits(hdcCompatible, pDoc->attached_bitmap, 0, height, pDoc->attached_pBits, bmi, DIB_RGB_COLORS);
+
+	// Clean up
+	HeapFree(GetProcessHeap(), NULL, bmi);
+	SelectObject(hdcCompatible, old_bitmap);
+	DeleteDC(hdcCompatible);
+	DeleteDC(hdcScreen);
+}
+
+CArray <STableList, STableList>		g_tlist; 
+
+BOOL CALLBACK EnumProcTopLevelWindowList(HWND hwnd, LPARAM lparam) 
+{
+	CString				title, winclass;
+	char				text[512];
+	RECT				crect;
+	STableList			tablelisthold;
+
+	// If this is not a top level window, then return
+	if (GetParent(hwnd) != NULL)
+		return true;
+
+	// If this window is not visible, then return
+	if (!IsWindowVisible(hwnd))
+		return true;
+
+	/* We use this when we only want windows with title text
+	// If there is no caption on this window, then return
+	GetWindowText(hwnd, text, sizeof(text));
+	if (strlen(text)==0)
+		return true;
+
+	title = text;
+	*/
+
+	// We use this when we want every existing window
+	// by setting the title text of non title text windows as "HWND: " + hwnd
+	GetWindowText(hwnd, text, sizeof(text));
+	if (strlen(text)==0)
+		title.AppendFormat("HWND: %i", hwnd);
+	else
+		title = text;
+	
+
+	// Found a window, get client area rect
+	GetClientRect(hwnd, &crect);
+
+	// Save it in the list
+	tablelisthold.hwnd = hwnd;
+	tablelisthold.title = title;
+	tablelisthold.crect.left = crect.left;
+	tablelisthold.crect.top = crect.top;
+	tablelisthold.crect.right = crect.right;
+	tablelisthold.crect.bottom = crect.bottom;
+	g_tlist.Add(tablelisthold);
+
+	return true;  // keep processing through entire list of windows
+}
+

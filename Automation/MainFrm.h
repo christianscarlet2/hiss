@@ -1,0 +1,146 @@
+//******************************************************************************
+//
+// This file is part of the OpenHoldem project
+//    Source code:           https://github.com/OpenHoldem/openholdembot/
+//    Forums:                http://www.maxinmontreal.com/forums/index.php
+//    Licensed under GPL v3: http://www.gnu.org/licenses/gpl.html
+//
+//******************************************************************************
+//
+// Purpose:
+//
+//******************************************************************************
+
+
+// MainFrm.h : interface of the CMainFrame class
+//
+#pragma once
+#include "OpenScrapeDoc.h"
+
+#define		BLINKER_TIMER				1
+
+// Small read-only static that paints its text in blue (used for the toolbar's
+// "(N)" captured-screenshot count).
+class CBlueStatic : public CStatic {
+protected:
+	afx_msg void OnPaint();
+	DECLARE_MESSAGE_MAP()
+};
+
+class CMainFrame : public CFrameWnd {
+ public:
+	LRESULT OnHotKey(WPARAM wParam, LPARAM lParam);
+	void UpdateTableMapDockSide();
+	bool AutoConnectToTablemapTitleText();
+ protected: // create from serialization only
+	CMainFrame();
+	DECLARE_DYNCREATE(CMainFrame)
+	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
+	afx_msg void OnViewRefresh();
+	afx_msg void OnViewPrev();
+	afx_msg void OnViewNext();
+	afx_msg void OnTrainingData();
+	afx_msg void OnUpdateTrainingData(CCmdUI *pCmdUI);
+	afx_msg void OnToolsCloneRegions();
+	afx_msg void OnToolsShiftRegions();
+	afx_msg void OnEditUpdatehashes();
+	afx_msg void OnEditDuplicateregion();
+	afx_msg void OnTimer(UINT_PTR nIDEvent);
+	afx_msg void OnMove(int x, int y);
+	afx_msg void OnSize(UINT nType, int cx, int cy);
+	afx_msg void OnGetMinMaxInfo(MINMAXINFO* lpMMI);
+	afx_msg void OnGroupregionsBytype();
+	afx_msg void OnGroupregionsByname();
+	afx_msg void OnUpdateViewCurrentwindowsize(CCmdUI *pCmdUI);
+	afx_msg void OnUpdateEditDuplicateregion(CCmdUI *pCmdUI);
+	afx_msg void OnUpdateGroupregionsBytype(CCmdUI *pCmdUI);
+	afx_msg void OnUpdateGroupregionsByname(CCmdUI *pCmdUI);
+	afx_msg void OnAutoCapture();
+	afx_msg void OnUpdateAutoCapture(CCmdUI *pCmdUI);
+	afx_msg void OnAutoCaptureBack();
+	afx_msg void OnAutoCaptureNext();
+	afx_msg void OnAutoCaptureClear();
+	afx_msg void OnAutoCaptureRefresh();
+	afx_msg void OnUpdateAutoCaptureNav(CCmdUI *pCmdUI);
+	afx_msg void OnPauseScreenshot();
+	afx_msg void OnUpdatePauseScreenshot(CCmdUI *pCmdUI);
+	DECLARE_MESSAGE_MAP()
+
+	// ---- Automation process bar -------------------------------------------------------------
+	// Process-type combo + Save, over step buttons 1-9. Selecting a step swaps the displayed
+	// screenshot AND the region set, so the operator walks the flow one screen at a time.
+	afx_msg void OnProcessSave();
+	afx_msg void OnProcessComboChanged();
+	afx_msg void OnProcessStep(UINT nID);            // ON_COMMAND_RANGE over IDC_PROCESS_STEP1..9
+	afx_msg void OnUpdateProcessStep(CCmdUI *pCmdUI);
+	afx_msg void OnUpdateProcessSave(CCmdUI *pCmdUI);
+
+	CStatusBar	m_wndStatusBar;
+	CToolBar		m_wndToolBar;
+	CDialogBar	m_wndProcessBar;
+	CImageList	m_ToolbarImages;  // modern GDI+-rendered toolbar icons (32bpp alpha)
+	CBlueStatic	m_CaptureCount;   // blue "(N)" captured-screenshot count on the toolbar
+	CBlueStatic	m_CaptureIndex;   // "i/N" current capture index, between the arrows
+ public:
+	virtual BOOL DestroyWindow();
+	afx_msg void OnViewConnecttowindow();
+	// Session persistence (hiss DB "settings" table, key "vision_session"): restore
+	// the last-used tablemap + reconnect to the last connected window on startup,
+	// and save both on exit.
+	void RestoreSessionFromDb();
+	void SaveSessionToDb();
+	// Capture the connected window into the document bitmap (public so the auto-card-
+	// capture loop in the view can grab a fresh frame), and force a full redraw.
+	// force=true ignores the view's paused state (explicit user grabs: Refresh / Connect /
+	// Resume). Automatic callers (startup reconnect, auto-capture) leave it false so a
+	// paused view stays frozen.
+	void SaveBmpPbits(bool force = false);
+	void ForceRedraw();
+	virtual BOOL PreCreateWindow(CREATESTRUCT& cs);
+	virtual ~CMainFrame();
+ public:
+	// The six automation flows. A CLOSED vocabulary shared with the /automation site and the
+	// bot-side poller: these strings are stored verbatim in automation.tm_regions.process and
+	// automation.process_screenshots.process, so renaming one orphans every region mapped under
+	// the old name. Add to the end rather than editing in place.
+	static const char *kProcessTypes[];
+	static int         kProcessTypeCount;
+	CString CurrentProcess() const { return _process; }
+	int     CurrentStep() const { return _step; }
+	// Which steps of the current process already hold a screenshot (refreshed from the DB).
+	void    RefreshCapturedSteps();
+	bool    StepIsCaptured(int step) const;
+
+ private:
+	CString _process;              // "" until the combo has a selection
+	int     _step;                 // 1-9, always valid
+	bool    _captured_steps[10];   // 1-based; [0] unused so step numbers index directly
+	bool    _steps_refreshed_once; // deferred first refresh (no document during OnCreate)
+	long    CurrentTablemapId();
+	void    LoadStepIntoView(int step);
+	bool    CreateProcessBar();
+	bool CreateToolbar();
+	void BuildToolbarImageList();   // render the modern icon set with GDI+
+	bool CreateStatusBar();
+	void AttachToTableCandidate(const STableList &candidate);
+	bool TableCandidateMatchesTitleText(const STableList &candidate);
+	void ResizeWindow(COpenScrapeDoc *pDoc);
+	CSize CalculateFrameSizeForScreenshot(COpenScrapeDoc *pDoc);
+	void BringOpenScrapeBackToFront();
+	void SetTablemapSizeIfUnknown(int size_x, int size_y);
+	void DockTableMapWindow(bool update_dock_side);
+  void CheckIfOHReplayRunning();
+	bool _docking_tablemap;
+	bool _window_size_locked;
+	CSize _locked_window_size;
+	int _tablemap_dock_side;
+#ifdef _DEBUG
+	virtual void AssertValid() const;
+	virtual void Dump(CDumpContext& dc) const;
+#endif
+};
+
+// used by EnumProcTopLevelWindowList function
+extern CArray <STableList, STableList>		g_tlist; 
+
+BOOL CALLBACK EnumProcTopLevelWindowList(HWND hwnd, LPARAM lparam);

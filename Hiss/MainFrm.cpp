@@ -138,6 +138,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_ULTRA, &CMainFrame::OnUltra)
 	ON_UPDATE_COMMAND_UI(ID_MAIN_TOOLBAR_ULTRA, &CMainFrame::OnUpdateUltra)
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_SUPERSTITION, &CMainFrame::OnSuperstition)
+	ON_BN_CLICKED(ID_MAIN_TOOLBAR_AUTOMATION, &CMainFrame::OnAutomation)
 	ON_UPDATE_COMMAND_UI(ID_MAIN_TOOLBAR_SUPERSTITION, &CMainFrame::OnUpdateSuperstition)
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_FORMULA, &CMainFrame::OnEditFormula)
 	ON_BN_CLICKED(ID_MAIN_TOOLBAR_VALIDATOR, &CMainFrame::OnValidator)
@@ -285,6 +286,14 @@ CMainFrame::~CMainFrame() {
 		delete p_react_table_window;
 		p_react_table_window = NULL;
 	}
+	// Destroyed BEFORE the HUD overlay: its paint path reads the HUD's hero anchor rect.
+	if (p_hud_action_window != NULL) {
+		if (::IsWindow(p_hud_action_window->GetSafeHwnd())) {
+			p_hud_action_window->DestroyWindow();
+		}
+		delete p_hud_action_window;
+		p_hud_action_window = NULL;
+	}
 	if (p_hud_overlay_window != NULL) {
 		if (::IsWindow(p_hud_overlay_window->GetSafeHwnd())) {
 			p_hud_overlay_window->DestroyWindow();
@@ -345,6 +354,10 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpCreateStruct) {
 	// Transparent PT4 HUD overlay drawn over the attached scrcpy table window.
 	p_hud_overlay_window = new CHudOverlayWindow();
 	p_hud_overlay_window->Create(this);
+	// The bot's RED decision rides on its OWN solid overlay so the HUD tiles above can stay faint
+	// (a layered window's alpha is global). Created after the HUD so it starts above it.
+	p_hud_action_window = new CHudActionWindow();
+	p_hud_action_window->Create(this);
 	// Start timer that checks if we should enable buttons
 	SetTimer(ENABLE_BUTTONS_TIMER, 50, 0);
 	// Start timer that updates status bar
@@ -783,6 +796,11 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent) {
     if (p_hud_overlay_window != NULL) {
       p_hud_overlay_window->TrackTableWindow();
     }
+    // AFTER the HUD, so the decision overlay lands above it in the topmost band and the action
+    // is never drawn behind a stat tile.
+    if (p_hud_action_window != NULL) {
+      p_hud_action_window->TrackTableWindow();
+    }
  	} else if (nIDEvent == ENABLE_BUTTONS_TIMER) {
 		// Autoplayer
 		// Since OH 4.0.5 we support autoplaying immediatelly after connection
@@ -854,6 +872,42 @@ void CMainFrame::OnUltra() {
 void CMainFrame::OnUpdateUltra(CCmdUI *pCmdUI) {
 	extern bool g_ultra_engaged;
 	pCmdUI->SetCheck(g_ultra_engaged ? 1 : 0);   // button shows pressed while ULTRA is running
+}
+
+// Toolbar gear: automation preferences, served as a React page by the local terminal
+// server at /automation-prefs/. Reuses CReactMappingsWindow as a generic embedded-browser
+// host (see NavigateToPath) rather than cloning a second WebView2 window whose only
+// difference would be the URL. Kept in its own window instance so opening preferences
+// never disturbs whatever the mappings window is showing.
+CReactMappingsWindow *p_react_automation_window = NULL;
+
+void CMainFrame::OnAutomation() {
+	if (p_chat_terminal_server == NULL) {
+		MessageBox("Terminal API server is not running; cannot open automation preferences.",
+			"Automation", MB_OK | MB_ICONERROR);
+		return;
+	}
+	unsigned short port = p_chat_terminal_server->port();
+	if (p_react_automation_window != NULL && ::IsWindow(p_react_automation_window->GetSafeHwnd())) {
+		p_react_automation_window->ShowWindow(SW_SHOW);
+		p_react_automation_window->SetForegroundWindow();
+		p_react_automation_window->NavigateToPath(port, "/automation-prefs/");
+		return;
+	}
+	if (p_react_automation_window != NULL) {
+		delete p_react_automation_window;
+		p_react_automation_window = NULL;
+	}
+	p_react_automation_window = new CReactMappingsWindow();
+	if (!p_react_automation_window->Create(this, port)) {
+		delete p_react_automation_window;
+		p_react_automation_window = NULL;
+		MessageBox("Could not create the automation preferences window.",
+			"Automation", MB_OK | MB_ICONERROR);
+		return;
+	}
+	// Create() navigates to /mappings/ by default; point it at the automation page.
+	p_react_automation_window->NavigateToPath(port, "/automation-prefs/");
 }
 
 void CMainFrame::OnSuperstition() {

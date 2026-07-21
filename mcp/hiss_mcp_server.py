@@ -88,6 +88,33 @@ def hiss_get(path):
     with urllib.request.urlopen(url, timeout=5) as r:
         return r.read().decode("utf-8", errors="replace")
 
+def hiss_get_on(port, path):
+    """Same as hiss_get but against an EXPLICIT instance.
+
+    hiss_port() caches ONE port, so plain hiss_get() always talks to whichever instance answered
+    first. That is wrong for anything instance-specific: several Hiss instances run at once, one
+    per scrcpy mirror, and 'which window am I capturing' is meaningless without saying which bot.
+    Ports are assigned in bind order, NOT fixed per mirror, so re-check the window list after a
+    restart rather than trusting a remembered port->mirror mapping.
+    """
+    port = int(port) if port else hiss_port()
+    if not port:
+        raise RuntimeError("hiss.exe terminal server not found (is Hiss running?)")
+    url = "http://127.0.0.1:%d%s" % (port, path)
+    with urllib.request.urlopen(url, timeout=5) as r:
+        return r.read().decode("utf-8", errors="replace")
+
+def live_hiss_ports():
+    """Every instance currently answering, so a tool can report the fleet rather than guess."""
+    out = []
+    for cand in range(27654, 27665):
+        try:
+            urllib.request.urlopen("http://127.0.0.1:%d/api/terminal-state" % cand, timeout=0.4).read()
+            out.append(cand)
+        except Exception:
+            continue
+    return out
+
 # --- AIL control server (mcp/ail_server.py on :7900) -----------------------
 AIL_PORT = int(os.environ.get("AIL_SERVER_PORT", "7900"))
 def _ail_url(path):
@@ -230,6 +257,10 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["fold", "check", "call", "bet", "raise", "allin"]}, "amount": {"type": "number", "description": "bet/raise size in big blinds"}}, "required": ["action"]}},
     {"name": "terminal_panes", "description": "Live contents of the 4 Terminal panes (Context / State / Decisions / Chat) + the pinned State block, from the running hiss.exe.",
      "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "hand_report", "description": "EVERYTHING about one hand, by hand number: the hand number, its gamestate/hand-history, every NN-driver decision, every OHF decision, the net result, and the list of captured frame screenshots (png paths you can Read). Use this FIRST when asked why the bot did or did not do something on a specific hand -- it joins the tables that otherwise have to be queried one by one. Pass no handnumber to get the most recent hand.",
+     "inputSchema": {"type": "object", "properties": {
+        "handnumber": {"type": "string", "description": "e.g. 2782511829; omit for the most recent hand"},
+        "max_frames": {"type": "integer", "description": "cap on screenshot rows returned (default 40)"}}}},
     {"name": "set_table_game_info", "description": "Set table_game_info from what YOU (Claude) read in the table image (a heartbeat frame) - NOT OCR. Determine the real blinds/ante/level/tourney from the screenshot and pass them here; the bot uses these as authoritative (blinds drive the engine, fixing BB-denominated displays). For a big-blind display set sb=0.5 bb=1.0 and chips_per_bb to the real big blind (e.g. 400). All fields optional.",
      "inputSchema": {"type": "object", "properties": {
         "sb": {"type": "number", "description": "operating small blind (BB-display -> 0.5)"},
@@ -355,6 +386,12 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {"since": {"type": "integer", "default": 0}}}},
     {"name": "lobby_fetch", "description": "Trigger the lobby-recon choreography (mcp/lobby_fetch.sh) for a Hiss instance via the AIL control server: navigate to the tournament lobby, capture the info pages to C:/tmp, and return to the felt. port = the instance's terminal port (default 27654). Parse C:/tmp/lobby_main.png + C:/tmp/lobby_moreinfo.png AFTER it returns.",
      "inputSchema": {"type": "object", "properties": {"port": {"type": "integer", "default": 27654}}}},
+    {"name": "set_capture_window", "description": "Change (or inspect) which window a Hiss instance is capturing. Call with NO title/hwnd/clear to LIST every pickable window for that instance, marking which is attached and which are already served by another bot -- do this first to get the hwnd/title. Then pass title (exact match, e.g. 'S10'/'A17'/'EMU'/'EMU2') or hwnd to pin that window; the connect happens on the next heartbeat, so re-check to confirm. clear=true drops the pin and restores automatic table selection. Several instances run at once (one per scrcpy mirror) so ALWAYS pass port to say which bot you mean; ports are assigned in bind order and are NOT fixed per mirror, so re-list after any restart instead of reusing an old port->mirror mapping.",
+     "inputSchema": {"type": "object", "properties": {
+        "port": {"type": "integer", "description": "terminal port of the instance to act on (omit to use the first one found)"},
+        "title": {"type": "string", "description": "exact window title to capture, e.g. 'S10'. Exact because 'EMU' is a prefix of 'EMU2'."},
+        "hwnd": {"type": "integer", "description": "window handle, if you already have it from a listing"},
+        "clear": {"type": "boolean", "description": "release the manual pin and go back to automatic table selection"}}}},
 ]
 
 def _card_region(position, slot):
@@ -365,6 +402,102 @@ def _card_region(position, slot):
     return "p%dcardface%d" % (int(p), int(slot))
 
 def call_tool(name, args):
+    if name == "set_capture_window":
+        port = args.get("port")
+        try:
+            ports = live_hiss_ports()
+            if port and int(port) not in ports:
+                return [{"type": "text", "text":
+                    "No Hiss instance is listening on port %s. Live instances: %s"
+                    % (port, ", ".join(str(p) for p in ports) or "(none)")}]
+            if not port:
+                if not ports:
+                    return [{"type": "text", "text": "No Hiss instance is running."}]
+                port = ports[0]
+
+            # clear the pin -> automatic table selection
+            if args.get("clear"):
+                st = json.loads(hiss_get_on(port, "/api/connect-window?clear=1"))
+                return [{"type": "text", "text":
+                    "port %d: manual window pin CLEARED -- automatic table selection restored.\n"
+                    "attached_hwnd=%s status=%s" % (port, st.get("attached_hwnd"), st.get("status"))}]
+
+            wins = json.loads(hiss_get_on(port, "/api/windows")).get("windows", [])
+            title = args.get("title")
+            hwnd = args.get("hwnd")
+
+            # No target -> LIST. Callers need the hwnd/title and, just as importantly, to see
+            # which windows another instance already holds.
+            if not title and not hwnd:
+                lines = ["port %d -- pickable windows (fleet: %s):"
+                         % (port, ", ".join(str(p) for p in ports))]
+                for w in wins:
+                    flags = []
+                    if w.get("attached"): flags.append("ATTACHED (this instance)")
+                    elif w.get("served"): flags.append("served by another bot")
+                    lines.append("  hwnd=%-10s %-24s %sx%s %s"
+                                 % (w.get("hwnd"), "'%s'" % w.get("title", ""),
+                                    w.get("w"), w.get("h"), " ".join(flags)))
+                lines.append("Pass title= or hwnd= to capture one of these.")
+                return [{"type": "text", "text": "\n".join(lines)}]
+
+            if title and not hwnd:
+                # EXACT match: 'EMU' is a prefix of 'EMU2', and a substring match would happily
+                # pin the wrong emulator -- a collision that has already bitten this rig once.
+                hits = [w for w in wins if w.get("title") == title]
+                if not hits:
+                    avail = ", ".join("'%s'" % w.get("title", "") for w in wins) or "(none)"
+                    return [{"type": "text", "text":
+                        "No window titled exactly '%s' on port %d. Available: %s" % (title, port, avail)}]
+                if len(hits) > 1:
+                    return [{"type": "text", "text":
+                        "%d windows are titled exactly '%s' (hwnds: %s). Pass hwnd= to disambiguate."
+                        % (len(hits), title, ", ".join(str(w.get("hwnd")) for w in hits))}]
+                hwnd = hits[0].get("hwnd")
+                if hits[0].get("served") and not hits[0].get("attached"):
+                    note = " NOTE: another instance currently holds this window; the pin may not take."
+                else:
+                    note = ""
+            else:
+                note = ""
+
+            want = int(hwnd)
+            st = json.loads(hiss_get_on(port, "/api/connect-window?hwnd=%d" % want))
+            # The connect runs on the HEARTBEAT thread, so the response above always still shows
+            # the old window. Poll for the real outcome instead of reporting the request and
+            # calling it done -- a pin can legitimately fail (no tablemap matches that window's
+            # size/title/tablepoints), and Hiss puts that reason in `status`.
+            outcome, status = None, st.get("status")
+            for _ in range(12):                      # ~18s; a connect cycle is a few seconds
+                time.sleep(1.5)
+                cur = json.loads(hiss_get_on(port, "/api/connect-window"))
+                status = cur.get("status") or status
+                if int(cur.get("attached_hwnd") or 0) == want:
+                    outcome = "ok"
+                    break
+                if not cur.get("override"):
+                    # Hiss dropped the pin: it gave up on that window and fell back.
+                    outcome = "failed"
+                    break
+            if outcome == "ok":
+                return [{"type": "text", "text":
+                    "port %d: NOW CAPTURING hwnd=%d ('%s').%s" % (port, want, title or "", note)}]
+            attached = json.loads(hiss_get_on(port, "/api/windows")).get("windows", [])
+            now = [w for w in attached if w.get("attached")]
+            now_s = ("'%s' (hwnd=%s)" % (now[0].get("title"), now[0].get("hwnd"))) if now else "nothing"
+            if outcome == "failed":
+                return [{"type": "text", "text":
+                    "port %d: could NOT capture hwnd=%d ('%s') -- Hiss dropped the pin and is on %s.\n"
+                    "reason: %s\n"
+                    "A window is only pickable if some tablemap matches its size/title/tablepoints, "
+                    "so check the mirror's client size against the tablemap's clientsizemin/max."
+                    % (port, want, title or "", now_s, status)}]
+            return [{"type": "text", "text":
+                "port %d: requested hwnd=%d ('%s') but it has not attached yet; still on %s.%s\n"
+                "status: %s -- re-run with no arguments to check again."
+                % (port, want, title or "", now_s, note, status)}]
+        except Exception as e:
+            return [{"type": "text", "text": "set_capture_window failed: %s" % e}]
     if name == "hiss_status":
         port = hiss_port()
         if not port:
@@ -404,6 +537,18 @@ def call_tool(name, args):
                     coupled.append("brain(synapse) :%d" % port)
                 except Exception:
                     pass
+        # Couple the vision driver to Hiss boot (the port is bound by now): one windowless cycle
+        # corrects table name / dollar blinds / name-lint immediately; the 3-min HissVisionDriver
+        # scheduled task continues it thereafter. Best-effort, never blocks start_hiss. [vision]
+        try:
+            _vd = os.path.join(REPO, "mcp", "vision_driver.py")
+            _pyw = r"C:\Users\scarl\AppData\Local\Programs\Python\Python310\pythonw.exe"
+            if os.path.isfile(_vd):
+                subprocess.Popen([_pyw if os.path.isfile(_pyw) else sys.executable, _vd, "--once"],
+                                 cwd=os.path.join(REPO, "mcp"), close_fds=True,
+                                 creationflags=(0x00000008 | 0x08000000) if os.name == "nt" else 0)
+        except Exception:
+            pass
         return [{"type": "text", "text": "Launched Hiss.exe (cwd=Release). Coupled: %s. Give it a few seconds, then hiss_status."
                  % (", ".join(coupled) or "none (ail_server unreachable)")}]
     if name == "stop_hiss":
@@ -459,6 +604,64 @@ def call_tool(name, args):
         return [{"type": "text", "text": hiss_get("/api/action?" + q)}]
     if name == "terminal_panes":
         return [{"type": "text", "text": hiss_get("/api/terminal-state")}]
+    if name == "hand_report":
+        # One hand, everything we know about it. Built because answering "why didn't the bot call
+        # on hand X" otherwise means querying four tables by hand and knowing which one holds what:
+        # the NN driver writes bot_nn_decision, the OHF autoplayer writes hiss_log_decisions, and a
+        # hand driven by the NN therefore has an EMPTY hiss_log_decisions -- which reads as "the bot
+        # never decided" if you only look there. Showing both side by side is the whole point.
+        hand = str(args.get("handnumber") or "").strip()
+        try:
+            max_frames = int(args.get("max_frames") or 40)
+        except Exception:
+            max_frames = 40
+        max_frames = max(1, min(max_frames, 500))
+        if not hand:
+            row = psql_query("SELECT handnumber FROM hiss_log_frames ORDER BY ts_ms DESC LIMIT 1").strip()
+            hand = row.splitlines()[0].strip() if row.strip() else ""
+            if not hand:
+                return [{"type": "text", "text": "no hands found in hiss_log_frames"}]
+        h = esc_sql(hand)
+        out = ["=== HAND %s ===" % hand]
+
+        def section(title, sql, empty="(none)"):
+            try:
+                txt = psql_query(sql, tuples_only=False).rstrip()
+            except Exception as e:
+                txt = "query failed: %s" % e
+            out.append("\n--- %s ---" % title)
+            out.append(txt if txt.strip() else empty)
+
+        section("NN DRIVER decisions (bot_nn_decision)",
+                "SELECT betround, action, amount, note, "
+                "to_char(to_timestamp(ts_ms/1000) AT TIME ZONE 'UTC','HH24:MI:SS') AS t_utc "
+                "FROM bot_nn_decision WHERE handnumber='%s' ORDER BY ts_ms" % h,
+                "(none - the NN driver did not decide this hand)")
+        section("OHF decisions (hiss_log_decisions)",
+                "SELECT betround, action, amount, hero_cards, "
+                "to_char(to_timestamp(ts_ms/1000) AT TIME ZONE 'UTC','HH24:MI:SS') AS t_utc "
+                "FROM hiss_log_decisions WHERE handnumber='%s' ORDER BY ts_ms" % h,
+                "(none - the OHF autoplayer did not decide this hand; normal when the NN is driving)")
+        section("RESULT (hand_results)",
+                "SELECT net, start_balance, end_balance FROM hand_results WHERE handnumber='%s'" % h)
+        section("REVIEW (bot_hand_review)",
+                "SELECT hero_cards, board, hero_net, classification, equity, action_taken, reason "
+                "FROM bot_hand_review WHERE handnumber='%s' ORDER BY ts" % h)
+        section("GAMESTATE / hand history (hiss_log_hands)",
+                "SELECT complete, verified_players, identity, hh_text "
+                "FROM hiss_log_hands WHERE handnumber='%s' ORDER BY ts_ms" % h)
+        section("SCREENSHOTS (hiss_log_frames, newest last) - Read these png_path values",
+                "SELECT betround, active_seat, hole, changed, png_path, "
+                "to_char(to_timestamp(ts_ms/1000) AT TIME ZONE 'UTC','HH24:MI:SS') AS t_utc "
+                "FROM hiss_log_frames WHERE handnumber='%s' ORDER BY ts_ms LIMIT %d" % (h, max_frames))
+        try:
+            n = psql_query("SELECT count(*) FROM hiss_log_frames WHERE handnumber='%s'" % h).strip()
+            if n.isdigit() and int(n) > max_frames:
+                out.append("\n(%s frames total; showing the first %d - raise max_frames for more)"
+                           % (n, max_frames))
+        except Exception:
+            pass
+        return [{"type": "text", "text": "\n".join(out)}]
     if name == "set_table_game_info":
         keys = ["sb", "bb", "ante", "chips_per_bb", "level", "players",
                 "tourney_name", "tourney_id", "table_number", "gametype"]

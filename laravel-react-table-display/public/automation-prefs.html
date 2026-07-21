@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Automation Preferences</title>
+<!--
+  Served by CChatTerminalServer at /automation-prefs/ and opened by the toolbar gear
+  (CMainFrame::OnAutomation) inside a WebView2 window.
+
+  React from a LOCAL vendored bundle, not a CDN: this page is opened by a bot that is often
+  running with no usable internet route, and a CDN miss would leave the gear opening a blank
+  window. If the vendored files are absent the page degrades to a readable message rather
+  than a white screen.
+-->
+<style>
+  :root{--bg:#0b0e0c;--panel:#11160f;--line:#20301d;--txt:#cfe9d6;--dim:#6f8c79;--acc:#7ef0a6}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
+  .wrap{max-width:720px;margin:26px auto;padding:0 18px}
+  h1{font-size:20px;font-weight:800;color:var(--acc);margin:0 0 2px;letter-spacing:.03em}
+  .sub{color:var(--dim);font-size:12.5px;margin:0 0 20px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:14px}
+  .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);margin:0 0 12px}
+  label{display:block;font-size:12.5px;color:var(--dim);margin:10px 0 4px}
+  input,select{width:100%;background:#0c120a;border:1px solid var(--line);color:var(--txt);
+               border-radius:8px;padding:8px 11px;font:13.5px inherit}
+  input:focus,select:focus{outline:none;border-color:#2f5a2c}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  button{cursor:pointer;border:none;border-radius:8px;padding:9px 16px;font-weight:700;font-size:13.5px;
+         background:#1f8f4a;color:#021}
+  button.ghost{background:#1a2417;color:var(--txt);border:1px solid var(--line)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .msg{margin-top:12px;font-size:13px;min-height:18px}
+  .ok{color:#9dffc4}.err{color:#ffb3b3}
+  .hint{color:var(--dim);font-size:11.5px;margin-top:6px}
+  code{background:#0c120a;border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:12px}
+</style></head>
+<body>
+<div id="root" class="wrap"></div>
+
+<script src="vendor/react.production.min.js"></script>
+<script src="vendor/react-dom.production.min.js"></script>
+<script>
+(function () {
+  var root = document.getElementById('root');
+  if (!window.React || !window.ReactDOM) {
+    root.innerHTML = '<h1>Automation Preferences</h1>'
+      + '<p class="sub">React bundle not found.</p>'
+      + '<div class="card">Expected <code>vendor/react.production.min.js</code> and '
+      + '<code>vendor/react-dom.production.min.js</code> under '
+      + '<code>laravel-react-table-display/public/</code>. '
+      + 'Vendored deliberately so this page works with no internet.</div>';
+    return;
+  }
+  var h = React.createElement;
+  var useState = React.useState, useEffect = React.useEffect;
+
+  function Field(p) {
+    return h('div', null,
+      h('label', null, p.label),
+      p.options
+        ? h('select', {value: p.value, onChange: function (e) { p.onChange(e.target.value); }},
+            p.options.map(function (o) { return h('option', {key: o, value: o}, o); }))
+        : h('input', {type: p.type || 'text', value: p.value, placeholder: p.placeholder || '',
+                      onChange: function (e) { p.onChange(e.target.value); }}),
+      p.hint ? h('div', {className: 'hint'}, p.hint) : null);
+  }
+
+  function App() {
+    var s = useState({api_base: '', api_token: '', bot_name: '', poll_seconds: '30',
+                      join_window_minutes: '59', enabled: 'off'});
+    var cfg = s[0], setCfg = s[1];
+    var m = useState({text: '', ok: true}); var msg = m[0], setMsg = m[1];
+    var b = useState(false); var busy = b[0], setBusy = b[1];
+
+    function set(k) {
+      return function (v) {
+        var next = {}; next[k] = v;
+        setCfg(Object.assign({}, cfg, next));
+      };
+    }
+
+    useEffect(function () {
+      fetch('/api/automation-prefs').then(function (r) { return r.json(); })
+        .then(function (j) { if (j && j.prefs) setCfg(Object.assign({}, cfg, j.prefs)); })
+        .catch(function () { /* first run: no prefs stored yet */ });
+    }, []);
+
+    function save() {
+      setBusy(true); setMsg({text: '', ok: true});
+      // Sent as QUERY PARAMETERS, not a body: that is how every endpoint on this local server
+      // takes input, and it avoids body handling entirely. encodeURIComponent matters here --
+      // a token or URL containing & or = would otherwise split into bogus extra parameters.
+      var qs = Object.keys(cfg).map(function (k) {
+        return encodeURIComponent(k) + '=' + encodeURIComponent(cfg[k] == null ? '' : cfg[k]);
+      }).join('&');
+      fetch('/api/automation-prefs?' + qs, {method: 'POST'})
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          setMsg(j && j.ok ? {text: 'Saved.', ok: true}
+                           : {text: (j && j.error) || 'Save failed.', ok: false});
+        })
+        .catch(function (e) { setMsg({text: String(e), ok: false}); })
+        .finally(function () { setBusy(false); });
+    }
+
+    function test() {
+      setBusy(true); setMsg({text: 'Contacting the automation API…', ok: true});
+      fetch('/api/automation-prefs/test', {method: 'POST'})
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          setMsg(j && j.ok
+            ? {text: 'Connected. This bot is now visible on /automation' + (j.bot ? ' as ' + j.bot : '') + '.', ok: true}
+            : {text: (j && j.error) || 'Could not reach the automation API.', ok: false});
+        })
+        .catch(function (e) { setMsg({text: String(e), ok: false}); })
+        .finally(function () { setBusy(false); });
+    }
+
+    return h('div', null,
+      h('h1', null, '⚙ Automation Preferences'),
+      h('p', {className: 'sub'},
+        'How this bot talks to the tournament console at poker.scarletbeast.com/automation. '
+        + 'The bot POLLS — nothing is pushed to it — and each poll also marks it "active" in the bot list there.'),
+
+      h('div', {className: 'card'},
+        h('h2', null, 'Connection'),
+        h(Field, {label: 'API base URL', value: cfg.api_base, onChange: set('api_base'),
+                  placeholder: 'https://poker.scarletbeast.com'}),
+        h(Field, {label: 'Bot API token', type: 'password', value: cfg.api_token, onChange: set('api_token'),
+                  hint: 'Sent as a Bearer token. The user that owns this token IS the bot you pick on /automation.'}),
+        h(Field, {label: 'Display name (optional)', value: cfg.bot_name, onChange: set('bot_name'),
+                  placeholder: 'e.g. A17 / S10 / EMU2'})),
+
+      h('div', {className: 'card'},
+        h('h2', null, 'Polling'),
+        h('div', {className: 'row'},
+          h(Field, {label: 'Poll every (seconds)', type: 'number', value: cfg.poll_seconds, onChange: set('poll_seconds'),
+                    hint: 'Also the heartbeat that keeps this bot "active".'}),
+          h(Field, {label: 'Join window (minutes)', type: 'number', value: cfg.join_window_minutes,
+                    onChange: set('join_window_minutes'),
+                    hint: 'ACR opens registration ~59 min before start.'})),
+        h(Field, {label: 'Automation', value: cfg.enabled, onChange: set('enabled'),
+                  options: ['off', 'on'],
+                  hint: 'Off means this bot never claims a tournament, even if one is queued for it.'})),
+
+      h('div', null,
+        h('button', {onClick: save, disabled: busy}, busy ? 'Working…' : 'Save'),
+        ' ',
+        h('button', {className: 'ghost', onClick: test, disabled: busy}, 'Test connection'),
+        h('div', {className: 'msg ' + (msg.ok ? 'ok' : 'err')}, msg.text)));
+  }
+
+  ReactDOM.createRoot ? ReactDOM.createRoot(root).render(h(App))
+                      : ReactDOM.render(h(App), root);
+})();
+</script>
+</body></html>

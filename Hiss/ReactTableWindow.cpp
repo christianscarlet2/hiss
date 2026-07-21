@@ -224,6 +224,10 @@ int CReactTableWindow::OnCreate(LPCREATESTRUCT lpCreateStruct)
 	return 0;
 }
 
+// Set only by the emulated caption's red X so OnDestroy() can tell a deliberate
+// shutdown from an incidental window teardown (e.g. the scrcpy mirror closing).
+bool g_react_close_was_user_initiated = false;
+
 void CReactTableWindow::OnSize(UINT nType, int cx, int cy)
 {
 	CWnd::OnSize(nType, cx, cy);
@@ -620,6 +624,38 @@ void CReactTableWindow::OnLButtonDown(UINT nFlags, CPoint point)
 {
 	int hit = HitButton(point);
 	if (hit >= 0) {
+		// Record WHERE this click really came from. DoButtonAction(2) (the red X, which shuts
+		// the whole bot down) is reachable ONLY from here via OnLButtonUp, yet instances keep
+		// dying with reason=react-close-button when nobody is clicking. A hardware click has
+		// the cursor sitting on the button; a PostMessage/SendMessage-injected click does not.
+		// Logging both, plus the foreground window, tells us which -- instead of guessing again.
+		POINT cur = { 0, 0 };
+		GetCursorPos(&cur);
+		CPoint screen_pt = point;
+		ClientToScreen(&screen_pt);
+		HWND fg = ::GetForegroundWindow();
+		char fg_title[256] = { 0 };
+		if (fg != NULL) ::GetWindowTextA(fg, fg_title, sizeof(fg_title) - 1);
+		DWORD fg_pid = 0;
+		if (fg != NULL) ::GetWindowThreadProcessId(fg, &fg_pid);
+		bool cursor_on_button = (abs((int)cur.x - (int)screen_pt.x) <= 2)
+		                     && (abs((int)cur.y - (int)screen_pt.y) <= 2);
+		FILE *cf = NULL;
+		fopen_s(&cf, "C:\\www\\openholdembot_old\\Release\\logs\\shutdown.log", "a");
+		if (cf != NULL) {
+			SYSTEMTIME st; GetLocalTime(&st);
+			fprintf(cf, "%04d-%02d-%02d %02d:%02d:%02d  pid=%-6lu  %-28s "
+			            "button=%d client=(%ld,%ld) screen=(%ld,%ld) cursor=(%ld,%ld) %s "
+			            "fg_pid=%lu fg=\"%s\" extra=0x%lx\n",
+			        st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond,
+			        (unsigned long)GetCurrentProcessId(), "CaptionButtonDown",
+			        hit, (long)point.x, (long)point.y, (long)screen_pt.x, (long)screen_pt.y,
+			        (long)cur.x, (long)cur.y,
+			        cursor_on_button ? "CURSOR-ON-BUTTON(real click)" : "CURSOR-ELSEWHERE(INJECTED)",
+			        (unsigned long)fg_pid, fg_title, (unsigned long)::GetMessageExtraInfo());
+			fflush(cf);
+			fclose(cf);
+		}
 		_pressed_button = hit;
 		SetCapture();
 		InvalidateChrome();
@@ -697,6 +733,11 @@ void CReactTableWindow::DoButtonAction(int index)
 		// exes, the WebView2 renderers, and the python brain daemons -- all descendants of
 		// this Hiss process), then close the main app so ExitInstance runs as a backstop.
 		extern void TerminateInstanceHelpers();
+		extern const char *g_shutdown_reason;
+		g_shutdown_reason = "react-close-button";
+		extern void ShutdownLog(const char *what);
+		ShutdownLog("ReactCloseButton");
+		g_react_close_was_user_initiated = true;   // see OnDestroy()
 		TerminateInstanceHelpers();
 		CWnd *main_wnd = AfxGetMainWnd();
 		if (main_wnd != NULL && ::IsWindow(main_wnd->GetSafeHwnd())) {
@@ -844,13 +885,22 @@ void CReactTableWindow::ForwardCommand(unsigned int command_id)
 
 void CReactTableWindow::OnDestroy()
 {
-	// React table window closed -> kill this instance's Hiss + all related processes, then
-	// close the whole app so closing the React window shuts Hiss down completely.
-	extern void TerminateInstanceHelpers();
-	TerminateInstanceHelpers();
-	CWnd *main_wnd = AfxGetMainWnd();
-	if (main_wnd != NULL && ::IsWindow(main_wnd->GetSafeHwnd())) {
-		main_wnd->PostMessage(WM_CLOSE);
+	// Only tear the whole instance down when the USER asked for it (the red X in the
+	// emulated caption). This window is also destroyed for reasons that are not a shutdown
+	// request -- most importantly when the scrcpy mirror it was showing goes away, or when
+	// the view is recreated. Treating every destruction as "quit" made Hiss exit whenever a
+	// mirror was restarted, which reads as the bot mysteriously closing itself.
+	if (g_react_close_was_user_initiated) {
+		extern void TerminateInstanceHelpers();
+		extern const char *g_shutdown_reason;
+		g_shutdown_reason = "react-window-destroyed-after-user-close";
+		extern void ShutdownLog(const char *what);
+		ShutdownLog("ReactOnDestroy");
+		TerminateInstanceHelpers();
+		CWnd *main_wnd = AfxGetMainWnd();
+		if (main_wnd != NULL && ::IsWindow(main_wnd->GetSafeHwnd())) {
+			main_wnd->PostMessage(WM_CLOSE);
+		}
 	}
 	CWnd::OnDestroy();
 }

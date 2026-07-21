@@ -729,6 +729,51 @@ function App() {
       .then(function () { setTimeout(function () { setLobbyState(''); }, 26000); });
   };
 
+  // MANUAL WINDOW OVERRIDE ("connect to window"). Normally the autoconnector picks a table by
+  // itself -- first loaded tablemap that matches an unserved window wins. Pinning overrides that
+  // entirely: the bot attaches to the chosen window and, on any later reconnect, can only go back
+  // to that same window. Clicking the lit button releases the pin and hands selection back.
+  var winOvPair = useState({ override: false, hwnd: 0, title: '', status: '' });
+  var winOv = winOvPair[0];
+  var setWinOv = winOvPair[1];
+  var winListPair = useState(null);      // null = picker closed; array = open, holding the windows
+  var winList = winListPair[0];
+  var setWinList = winListPair[1];
+
+  var toggleWindowPin = function () {
+    if (winOv.override) {                // lit -> release the pin, automatic selection resumes
+      fetch('/api/connect-window?clear=1').then(function (r) { return r.json(); })
+        .then(function (j) { if (j) setWinOv(j); }).catch(function () {});
+      setWinList(null);
+      return;
+    }
+    if (winList) { setWinList(null); return; }   // picker already open -> just close it
+    fetch('/api/windows').then(function (r) { return r.json(); })
+      .then(function (j) { setWinList((j && j.windows) || []); })
+      .catch(function () { setWinList([]); });
+  };
+  var pickWindow = function (hwnd) {
+    fetch('/api/connect-window?hwnd=' + encodeURIComponent(String(hwnd)))
+      .then(function (r) { return r.json(); })
+      .then(function (j) { if (j) setWinOv(j); }).catch(function () {});
+    setWinList(null);
+  };
+
+  // The heartbeat owns the actual connect, so the button's lit state has to come from the server,
+  // not from the click -- a pin that fails (no matching tablemap, window served elsewhere) must
+  // NOT leave the button stuck down.
+  useEffect(function () {
+    var alive = true;
+    function pollWin() {
+      fetch('/api/connect-window').then(function (r) { return r.json(); })
+        .then(function (j) { if (alive && j && typeof j.override === 'boolean') setWinOv(j); })
+        .catch(function () {});
+    }
+    pollWin();
+    var t = setInterval(pollWin, 1500);
+    return function () { alive = false; clearInterval(t); };
+  }, []);
+
   // Reflect the NN-driver engaged state (engaging it disengages the autoplayer, server-side).
   useEffect(function () {
     var alive = true;
@@ -905,7 +950,71 @@ function App() {
           color: lobbyState === 'go' ? '#f0c75e' : '#bbb',
           boxShadow: lobbyState === 'go' ? '0 0 8px rgba(232,184,75,.55)' : 'none'
         }
-      }, (lobbyState === 'go' ? '🔭 Lobby…' : '🔭 Lobby'))
+      }, (lobbyState === 'go' ? '🔭 Lobby…' : '🔭 Lobby')),
+      (function () {
+        var on = !!winOv.override;
+        var open = !!winList;
+        var failed = !on && winOv.status && winOv.status !== 'automatic selection restored'
+                     && winOv.status !== 'connecting...';
+        return e('div', { style: { position: 'relative', display: 'inline-block', marginLeft: '8px' } },
+          e('button', {
+            onClick: toggleWindowPin,
+            title: on
+              ? ('PINNED to "' + (winOv.title || ('window ' + winOv.hwnd))
+                 + '" — automatic table selection is overridden. Click to release it.')
+              : (failed ? ('Last attempt: ' + winOv.status + ' — click to pick another window')
+                        : 'Override automatic table selection: pick the window to attach to'),
+            style: {
+              padding: '4px 12px', borderRadius: '6px', cursor: 'pointer',
+              fontWeight: 'bold', font: 'inherit',
+              border: '1px solid ' + (on ? '#e8873b' : (failed ? '#a33' : '#444')),
+              background: on ? '#3a2413' : '#1c1c20',
+              color: on ? '#f0a05e' : (failed ? '#e07070' : '#bbb'),
+              boxShadow: on ? 'inset 0 1px 3px rgba(0,0,0,.6), 0 0 8px rgba(232,135,59,.55)' : 'none'
+            }
+          }, on ? '🎯 Window ●' : '🎯 Window'),
+          open ? e('div', {
+            style: {
+              // Only orders the dropdown WITHIN .topbar's stacking context -- what actually puts
+              // it over the felt is .topbar's own z-index (app.css), which must stay above the
+              // seat/dealer layers. Raising this number alone does nothing.
+              position: 'absolute', top: '115%', right: 0, zIndex: 10,
+              width: '470px', maxHeight: '340px', overflowY: 'auto',
+              background: '#141418', border: '1px solid #444', borderRadius: '8px',
+              boxShadow: '0 8px 24px rgba(0,0,0,.65)', padding: '6px', textAlign: 'left'
+            }
+          },
+            e('div', { style: { padding: '4px 8px 8px', color: '#888', fontSize: '11px' } },
+              winList.length + ' window' + (winList.length === 1 ? '' : 's')
+              + ' — pick one to pin this instance to it'),
+            winList.length === 0
+              ? e('div', { style: { padding: '8px', color: '#777', fontSize: '12px' } }, 'No windows found.')
+              : winList.map(function (w) {
+                  // A window another instance already serves cannot be attached -- the
+                  // autoconnector refuses it -- so show it greyed rather than letting the
+                  // click fail silently.
+                  var blocked = w.served && !w.attached;
+                  return e('div', {
+                    key: w.hwnd,
+                    onClick: blocked ? null : function () { pickWindow(w.hwnd); },
+                    title: blocked ? 'Served by another Hiss instance' : ('hwnd ' + w.hwnd),
+                    style: {
+                      padding: '5px 8px', borderRadius: '5px', marginBottom: '2px',
+                      cursor: blocked ? 'not-allowed' : 'pointer',
+                      opacity: blocked ? 0.4 : 1,
+                      background: w.attached ? '#16281a' : 'transparent',
+                      border: '1px solid ' + (w.attached ? '#2c5a2f' : 'transparent')
+                    }
+                  },
+                    e('div', { style: { fontSize: '12.5px', color: '#ddd', whiteSpace: 'nowrap',
+                                        overflow: 'hidden', textOverflow: 'ellipsis' } },
+                      (w.attached ? '● ' : '') + (w.title || '(untitled)')),
+                    e('div', { style: { fontSize: '10.5px', color: '#777', fontFamily: 'monospace' } },
+                      w.class + '  ' + w.w + '×' + w.h
+                      + (blocked ? '  — served elsewhere' : '')));
+                })
+          ) : null);
+      })()
     ),
     e('section', { className: 'table' },
       e('div', { className: 'felt' },

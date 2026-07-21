@@ -362,8 +362,34 @@ void COpenHoldemApp::FinishInitialization() {
 // snapshot and terminates (a) every DESCENDANT of this process (the OCR-worker Hiss.exe, the
 // msedgewebview2.exe WebView2 renderers, and any child brain daemons), and (b) any process named
 // like a Hiss ecosystem exe. Excludes THIS process (it exits on its own). Logs the tree for diag.
+// Set by whoever initiates a deliberate shutdown so the log records the REASON, not just
+// the fact. Silence in the log means the process was killed from outside (Task Manager,
+// taskkill, a script) -- which is itself the answer when an instance vanishes unexplained.
+const char *g_shutdown_reason = "unset";
+
+// Shutdown breadcrumb. Deliberately NOT write_log(): that goes through the logging
+// subsystem, which stop_log() tears down during ExitInstance, so a shutdown line could be
+// swallowed exactly when it matters most -- which is what happened: instances plainly ran
+// shutdown code yet produced no entry. This opens, writes, flushes and closes its own file
+// every call (the same approach terminate.log already uses successfully), so it survives
+// partial teardown. Silence in shutdown.log now genuinely means the process was killed
+// from outside and never ran its own exit path.
+void ShutdownLog(const char *what);   // fwd
+void ShutdownLog(const char *what) {
+  FILE *f = NULL;
+  fopen_s(&f, "C:\\www\\openholdembot_old\\Release\\logs\\shutdown.log", "a");
+  if (f == NULL) return;
+  SYSTEMTIME st; GetLocalTime(&st);
+  fprintf(f, "%04d-%02d-%02d %02d:%02d:%02d  pid=%-6lu  %-28s reason=%s\n",
+          st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond,
+          (unsigned long)GetCurrentProcessId(), what, g_shutdown_reason);
+  fflush(f);
+  fclose(f);
+}
+
 void TerminateInstanceHelpers() {
   DWORD myPid = GetCurrentProcessId();
+  ShutdownLog("TerminateInstanceHelpers");
   HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
   if (snap == INVALID_HANDLE_VALUE) return;
   std::vector<PROCESSENTRY32> procs;
@@ -382,12 +408,50 @@ void TerminateInstanceHelpers() {
       }
     }
   }
-  static const char *kNames[] = { "Hiss.exe", "Vision.exe", "OHReplay.exe", "ManualMode.exe",
-                                  "DeveloperToolbar.exe", "WindowSizer.exe", "OpenReplayShooter.exe" };
-  for (size_t i = 0; i < procs.size(); ++i) {
-    if (procs[i].th32ProcessID == myPid) continue;
-    for (int n = 0; n < (int)(sizeof(kNames)/sizeof(kNames[0])); ++n)
-      if (_stricmp(procs[i].szExeFile, kNames[n]) == 0) { targets.insert(procs[i].th32ProcessID); break; }
+  // Is another BOT still running? A Hiss.exe that is neither us nor one of our descendants
+  // (our OCR workers are descendants) is a sibling bot on another table. Everything below
+  // this point is machine-wide rather than instance-owned, so it must only run when we are
+  // the last bot standing.
+  bool other_instance_alive = false;
+  for (size_t i = 0; i < procs.size() && !other_instance_alive; ++i) {
+    DWORD pid = procs[i].th32ProcessID;
+    if (pid == myPid || pid == 0) continue;
+    if (_stricmp(procs[i].szExeFile, "Hiss.exe") != 0) continue;
+    // Skip ONLY our own OCR workers, identified by the pids we recorded when we spawned them.
+    // This used to be `targets.count(pid)` -- i.e. "is it a descendant of ours" -- which is wrong:
+    // COpenHoldemStarter launches additional BOT instances via ShellExecute, so a real sibling bot
+    // is frequently our child. Treating it as a worker meant a closing instance both KILLED it and
+    // failed to count it, so it also believed it was the last bot standing and tore down the shared
+    // tools while other bots were still playing.
+    if (IsOwnOcrWorkerPid(pid)) continue;
+    other_instance_alive = true;
+  }
+
+  // NOTE: "Hiss.exe" is deliberately NOT in this list. This sweep matches purely on exe
+  // name, so including it made a shutting-down instance force-kill EVERY OTHER Hiss
+  // instance on the machine -- sibling bots on other tables and their OCR workers, none of
+  // which it owns. That is why closing one table silently took the others down with it.
+  // This instance's own OCR workers are already covered: they are descendants, and the
+  // parent-walk above collects the whole descendant tree.
+  //
+  // The same name-only reasoning applies to the tools below: they are SHARED. Vision, WindowSizer
+  // and the replay tools are not owned by whichever bot happens to close first. Killing them while
+  // other bots are still playing takes away infrastructure those bots need. So only sweep them when
+  // no sibling remains -- any copy this instance actually spawned is already in `targets` via the
+  // descendant walk.
+  //
+  // DeveloperToolbar.exe is deliberately NOT in this list, and is hard-excluded in the kill loop
+  // below. It is the LAUNCHER: it starts and manages every Hiss instance, so it is the one process
+  // that must OUTLIVE the bots -- it is how the next instance gets started and how the fleet is
+  // driven. A closing bot tearing it down leaves the user with no way back in.
+  static const char *kNames[] = { "Vision.exe", "OHReplay.exe", "ManualMode.exe",
+                                  "WindowSizer.exe", "OpenReplayShooter.exe" };
+  if (!other_instance_alive) {
+    for (size_t i = 0; i < procs.size(); ++i) {
+      if (procs[i].th32ProcessID == myPid) continue;
+      for (int n = 0; n < (int)(sizeof(kNames)/sizeof(kNames[0])); ++n)
+        if (_stricmp(procs[i].szExeFile, kNames[n]) == 0) { targets.insert(procs[i].th32ProcessID); break; }
+    }
   }
   FILE *lg = NULL; fopen_s(&lg, "C:\\www\\openholdembot_old\\Release\\logs\\terminate.log", "a");
   if (lg) fprintf(lg, "--- terminate: self=%lu, %d procs, %d targets ---\n",
@@ -395,6 +459,21 @@ void TerminateInstanceHelpers() {
   for (size_t i = 0; i < procs.size(); ++i) {
     DWORD pid = procs[i].th32ProcessID;
     bool kill = targets.count(pid) > 0;
+    // Hard exclusion for the launcher, applied AFTER the descendant walk on purpose. Dropping it
+    // from kNames only stops the name sweep; DeveloperToolbar is normally our parent, but anything
+    // it spawns that then spawns a bot would put it in `targets` and quietly reintroduce the bug.
+    // One unconditional check is cheaper than reasoning about the process tree every time.
+    if (_stricmp(procs[i].szExeFile, "DeveloperToolbar.exe") == 0) kill = false;
+    // NEVER terminate another Hiss.exe here, no matter how it got into `targets`.
+    //   - Our own OCR workers do not need it: they are in a job object created with
+    //     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE (COcrWorker.h), so the OS reaps them when we exit,
+    //     even on a hard crash. Killing them here was always redundant.
+    //   - Anything else called Hiss.exe is a REAL BOT. It may well be our child, because
+    //     COpenHoldemStarter starts new instances with ShellExecute -- which is exactly how
+    //     closing one table came to kill two.
+    // The name sweep already learned this lesson (see the kNames note above); the descendant walk
+    // had not, so it kept the bug alive through the back door.
+    if (_stricmp(procs[i].szExeFile, "Hiss.exe") == 0 && !IsOwnOcrWorkerPid(pid)) kill = false;
     if (lg && (kill || _strnicmp(procs[i].szExeFile, "python", 6) == 0
                || _strnicmp(procs[i].szExeFile, "msedgewebview2", 14) == 0))
       fprintf(lg, "  %-24s pid=%-6lu parent=%-6lu %s\n", procs[i].szExeFile,
@@ -416,6 +495,19 @@ void TerminateInstanceHelpers() {
   // descendant walk nor an 'openholdembot' path match finds them. Delegate to an external, hidden,
   // synchronous PowerShell script (editable without rebuilding Hiss) that matches them by script
   // name / the ail_server tree and kills them + their descendants, in OUR interactive session.
+  // ...but ONLY when no sibling bot is left. ail_server and the brain daemons it manages are
+  // shared: they are one persistent tree serving every instance, not per-instance children.
+  // Tearing them down because one table closed leaves the still-running bots without their
+  // brain, which looks like those bots breaking for no reason.
+  if (other_instance_alive) {
+    FILE *lg2 = NULL; fopen_s(&lg2, "C:\\www\\openholdembot_old\\Release\\logs\\terminate.log", "a");
+    if (lg2) {
+      fprintf(lg2, "--- self=%lu: sibling bot still running -> kept shared daemons + tools alive "
+                   "(killed only own descendants) ---\n", (unsigned long)myPid);
+      fclose(lg2);
+    }
+    return;
+  }
   char _kc[600];
   _snprintf_s(_kc, sizeof(_kc), _TRUNCATE,
     "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "
@@ -430,6 +522,7 @@ void TerminateInstanceHelpers() {
 }
 
 int COpenHoldemApp::ExitInstance() {
+  ShutdownLog("ExitInstance");
   TerminateInstanceHelpers();
   // timers and threads are already stopped 
   // by CMainFrame::DestroyWindow().

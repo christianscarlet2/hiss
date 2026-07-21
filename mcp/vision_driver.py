@@ -89,6 +89,10 @@ PROMPT = (
 def vision_read(path):
     env = dict(os.environ)
     env.pop("ANTHROPIC_API_KEY", None)          # use the logged-in Claude Code subscription auth
+    # No Stop-hook chime for this call. Normally inherited from launch_hiss.py, but set it
+    # here too so a standalone run of this driver is silent as well -- it fires once per
+    # tablemap read, which is often enough to be maddening over the speakers.
+    env["HISS_NO_CHIME"] = "1"
     r = subprocess.run([CLAUDE, "-p", PROMPT % path],
                        capture_output=True, text=True, timeout=240, env=env,
                        creationflags=CREATE_NO_WINDOW)
@@ -116,14 +120,30 @@ def match_port(vision, ports_state):
     return None
 
 
-def push(port, v):
+def push(port, v, state=None):
     q = {}
-    # These are OBSERVER tables: engine decisions are irrelevant, only the written HH text matters.
-    # The writer formats "Level (sblind/bblind)" and "posts the big blind <bb>" straight from sb/bb.
-    # Push DOLLAR blinds read off the stakes line and do NOT send chips_per_bb -- sending it makes the
-    # bot re-normalise sblind/bblind back to the BB-frame (0.4/1.0), overriding the dollar values.
-    sb = v.get("sb_dollars") or ((v.get("sb_bbframe") or 0) * (v.get("chips_per_bb") or 0) or None)
-    bb = v.get("bb_dollars") or ((v.get("bb_bbframe") or 0) * (v.get("chips_per_bb") or 0) or None)
+    # UNIT CONTRACT (CScraper.h): g_tgi_bblind is the operating big blind in the *scraped* unit --
+    # "BB-display -> 1.0". The phones show money in big blinds (p7bet reads "1", c0pot0 reads
+    # "1.5BB"), so the unit depends on what the instance is FOR:
+    #
+    #   OBSERVER table -- the engine never acts, only the written HH text matters. The writer formats
+    #     "Level (sblind/bblind)" and "posts the big blind <bb>" straight from sb/bb, so it wants
+    #     DOLLAR blinds and must NOT get chips_per_bb (that re-normalises sb/bb back to the BB frame).
+    #
+    #   PLAYING table -- the engine decides, so sb/bb MUST stay in the scraped (BB) frame and the
+    #     dollar value goes in chips_per_bb. Pushing dollar blinds here sets bblind=300 while the
+    #     scraped bets are ~1, so nbetsround = maxbet/bblind (CSymbolEngineHistory.cpp:255-258)
+    #     collapses to ~0.003; every OpenPPL "nbetsround >= 1" test fails, the book reads
+    #     "checked to me, first in" on every street and DONK BETS, worsening each blind level.
+    #     Diagnosed on A17 2026-07-19.
+    if (state or {}).get("observer"):
+        sb = v.get("sb_dollars") or ((v.get("sb_bbframe") or 0) * (v.get("chips_per_bb") or 0) or None)
+        bb = v.get("bb_dollars") or ((v.get("bb_bbframe") or 0) * (v.get("chips_per_bb") or 0) or None)
+    else:
+        sb = v.get("sb_bbframe") or 0.5
+        bb = v.get("bb_bbframe") or 1.0
+        cpb = v.get("chips_per_bb") or v.get("bb_dollars") or None
+        if cpb: q["chips_per_bb"] = round(cpb, 4)
     if sb:  q["sb"] = round(sb, 4)
     if bb:  q["bb"] = round(bb, 4)
     if v.get("table_name"):    q["tourney_name"] = v["table_name"]
@@ -187,7 +207,7 @@ def cycle():
             if not port:
                 log("%s: read '%s' (%s) but no matching instance" %
                     (serial, v.get("table_name"), v.get("tourney_id"))); continue
-            push(port, v)
+            push(port, v, ports_state[port])
             nlint = lint_names(port, v.get("seats"), ports_state[port])
             log("%s -> port %d: %s  blinds=%s/%s tid=%s hand=%s names_linted=%d" %
                 (serial, port, v.get("table_name"), v.get("sb_dollars"), v.get("bb_dollars"),

@@ -35,6 +35,11 @@ public:
 	// Called from the MainFrm UI timer: cover the scrcpy client area, show/hide,
 	// and repaint with the latest stats.
 	void TrackTableWindow();
+	// Anchor rect the RED decision is drawn above (the hero's HUD box, or the hero seat's
+	// default position when that seat has no box yet). Public because the decision now lives
+	// in its OWN window (CHudActionWindow) which is the same size as this one, so the rect
+	// carries over unchanged. Returns false when there is no hero chair to anchor on.
+	bool HeroAnchorRect(int client_w, int client_h, CRect *out);
 
 protected:
 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
@@ -72,5 +77,35 @@ private:
 };
 
 extern CHudOverlayWindow *p_hud_overlay_window;
+
+// Separate always-SOLID overlay carrying ONLY the bot's RED decision (action + table name +
+// brain detail lines). It exists because a layered window's alpha is GLOBAL: while the decision
+// shared CHudOverlayWindow, making the action readable forced the whole window -- HUD tiles
+// included -- to ~92% opacity, which buried the scrcpy table behind opaque stat boxes. Splitting
+// the two lets the tiles stay faint (12%) permanently while the action still reads crisply.
+// [Emrald: "when the ACTION shows up ... leave the HUD tiles transparent"]
+class CHudActionWindow : public CWnd {
+	DECLARE_DYNAMIC(CHudActionWindow)
+	DECLARE_MESSAGE_MAP()
+
+public:
+	CHudActionWindow();
+	virtual ~CHudActionWindow();
+
+	BOOL Create(CWnd *owner);
+	// Same 200ms MainFrm tick as the HUD: cover the scrcpy client area while a decision is
+	// trailing, and stay hidden the rest of the time.
+	void TrackTableWindow();
+
+protected:
+	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
+	afx_msg void OnPaint();
+	afx_msg BOOL OnEraseBkgnd(CDC *pDC);
+
+private:
+	CWnd *_owner;
+};
+
+extern CHudActionWindow *p_hud_action_window;
 
 #endif // INC_HUD_OVERLAY_WINDOW_H

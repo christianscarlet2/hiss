@@ -42,7 +42,12 @@ body {
 /* ---- top bar -------------------------------------------------------------- */
 .topbar {
   position: relative;
-  z-index: 2;
+  /* Must outrank every layer on the felt below (.pot z-3, .player.hero z-4, seat plates z-5,
+     .dealer z-6). `position: relative` + a z-index makes this bar a STACKING CONTEXT, which means
+     a descendant can never paint above a higher-stacked SIBLING of the bar no matter how large its
+     own z-index is -- at z-index 2 the felt painted straight over the open window-picker dropdown,
+     and raising the dropdown's own z-index could not fix it. Raise the whole bar instead. */
+  z-index: 50;
   height: 46px;
   display: flex;
   align-items: center;

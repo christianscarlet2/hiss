@@ -104,10 +104,23 @@ MOUSEDLL_API int MouseClick(const HWND hwnd, const RECT rect, const MouseButton 
 	SetForegroundWindow(hwnd);
 	SetActiveWindow(hwnd);
 
+	// Put the pointer back where the user left it. MOUSEEVENTF_MOVE physically warps the
+	// cursor, so without this a bot click yanks the mouse out from under whatever the user
+	// was doing. Captured before the click and restored after the button-up has been
+	// delivered, so the click still lands normally. (adb-backed tables never get here --
+	// they inject taps into the guest and never touch the cursor at all.)
+	//
+	// This is per-click and unconditional, unlike CAutoplayer's action-sequence restore,
+	// which is gated behind Preferences()->restore_position_and_focus() and off for real
+	// casinos.
+	POINT restore_cursor = {0};
+	const BOOL have_cursor = GetCursorPos(&restore_cursor);
+
 	// Send input
 	Sleep(100);
 	SendInput(clicks*2, input, sizeof(INPUT));
 	Sleep(100);
+	if (have_cursor) SetCursorPos(restore_cursor.x, restore_cursor.y);
 	return (int) true;
 }
 
@@ -184,8 +197,14 @@ MOUSEDLL_API int MouseClickDrag(const HWND hwnd, const RECT rect, bool is_horizo
 	SetFocus(hwnd);
 	SetForegroundWindow(hwnd);
 	SetActiveWindow(hwnd);
+
+	// Restore the pointer after the drag -- see the note in MouseClick.
+	POINT restore_cursor = {0};
+	const BOOL have_cursor = GetCursorPos(&restore_cursor);
+
 	// Send input
 	SendInput(3, input, sizeof(INPUT));
+	if (have_cursor) SetCursorPos(restore_cursor.x, restore_cursor.y);
 	return (int)true;
 }
 

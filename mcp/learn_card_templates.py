@@ -1,0 +1,355 @@
+#!/usr/bin/env python3
+"""Learn card-face templates for a tablemap by watching a live table.
+
+Why this exists: android_EMU was cloned from android_s10, but the emulator renders the
+table ~4.5% larger, so the card regions are 23x40 while every inherited tm_images template
+is 22x39. Image matching compares fixed-size pixel arrays, so nothing can ever match and
+the board scrapes as empty. The templates have to be re-learned at the new size.
+
+Each pass: capture the mirror window, crop the community-card regions, skip slots that are
+empty or already known, ask `claude -p` what the card is (twice, and only accept a
+unanimous answer), then INSERT the bitmap into tm_images in the exact format
+CTablemapDB expects -- one line per row, each pixel %08x packed as A<<24|B<<16|G<<8|R.
+
+Usage:
+  python learn_card_templates.py --once --dry-run     # inspect, write nothing
+  python learn_card_templates.py                      # run until every card is learned
+"""
+import argparse
+import hashlib
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
+
+import cv2
+import numpy as np
+
+PSQL = r"C:\Program Files\PostgreSQL\12\bin\psql.exe"
+TABLEMAP_ID = 282
+WINDOW_TITLE = "EMU"
+RANKS, SUITS = "23456789TJQKA", "cdhs"
+ALL_CARDS = {r + s for r in RANKS for s in SUITS}
+
+WORK = os.path.join(tempfile.gettempdir(), "learn_cards")
+os.makedirs(WORK, exist_ok=True)
+
+CAPTURE_PS1 = r"""
+Add-Type -TypeDefinition @'
+using System;using System.Runtime.InteropServices;using System.Drawing;using System.Drawing.Imaging;
+public class Cap {
+  [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint f);
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L,T,R,B; }
+  public static void Grab(IntPtr h, string path) {
+    RECT r; GetClientRect(h, out r);
+    int w = r.R - r.L, ht = r.B - r.T; if (w <= 0 || ht <= 0) return;
+    using (Bitmap b = new Bitmap(w, ht, PixelFormat.Format32bppArgb))
+    using (Graphics g = Graphics.FromImage(b)) {
+      IntPtr dc = g.GetHdc(); PrintWindow(h, dc, 3); g.ReleaseHdc(dc);
+      b.Save(path, ImageFormat.Png);
+    }
+  }
+}
+'@ -ReferencedAssemblies System.Drawing
+$p = Get-Process scrcpy -ErrorAction SilentlyContinue |
+     Where-Object { $_.MainWindowTitle -eq '%TITLE%' } | Select-Object -First 1
+if (-not $p) { Write-Output "NOWINDOW"; exit }
+[Cap]::Grab($p.MainWindowHandle, '%OUT%')
+Write-Output "OK"
+"""
+
+
+def log(msg):
+    print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
+def psql(sql, want_rows=True):
+    env = dict(os.environ, PGPASSWORD="dbpass")
+    args = [PSQL, "-h", "127.0.0.1", "-U", "postgres", "-d", "hiss", "-t", "-A", "-F", "|", "-c", sql]
+    out = subprocess.run(args, capture_output=True, text=True, env=env, timeout=60)
+    if out.returncode != 0:
+        raise RuntimeError(f"psql failed: {out.stderr.strip()}")
+    if not want_rows:
+        return None
+    return [l for l in out.stdout.strip().splitlines() if l]
+
+
+def psql_file(sql):
+    """Run SQL too large for a command line (a 7.4KB pixel blob) via a temp file."""
+    env = dict(os.environ, PGPASSWORD="dbpass")
+    path = os.path.join(WORK, "_ins.sql")
+    # newline="" is essential: Windows text mode rewrites the row separators inside the
+    # pixel blob as CRLF, so each stored bitmap gained 38 stray CR bytes
+    # (6902 -> 6940 chars) and no longer matched what CTablemapDB writes.
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(sql)
+    out = subprocess.run([PSQL, "-h", "127.0.0.1", "-U", "postgres", "-d", "hiss",
+                          "-v", "ON_ERROR_STOP=1", "-f", path],
+                         capture_output=True, text=True, env=env, timeout=60)
+    if out.returncode != 0:
+        raise RuntimeError(f"psql insert failed: {out.stderr.strip()}")
+    return out.stdout.strip()
+
+
+def capture(out_path):
+    script = CAPTURE_PS1.replace("%TITLE%", WINDOW_TITLE).replace("%OUT%", out_path.replace("\\", "\\\\"))
+    p = os.path.join(WORK, "_cap.ps1")
+    with open(p, "w", encoding="utf-8") as f:
+        f.write(script)
+    r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", p],
+                       capture_output=True, text=True, timeout=90)
+    return "OK" in r.stdout
+
+
+def card_regions():
+    """Every image region that holds card art, tagged with WHICH vocabulary its templates use.
+
+    Community cards store a full code ("Ah") in one 22x39 region, but hole cards are split:
+    a rank-only region and a suit-only region, whose templates are named with a single
+    character. The 25x25 hero/observer regions use both vocabularies depending on the suffix.
+    Learning a full code into a rank region would create a template that can never match.
+    """
+    rows = psql(f"SELECT name,rgn_left,rgn_top,rgn_right,rgn_bottom FROM tm_regions "
+                f"WHERE tablemap_id={TABLEMAP_ID} AND transform='I' "
+                f"AND name ~ 'cardface' AND name !~ 'nocard' ORDER BY name")
+    out = []
+    for r in rows:
+        f = r.split("|")
+        name = f[0]
+        l, t, rr, b = map(int, f[1:])
+        if name.endswith("rank"):
+            kind = "rank"
+        elif name.endswith("suit"):
+            kind = "suit"
+        else:
+            kind = "card"
+        out.append((name, l, t, rr, b, kind))
+    return out
+
+
+def encode(bgr):
+    """cv2 BGR -> the tm_images text format. Red lands in the LOW byte."""
+    h, w = bgr.shape[:2]
+    lines = []
+    for y in range(h):
+        row = []
+        for x in range(w):
+            b, g, r = (int(v) for v in bgr[y, x])
+            row.append(f"{(0xFF << 24) | (b << 16) | (g << 8) | r:08x}")
+        lines.append("".join(row))
+    return "\n".join(lines)
+
+
+def ensure_tracking():
+    """Inherited A17 templates must not count as coverage -- otherwise the learner sees
+    52/52 and exits without capturing a single EMU-native bitmap. Track our own inserts."""
+    psql("CREATE TABLE IF NOT EXISTS tm_images_native ("
+         "tablemap_id INT, name TEXT, md5 TEXT, width INT, height INT, "
+         "created TIMESTAMP DEFAULT now())", want_rows=False)
+
+
+def native_coverage(w, h):
+    rows = psql(f"SELECT name, md5 FROM tm_images_native WHERE tablemap_id={TABLEMAP_ID} "
+                f"AND width={w} AND height={h}")
+    seen, counts = set(), {}
+    for r in rows:
+        n, m = r.split("|")
+        seen.add(m)
+        counts[n] = counts.get(n, 0) + 1
+    return seen, counts
+
+
+def known_hashes(w, h):
+    """md5 of every stored bitmap AT THE TARGET SIZE, so an identical crop is never learned
+    twice. Filtering on size is essential: the inherited android_s10 templates are 22x39 and
+    can never match a 23x40 region, so counting them would make coverage look complete and
+    the loop would exit having learned nothing."""
+    rows = psql(f"SELECT name, md5(pixels) FROM tm_images "
+                f"WHERE tablemap_id={TABLEMAP_ID} AND width={w} AND height={h}")
+    seen, counts = set(), {}
+    for r in rows:
+        name, m = r.split("|")
+        seen.add(m)
+        counts[name] = counts.get(name, 0) + 1
+    return seen, counts
+
+
+def looks_like_card(bgr):
+    """Is this crop a FACE-UP card, as opposed to a card back or an empty slot?
+
+    Mean brightness alone does not separate them: measured on this table a red card BACK
+    reads 65-134 while a 10x10 suit crop reads 68-105, so a single mean>110 gate both let
+    backs through and rejected genuine suit crops. What actually distinguishes a face-up
+    card is CONTRAST -- a near-white face with a dark glyph on it -- whereas a back is a
+    flat mid-tone and an empty slot is flat dark. So require both a bright background and
+    a real dark-to-light spread, which works the same for a 7x11 rank and a 22x39 corner.
+    """
+    g = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    hi = float(np.percentile(g, 95))
+    lo = float(np.percentile(g, 5))
+    return hi > 170 and (hi - lo) > 60
+
+
+PROMPTS = {
+    "card": ("It is the magnified top-left corner of a playing card. Reply with EXACTLY two "
+             "characters: rank (2 3 4 5 6 7 8 9 T J Q K A) then suit (c d h s)."),
+    "rank": ("It is the magnified RANK character of a playing card. Reply with EXACTLY ONE "
+             "character: 2 3 4 5 6 7 8 9 T J Q K or A."),
+    "suit": ("It is the magnified SUIT symbol of a playing card. Reply with EXACTLY ONE "
+             "character: c (clubs) d (diamonds) h (hearts) or s (spades)."),
+}
+PATTERNS = {"card": r"\b([23456789TJQKA][cdhs])\b",
+            "rank": r"\b([23456789TJQKA])\b",
+            "suit": r"\b([cdhs])\b"}
+
+
+def ask_claude(png, votes=2, kind="card"):
+    """Ask N times; accept only a unanimous, well-formed answer. A wrong template is far
+    worse than a missing one -- it would poison matching for that card permanently."""
+    prompt = (f"Read the image at {png} . {PROMPTS[kind]} If it is blank/empty with no card, "
+              f"reply exactly NONE. Output nothing else.")
+    answers = []
+    for _ in range(votes):
+        try:
+            r = subprocess.run(["claude", "-p", prompt], capture_output=True, text=True, timeout=180,
+                               stdin=subprocess.DEVNULL)
+        except subprocess.TimeoutExpired:
+            return None
+        # Scan ALL output lines, newest first. Taking only the last line was fragile: an
+        # incidental notice from the CLI (e.g. the stdin warning) could land after the answer
+        # and mask it, which produced a long run of [None, None] "no consensus" with a
+        # perfectly good crop and a CLI that answers correctly when run by hand.
+        out_lines = [x.strip() for x in (r.stdout or "").splitlines() if x.strip()]
+        pick = None
+        for cand in reversed(out_lines):
+            mm = re.search(PATTERNS[kind], cand)
+            if mm:
+                pick = mm.group(1)
+                break
+            if "NONE" in cand.upper():
+                pick = "NONE"
+                break
+        if pick is None:
+            # Log the RAW stdout, the kind and the pattern. An earlier version logged only
+            # the cleaned-up line list, which showed answers like ['Ts'] that the pattern for
+            # every kind matches -- i.e. the log described a failure that cannot happen, so
+            # the real input was something the cleaning step had already hidden.
+            log(f"    PARSE-FAIL kind={kind} pat={PATTERNS[kind]!r} rc={r.returncode} "
+                f"stdout={(r.stdout or '')[:200]!r} stderr={(r.stderr or '')[:120]!r}")
+        answers.append(pick)
+    if len(set(answers)) == 1 and answers[0] not in (None, "NONE"):
+        return answers[0]
+    if answers and all(a == "NONE" for a in answers):
+        return "NONE"
+    log(f"    no consensus {answers} -> skipping")
+    return None
+
+
+def one_pass(regions, seen, counts, max_per_card, dry):
+    shot = os.path.join(WORK, "shot.png")
+    if not capture(shot):
+        log(f"scrcpy window '{WINDOW_TITLE}' not found")
+        return 0
+    img = cv2.imread(shot)
+    if img is None:
+        return 0
+    learned = 0
+    for name, l, t, r, b, kind in regions:
+        crop = img[t:b + 1, l:r + 1]
+        if crop.size == 0 or not looks_like_card(crop):
+            continue
+        pix = encode(crop)
+        h = hashlib.md5(pix.encode()).hexdigest()
+        if h in seen:
+            continue
+        big = os.path.join(WORK, f"{name}_big.png")
+        cv2.imwrite(big, cv2.resize(crop, None, fx=8, fy=8, interpolation=cv2.INTER_NEAREST))
+        card = ask_claude(big, kind=kind)
+        if not card or card == "NONE":
+            continue
+        if counts.get(card, 0) >= max_per_card:
+            seen.add(h)                       # enough samples of this card already
+            continue
+        hh, ww = crop.shape[:2]
+        if dry:
+            log(f"    [dry] would insert {card} ({ww}x{hh}) from {name}")
+        else:
+            esc = pix.replace("'", "''")
+            sql = (f"INSERT INTO tm_images (tablemap_id,name,width,height,pixels) "
+                   f"VALUES ({TABLEMAP_ID},'{card}',{ww},{hh},'{esc}'); "
+                   f"INSERT INTO tm_images_native (tablemap_id,name,md5,width,height) "
+                   f"SELECT {TABLEMAP_ID},'{card}',md5(pixels),{ww},{hh} FROM tm_images "
+                   f"WHERE id = currval('tm_images_id_seq'); "
+                   f"UPDATE tablemaps SET updated_at=now() WHERE id={TABLEMAP_ID};")
+            psql_file(sql)
+            log(f"    + learned {card} ({ww}x{hh}) from {name} "
+                f"[sample {counts.get(card,0)+1}/{max_per_card}]")
+        seen.add(h)
+        counts[card] = counts.get(card, 0) + 1
+        learned += 1
+    return learned
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--once", action="store_true")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--interval", type=float, default=6.0)
+    ap.add_argument("--max-per-card", type=int, default=2)
+    a = ap.parse_args()
+
+    regions = card_regions()
+    if not regions:
+        log("no card regions found -- wrong tablemap id?")
+        return
+    ensure_tracking()
+
+    # Regions span several sizes (22x39 full cards, 7x11 ranks, 10x10 suits, 25x25 both),
+    # so coverage must be tracked PER SIZE -- a rank template and a card template of the
+    # same name are different bitmaps and the matcher only compares equal dimensions.
+    sizes = sorted({(r - l + 1, b - t + 1) for _, l, t, r, b, _ in regions})
+    seen, counts = set(), {}
+    for (w, h) in sizes:
+        inh, _ = known_hashes(w, h)
+        nat_seen, nat_counts = native_coverage(w, h)
+        seen |= inh | nat_seen              # never re-learn an identical bitmap
+        for k, v in nat_counts.items():
+            counts[k] = counts.get(k, 0) + v
+        log(f"  {w}x{h}: {len(inh)} inherited (kept, not counted), {len(nat_seen)} native")
+
+    by_kind = {}
+    for _, _, _, _, _, k in regions:
+        by_kind[k] = by_kind.get(k, 0) + 1
+    log(f"tablemap {TABLEMAP_ID}: {len(regions)} card regions {by_kind}")
+
+    # what "complete" means per vocabulary
+    RANKS_SET, SUITS_SET = set(RANKS), set(SUITS)
+    targets = {"card": ALL_CARDS, "rank": RANKS_SET, "suit": SUITS_SET}
+    wanted = set().union(*(targets[k] for k in by_kind))
+
+    total = 0
+    while True:
+        try:
+            total += one_pass(regions, seen, counts, a.max_per_card, a.dry_run)
+        except Exception as e:                       # a bad pass must not kill a long run
+            log(f"pass error: {e}")
+        have = {c for c in wanted if counts.get(c, 0) >= a.max_per_card}
+        if a.once:
+            break
+        if have >= wanted:
+            log("every card / rank / suit learned at full sample count -- done")
+            break
+        time.sleep(a.interval)
+
+    have = sorted(c for c in wanted if counts.get(c, 0) > 0)
+    log(f"learned this run: {total}. coverage: {len(have)}/{len(wanted)}")
+    missing = sorted(wanted - set(have))
+    if missing:
+        log(f"still missing ({len(missing)}): {' '.join(missing)}")
+
+
+if __name__ == "__main__":
+    main()

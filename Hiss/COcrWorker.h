@@ -42,6 +42,11 @@ bool ParseOcrWorkerCommandLine(CString* pipe_name, CString* tablemap_name);
 // InstantiateAllSingletons() so the singletons can consult it.
 extern bool g_ocr_worker_mode;
 
+// True if `pid` is an OCR worker THIS process spawned. Shutdown must not identify workers by
+// descendancy: COpenHoldemStarter launches additional BOT instances as our children too, and
+// treating those as workers is what made closing one table kill the others.
+bool IsOwnOcrWorkerPid(DWORD pid);
+
 // ---- Coordinator side (main Hiss) ----
 // A warm pool of worker processes, one duplex named pipe each. PreOcrParallel
 // borrows pipe handles (one outstanding request per pipe) to OCR regions

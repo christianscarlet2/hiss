@@ -67,11 +67,19 @@ class CSharedMem : public CSpaceOptimizedGlobalObject {
  public:
   int OpenHoldemProcessID();
   int OpenHoldemProcessID(int session_ID);
+ public:
+  // How many Hiss MAIN instances are alive, from the shared PID table. Public because the
+  // auto-starter needs it: counting our own WINDOWS cannot work (see COpenHoldemStarter).
+  int NBotsPresent();
+ public:
+  // Watchdog heartbeats, kept in the same shared mapping as the PIDs.
+  // See the implementation note in CSharedMem.cpp.
+  time_t AliveTimestamp(int session_ID);
+  void   SetAliveTimestamp(int session_ID, time_t when);
  private:
 	void CreateDenseListOfConnectedPokerWindows();
 	void VerifyMainMutexName();
-  int NBotsPresent();
-  void Dump(); 
+  void Dump();
  private:
 	CCritSec	m_critsec;
 };

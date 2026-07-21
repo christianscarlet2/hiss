@@ -65,6 +65,7 @@ protected: // create from serialization only
 	afx_msg void OnUltra();
 	afx_msg void OnUpdateUltra(CCmdUI *pCmdUI);
 	afx_msg void OnSuperstition();
+	afx_msg void OnAutomation();
 	afx_msg void OnUpdateSuperstition(CCmdUI *pCmdUI);
 	afx_msg void OnValidator();
 	afx_msg void OnClickedFlags();

@@ -1,0 +1,218 @@
+#!/usr/bin/env python3
+"""Measure OCR accuracy of a running hiss.exe against independent ground truth.
+
+Hiss dumps every region's raw scrape image next to the text it recognised. This builds one
+labelled montage of those crops and asks `claude -p` to read them all in a single call
+(one-by-one is ~20x slower), then diffs that against what Hiss produced.
+
+Two numbers are reported:
+  * raw OCR      -- the region .txt, i.e. tesseract's output before any repair
+  * after repair -- the value the engine exposes on /api/table-state, i.e. AFTER
+                    decimal-splitting (Vision/DecimalSplit) and CScraper's bet-repair.
+The second is what the bot acts on, so it is the score that matters; the gap between them
+shows how much work the repair layer is doing.
+
+Misses are attributed to their autoocr group (A0->autoocr0 ...) because those settings
+(model / threshold / decimal_correct / split_margin / no_preprocess) are per-group and are
+what you tune in response.
+
+An empty seat legitimately reads as "", "0" or "0.0"; Hiss reporting 0 there is agreement,
+not a misread. Counting those as failures made scores swing with how many seats happened to
+be occupied, so runs on different table states were not comparable.
+
+  python measure_ocr_accuracy.py --port 27655 --tablemap 282 --label emu
+"""
+import argparse
+import json
+import os
+import re
+import subprocess
+import tempfile
+import time
+
+import cv2
+import numpy as np
+
+SCRAPES = r"C:\www\openholdembot_old\Release\logs\scrapes"
+PSQL = "C:/Program Files/PostgreSQL/12/bin/psql.exe"
+OUT = os.path.join(tempfile.gettempdir(), "ocr_measure")
+os.makedirs(OUT, exist_ok=True)
+
+REGIONS = ([f"p{i}balance" for i in range(9)] + [f"p{i}name" for i in range(9)] +
+           ["c0pot0"] + [f"p{i}bet" for i in range(9)])
+EMPTY = ("", "NONE", "0", "0.0", "0.00", "-")
+
+
+def psql(sql):
+    env = dict(os.environ, PGPASSWORD="dbpass")
+    r = subprocess.run([PSQL, "-h", "127.0.0.1", "-U", "postgres", "-d", "hiss",
+                        "-t", "-A", "-F", "|", "-c", sql],
+                       capture_output=True, text=True, env=env, timeout=60)
+    return [l for l in r.stdout.strip().splitlines() if "|" in l]
+
+
+def region_groups(tmid):
+    out = {}
+    for ln in psql(f"SELECT name,transform FROM tm_regions WHERE tablemap_id={tmid}"):
+        n, tr = ln.split("|", 1)
+        out[n] = ("autoocr" + tr[1]) if (len(tr) > 1 and tr[0] == "A") else tr
+    return out
+
+
+def ocr_settings():
+    out = {}
+    for ln in psql("SELECT key, value->>'model', value->>'threshold', value->>'decimal_correct',"
+                   " value->>'split_margin', value->>'no_preprocess' FROM settings"
+                   " WHERE key LIKE 'autoocr_' ORDER BY key"):
+        f = ln.split("|")
+        if len(f) >= 6:
+            out[f[0]] = dict(model=os.path.basename(f[1] or ""), thr=f[2],
+                             dec=f[3], split=f[4], nopre=f[5])
+    return out
+
+
+def dump(port):
+    subprocess.run(["curl", "-s", "--max-time", "10",
+                    f"http://127.0.0.1:{port}/api/dump-scrapes"], capture_output=True, timeout=30)
+    time.sleep(4)
+
+
+def engine_values(port):
+    """Final values AFTER decimal-splitting and bet-repair."""
+    try:
+        r = subprocess.run(["curl", "-s", "--max-time", "8",
+                            f"http://127.0.0.1:{port}/api/table-state"],
+                           capture_output=True, text=True, timeout=20)
+        d = json.loads(r.stdout)
+    except Exception:
+        return {}, None
+    out = {}
+    for pl in d.get("players", []):
+        c = pl.get("chair")
+        out[f"p{c}balance"] = pl.get("balance")
+        out[f"p{c}bet"] = pl.get("bet")
+        out[f"p{c}name"] = pl.get("name")
+    out["c0pot0"] = d.get("pot")
+    return {k: ("" if v is None else str(v)) for k, v in out.items()}, d.get("table")
+
+
+def build_montage(path):
+    tiles, present = [], []
+    for r in REGIONS:
+        img = cv2.imread(os.path.join(SCRAPES, f"{r}_raw.bmp"))
+        if img is None:
+            continue
+        z = cv2.resize(img, None, fx=3, fy=3, interpolation=cv2.INTER_NEAREST)
+        tile = np.full((max(z.shape[0], 30) + 10, 300 + z.shape[1], 3), 20, np.uint8)
+        cv2.putText(tile, r, (6, 24), cv2.FONT_HERSHEY_SIMPLEX, .6, (255, 255, 255), 1, cv2.LINE_AA)
+        tile[5:5 + z.shape[0], 300:300 + z.shape[1]] = z
+        tiles.append(tile)
+        present.append(r)
+    if not tiles:
+        return None, []
+    W = max(t.shape[1] for t in tiles)
+    tiles = [np.pad(t, ((0, 0), (0, W - t.shape[1]), (0, 0))) for t in tiles]
+    cv2.imwrite(path, np.vstack(tiles))
+    return path, present
+
+
+def hiss_values(present):
+    out = {}
+    for r in present:
+        p = os.path.join(SCRAPES, f"{r}.txt")
+        out[r] = open(p).read().strip() if os.path.exists(p) else ""
+    return out
+
+
+def ask_claude(png, present):
+    prompt = (f"Read the image at {png} . Each row shows a region name on the left and a "
+              f"magnified screenshot crop from a poker table on the right. For EVERY row, "
+              f"transcribe EXACTLY the text visible in the crop, character for character, "
+              f"including any 'BB' suffix. If a crop is empty/blank, write NONE. Output one "
+              f"line per row in the form  name=value  and nothing else. "
+              f"The rows are: {', '.join(present)}")
+    r = subprocess.run(["claude", "-p", prompt], capture_output=True, text=True, timeout=600)
+    truth = {}
+    for line in (r.stdout or "").splitlines():
+        m = re.match(r"\s*([A-Za-z0-9_]+)\s*=\s*(.*)$", line.strip())
+        if m and m.group(1) in present:
+            truth[m.group(1)] = m.group(2).strip()
+    return truth
+
+
+def norm(s):
+    s = (s or "").strip().upper().replace(" ", "")
+    return re.sub(r"BB$", "", s)
+
+
+def num_eq(x, y):
+    try:
+        return abs(float(x) - float(y)) < 0.005
+    except Exception:
+        return norm(x) == norm(y)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, required=True)
+    ap.add_argument("--tablemap", type=int, required=True)
+    ap.add_argument("--label", required=True)
+    a = ap.parse_args()
+
+    dump(a.port)
+    png, present = build_montage(os.path.join(OUT, f"{a.label}.png"))
+    if not png:
+        raise SystemExit("no scrape images found -- did the dump run?")
+    hv = hiss_values(present)
+    ev, table = engine_values(a.port)
+    truth = ask_claude(png, present)
+    groups = region_groups(a.tablemap)
+
+    print(f"\n=== {a.label}  port {a.port}  tablemap {a.tablemap} ===")
+    print(f"table: {table}")
+    for k, v in sorted(ocr_settings().items()):
+        print(f"  {k}: model={v['model']} thr={v['thr']} decimal_correct={v['dec']} "
+              f"split_margin={v['split']} no_preprocess={v['nopre']}")
+
+    rows, agree, total = [], 0, 0
+    for r in present:
+        h, t, e = hv.get(r, ""), truth.get(r, ""), ev.get(r, "")
+        if not t:
+            continue
+        if norm(t) in EMPTY and norm(h) in EMPTY:
+            continue                       # both agree the seat is empty
+        total += 1
+        ok_raw = norm(h) == norm(t)
+        ok_fin = num_eq(e, norm(t)) if e != "" else ok_raw
+        agree += ok_fin
+        rows.append((r, t, h, e, ok_raw, ok_fin, groups.get(r, "?")))
+
+    print(f"\n{'region':<14}{'actual':>14}{'raw ocr':>16}{'after repair':>15}  group")
+    for r, t, h, e, ok_raw, ok_fin, g in rows:
+        note = "  (repair FIXED)" if ok_fin and not ok_raw else \
+               ("  (repair BROKE)" if ok_raw and not ok_fin else "")
+        print(f"{r:<14}{t[:13]:>14}{h[:15]:>16}{e[:14]:>15}  {g:<9}"
+              f"{'ok' if ok_fin else 'MISREAD'}{note}")
+
+    raw_agree = sum(1 for x in rows if x[4])
+    pct = 100.0 * agree / total if total else 0.0
+    print(f"\nafter repair : {agree}/{total} = {pct:.0f}%   <-- what the bot acts on")
+    print(f"raw OCR only : {raw_agree}/{total} = {100.0*raw_agree/total if total else 0:.0f}%")
+
+    print("\n=== per autoocr group (which settings to tune) ===")
+    for g in sorted({x[6] for x in rows}):
+        gr = [x for x in rows if x[6] == g]
+        okc = sum(1 for x in gr if x[5])
+        bad = [x[0] for x in gr if not x[5]]
+        print(f"  {g:<10} {okc}/{len(gr)}" + (f"   misses: {', '.join(bad)}" if bad else ""))
+
+    with open(os.path.join(OUT, f"{a.label}.json"), "w") as f:
+        json.dump({"label": a.label, "port": a.port, "tablemap": a.tablemap, "table": table,
+                   "agree": agree, "total": total, "pct": pct, "raw_agree": raw_agree,
+                   "rows": [{"region": r, "actual": t, "raw": h, "final": e,
+                             "ok_raw": orw, "ok_final": okf, "group": g}
+                            for r, t, h, e, orw, okf, g in rows]}, f, indent=1)
+
+
+if __name__ == "__main__":
+    main()

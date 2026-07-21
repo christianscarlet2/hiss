@@ -21,11 +21,14 @@
 
 CWatchdog *p_watchdog = NULL;
 
-// CWatchdog uses the same shared memory segment like CSharedMem
-#pragma data_seg(kOpenHoldemSharedmemorySegment) // names are limited to 8 chars, including the dot.
-__declspec(allocate(kOpenHoldemSharedmemorySegment)) static	time_t timestamps_openholdem_alive[MAX_SESSION_IDS] = { NULL };
-#pragma data_seg()
-#pragma comment(linker, "/SECTION:.ohshmem,RWS")		// RWS: read, write, shared
+// The heartbeats live in CSharedMem's named file mapping, reached through
+// p_sharedmem->AliveTimestamp()/SetAliveTimestamp(). They used to be declared here in
+// the .ohshmem data_seg, but that segment is NOT shared across processes on this
+// toolchain -- each instance got a private copy. Since openholdem_PIDs IS genuinely
+// shared, every instance could see its siblings but never their heartbeats, so every
+// sibling looked permanently frozen to every other one. That is what used to make
+// WatchForFrozenProcesses() below TerminateProcess() healthy bots; the kill is gone
+// now, but without this the freeze verdict itself was still always wrong.
 
 const int kSecondsToconsiderAProcessAsFrozen = 15;
 
@@ -54,9 +57,13 @@ void CWatchdog::MarkInstanceAsAlive(int session_ID) {
   write_log(Preferences()->debug_watchdog(), "[CWatchdog] Marking instance %d alive\n", session_ID);
   assert(session_ID >=  0);
   assert(session_ID < MAX_SESSION_IDS);
+  // p_watchdog is constructed BEFORE p_sharedmem (and destroyed after it), so the
+  // heartbeat store is legitimately absent at both ends of the process lifetime.
+  // Nothing is lost by skipping: the next heartbeat marks us alive again.
+  if (p_sharedmem == NULL) return;
   time_t current_time;
   time(&current_time);
-  timestamps_openholdem_alive[session_ID] = current_time;
+  p_sharedmem->SetAliveTimestamp(session_ID, current_time);
 }
 
 void CWatchdog::MarkThisInstanceAsAlive() {
@@ -69,7 +76,11 @@ void CWatchdog::MarkInstanceAsDead(int session_ID) {
   write_log(Preferences()->debug_watchdog(), "[CWatchdog] Marking instance %d dead\n", session_ID);
   assert(session_ID >= 0);
   assert(session_ID < MAX_SESSION_IDS);
-  timestamps_openholdem_alive[session_ID] = kUndefinedZero;
+  // See MarkInstanceAsAlive(): p_sharedmem is already gone during our own teardown.
+  // A crashed/exited instance is reaped anyway by WatchForCrashedProcesses(), which
+  // tests real PID liveness rather than the heartbeat.
+  if (p_sharedmem == NULL) return;
+  p_sharedmem->SetAliveTimestamp(session_ID, kUndefinedZero);
 }
 
 void CWatchdog::MarkThisInstanceAsDead() {
@@ -113,7 +124,7 @@ void CWatchdog::WatchForFrozenProcesses() {
       // Not a process
       continue;
     }
-    time_t last_process_timestamp = timestamps_openholdem_alive[i];
+    time_t last_process_timestamp = p_sharedmem->AliveTimestamp(i);
     int seconds_elapsed = current_time - last_process_timestamp;
     assert(seconds_elapsed >= 0);
     if (seconds_elapsed > kSecondsToconsiderAProcessAsFrozen) {
@@ -131,11 +142,28 @@ void CWatchdog::WatchForFrozenProcesses() {
         continue;
       }
 #ifndef _DEBUG
-      write_log(Preferences()->debug_watchdog(), "[CWatchdog] Killing frozen process %i, PID: %i\n",
-        i, p_sharedmem->OpenHoldemProcessID(i));
-      KillProcess(p_sharedmem->OpenHoldemProcessID(i));
-      MarkInstanceAsDead(i);
-      p_sharedmem->CleanUpProcessMemory(i);
+      // DO NOT kill the other instance. This watchdog runs in EVERY instance and inspects
+      // EVERY session's heartbeat, so a bot that merely stalls -- an adb tap that blocks, an
+      // OCR worker round-trip, a burst of validator capture-dumps -- gets TerminateProcess'd
+      // by a sibling. That is external termination: no ExitInstance, no shutdown.log line, no
+      // WER event, which is exactly the "Hiss keeps closing for no reason" signature. Sysmon
+      // caught it as Hiss.exe -> Hiss.exe with GrantedAccess 0x1 (PROCESS_TERMINATE), and 0x1
+      // is requested in only one place: KillProcess() below.
+      // A stall is not a crash. Genuinely dead processes are already reaped by
+      // WatchForCrashedProcesses()/IsDeadOpenHoldemProcess(), which checks the process is gone
+      // rather than merely quiet. So record the freeze and leave the other bot alone.
+      {
+        extern void ShutdownLog(const char *what);
+        extern const char *g_shutdown_reason;
+        const char *saved_reason = g_shutdown_reason;
+        g_shutdown_reason = "observed-frozen-sibling-NOT-killed";
+        ShutdownLog("WatchdogFreezeObserved");
+        g_shutdown_reason = saved_reason;
+      }
+      write_log(k_always_log_errors,
+        "[CWatchdog] Session %i (PID %i) has not heartbeat for >%i s. NOT killing it: a stall "
+        "is not a crash, and killing a live sibling loses a hand mid-play.\n",
+        i, p_sharedmem->OpenHoldemProcessID(i), kSecondsToconsiderAProcessAsFrozen);
 #else
       // Don't kill any processes in debug.mode
       // It is extremely annoying if we hit a breakpoint

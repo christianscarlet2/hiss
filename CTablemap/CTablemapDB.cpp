@@ -26,6 +26,7 @@
 
 CTablemapDB *p_tablemap_db = NULL;
 CString CTablemapDB::s_conn_str = "";
+CString CTablemapDB::s_schema = "";   // "" => public (Hiss/Vision); Automation.exe sets "automation"
 
 // NULL-safe wrapper around libpq's PQgetvalue. PQgetvalue can hand back NULL
 // (out-of-range indices, a result in an error state, a dropped connection), and
@@ -74,7 +75,8 @@ static void SplitLines(const CString &text, std::vector<CString> *out) {
 }
 
 CTablemapDB::CTablemapDB()
-	: _conn(NULL) {
+	: _region_scope_on(false), _region_step(1), _conn(NULL) {
+	// Region scope stays OFF unless Automation.exe turns it on -- see SetRegionScope().
 }
 
 CTablemapDB::~CTablemapDB() {
@@ -133,8 +135,35 @@ bool CTablemapDB::Connect() {
 		return false;
 	}
 	_conn = c;
+	// Point this connection at the owning app's schema BEFORE EnsureSchema(), which creates and
+	// migrates tables unqualified and would otherwise operate on public.
+	//
+	// "<schema>, public" and NOT "<schema>" alone: the tablemap tables are duplicated per schema,
+	// but the SHARED ones (settings, oh_attached_windows, hud_*) exist only in public, and a
+	// single-entry path would break every one of them.
+	//
+	// Until this existed, Automation.exe read and wrote HISS's tablemaps -- the automation schema
+	// was created but never actually used, because nothing ever set the search_path. It surfaced
+	// as "column process does not exist" on save: the scoped DELETE was hitting public.tm_regions.
+	if (!s_schema.IsEmpty()) {
+		CString safe;
+		for (int i = 0; i < s_schema.GetLength(); ++i) {
+			const char ch = (char)s_schema[i];
+			if (isalnum((unsigned char)ch) || ch == '_') safe += ch;   // identifier-safe only
+		}
+		if (!safe.IsEmpty()) {
+			CString sp;
+			sp.Format("SET search_path TO %s, public", safe.GetString());
+			PGresult *r = PQexec(c, sp.GetString());
+			if (r) PQclear(r);
+		}
+	}
 	EnsureSchema();
 	return true;
+}
+
+void CTablemapDB::SetSchema(const CString &schema) {
+	s_schema = schema;
 }
 
 void CTablemapDB::Disconnect() {
@@ -451,6 +480,107 @@ bool CTablemapDB::DBClearAttachedSession(int session_id) {
 	return ExecCommand(sql);
 }
 
+void CTablemapDB::SetRegionScope(const CString &process, int step) {
+	if (step < 1 || step > 9) return;
+	_region_scope_on = true;
+	_region_process  = process;
+	_region_step     = step;
+}
+
+void CTablemapDB::ClearRegionScope() {
+	_region_scope_on = false;
+	_region_process  = "";
+	_region_step     = 1;
+}
+
+// ---- Automation process screenshots -------------------------------------------------------
+// These run under search_path=automation (Automation.exe only). See scripts\automation_schema.sql.
+
+bool CTablemapDB::SaveProcessScreenshot(long tablemap_id, const CString &process, int step,
+		const CString &label, int width, int height, const CString &pixels) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
+	if (tablemap_id < 0 || step < 1 || step > 9) return false;
+	if (!Connect()) return false;
+	// Upsert: re-capturing a step must REPLACE that screenshot, not accumulate versions -- the
+	// primary key is (tablemap_id, process, step) precisely so a step has exactly one image.
+	CString sql;
+	sql.Format("INSERT INTO process_screenshots"
+		" (tablemap_id,process,step,label,width,height,pixels,updated_at)"
+		" VALUES (%ld,'%s',%d,'%s',%d,%d,'%s',now())"
+		" ON CONFLICT (tablemap_id,process,step) DO UPDATE SET"
+		" label=EXCLUDED.label, width=EXCLUDED.width, height=EXCLUDED.height,"
+		" pixels=EXCLUDED.pixels, updated_at=now()",
+		tablemap_id, EscapeSqlLiteral(process).GetString(), step,
+		EscapeSqlLiteral(label).GetString(), width, height,
+		EscapeSqlLiteral(pixels).GetString());
+	return ExecCommand(sql);
+}
+
+bool CTablemapDB::LoadProcessScreenshot(long tablemap_id, const CString &process, int step,
+		int *width, int *height, CString *pixels, CString *label) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
+	if (tablemap_id < 0 || step < 1 || step > 9) return false;
+	if (!Connect()) return false;
+	CString sql;
+	sql.Format("SELECT width,height,pixels,label FROM process_screenshots"
+		" WHERE tablemap_id=%ld AND process='%s' AND step=%d",
+		tablemap_id, EscapeSqlLiteral(process).GetString(), step);
+	PGresult *res = PQexec((PGconn *)_conn, sql.GetString());
+	if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+		_last_error.Format("SQL error: %s", PQerrorMessage((PGconn *)_conn));
+		if (res) PQclear(res);
+		return false;
+	}
+	if (PQntuples(res) == 0) {
+		PQclear(res);
+		return false;   // step not captured yet -- expected, not an error
+	}
+	if (width  != NULL) *width  = atoi(PgVal(res, 0, 0));
+	if (height != NULL) *height = atoi(PgVal(res, 0, 1));
+	if (pixels != NULL) *pixels = PgVal(res, 0, 2);
+	if (label  != NULL) *label  = PgVal(res, 0, 3);
+	PQclear(res);
+	return true;
+}
+
+bool CTablemapDB::ListProcessSteps(long tablemap_id, const CString &process, std::vector<int> *out) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
+	if (out == NULL) return false;
+	out->clear();
+	if (tablemap_id < 0) return false;
+	if (!Connect()) return false;
+	CString sql;
+	// Only steps that actually carry an image count as captured: a row with NULL/empty pixels
+	// would otherwise light the button up as done when there is nothing to map against.
+	sql.Format("SELECT step FROM process_screenshots"
+		" WHERE tablemap_id=%ld AND process='%s' AND pixels IS NOT NULL AND pixels <> ''"
+		" ORDER BY step", tablemap_id, EscapeSqlLiteral(process).GetString());
+	PGresult *res = PQexec((PGconn *)_conn, sql.GetString());
+	if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+		_last_error.Format("SQL error: %s", PQerrorMessage((PGconn *)_conn));
+		if (res) PQclear(res);
+		return false;
+	}
+	int rows = PQntuples(res);
+	for (int i = 0; i < rows; ++i) out->push_back(atoi(PgVal(res, i, 0)));
+	PQclear(res);
+	return true;
+}
+
+bool CTablemapDB::DeleteProcessScreenshot(long tablemap_id, const CString &process, int step) {
+	CSLock lock(_db_cs);  // serialise libpq access (not thread-safe)
+	if (tablemap_id < 0 || step < 1 || step > 9) return false;
+	if (!Connect()) return false;
+	// Drop the regions mapped against that screenshot too: they are coordinates on an image that
+	// no longer exists, and leaving them behind would silently re-attach to the next capture.
+	CString sql;
+	sql.Format("DELETE FROM tm_regions WHERE tablemap_id=%ld AND process='%s' AND step=%d;"
+		" DELETE FROM process_screenshots WHERE tablemap_id=%ld AND process='%s' AND step=%d",
+		tablemap_id, EscapeSqlLiteral(process).GetString(), step,
+		tablemap_id, EscapeSqlLiteral(process).GetString(), step);
+	return ExecCommand(sql);
+}
+
 bool CTablemapDB::GetHudPlayerStats(const CString &player, SHudDbStats *out) {
 	return GetHudPlayerStats(player, CString(""), out);   // "" -> sum across gametypes (legacy)
 }
@@ -719,6 +849,13 @@ int CTablemapDB::LoadTablemapFromDB(const CString name, CTablemap *tm) {
 		" COALESCE(ac_color3,0), COALESCE(ac_tol3,0), COALESCE(ac_c3en,false),"
 		" COALESCE(ac_blank,false)"
 		" FROM tm_regions WHERE tablemap_id=%ld", id);
+	// Automation: show only the regions belonging to the screenshot being edited.
+	if (_region_scope_on) {
+		CString scope;
+		scope.Format(" AND process='%s' AND step=%d",
+			EscapeSqlLiteral(_region_process).GetString(), _region_step);
+		sql += scope;
+	}
 	res = PQexec((PGconn *)_conn, sql.GetString());
 	if (PQresultStatus(res) == PGRES_TUPLES_OK) {
 		n = PQntuples(res);
@@ -934,7 +1071,15 @@ int CTablemapDB::SaveTablemapToDB(const CString name, CTablemap *tm) {
 	const char *children[] = { "tm_sizes", "tm_symbols", "tm_regions", "tm_fonts",
 		"tm_hash_points", "tm_hash_values", "tm_images", "tm_templates" };
 	for (int k = 0; k < 8; ++k) {
-		sql.Format("DELETE FROM %s WHERE tablemap_id=%ld", children[k], id);
+		// With a region scope active, tm_regions holds NINE steps' worth of rows under this one
+		// tablemap and only the edited step is in memory. Wiping the table wholesale would
+		// delete the other eight steps, so that one child gets a scoped delete instead.
+		if (_region_scope_on && strcmp(children[k], "tm_regions") == 0) {
+			sql.Format("DELETE FROM tm_regions WHERE tablemap_id=%ld AND process='%s' AND step=%d",
+				id, EscapeSqlLiteral(_region_process).GetString(), _region_step);
+		} else {
+			sql.Format("DELETE FROM %s WHERE tablemap_id=%ld", children[k], id);
+		}
 		if (!ExecCommand(sql)) { ExecCommand("ROLLBACK"); return ERR_SYNTAX; }
 	}
 
@@ -962,17 +1107,29 @@ int CTablemapDB::SaveTablemapToDB(const CString name, CTablemap *tm) {
 
 	// regions (r$)
 	{
+		// Automation only: stamp every region with the screenshot it was drawn on. Left empty for
+		// Hiss/Vision, whose tm_regions has no such columns -- naming them there would be a
+		// "column does not exist" error on every save.
+		CString scope_cols, scope_vals;
+		if (_region_scope_on) {
+			scope_cols = ",process,step";
+			scope_vals.Format(",'%s',%d",
+				EscapeSqlLiteral(_region_process).GetString(), _region_step);
+		}
 		const RMap *r = tm->r$();
 		for (RMapCI it = r->begin(); it != r->end(); ++it) {
 			const STablemapRegion &g = it->second;
+			// NOTE the two %s at the ends of the column list and the value list: scope_cols is
+			// therefore the FIRST Format argument and scope_vals the LAST. Keep them paired.
 			sql.Format("INSERT INTO tm_regions (tablemap_id,name,rgn_left,rgn_top,rgn_right,rgn_bottom,"
 				"color,radius,transform,use_default,threshold,use_cropping,crop_size,match_mode,sharpen,"
 				"color2,color2_enabled,color3,color3_enabled,"
 				"rgn_left2,rgn_top2,rgn_right2,rgn_bottom2,rect2_enabled,"
 				"ac_enabled,ac_color1,ac_tol1,ac_c1en,ac_color2,ac_tol2,ac_c2en,"
-				"ac_color3,ac_tol3,ac_c3en,ac_blank) "
+				"ac_color3,ac_tol3,ac_c3en,ac_blank%s) "
 				"VALUES (%ld,'%s',%u,%u,%u,%u,%lu,%d,'%s',%s,%d,%s,%d,%d,%d,%lu,%s,%lu,%s,%u,%u,%u,%u,%s,"
-				"%s,%lu,%d,%s,%lu,%d,%s,%lu,%d,%s,%s)",
+				"%s,%lu,%d,%s,%lu,%d,%s,%lu,%d,%s,%s%s)",
+				scope_cols.GetString(),
 				id, EscapeSqlLiteral(g.name).GetString(),
 				g.left, g.top, g.right, g.bottom,
 				(unsigned long)g.color, g.radius, EscapeSqlLiteral(g.transform).GetString(),
@@ -985,7 +1142,8 @@ int CTablemapDB::SaveTablemapToDB(const CString name, CTablemap *tm) {
 				(unsigned long)g.autocrop_color1, g.autocrop_tol1, g.autocrop_c1_enabled ? "true" : "false",
 				(unsigned long)g.autocrop_color2, g.autocrop_tol2, g.autocrop_c2_enabled ? "true" : "false",
 				(unsigned long)g.autocrop_color3, g.autocrop_tol3, g.autocrop_c3_enabled ? "true" : "false",
-				g.autocrop_blank ? "true" : "false");
+				g.autocrop_blank ? "true" : "false",
+				scope_vals.GetString());
 			if (!ExecCommand(sql)) { ExecCommand("ROLLBACK"); return ERR_SYNTAX; }
 		}
 	}

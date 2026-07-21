@@ -15,6 +15,10 @@ public:
 
 	BOOL Create(CWnd *owner, unsigned short port);
 	void NavigateToMappings(unsigned short port);
+	// Same embedded browser, arbitrary page on the local terminal server. Added so the
+	// automation preferences page can reuse this host instead of cloning a second
+	// WebView2 window that would differ only in its URL. Pass e.g. "/automation-prefs/".
+	void NavigateToPath(unsigned short port, const CString &path);
 
 protected:
 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);

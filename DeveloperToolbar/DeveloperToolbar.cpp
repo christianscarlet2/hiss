@@ -95,6 +95,7 @@ static void SetButtonIconFromExe(HWND button, const char *exe_path) {
 #define IDC_OPEN_BRASS_SERPENT_BUTTON 1021
 #define IDC_OPEN_EYES_BUTTON 1022
 #define IDC_OPEN_SCRCPY_EMU 1023
+#define IDC_OPEN_SCRCPY_EMU2 1024
 
 #define TIMER_WINDOW_MONITOR 2001
 
@@ -132,6 +133,7 @@ static HWND g_close_all_button = NULL;
 static HWND g_open_brass_serpent_button = NULL;
 static HWND g_open_eyes_button = NULL;
 static HWND g_open_scrcpy_emu_button = NULL;
+static HWND g_open_scrcpy_emu2_button = NULL;
 static HWND g_build_progress = NULL;
 static HWND g_alert_text = NULL;
 static HBRUSH g_alert_brush = NULL;
@@ -1204,11 +1206,39 @@ static const char *kScrcpyWindowsKey = "devtoolbar_windows";
 // One scrcpy-able phone: adb serial, a short window title (set via --window-title so each phone's
 // mirror window can be found/positioned/recorded independently), and the settings field its
 // placement is persisted under. Add a row here to support another device.
-struct ScrcpyDevice { const char *serial; const char *title; const char *field; };
+// `extra` holds device-specific scrcpy flags appended after the serial/title. Emulators have no
+// hardware video encoder, so scrcpy makes the guest software-encode the screen (mediaswcodec);
+// capping fps and dropping audio cuts that encoder's load without changing the mirror resolution
+// (so OpenScrape coordinates stay valid).
+//
+// EVERY device gets --max-fps=1, phones included. A phone's hardware encoder makes the GUEST
+// side cheap, which is why these two rows used to be empty -- but the cost that actually hurt
+// was on the HOST: scrcpy.exe decodes and blits every frame it is sent, and dwm composites it.
+// Measured 2026-07-19 with the phones uncapped and the AVDs at --max-fps=1: S10 16691s and A17
+// 14972s of CPU against 147s for the EMU2 mirror, ~100x. Scraping only ever needs a sharp still,
+// never smooth motion, so the frames above 1fps were pure waste that starved the emulators and
+// the bots of CPU on a 12-core box running two AVDs.
+struct ScrcpyDevice { const char *serial; const char *title; const char *field; const char *extra; };
 static const ScrcpyDevice kScrcpyDevices[] = {
-  { "R58M50TB3BY", "S10", "scrcpy_s10" },   // Galaxy S10+ (SM-G975U1)
-  { "R5GL205FT7Y", "A17", "scrcpy_a17" },   // Galaxy A17  (SM-A176U1)
-  { "emulator-5554", "EMU", "scrcpy_emu" }, // Android Studio AVD (sdk_gphone16k_x86_64)
+  { "R58M50TB3BY", "S10", "scrcpy_s10", "--max-fps=1" },   // Galaxy S10+ (SM-G975U1)
+  { "R5GL205FT7Y", "A17", "scrcpy_a17", "--max-fps=1" },   // Galaxy A17  (SM-A176U1)
+  // Android Studio AVD (sdk_gphone16k_x86_64). The AVD has no hardware encoder, so cap the
+  // frame rate to cut the software encoder's load -- fps is free for scraping, which only
+  // needs sharp stills, not smooth motion.
+  // --max-size must stay >= the mirror window height (1000px): at 720 the 1080x2340 guest
+  // streams at only 332x720 and is UPSCALED into the window, which blurs every glyph and
+  // wrecks OCR. 1080 gives a 498x1080 stream that downscales cleanly into the window.
+  // --no-clipboard-autosync stops scrcpy pushing the Windows clipboard to the guest; that
+  // made Android 12+ toast "Shell pasted from your clipboard" over the bottom of the felt,
+  // occluding the action buttons and the bottom seat in every capture taken while it showed.
+  { "emulator-5554", "EMU", "scrcpy_emu",
+    "--max-fps=1 --no-audio --max-size=1080 --no-clipboard-autosync" },
+  // Second Android Studio AVD (named EMU2), on the next emulator console port. Same flags and
+  // the same reasoning as EMU above -- it is another software-encoding AVD, not a real phone.
+  // Its own `field` keeps its window placement separate from EMU's, so the two mirrors can be
+  // parked side by side and each restored where it was recorded.
+  { "emulator-5556", "EMU2", "scrcpy_emu2",
+    "--max-fps=1 --no-audio --max-size=1080 --no-clipboard-autosync" },
 };
 
 // Optional connection override at HKCU\Software\Hiss\Trainer "hiss_conn" (shared with
@@ -1449,7 +1479,10 @@ static void OpenScrcpyForDevice(const ScrcpyDevice &dev) {
   const bool have_saved = DbLoadScrcpyRect(dev.field, &saved);
 
   char args[256] = {0};
-  sprintf_s(args, "-s %s --window-title=%s", dev.serial, dev.title);
+  if (dev.extra && dev.extra[0] != '\0')
+    sprintf_s(args, "-s %s --window-title=%s %s", dev.serial, dev.title, dev.extra);
+  else
+    sprintf_s(args, "-s %s --window-title=%s", dev.serial, dev.title);
   LaunchScrcpyWithArgs(args);
 
   char msg[160] = {0};
@@ -1579,6 +1612,12 @@ static void CreateChildControls(HWND hwnd) {
     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
     282, 298, 64, 28, hwnd, (HMENU)IDC_OPEN_SCRCPY_EMU, g_instance, NULL);
 
+  // EMU2: the second emulator (adb serial emulator-5556). The y=298 row is already full width,
+  // so this starts a new row directly under EMU rather than squeezing a fourth button in.
+  g_open_scrcpy_emu2_button = CreateWindow("BUTTON", "EMU2",
+    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+    282, 334, 64, 28, hwnd, (HMENU)IDC_OPEN_SCRCPY_EMU2, g_instance, NULL);
+
   // App icons on the launch buttons.
   SetButtonIcon(g_open_openholdem_button, kSnakeIcoPath);   // Hiss
   SetButtonIcon(g_open_openscrape_button, kEyeIcoPath);     // Vision
@@ -1593,18 +1632,18 @@ static void CreateChildControls(HWND hwnd) {
 
   g_build_progress = CreateWindowEx(0, PROGRESS_CLASS, "",
     WS_CHILD | WS_VISIBLE,
-    16, 338, 330, 18, hwnd, (HMENU)IDC_BUILD_PROGRESS, g_instance, NULL);
+    16, 374, 330, 18, hwnd, (HMENU)IDC_BUILD_PROGRESS, g_instance, NULL);
   SendMessage(g_build_progress, PBM_SETRANGE, 0, MAKELPARAM(0, 100));
   SendMessage(g_build_progress, PBM_SETPOS, 0, 0);
 
   g_alert_text = CreateWindow("STATIC", "",
     WS_CHILD | SS_CENTER,
-    16, 374, 330, 36, hwnd, (HMENU)IDC_ALERT_TEXT, g_instance, NULL);
+    16, 410, 330, 36, hwnd, (HMENU)IDC_ALERT_TEXT, g_instance, NULL);
   ShowWindow(g_alert_text, SW_HIDE);
 
   g_status_text = CreateWindow("STATIC", "Enter size, then click Pick Window.",
     WS_CHILD | WS_VISIBLE,
-    16, 418, 340, 54, hwnd, (HMENU)IDC_STATUS_TEXT, g_instance, NULL);
+    16, 454, 340, 54, hwnd, (HMENU)IDC_STATUS_TEXT, g_instance, NULL);
   LoadDefaultTablemapSize();
 }
 
@@ -1642,6 +1681,10 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARA
     }
     if (LOWORD(wparam) == IDC_OPEN_SCRCPY_EMU) {
       OpenScrcpyForDevice(kScrcpyDevices[2]);   // Android Studio emulator
+      return 0;
+    }
+    if (LOWORD(wparam) == IDC_OPEN_SCRCPY_EMU2) {
+      OpenScrcpyForDevice(kScrcpyDevices[3]);   // second Android Studio emulator (EMU2)
       return 0;
     }
     if (LOWORD(wparam) == IDC_OPEN_BRASS_SERPENT_BUTTON) {
@@ -1792,7 +1835,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show_command) {
 
   HWND hwnd = CreateWindowEx(WS_EX_TOPMOST, kWindowClassName, kAppTitle,
     WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-    CW_USEDEFAULT, CW_USEDEFAULT, 380, 533,
+    CW_USEDEFAULT, CW_USEDEFAULT, 380, 569,
     NULL, NULL, instance, NULL);
   if (hwnd == NULL) {
     return 1;

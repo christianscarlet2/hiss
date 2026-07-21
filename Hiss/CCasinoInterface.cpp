@@ -19,6 +19,7 @@
 #include "CEngineContainer.h"
 #include "..\CTablemap\CTablemap.h"
 #include "..\CTableMap\CTableMapAccess.h"
+#include "CAdbInput.h"
 #include "CAutoConnector.h"
 #include "CAutoplayerFunctions.h"
 #include "CAutoplayerTrace.h"
@@ -101,8 +102,20 @@ void CCasinoInterface::Reset() {
 }
 
 bool CCasinoInterface::TableLostFocus() {
-  HWND foreground_window = GetForegroundWindow();
   HWND connected_window = p_autoconnector->attached_hwnd();
+  // An adb-backed mirror NEVER needs focus. Input is injected straight into the guest with
+  // `adb shell input tap`, which lands regardless of which window is foreground or whether the
+  // mirror is occluded -- that is the entire reason CAdbInput exists. Asking "is the mirror the
+  // foreground window?" is meaningless for such a table, and answering "yes it lost focus"
+  // silently aborted every MULTI-STEP action while single clicks kept working, because only the
+  // multi-step paths consult this:
+  //   * ClickButtonSequence() dropped the SECOND click -- the raise opened the bet UI and stalled;
+  //   * CBetsizeInputBox::DoBetsize() bailed before EnterBetsizeByNumpad(), so no digits;
+  //   * CBetSlider's drags bailed the same way.
+  // Observed on a live table: foreground was an ordinary editor window, connected was "A17".
+  // Focus still matters for the SendInput / keyboard.dll paths, so only adb tables skip the check.
+  if (AdbInput::IsAdbBackedWindow(connected_window)) return false;
+  HWND foreground_window = GetForegroundWindow();
 	bool lost_focus = (foreground_window != connected_window);
   if (lost_focus) {
     CString foreground_title(" ", MAX_WINDOW_TITLE);
@@ -116,17 +129,25 @@ bool CCasinoInterface::TableLostFocus() {
   return lost_focus;
 }
 
+// Deliver a click to rect: an adb tap into the guest for scrcpy-mirrored tables, else the
+// mouse DLL. Every window that is not an adb-backed mirror behaves exactly as before.
+static void ClickOrTapRect(RECT rect, int clicks) {
+  HWND window = p_autoconnector->attached_hwnd();
+  if (AdbInput::TapRect(window, rect, clicks)) return;
+  (theApp._dll_mouse_click) (window, rect, MouseLeft, clicks);
+}
+
 void CCasinoInterface::ClickRect(RECT rect) {
-	write_log(Preferences()->debug_autoplayer(), "[CasinoInterface] Calling mouse.dll to single click button: %d,%d %d,%d\n", 
+	write_log(Preferences()->debug_autoplayer(), "[CasinoInterface] Single click button: %d,%d %d,%d\n",
     rect.left, rect.top, rect.right, rect.bottom);
-	(theApp._dll_mouse_click) (p_autoconnector->attached_hwnd(), rect, MouseLeft, 1);
+	ClickOrTapRect(rect, 1);
   p_engine_container->symbol_engine_time()->UpdateOnAutoPlayerAction();
 }
 
 void CCasinoInterface::DoubleClickRect(RECT rect) {
-  write_log(Preferences()->debug_autoplayer(), "[CasinoInterface] Calling mouse.dll to double click button: %d,%d %d,%d\n", 
+  write_log(Preferences()->debug_autoplayer(), "[CasinoInterface] Double click button: %d,%d %d,%d\n",
     rect.left, rect.top, rect.right, rect.bottom);
-  (theApp._dll_mouse_click) (p_autoconnector->attached_hwnd(), rect, MouseLeft, 2);
+  ClickOrTapRect(rect, 2);
   p_engine_container->symbol_engine_time()->UpdateOnAutoPlayerAction();
 }
 
@@ -417,14 +438,13 @@ bool CCasinoInterface::AllinOptionAvailable() {
 }
 
 void CCasinoInterface::SendKey(const char ascii_key) {
+	// SendString ignores its rect entirely (it only plays keyboard events), so this path
+	// never touches the mouse whatever the rect holds. Kept at 0 to avoid churn.
 	RECT r_null;
-	// !! kUndefined causes SendKey to return early
-	// !! keyboard-DLL is a mess.
 	r_null.bottom = kUndefinedZero;
 	r_null.left = kUndefinedZero;
 	r_null.right = kUndefinedZero;
 	r_null.top = kUndefinedZero;
-	POINT	cur_pos = { 0 };
 	// Using the SendString function to send a single character
 	char input[2];
 	input[0] = ascii_key;
@@ -433,11 +453,15 @@ void CCasinoInterface::SendKey(const char ascii_key) {
 }
 
 void CCasinoInterface::SendHotKey(const char* hot_key) {
+	// The keyboard DLL's SendKey synthesises a MOUSE CLICK into `rect` first, to focus the
+	// field, and suppresses it ONLY when the rect is all -1 (kUndefined). Passing
+	// kUndefinedZero (0) here did not suppress anything: it clicked client (0,0) of the table
+	// window, which physically moved the user's cursor there and never put it back -- on adb
+	// tables too, where the tap itself needs no focus at all. All -1 sends the keystroke alone.
 	RECT r_null;
-	r_null.bottom = kUndefinedZero;
-	r_null.left = kUndefinedZero;
-	r_null.right = kUndefinedZero;
-	r_null.top = kUndefinedZero;
-	POINT	cur_pos = { 0 };
+	r_null.bottom = kUndefined;
+	r_null.left = kUndefined;
+	r_null.right = kUndefined;
+	r_null.top = kUndefined;
 	(theApp._dll_keyboard_sendkey) (p_autoconnector->attached_hwnd(), r_null, hot_key);
 }

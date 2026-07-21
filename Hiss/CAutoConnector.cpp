@@ -160,9 +160,146 @@ void CAutoConnector::CheckIfWindowMatchesMoreThanOneTablemap(HWND hwnd) {
   }
 }
 
+// ---- Per-instance window memory -----------------------------------------------------------
+//
+// Remember which window THIS instance was on and reclaim it after a restart.
+//
+// Keyed by TERMINAL PORT, because several instances run at once (one per scrcpy mirror) and each
+// must come back to its own table -- restoring them from one shared key would have every instance
+// race for the same window and land wherever it happened to finish first. The port is also what
+// the automation bot identity is keyed on, so keeping them consistent means "the A17 bot" stays
+// the instance actually attached to A17 across restarts.
+//
+// The TITLE is stored, not the HWND: handles are per-process and meaningless after a restart,
+// whereas the scrcpy mirrors are deliberately titled S10 / A17 / EMU / EMU2.
+static const char *kWindowSessionKey = "hiss_session";
+
+static CString WindowSessionField() {
+	extern int g_terminal_port;
+	CString f;
+	f.Format("window_title_%d", (g_terminal_port > 0) ? g_terminal_port : 0);
+	return f;
+}
+
+// Find a visible top-level window by exact title. Exact rather than substring on purpose: "EMU"
+// is a prefix of "EMU2", and a substring match would happily reclaim the wrong mirror -- the same
+// collision that had the bot scraping the wrong emulator once before.
+struct SFindWindowByTitle { const char *want; HWND found; };
+
+static BOOL CALLBACK FindWindowByTitleProc(HWND hwnd, LPARAM lparam) {
+	SFindWindowByTitle *ctx = (SFindWindowByTitle *)lparam;
+	if (ctx->found != NULL || !::IsWindowVisible(hwnd)) {
+		return TRUE;
+	}
+	char title[MAX_WINDOW_TITLE] = { 0 };
+	::GetWindowTextA(hwnd, title, sizeof(title) - 1);
+	if (strcmp(title, ctx->want) == 0) {
+		ctx->found = hwnd;
+		return FALSE;   // stop enumerating
+	}
+	return TRUE;
+}
+
+// Read back what this instance is remembered to own ("" if nothing stored yet).
+CString RememberedWindowTitle() {
+	extern int g_terminal_port;
+	if (p_tablemap_db == NULL || g_terminal_port <= 0) {
+		return CString();
+	}
+	return p_tablemap_db->GetSettingString(kWindowSessionKey, WindowSessionField());
+}
+
+// Called whenever this instance attaches to a table, so the memory always reflects reality
+// rather than only an explicit pick from the dropdown.
+void RememberAttachedWindow(HWND window) {
+	extern int g_terminal_port;
+	if (window == NULL || !::IsWindow(window) || p_tablemap_db == NULL) {
+		return;
+	}
+	// REFUSE while the port is still 0. The first attach happens BEFORE the terminal server has
+	// bound its port, so an unguarded save wrote every instance's window to window_title_0 --
+	// they overwrote each other and the restore, which looks up window_title_<port>, then found
+	// nothing. That is the exact "all instances collapse into one" failure this feature exists to
+	// avoid. The heartbeat re-calls this once the port is known, so nothing is lost by waiting.
+	if (g_terminal_port <= 0) {
+		return;
+	}
+	char title[MAX_WINDOW_TITLE] = { 0 };
+	::GetWindowTextA(window, title, sizeof(title) - 1);
+	if (title[0] == '\0') {
+		return;   // an untitled window cannot be found again by title; nothing useful to store
+	}
+	// Do NOT let a fallback attach overwrite a remembered window that still EXISTS. When the
+	// remembered mirror is momentarily unavailable (still claimed by a session that was killed
+	// rather than closed cleanly, or briefly held by a sibling) the autoconnector lands on some
+	// other table -- and an unconditional save would burn that accident in as the new preference,
+	// losing the real one permanently. Observed live: A17 -> S10 after one reconnect. Adopting the
+	// new window is only correct once the remembered one is genuinely gone from the desktop.
+	CString remembered = RememberedWindowTitle();
+	if (!remembered.IsEmpty() && remembered.Compare(title) != 0) {
+		SFindWindowByTitle probe = { remembered.GetString(), NULL };
+		::EnumWindows(FindWindowByTitleProc, (LPARAM)&probe);
+		if (probe.found != NULL) {
+			return;   // remembered window is still on screen -- keep waiting for it, don't rewrite
+		}
+		write_log(k_always_log_basic_information,
+			"[session] remembered window \"%s\" no longer exists -- adopting \"%s\" for port %d\n",
+			remembered.GetString(), title, g_terminal_port);
+	}
+	// Dedupe on PORT+TITLE, not title alone: the port changes from 0 to real during startup, and
+	// keying on the title would treat the first real save as a no-op and never write it.
+	static CString s_last_saved;
+	CString key;
+	key.Format("%d|%s", g_terminal_port, title);
+	if (key == s_last_saved) {
+		return;   // called every heartbeat; only write on a real change
+	}
+	s_last_saved = key;
+	p_tablemap_db->SetSettingString(kWindowSessionKey, WindowSessionField(), CString(title));
+	write_log(k_always_log_basic_information,
+		"[session] remembered window \"%s\" for port %d\n", title, g_terminal_port);
+}
+
+// One-shot restore, run once the terminal port is known (that is what identifies this instance).
+// If the remembered window is gone we deliberately do NOTHING but log: leaving the pin clear IS
+// "deactivate the window button and select the tablemap automatically" -- the autoconnector's
+// normal path then picks a table on its own.
+void RestoreRememberedWindow() {
+	// g_manual_connect_* and g_terminal_port are declared in CScraper.h, already included here.
+	extern int g_terminal_port;
+
+	if (p_tablemap_db == NULL) {
+		return;
+	}
+	CString want = p_tablemap_db->GetSettingString(kWindowSessionKey, WindowSessionField());
+	if (want.IsEmpty()) {
+		write_log(k_always_log_basic_information,
+			"[session] no remembered window for port %d -- automatic table selection\n", g_terminal_port);
+		return;
+	}
+	SFindWindowByTitle ctx = { want.GetString(), NULL };
+	::EnumWindows(FindWindowByTitleProc, (LPARAM)&ctx);
+	if (ctx.found == NULL) {
+		write_log(k_always_log_basic_information,
+			"[session] remembered window \"%s\" is gone -- window override left OFF, "
+			"falling back to automatic table selection\n", want.GetString());
+		g_manual_connect_hwnd = 0;
+		g_manual_connect_request = -1;              // no pin: let the autoconnector choose
+		g_manual_connect_status = "remembered window gone; automatic selection";
+		return;
+	}
+	// Pin it exactly as the toolbar button would, so one code path does the connecting.
+	g_manual_connect_hwnd = (long long)(intptr_t)ctx.found;
+	g_manual_connect_request = 1;
+	g_manual_connect_status = "restoring remembered window...";
+	write_log(k_always_log_basic_information,
+		"[session] restoring remembered window \"%s\" for port %d\n", want.GetString(), g_terminal_port);
+}
+
 void CAutoConnector::set_attached_hwnd(const HWND table) {
   CSLock lock(m_critsec);
   _attached_hwnd = table;
+  RememberAttachedWindow(table);   // per-port window memory; see above
   assert(p_sharedmem != NULL);
   p_sharedmem->MarkPokerWindowAsAttached(table);
 }
@@ -450,6 +587,28 @@ void CAutoConnector::Disconnect(CString reason_for_disconnection) {
 int CAutoConnector::SelectTableMapAndWindowAutomatically() {
 	write_log(Preferences()->debug_autoconnector(), "[CAutoConnector] SelectTableMapAndWindowAutomatically(..)\n");
   int n_window_candidates = (int)g_tlist.GetSize();
+	// FIRST PASS: prefer the window this instance is remembered to own.
+	// Without this the loop below just takes the lowest-index free candidate, so a reconnect after
+	// any transient disconnect silently migrates the instance to whatever window happens to sort
+	// first -- observed live: restored onto A17, disconnected 25s later, came back on S10. The
+	// startup pin cannot prevent that on its own because it is consumed by the FIRST connect and
+	// every later reconnect goes through this function instead.
+	extern CString RememberedWindowTitle();
+	CString remembered = RememberedWindowTitle();
+	if (!remembered.IsEmpty()) {
+		for (int i = 0; i < n_window_candidates; ++i) {
+			if (p_sharedmem->PokerWindowAttached(g_tlist[i].hwnd)) continue;
+			char title[MAX_WINDOW_TITLE] = { 0 };
+			::GetWindowTextA(g_tlist[i].hwnd, title, sizeof(title) - 1);
+			if (remembered.Compare(title) == 0) {   // EXACT: "EMU" is a prefix of "EMU2"
+				write_log(k_always_log_basic_information,
+					"[session] reclaimed remembered window \"%s\" (candidate %d)\n", title, i);
+				return i;
+			}
+		}
+		// Remembered window not among the free candidates (gone, or held by another instance).
+		// Fall through: taking some other table beats not playing at all.
+	}
 	for (int i=0; i<n_window_candidates; ++i) {
 		if (!p_sharedmem->PokerWindowAttached(g_tlist[i].hwnd))	{
 			write_log(Preferences()->debug_autoconnector(), "[CAutoConnector] Chosen (table, TM)-pair in list: %d\n", i);

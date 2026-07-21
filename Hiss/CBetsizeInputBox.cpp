@@ -14,6 +14,7 @@
 #include "stdafx.h"
 #include "CBetsizeInputBox.h"
 
+#include "CAdbInput.h"
 #include "CAutoConnector.h"
 #include "CAutoplayer.h"
 #include "CAutoplayerTrace.h"
@@ -244,7 +245,9 @@ bool CBetsizeInputBox::ClickNumpadRegion(CString region_name) {
 	}
 	write_log(k_always_log_basic_information, "[CBetsizeInputBox] Numpad click \"%s\" (%d,%d-%d,%d)\n",
 		region_name.GetString(), r.left, r.top, r.right, r.bottom);
-	(theApp._dll_mouse_click) (p_autoconnector->attached_hwnd(), r, MouseLeft, 1);
+	if (!AdbInput::TapRect(p_autoconnector->attached_hwnd(), r, 1)) {
+		(theApp._dll_mouse_click) (p_autoconnector->attached_hwnd(), r, MouseLeft, 1);
+	}
 	return true;
 }
 
@@ -426,19 +429,27 @@ void CBetsizeInputBox::SelectText() {
   if (p_tablemap->swagselectionmethod() == TEXTSEL_SINGLECLICK) {
    write_log(Preferences()->debug_autoplayer(), "[CBetsizeInputBox] Text selection; calling mouse.dll to single click: %d,%d %d,%d\n",
       _i3_edit_region.left, _i3_edit_region.top, _i3_edit_region.right, _i3_edit_region.bottom);
-    (theApp._dll_mouse_click) (p_autoconnector->attached_hwnd(), _i3_edit_region, MouseLeft, 1);
+    if (!AdbInput::TapRect(p_autoconnector->attached_hwnd(), _i3_edit_region, 1)) {
+      (theApp._dll_mouse_click) (p_autoconnector->attached_hwnd(), _i3_edit_region, MouseLeft, 1);
+    }
   } else if (p_tablemap->swagselectionmethod() == TEXTSEL_DOUBLECLICK) {
    write_log(Preferences()->debug_autoplayer(), "[CBetsizeInputBox] Text selection; calling mouse.dll to double click: %d,%d %d,%d\n",
       _i3_edit_region.left, _i3_edit_region.top, _i3_edit_region.right, _i3_edit_region.bottom);
-    (theApp._dll_mouse_click) (p_autoconnector->attached_hwnd(), _i3_edit_region, MouseLeft, 2);
+    if (!AdbInput::TapRect(p_autoconnector->attached_hwnd(), _i3_edit_region, 2)) {
+      (theApp._dll_mouse_click) (p_autoconnector->attached_hwnd(), _i3_edit_region, MouseLeft, 2);
+    }
   } else if (p_tablemap->swagselectionmethod() == TEXTSEL_TRIPLECLICK) {
    write_log(Preferences()->debug_autoplayer(), "[CBetsizeInputBox] Text selection; calling mouse.dll to triple click: %d,%d %d,%d\n",
       _i3_edit_region.left, _i3_edit_region.top, _i3_edit_region.right, _i3_edit_region.bottom);
-    (theApp._dll_mouse_click) (p_autoconnector->attached_hwnd(), _i3_edit_region, MouseLeft, 3);
+    if (!AdbInput::TapRect(p_autoconnector->attached_hwnd(), _i3_edit_region, 3)) {
+      (theApp._dll_mouse_click) (p_autoconnector->attached_hwnd(), _i3_edit_region, MouseLeft, 3);
+    }
   } else if (p_tablemap->swagselectionmethod() == TEXTSEL_CLICKDRAG) {
    write_log(Preferences()->debug_autoplayer(), "[CBetsizeInputBox] Text selection; calling mouse.dll to click drag: %d,%d %d,%d\n",
       _i3_edit_region.left, _i3_edit_region.top, _i3_edit_region.right, _i3_edit_region.bottom);
-    (theApp._dll_mouse_click_drag) (p_autoconnector->attached_hwnd(), _i3_edit_region, true);
+    if (!AdbInput::SwipeRect(p_autoconnector->attached_hwnd(), _i3_edit_region, 0)) {
+      (theApp._dll_mouse_click_drag) (p_autoconnector->attached_hwnd(), _i3_edit_region, true);
+    }
   } else if (p_tablemap->swagselectionmethod() == TEXTSEL_NOTHING) {
     // Nothing to do
   } else {

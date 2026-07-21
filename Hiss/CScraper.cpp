@@ -68,6 +68,15 @@ int g_mcp_nn_driver_request = -1;    // -1 idle, 0 = disengage, 1 = engage
 bool g_nn_driver_engaged = false;
 int g_mcp_ultra_request = -1;        // -1 idle, 0 = disengage, 1 = engage ULTRA
 bool g_ultra_engaged = false;
+// MANUAL WINDOW OVERRIDE ("connect to window" in the React toolbar).
+// While g_manual_connect_hwnd is non-zero the autoconnector is PINNED to that one window:
+// AutoConnect() offers only that hwnd and never auto-selects, so the instance can neither
+// wander onto another table nor be handed one by the automatic first-match rule. Clearing it
+// (0) restores automatic selection. The request field is consumed by the heartbeat thread,
+// because connecting must not happen on the HTTP thread.
+long long g_manual_connect_hwnd = 0;   // 0 = automatic; non-zero = pinned window
+int g_manual_connect_request = -1;     // -1 idle, 0 = clear override, 1 = apply g_manual_connect_hwnd
+CString g_manual_connect_status;       // last result, surfaced to the toolbar
 int g_mcp_superstition_request = -1; // -1 idle, 0 = disengage, 1 = engage superstition/omen
 bool g_superstition_engaged = false; // 666 Card Oracle (--superstition) running for THIS instance
 double g_beast_favor = 0.0;           // 666 Card Oracle resonance 0..1 (pushed via /api/beast)
@@ -2259,10 +2268,30 @@ void CScraper::CaptureSuspectScrapeIfRequested() {
 	if (!g_capture_suspect_request) return;
 	g_capture_suspect_request = false;
 	if (p_tablemap == NULL) return;
+	// A rate limit alone is NOT a bound. When a scrape fails persistently -- e.g. the validator
+	// reports "duplicate card on the board" on every heartbeat -- this fired ~15x/min forever,
+	// ~27 files each. That is how logs\capture reached 597,677 files / 20.5 GB. Worse, the
+	// sustained disk I/O stalled the scrape thread past the watchdog's 15s heartbeat threshold,
+	// so the instance was killed as "frozen" (see CWatchdog::WatchForFrozenProcesses).
+	// These captures are TRAINING SAMPLES: the 400th image of the same failing region teaches
+	// nothing the 1st did not. So bound the TOTAL, not just the rate.
 	static unsigned long long s_last_capture_ms = 0;
+	static int s_captures_this_session = 0;
+	const int kMaxCapturesPerSession = 200;
 	unsigned long long ms = NowEpochMs();
-	if (ms - s_last_capture_ms < 4000ULL) return;   // at most one capture / 4s
+	if (ms - s_last_capture_ms < 30000ULL) return;   // at most one capture / 30s
+	if (s_captures_this_session >= kMaxCapturesPerSession) {
+		if (s_captures_this_session == kMaxCapturesPerSession) {
+			++s_captures_this_session;               // announce the cap exactly once
+			write_log(k_always_log_basic_information,
+				"[CScraper] suspect-capture budget of %d reached this session; no further captures. "
+				"Repeat samples of the same failure add no training value, and the disk I/O stalls "
+				"the scrape thread.\n", kMaxCapturesPerSession);
+		}
+		return;
+	}
 	s_last_capture_ms = ms;
+	++s_captures_this_session;
 
 	CString dir;
 	dir.Format("%scapture\\%llu", LogsDirectory().GetString(), ms);

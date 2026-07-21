@@ -54,22 +54,46 @@ static int CountVisibleWindowsOfClass(const char *cls) {
 }
 
 void COpenHoldemStarter::StartNewInstanceIfNeeded() {
-  // [Emrald] AUTO-STARTER (scrcpy-window driven): keep ONE Hiss instance per scrcpy mirror window. Count
-  // scrcpy windows (class SDL_app) vs Hiss instances (class OpenHoldem); if there are MORE scrcpy windows
-  // than Hiss instances, launch one more. Only the lowest-session instance coordinates (so instances
-  // don't race to spawn) and it is throttled, so by the next tick the freshly-launched instance's window
-  // already counts and we stop once they match.
-  // Coordinator: ONLY the base instance (terminal port 27654 -- the first one launched) spawns new
-  // instances, so they don't race. Hiss SHARED MEMORY does NOT share across processes in this setup
-  // (see memory multi-instance-coordination-postgres), so we must NOT gate on p_sharedmem here; the
-  // terminal port is a reliable per-process coordinator. The coordinator must already be ATTACHED (so a
-  // freshly-launched, not-yet-connected instance doesn't also try to spawn).
+  // [Emrald] AUTO-STARTER (scrcpy-window driven): keep ONE Hiss instance per scrcpy mirror window.
+  // Count scrcpy windows (class SDL_app) vs live Hiss instances; if there are MORE mirrors than
+  // instances, launch one more. Only the base instance (terminal port 27654) coordinates, so
+  // instances don't race, and it is throttled.
+  //
+  // COUNT INSTANCES FROM THE SHARED PID TABLE, NOT FROM WINDOW CLASSES. This used to be
+  // CountVisibleWindowsOfClass("OpenHoldem") and that was doubly wrong:
+  //   * Hiss's own main frame is a DEFAULT MFC class ("Afx:00400000:b:..."), NOT "OpenHoldem",
+  //     so our own instances were never counted -- closing one could not lower the count, and
+  //     the spawn condition stayed true forever. Symptom: a closed instance instantly reopens,
+  //     and Hiss mains pile up (4 were live when this was found).
+  //   * "OpenHoldem" IS the class of the sibling brass_serpent app's windows, so we were really
+  //     counting how many brass_serpent bots were open and spawning Hiss to match.
+  // Counting windows cannot be salvaged anyway: one instance owns several visible windows (the
+  // main frame plus HissHUD), so it would over-count.
+  // openholdem_PIDs lives in CSharedMem's named file mapping, which IS genuinely shared across
+  // processes and is namespaced per app (Local\HissAutoConnectorSharedState_v2), so brass_serpent
+  // cannot pollute it. OCR workers deliberately never register a PID, so they are excluded, and
+  // the watchdog reaps dead entries every heartbeat. (The old comment here claimed the shared
+  // memory does not share across processes -- that was true only of the legacy .ohshmem data_seg,
+  // not of the file mapping this uses.)
   extern int g_terminal_port;
+  // HISS_SINGLE_INSTANCE=1 suppresses the fleet entirely: this instance runs alone no matter how
+  // many scrcpy mirrors are open. For debugging a single table, where the auto-starter otherwise
+  // races a fresh instance onto every other mirror and muddies the logs. Read from the environment
+  // rather than a stored preference on purpose -- it must not survive into a normal launch and
+  // silently leave the operator with one bot when they expect the whole fleet.
+  {
+    char single[8] = { 0 };
+    if (::GetEnvironmentVariableA("HISS_SINGLE_INSTANCE", single, sizeof(single)) > 0
+        && single[0] == '1') {
+      return;
+    }
+  }
   if (g_terminal_port != 27654) return;
   if (p_autoconnector == NULL || !p_autoconnector->IsConnectedToAnything()) return;
   if (p_engine_container->symbol_engine_casino()->ConnectedToOHReplay()) return;
+  if (p_sharedmem == NULL) return;
   int n_scrcpy = CountVisibleWindowsOfClass("SDL_app");
-  int n_hiss   = CountVisibleWindowsOfClass("OpenHoldem");
+  int n_hiss   = p_sharedmem->NBotsPresent();
   if (n_scrcpy <= 0 || n_hiss >= n_scrcpy) {
     write_log(Preferences()->debug_autostarter(),
       "[COpenHoldemStarter] %d scrcpy window(s), %d Hiss instance(s) -- no new instance needed.\n", n_scrcpy, n_hiss);
