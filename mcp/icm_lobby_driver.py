@@ -30,16 +30,41 @@ PRIMARY_PORT = int(os.environ.get("ICM_PRIMARY_PORT", "27654"))
 LOCK   = r"C:\tmp\icm_lobby.lock"
 LOG    = r"C:\tmp\icm_lobby_driver.log"
 
-# How long one firing will wait for a UTG fold before giving up (the schtask period is 7 min and the
-# task is killed at 10, so leave room for the scrapes themselves).
-WAIT_BUDGET_S = int(os.environ.get("ICM_WAIT_BUDGET", "210"))
-POLL_S        = 1.5
+# How long one firing will wait for a UTG fold before giving up. Hero is UTG once an orbit, and at the
+# ~50s/hand this table runs that is ~5 min -- so a short budget misses far more often than it hits. The
+# schtask fires every 7 min and is killed at 10, so 5.5 min of waiting still leaves room for the
+# scrapes; a firing that overruns simply loses the lock race and skips, which is harmless.
+WAIT_BUDGET_S = int(os.environ.get("ICM_WAIT_BUDGET", "330"))
+# How many early seats count as "early enough". 1 = UTG only (a full orbit of clearance); 2 also
+# accepts UTG+1, which roughly doubles the chance of catching a fold inside one firing's budget and
+# still leaves ~4 seats before hero must act again. Set to 2 because at ~50s/hand hero reaches UTG
+# only every ~5 min, and a UTG-only gate missed entire firings.
+EP_SEATS      = max(1, int(os.environ.get("ICM_EP_SEATS", "2")))
+POLL_S        = 1.0                    # hero folds fast; the 'holding cards' window is only seconds
 # Fall back to the old "hero is simply out of the hand" gate when the budget expires without a UTG fold?
 # Off by default: a button fold leaves ~2 seats of clearance and the navigation runs into the next hand.
 ALLOW_FALLBACK = os.environ.get("ICM_ALLOW_FALLBACK", "0") == "1"
 # How much of the lobby's tournament name must be found in the live table string before we believe the
 # scrape belongs to this table. Both sides are OCR-noisy, so this is a fuzzy ratio, not containment.
 MATCH_MIN = float(os.environ.get("ICM_NAME_MATCH_MIN", "0.65"))
+
+
+def _find_bash():
+    """GIT bash, by absolute path.
+
+    Bare "bash" is not safe here: on this box PATH resolves it to C:\\WINDOWS\\system32\\bash.exe (WSL),
+    which reads /c/www/... as a Linux path and exits 127 immediately. Git bash is the only one that can
+    run lobby_fetch.sh, so name it explicitly rather than trusting PATH order."""
+    for p in (os.environ.get("HISS_BASH", ""),
+              r"C:\Program Files\Git\bin\bash.exe",
+              r"C:\Program Files\Git\usr\bin\bash.exe",
+              r"C:\Program Files (x86)\Git\bin\bash.exe"):
+        if p and os.path.exists(p):
+            return p
+    return "bash"
+
+
+BASH = _find_bash()
 
 
 def paths(port):
@@ -130,8 +155,8 @@ def _has_cards(pl):
     return bool([c for c in (pl.get("cards") or []) if c])
 
 
-def utg_chair(st):
-    """The seat that acts FIRST preflop = the one after the big blind.
+def early_chairs(st):
+    """The EP_SEATS seats that act first preflop, starting with UTG (the one after the big blind).
 
     The dealer button is not published in /api/table-state (every chair reads dealer:false), so we
     recover position from the posted blinds instead: exactly one chair at the small blind and one at
@@ -162,28 +187,52 @@ def utg_chair(st):
     at_bb = [c for c in order if abs(bet_of(c) - bb) <= eps]
     if len(at_sb) != 1 or len(at_bb) != 1:
         return None
-    return order[(order.index(at_bb[0]) + 1) % len(order)]
+    i = order.index(at_bb[0])
+    # The early seats, nearest-first. Never wrap past the button into the blinds themselves.
+    n = min(EP_SEATS, max(1, len(order) - 3))
+    return [order[(i + k) % len(order)] for k in range(1, n + 1)]
 
 
 class UtgWatch(object):
     """Per-table state machine for 'hero was UTG this hand, and has now folded'.
 
-    Arming and firing are separate observations: we must SEE hero holding cards in the UTG seat, then
-    see those cards go away while the hand number is unchanged. A hand that ends without ever arming
-    (hero was elsewhere) simply resets."""
+    utg_chair() only reads cleanly in the narrow window between the blinds being posted and the first
+    voluntary action -- one limp puts a second chair at the big blind and the seat becomes ambiguous.
+    So the answer is CACHED per hand number: one good sample early in the hand fixes the position for
+    the whole hand. Arming then needs to see hero holding cards in that seat; firing needs those cards
+    to go away while the hand number is unchanged."""
+
+    MAX_ROTATIONS = 3          # how many unread hands in a row we will carry the button forward
 
     def __init__(self):
         self.hand = None
+        self.early = None
         self.armed = False
+        self.rotations = 0
 
     def update(self, st):
         hand = st.get("handnumber")
         if hand != self.hand:
-            self.hand, self.armed = hand, False
+            # New hand. If we never got a clean blind reading last hand we would simply be blind to
+            # hero's position -- but the button advances exactly one seated seat per hand, so carry the
+            # previous answer forward instead. A later clean reading overwrites it, so drift from a
+            # bust-out or a sit-out self-corrects rather than compounding.
+            prev = self.early
+            self.hand, self.early, self.armed = hand, None, False
+            if prev and self.rotations < self.MAX_ROTATIONS:
+                order = [p.get("chair") for p in (st.get("players") or []) if p.get("seated")]
+                if prev[0] in order:
+                    i = order.index(prev[0])
+                    n = min(EP_SEATS, max(1, len(order) - 3))
+                    self.early = [order[(i + 1 + k) % len(order)] for k in range(n)]
+                    self.rotations += 1
+        clean = early_chairs(st)                       # first clean reading wins, for this hand
+        if clean:
+            self.early, self.rotations = clean, 0
         hero = _hero(st)
         if not self.armed:
-            if _has_cards(hero) and utg_chair(st) == st.get("userchair"):
-                self.armed = True                      # hero is UTG with live cards
+            if self.early and st.get("userchair") in self.early and _has_cards(hero):
+                self.armed = True                      # hero is in an early seat with live cards
             return False
         if st.get("ismyturn") or st.get("toact") == st.get("userchair"):
             return False                               # still hero's decision -- never navigate now
@@ -216,9 +265,17 @@ def gather(port):
         except OSError: pass
     log("[%d] lobby_fetch (navigate + capture) ..." % port)
     try:
-        subprocess.run(["bash", "/c/www/openholdembot_old/mcp/lobby_fetch.sh", str(port), "3.5", "6",
-                        "lobby_%d" % port],
-                       timeout=120, creationflags=NW)
+        r = subprocess.run([BASH, "/c/www/openholdembot_old/mcp/lobby_fetch.sh", str(port), "3.5", "6",
+                            "lobby_%d" % port],
+                           capture_output=True, text=True, timeout=120, creationflags=NW)
+        # ALWAYS log the outcome. This shelled out with stdout and stderr discarded, so when `bash`
+        # resolved to WSL and every run died in under a second with exit 127, nothing said so -- and
+        # vision() went on parsing week-old screenshots as if they were this tournament.
+        if r.returncode != 0:
+            log("[%d] lobby_fetch FAILED rc=%s stderr=%r" % (port, r.returncode, (r.stderr or "")[:300]))
+        else:
+            log("[%d] lobby_fetch: %s" % (port, " | ".join(
+                l.strip() for l in (r.stdout or "").splitlines() if l.strip())[:400]))
     except Exception as e:
         log("[%d] lobby_fetch error: %s" % (port, e))
     m = vision(MAIN, PROMPT_MAIN)
@@ -382,7 +439,8 @@ def main():
                     continue
                 tables[p] = st.get("table") or tables[p]
                 if watch[p].update(st):
-                    log("[%d] gate ok: hero folded from UTG -- full orbit of clearance" % p)
+                    log("[%d] gate ok: hero folded from an early seat (%s, UTG first) -- ~an orbit of "
+                        "clearance" % (p, watch[p].early))
                     pending.remove(p)
                     scrape_one(p, tables[p])
             if pending:
