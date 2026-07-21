@@ -26,6 +26,7 @@ LOCK   = r"C:\tmp\icm_lobby.lock"
 LOG    = r"C:\tmp\icm_lobby_driver.log"
 MAIN   = r"C:\tmp\lobby_main.png"
 MORE   = r"C:\tmp\lobby_moreinfo.png"
+PAYS   = r"C:\tmp\lobby_payouts.png"   # PRIZE POOL/STRUCTURE screen -- captured once the region is placed
 
 
 def log(m):
@@ -80,18 +81,30 @@ PROMPT_MORE = (
 TOURNEY_KEYS = ("freeroll", "gtd", "tourney", "tournament", "sit", "sng")
 
 def should_scrape():
-    """Gate: only navigate (which pulls the bot off the felt ~25s) when we are in a TOURNAMENT and the
-    hero is not currently to act. Returns (ok, reason)."""
+    """Gate: navigation pulls the bot off the felt for ~30s (the 5-min claude parse runs AFTER we're
+    back), so only navigate when we are in a TOURNAMENT and the hero is OUT of the current hand (folded
+    / between hands) -- a fresh fold gives ~an orbit of clearance. Returns (ok, reason, table_name)."""
     try:
         st = json.loads(urlget("/api/table-state", timeout=3))
     except Exception as e:
-        return False, "no table-state (%s)" % e
-    tbl = (st.get("table") or "").lower()
-    if not (any(k in tbl for k in TOURNEY_KEYS) or st.get("tourney_id")):
-        return False, "not a tournament (table=%r)" % (st.get("table") or "")
+        return False, "no table-state (%s)" % e, ""
+    name = st.get("table") or ""
+    if not (any(k in name.lower() for k in TOURNEY_KEYS) or st.get("tourney_id")):
+        return False, "not a tournament (table=%r)" % name, name
     if st.get("ismyturn") or st.get("toact") == st.get("userchair"):
-        return False, "hero to act -- not navigating mid-decision"
-    return True, "tournament=%r idle" % (st.get("table") or "")
+        return False, "hero to act -- not navigating mid-decision", name
+    hero = next((pl for pl in (st.get("players") or []) if pl.get("chair") == st.get("userchair")), {})
+    if hero.get("active") and [c for c in (hero.get("cards") or []) if c]:
+        return False, "hero holds live cards -- wait for a fold", name
+    return True, "tournament=%r hero out-of-hand" % name, name
+
+
+PROMPT_PAYS = (
+    "Read the image file at %s . It is an ACR tournament PRIZE POOL / STRUCTURE payout screen (or a table). "
+    "Output ONLY compact single-line JSON, no prose, keys: is_payouts (bool), places_paid (int or null), "
+    "first_place (dollars float or null), payouts (array of dollar amounts top-down, or null). null if not "
+    "a payout screen."
+)
 
 
 def gather():
@@ -103,7 +116,10 @@ def gather():
         log("lobby_fetch error: %s" % e)
     m = vision(MAIN, PROMPT_MAIN)
     mo = vision(MORE, PROMPT_MORE)
-    return m, mo
+    # exact payouts -- only present once the PRIZE POOL/STRUCTURE region+click are added to lobby_fetch.sh
+    # (the joint next step). Until then this file won't exist and pay stays {} -> daemon models the ladder.
+    pay = vision(PAYS, PROMPT_PAYS) if os.path.exists(PAYS) else {}
+    return m, mo, pay
 
 
 def bb_chips_from_table():
@@ -116,7 +132,7 @@ def bb_chips_from_table():
         return 0.0
 
 
-def build_lobby_info(m, mo):
+def build_lobby_info(m, mo, pay=None):
     # start from the existing row so we never lose fields the scrape didn't see
     try:
         cur = json.loads(psql("SELECT value FROM settings WHERE key='lobby_info';") or "{}")
@@ -140,6 +156,12 @@ def build_lobby_info(m, mo):
             out["avg_stack_bb"] = round((ent * sc / rem) / bbc, 2)
             out["bb_chips"] = bbc
             log("derived avg_stack_bb=%.2f (avg %.0f chips / bb %.0f)" % (out["avg_stack_bb"], ent*sc/rem, bbc))
+    if pay and pay.get("is_payouts"):          # EXACT payouts (once the PRIZE POOL region is placed)
+        for k in ("places_paid", "first_place", "payouts"):
+            if pay.get(k) is not None:
+                out[k] = pay[k]
+    if m.get("_scrape_table"):
+        out["scrape_table"] = m["_scrape_table"]
     out["parsed_ms"] = int(time.time() * 1000)
     return out
 
@@ -161,13 +183,15 @@ def main():
     if not acquire():
         log("another run holds the lock -- skip"); return
     try:
-        ok, why = should_scrape()
+        ok, why, tbl_name = should_scrape()
         if not ok:
             log("skip: %s" % why); return
         log("gate ok: %s" % why)
-        m, mo = gather()
-        log("main=%s more=%s" % (json.dumps(m)[:200], json.dumps(mo)[:120]))
-        info = build_lobby_info(m, mo)
+        m, mo, pay = gather()
+        if tbl_name:
+            m["_scrape_table"] = tbl_name        # record the table we were at (icm_serve tourney-match)
+        log("main=%s more=%s pay=%s" % (json.dumps(m)[:200], json.dumps(mo)[:100], json.dumps(pay)[:100]))
+        info = build_lobby_info(m, mo, pay)
         if info.get("remaining") and info.get("tournament"):
             psql("INSERT INTO settings(key,value) VALUES('lobby_info','%s') ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value"
                  % json.dumps(info).replace("'", "''"))

@@ -123,9 +123,17 @@ NUMERIC_SYMBOLS = ("handrank169,f$BoardWet,f$BoardDry,f$ScaryBoard,f$BoardHighCa
 #
 # So: localhost goes in-process, the LAN keeps curl. And loopback still falls back to curl if urllib
 # fails, so the worst case is the behaviour we already had.
+#
+# HIDE THE CURL CONSOLE. Hiss launches this driver with no console of its own (CREATE_NO_WINDOW),
+# so every curl child we spawn WOULD allocate its own fresh console window -- a curl box flashing
+# open and shut on the desktop several times a second (the per-turn LAN POST, plus the loopback
+# fallback whenever a localhost urllib call hiccups). Spawning curl with CREATE_NO_WINDOW keeps it
+# invisible. Windows-only flag; 0 elsewhere so this stays portable.
+_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+
 def _curl_get(url):
     out = subprocess.run(["curl", "-s", "--max-time", "6", url],
-                         capture_output=True, text=True).stdout
+                         capture_output=True, text=True, creationflags=_NO_WINDOW).stdout
     return json.loads(out)
 
 
@@ -142,7 +150,8 @@ def _get(url):
 def _post(url, payload):
     out = subprocess.run(["curl", "-s", "--max-time", "6", url, "-X", "POST",
                           "-H", "Content-Type: application/json", "-d", "@-"],
-                         input=json.dumps(payload), capture_output=True, text=True).stdout
+                         input=json.dumps(payload), capture_output=True, text=True,
+                         creationflags=_NO_WINDOW).stdout
     return json.loads(out)
 
 
