@@ -355,8 +355,15 @@ def fill_field(serial, title, m, region, text, dry, settle, secret, label,
 
         hide_keyboard(serial, dry)
         time.sleep(settle * 0.6)
+
+        # A sheet that appears AFTER typing has swallowed the keystrokes: what is left in
+        # the box is Chrome's autofilled value, not what was sent. Dismissing alone would
+        # leave that stale value behind and it verifies as "something is there" -- which is
+        # how a wrong password reached the submit. Dismiss AND type it again.
         if not dry and pullout_showing(title, guard):
             dismiss_pullout(serial, m, guard, dry, settle)
+            print("      the sheet swallowed the keystrokes -- retyping")
+            continue
 
         if secret:
             # The mask glyphs run together into one blob, so counting them is useless.
