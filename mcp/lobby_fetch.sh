@@ -20,6 +20,9 @@
 PORT="${1:-27654}"
 DELAY="${2:-3.5}"          # gap between clicks
 LOAD_DELAY="${3:-6}"      # longer wait for a page to actually load before we capture/parse
+# Capture-file prefix. Per-PORT when more than one table is scraped in a firing, else the two runs
+# race for C:/tmp/lobby_main.png and the second parse reads the first table's screenshot.
+PREFIX="${4:-lobby}"
 FRAMES="/c/www/openholdembot_old/Release/logs/frames"
 
 capture() {  # capture the newest heartbeat frame -> C:/tmp/$1.png  (full window)
@@ -33,12 +36,12 @@ click() {  # queue a region click; report whether the region exists
   echo "  click $1 -> $r"
 }
 
-echo "[lobby_fetch] start (port=$PORT click-gap=${DELAY}s load-wait=${LOAD_DELAY}s)"
+echo "[lobby_fetch] start (port=$PORT prefix=$PREFIX click-gap=${DELAY}s load-wait=${LOAD_DELAY}s)"
 click goto_lobby_button;        sleep "$LOAD_DELAY"   # info page is slow to load
-capture lobby_main                                  # PARSE POINT 1: tournament info page
+capture "${PREFIX}_main"                            # PARSE POINT 1: tournament info page
 sleep "$DELAY"
 click lobby_more_info_button;   sleep "$LOAD_DELAY"   # more-info detail is slow too
-capture lobby_moreinfo                              # PARSE POINT 2: more-info / structure
+capture "${PREFIX}_moreinfo"                        # PARSE POINT 2: more-info / structure
 sleep "$DELAY"
 # Corrected return choreography [Emrald]: CLOSE the MORE INFO popup with its X first, then hit BACK to
 # leave the lobby/info page, and ONLY THEN the TABLE button -- back must come BEFORE table, with a delay
@@ -50,4 +53,4 @@ sleep "$DELAY"
 click lobby_more_info_close_button; sleep "$DELAY"   # 1) close MORE INFO with its X
 click leave_lobby_button;           sleep "$DELAY"   # 2) BACK out of the lobby (BEFORE the table button)
 click return_to_tables_button                        # 3) TABLE button -> back on the felt
-echo "[lobby_fetch] done. Parse: C:/tmp/lobby_main.png + C:/tmp/lobby_moreinfo.png"
+echo "[lobby_fetch] done. Parse: C:/tmp/${PREFIX}_main.png + C:/tmp/${PREFIX}_moreinfo.png"

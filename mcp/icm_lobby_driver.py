@@ -12,21 +12,41 @@ Flow (mirrors the icm-chip-value skill):
   2. claude.exe -p (vision) reads each PNG -> compact JSON.
   3. merge, compute avg_stack_bb, write settings.lobby_info (postgres, the daemon's source of truth).
 
-Trigger: run on a schtask every ~5 min, only during a real tournament, and (poller wrapper) only after
-the hero has folded in early position so the bot is idle while we read. Lock prevents overlap.
+Trigger: a schtask every 7 min. On each firing we WAIT (up to ICM_WAIT_BUDGET) for the hero to fold
+from UTG -- the one seat that buys a full orbit of clearance before hero must act again, which is what
+the ~30s lobby navigation needs. Every LIVE table is watched in the same loop and scraped as it becomes
+ready, so a second tournament is not starved by the first. Lock prevents overlap between firings.
 """
-import subprocess, json, os, re, sys, time, urllib.request
+import subprocess, json, os, re, sys, time, difflib, urllib.request
 
 CLAUDE = r"C:\Users\scarl\.local\bin\claude.exe"
 PSQL   = r"C:\Program Files\PostgreSQL\12\bin\psql.exe"
 PROJ   = r"C:\www\openholdembot_old"
 NW     = 0x08000000
-PORT   = int(os.environ.get("ICM_PORT", "27654"))
+# Every Hiss instance serves its own table on its own port. ICM_PORTS overrides; otherwise we probe.
+PORTS_ENV    = os.environ.get("ICM_PORTS", "")
+PROBE_PORTS  = [27654, 27655, 27656, 27657]
+PRIMARY_PORT = int(os.environ.get("ICM_PRIMARY_PORT", "27654"))
 LOCK   = r"C:\tmp\icm_lobby.lock"
 LOG    = r"C:\tmp\icm_lobby_driver.log"
-MAIN   = r"C:\tmp\lobby_main.png"
-MORE   = r"C:\tmp\lobby_moreinfo.png"
-PAYS   = r"C:\tmp\lobby_payouts.png"   # PRIZE POOL/STRUCTURE screen -- captured once the region is placed
+
+# How long one firing will wait for a UTG fold before giving up (the schtask period is 7 min and the
+# task is killed at 10, so leave room for the scrapes themselves).
+WAIT_BUDGET_S = int(os.environ.get("ICM_WAIT_BUDGET", "210"))
+POLL_S        = 1.5
+# Fall back to the old "hero is simply out of the hand" gate when the budget expires without a UTG fold?
+# Off by default: a button fold leaves ~2 seats of clearance and the navigation runs into the next hand.
+ALLOW_FALLBACK = os.environ.get("ICM_ALLOW_FALLBACK", "0") == "1"
+# How much of the lobby's tournament name must be found in the live table string before we believe the
+# scrape belongs to this table. Both sides are OCR-noisy, so this is a fuzzy ratio, not containment.
+MATCH_MIN = float(os.environ.get("ICM_NAME_MATCH_MIN", "0.65"))
+
+
+def paths(port):
+    """Per-port capture files -- two tables scraped in one firing must not overwrite each other."""
+    return (r"C:\tmp\lobby_%d_main.png" % port,
+            r"C:\tmp\lobby_%d_moreinfo.png" % port,
+            r"C:\tmp\lobby_%d_payouts.png" % port)
 
 
 def log(m):
@@ -38,9 +58,25 @@ def log(m):
         pass
 
 
-def urlget(path, timeout=6):
-    with urllib.request.urlopen("http://127.0.0.1:%d%s" % (PORT, path), timeout=timeout) as r:
+def urlget(port, path, timeout=6):
+    with urllib.request.urlopen("http://127.0.0.1:%d%s" % (port, path), timeout=timeout) as r:
         return r.read().decode("utf-8", "replace")
+
+
+def table_state(port, timeout=3):
+    try:
+        return json.loads(urlget(port, "/api/table-state", timeout=timeout))
+    except Exception:
+        return None
+
+
+def live_ports():
+    """Every Hiss instance that answers right now. One firing serves them all."""
+    if PORTS_ENV.strip():
+        want = [int(p) for p in PORTS_ENV.replace(";", ",").split(",") if p.strip()]
+    else:
+        want = PROBE_PORTS
+    return [p for p in want if table_state(p) is not None]
 
 
 def psql(sql):
@@ -80,23 +116,89 @@ PROMPT_MORE = (
 
 TOURNEY_KEYS = ("freeroll", "gtd", "tourney", "tournament", "sit", "sng")
 
-def should_scrape():
-    """Gate: navigation pulls the bot off the felt for ~30s (the 5-min claude parse runs AFTER we're
-    back), so only navigate when we are in a TOURNAMENT and the hero is OUT of the current hand (folded
-    / between hands) -- a fresh fold gives ~an orbit of clearance. Returns (ok, reason, table_name)."""
+
+def is_tournament(st):
+    name = (st.get("table") or "").lower()
+    return any(k in name for k in TOURNEY_KEYS) or bool(st.get("tourney_id"))
+
+
+def _hero(st):
+    return next((p for p in (st.get("players") or []) if p.get("chair") == st.get("userchair")), {})
+
+
+def _has_cards(pl):
+    return bool([c for c in (pl.get("cards") or []) if c])
+
+
+def utg_chair(st):
+    """The seat that acts FIRST preflop = the one after the big blind.
+
+    The dealer button is not published in /api/table-state (every chair reads dealer:false), so we
+    recover position from the posted blinds instead: exactly one chair at the small blind and one at
+    the big blind identifies the blinds, and UTG is the next SEATED chair after the BB. Returns None
+    whenever that reading is not unambiguous -- a guess here would scrape at the wrong moment."""
+    lim = st.get("limits") or {}
     try:
-        st = json.loads(urlget("/api/table-state", timeout=3))
-    except Exception as e:
-        return False, "no table-state (%s)" % e, ""
-    name = st.get("table") or ""
-    if not (any(k in name.lower() for k in TOURNEY_KEYS) or st.get("tourney_id")):
-        return False, "not a tournament (table=%r)" % name, name
+        sb = float(lim.get("sblind") or 0); bb = float(lim.get("bblind") or 0)
+    except (TypeError, ValueError):
+        return None
+    if bb <= 0 or sb <= 0 or sb >= bb:
+        return None
+    if [c for c in (st.get("commonCards") or []) if c]:
+        return None                                    # postflop: a 'bb'-sized bet is not a blind
+    order = [p.get("chair") for p in (st.get("players") or []) if p.get("seated")]
+    if len(order) < 3:                                 # heads-up inverts the blinds; don't guess
+        return None
+
+    def bet_of(ch):
+        p = next((x for x in (st.get("players") or []) if x.get("chair") == ch), {})
+        try:
+            return float(p.get("bet") or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    eps = bb * 0.02
+    at_sb = [c for c in order if abs(bet_of(c) - sb) <= eps]
+    at_bb = [c for c in order if abs(bet_of(c) - bb) <= eps]
+    if len(at_sb) != 1 or len(at_bb) != 1:
+        return None
+    return order[(order.index(at_bb[0]) + 1) % len(order)]
+
+
+class UtgWatch(object):
+    """Per-table state machine for 'hero was UTG this hand, and has now folded'.
+
+    Arming and firing are separate observations: we must SEE hero holding cards in the UTG seat, then
+    see those cards go away while the hand number is unchanged. A hand that ends without ever arming
+    (hero was elsewhere) simply resets."""
+
+    def __init__(self):
+        self.hand = None
+        self.armed = False
+
+    def update(self, st):
+        hand = st.get("handnumber")
+        if hand != self.hand:
+            self.hand, self.armed = hand, False
+        hero = _hero(st)
+        if not self.armed:
+            if _has_cards(hero) and utg_chair(st) == st.get("userchair"):
+                self.armed = True                      # hero is UTG with live cards
+            return False
+        if st.get("ismyturn") or st.get("toact") == st.get("userchair"):
+            return False                               # still hero's decision -- never navigate now
+        if not _has_cards(hero):
+            self.armed = False
+            return True                                # cards gone while UTG -> hero folded
+        return False
+
+
+def out_of_hand(st):
+    """The old, weaker gate: hero simply is not in the current hand. Only used as a fallback."""
     if st.get("ismyturn") or st.get("toact") == st.get("userchair"):
-        return False, "hero to act -- not navigating mid-decision", name
-    hero = next((pl for pl in (st.get("players") or []) if pl.get("chair") == st.get("userchair")), {})
-    if hero.get("active") and [c for c in (hero.get("cards") or []) if c]:
-        return False, "hero holds live cards -- wait for a fold", name
-    return True, "tournament=%r hero out-of-hand" % name, name
+        return False
+    hero = _hero(st)
+    return not (hero.get("active") and _has_cards(hero))
 
 
 PROMPT_PAYS = (
@@ -107,13 +209,18 @@ PROMPT_PAYS = (
 )
 
 
-def gather():
-    log("lobby_fetch (navigate + capture) ...")
+def gather(port):
+    MAIN, MORE, PAYS = paths(port)
+    for f in (MAIN, MORE, PAYS):
+        try: os.remove(f)                  # never parse a previous firing's screenshot
+        except OSError: pass
+    log("[%d] lobby_fetch (navigate + capture) ..." % port)
     try:
-        subprocess.run(["bash", "/c/www/openholdembot_old/mcp/lobby_fetch.sh", str(PORT), "3.5", "6"],
+        subprocess.run(["bash", "/c/www/openholdembot_old/mcp/lobby_fetch.sh", str(port), "3.5", "6",
+                        "lobby_%d" % port],
                        timeout=120, creationflags=NW)
     except Exception as e:
-        log("lobby_fetch error: %s" % e)
+        log("[%d] lobby_fetch error: %s" % (port, e))
     m = vision(MAIN, PROMPT_MAIN)
     mo = vision(MORE, PROMPT_MORE)
     # exact payouts -- only present once the PRIZE POOL/STRUCTURE region+click are added to lobby_fetch.sh
@@ -122,21 +229,44 @@ def gather():
     return m, mo, pay
 
 
-def bb_chips_from_table():
-    """Current big blind IN CHIPS from the live table, to convert an avg-stack-in-chips to bb."""
-    try:
-        st = json.loads(urlget("/api/table-state", timeout=3))
-        bb = float(((st.get("limits") or {}).get("bblind")) or st.get("bblind") or 0)
-        return bb if bb > 1.5 else 0.0     # >1.5 => real chip value, not the BB-frame '1'
-    except Exception:
+def _slug(s):
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+def name_score(lobby_name, table_name):
+    """How much of the lobby's tournament name is present in the live table string, 0..1.
+
+    Straight containment (what the daemon does) breaks on a single OCR slip -- the table here reads
+    '50GYDFreeroll' for '$50 GTD Freeroll', and one wrong character fails an exact test. Matching
+    blocks tolerate that while still scoring an unrelated tournament far below threshold."""
+    a, b = _slug(lobby_name), _slug(table_name)
+    if not a or not b:
         return 0.0
+    blocks = difflib.SequenceMatcher(None, a, b).get_matching_blocks()
+    return sum(bl.size for bl in blocks) / float(len(a))
 
 
-def build_lobby_info(m, mo, pay=None):
-    # start from the existing row so we never lose fields the scrape didn't see
+def bb_chips_from_table(port):
+    """Current big blind IN CHIPS from the live table, to convert an avg-stack-in-chips to bb."""
+    st = table_state(port) or {}
     try:
-        cur = json.loads(psql("SELECT value FROM settings WHERE key='lobby_info';") or "{}")
+        bb = float(((st.get("limits") or {}).get("bblind")) or st.get("bblind") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    return bb if bb > 1.5 else 0.0         # >1.5 => real chip value, not the BB-frame '1'
+
+
+def build_lobby_info(port, key, m, mo, pay=None):
+    # Start from the existing row so we never lose fields the scrape didn't see -- but ONLY when that
+    # row is the same tournament. Carrying fields across tournaments is how a foreign id/buyin/payout
+    # set survives into a fresh scrape and quietly poisons every $ figure downstream.
+    try:
+        cur = json.loads(psql("SELECT value FROM settings WHERE key='%s';" % key) or "{}")
     except Exception:
+        cur = {}
+    if cur and m.get("tournament") and _slug(cur.get("tournament")) != _slug(m.get("tournament")):
+        log("[%d] new tournament (%r -> %r) -- discarding carried-over fields"
+            % (port, cur.get("tournament"), m.get("tournament")))
         cur = {}
     out = dict(cur)
     if m.get("is_info_page"):
@@ -151,11 +281,12 @@ def build_lobby_info(m, mo, pay=None):
     # derive avg_stack_bb from chip figures if the lobby didn't print it in BB
     if not out.get("avg_stack_bb"):
         ent = float(out.get("entrants") or 0); rem = float(out.get("remaining") or 0)
-        sc = float(out.get("starting_chips") or 0); bbc = bb_chips_from_table()
+        sc = float(out.get("starting_chips") or 0); bbc = bb_chips_from_table(port)
         if ent and rem and sc and bbc:
             out["avg_stack_bb"] = round((ent * sc / rem) / bbc, 2)
             out["bb_chips"] = bbc
-            log("derived avg_stack_bb=%.2f (avg %.0f chips / bb %.0f)" % (out["avg_stack_bb"], ent*sc/rem, bbc))
+            log("[%d] derived avg_stack_bb=%.2f (avg %.0f chips / bb %.0f)"
+                % (port, out["avg_stack_bb"], ent*sc/rem, bbc))
     if pay and pay.get("is_payouts"):          # EXACT payouts (once the PRIZE POOL region is placed)
         for k in ("places_paid", "first_place", "payouts"):
             if pay.get(k) is not None:
@@ -179,26 +310,96 @@ def acquire():
         return False
 
 
+def scrape_one(port, tbl_name):
+    """Navigate, parse, and store this table's structure. Returns True if a row was written."""
+    m, mo, pay = gather(port)
+    if tbl_name:
+        m["_scrape_table"] = tbl_name            # record the table we were at (icm_serve tourney-match)
+    log("[%d] main=%s more=%s pay=%s"
+        % (port, json.dumps(m)[:200], json.dumps(mo)[:100], json.dumps(pay)[:100]))
+
+    # THE MATCH GATE. The lobby opens on whatever tournament is selected, which is not necessarily the
+    # one hero is seated at -- that is how a foreign row ('DabPoker420 Champions') came to sit in
+    # settings.lobby_info while hero played a PLO freeroll. The daemon then refused to speak an ICM
+    # number, correctly but silently. Refuse the WRITE instead, so the mismatch is visible here and a
+    # good row from an earlier firing survives.
+    score = name_score(m.get("tournament"), tbl_name)
+    if m.get("tournament") and tbl_name and score < MATCH_MIN:
+        log("[%d] NOT writing: lobby read %r but table is %r (match %.2f < %.2f) -- lobby opened on the "
+            "wrong tournament" % (port, m.get("tournament"), tbl_name, score, MATCH_MIN))
+        return False
+
+    key = "lobby_info_%d" % port
+    info = build_lobby_info(port, key, m, mo, pay)
+    if not (info.get("remaining") and info.get("tournament")):
+        log("[%d] NOT writing: no remaining/tournament read (lobby nav blocked until button regions "
+            "placed?)" % port)
+        return False
+    info["port"] = port
+    info["name_match"] = round(score, 3)
+    blob = json.dumps(info).replace("'", "''")
+    # updated_at MUST be set explicitly: it defaults to now() only on INSERT, so an ON CONFLICT update
+    # left it frozen at the row's original creation. The row was rewritten every 7 min but still looked
+    # 35 days old, and the daemon's freshness check (LOBBY_MAX_AGE_S) threw it away every time.
+    keys = [key] + (["lobby_info"] if port == PRIMARY_PORT else [])
+    for k in keys:
+        psql("INSERT INTO settings(key,value,updated_at) VALUES('%s','%s',now()) "
+             "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()" % (k, blob))
+    log("[%d] wrote settings.%s: tourney=%r remaining=%s avg_stack_bb=%s match=%.2f"
+        % (port, "+".join(keys), info.get("tournament"), info.get("remaining"),
+           info.get("avg_stack_bb"), score))
+    return True
+
+
 def main():
     if not acquire():
         log("another run holds the lock -- skip"); return
     try:
-        ok, why, tbl_name = should_scrape()
-        if not ok:
-            log("skip: %s" % why); return
-        log("gate ok: %s" % why)
-        m, mo, pay = gather()
-        if tbl_name:
-            m["_scrape_table"] = tbl_name        # record the table we were at (icm_serve tourney-match)
-        log("main=%s more=%s pay=%s" % (json.dumps(m)[:200], json.dumps(mo)[:100], json.dumps(pay)[:100]))
-        info = build_lobby_info(m, mo, pay)
-        if info.get("remaining") and info.get("tournament"):
-            psql("INSERT INTO settings(key,value) VALUES('lobby_info','%s') ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value"
-                 % json.dumps(info).replace("'", "''"))
-            log("wrote settings.lobby_info: tourney=%r remaining=%s avg_stack_bb=%s"
-                % (info.get("tournament"), info.get("remaining"), info.get("avg_stack_bb")))
-        else:
-            log("NOT writing: no remaining/tournament read (lobby nav blocked until button regions placed?)")
+        ports = live_ports()
+        if not ports:
+            log("no Hiss instance is answering -- skip"); return
+        tables = {}
+        for p in list(ports):
+            st = table_state(p) or {}
+            if not is_tournament(st):
+                log("[%d] skip: not a tournament (table=%r)" % (p, st.get("table") or ""))
+                ports.remove(p); continue
+            tables[p] = st.get("table") or ""
+        if not ports:
+            return
+        log("watching %s for a UTG fold (budget %ds): %s"
+            % (", ".join(str(p) for p in ports), WAIT_BUDGET_S,
+               "; ".join("%d=%r" % (p, tables[p]) for p in ports)))
+
+        # One loop over every table. Each fires the moment ITS hero folds from UTG, so a second
+        # tournament is not starved waiting on the first.
+        watch = dict((p, UtgWatch()) for p in ports)
+        pending, deadline = list(ports), time.time() + WAIT_BUDGET_S
+        while pending and time.time() < deadline:
+            for p in list(pending):
+                st = table_state(p)
+                if st is None:
+                    continue
+                tables[p] = st.get("table") or tables[p]
+                if watch[p].update(st):
+                    log("[%d] gate ok: hero folded from UTG -- full orbit of clearance" % p)
+                    pending.remove(p)
+                    scrape_one(p, tables[p])
+            if pending:
+                time.sleep(POLL_S)
+
+        for p in pending:
+            if not ALLOW_FALLBACK:
+                log("[%d] no UTG fold within %ds -- skipping (set ICM_ALLOW_FALLBACK=1 to scrape from "
+                    "any out-of-hand moment)" % (p, WAIT_BUDGET_S))
+                continue
+            st = table_state(p) or {}
+            if out_of_hand(st):
+                log("[%d] FALLBACK: no UTG fold in %ds; scraping from a plain out-of-hand moment "
+                    "(less clearance)" % (p, WAIT_BUDGET_S))
+                scrape_one(p, st.get("table") or tables[p])
+            else:
+                log("[%d] no UTG fold and hero is in a hand -- skipping this firing" % p)
     finally:
         try: os.remove(LOCK)
         except OSError: pass

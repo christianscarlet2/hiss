@@ -28,6 +28,7 @@ Run:  python mcp/icm_chip_daemon.py        (the AIL 'icm' switch launches/kills 
 import os, re, sys, json, time, urllib.request, subprocess
 
 BOT     = os.environ.get("HISS_BOT_URL", "http://127.0.0.1:27654")
+BOT_PORT = int((re.search(r":(\d+)", BOT) or [0, 27654])[1])
 PSQL    = os.environ.get("HISS_PSQL", r"C:\Program Files\PostgreSQL\12\bin\psql.exe")
 PGUSER  = os.environ.get("PGUSER", "postgres")
 PGDB    = os.environ.get("PGDATABASE", "hiss")
@@ -132,16 +133,22 @@ def table_matches(ts, lobby_name):
 
 
 def lobby_info():
-    """settings.lobby_info + its age in seconds. This is the tournament structure the icm-chip-value
-    skill wrote after lobby_fetch.sh (Claude vision on the lobby screens)."""
-    raw = psql("SELECT json_build_object('v', value, 'age', "
-               "EXTRACT(EPOCH FROM (now() - updated_at)))::text "
-               "FROM settings WHERE key = 'lobby_info';")
-    try:
-        d = json.loads(raw) if raw else {}
-        return (d.get("v") or {}), num(d.get("age"), 1e9)
-    except Exception:
-        return {}, 1e9
+    """settings.lobby_info_<our port> (falling back to the shared key) + its age in seconds.
+
+    icm_lobby_driver.py scrapes EVERY live table and stores each structure under its own port, because
+    two Hiss instances sit at two different tournaments and one shared row cannot describe both. We
+    read our own table's row first and only fall back to the legacy key."""
+    for key in ("lobby_info_%d" % BOT_PORT, "lobby_info"):
+        raw = psql("SELECT json_build_object('v', value, 'age', "
+                   "EXTRACT(EPOCH FROM (now() - updated_at)))::text "
+                   "FROM settings WHERE key = '%s';" % key)
+        try:
+            d = json.loads(raw) if raw else {}
+        except Exception:
+            continue
+        if d.get("v"):
+            return d["v"], num(d.get("age"), 1e9)
+    return {}, 1e9
 
 
 def icm_config():
@@ -275,14 +282,44 @@ def run_icm(hero_bb, st):
         return {}
 
 
+AIL_STATE = os.path.join(RELEASE, "logs", "ail_state.json")
+AIL_NAME  = "icm"
+
+
+def ail_enabled():
+    """Is this AIL switched ON in the browser terminal's AIL panel?
+
+    The AIL toggle is the user-facing switch, but it is not the only way this daemon starts: the
+    HissIcmDaemon scheduled task relaunches it at logon and every 5 minutes. So a daemon turned OFF in
+    the browser came straight back and kept speaking through Lilith. Whoever launches us, the AIL state
+    file decides whether we run. Missing/unreadable file => assume enabled (never silence a working
+    daemon over a transient read error)."""
+    try:
+        with open(AIL_STATE) as f:
+            return bool((json.load(f).get("enabled") or {}).get(AIL_NAME, True))
+    except (OSError, ValueError):
+        return True
+
+
 def main():
-    log("icm chip daemon up. structure source = settings.lobby_info; math = icm.py "
-        "(exact closed form mid-field, monte-carlo at the final table)")
+    if not ail_enabled():
+        log("AIL '%s' is disabled -- exiting (toggle it on in the browser AIL panel to run)" % AIL_NAME)
+        return
+    log("icm chip daemon up. structure source = settings.lobby_info_%d; math = icm.py "
+        "(exact closed form mid-field, monte-carlo at the final table)" % BOT_PORT)
     last_say = 0.0
     last_level = None
     warned = None
+    last_ail_check = time.time()
 
     while True:
+        # Re-check periodically so flipping the switch off actually stops the voice, rather than
+        # waiting for the next reboot.
+        if time.time() - last_ail_check > 20:
+            last_ail_check = time.time()
+            if not ail_enabled():
+                log("AIL '%s' switched off -- exiting" % AIL_NAME)
+                return
         ts = _get("/api/table-state")
         uc = ts.get("userchair", -1)
         lim = ts.get("limits", {}) or {}
