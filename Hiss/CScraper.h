@@ -277,6 +277,24 @@ extern CString g_tgi_tourney_name;   // e.g. "$50 GTD Freeroll"
 extern CString g_tgi_tourney_id;     // e.g. "35300198"
 extern CString g_tgi_table_number;   // e.g. "1"
 extern CString g_table_identity;     // tourney_id|table_name; changes on a table switch (phantom guard)
+
+// --- Seat status for /api/seat-status (published by the heartbeat, see CScraper.cpp) -------------
+enum SeatState { kSeatNotAtTable = 0, kSeatObserving = 1, kSeatSeated = 2 };
+// The individual signals behind the verdict. Reported separately so a caller (and a human reading
+// the log) can see exactly WHY it decided what it did, instead of trusting one opaque boolean.
+const long kSeatEvIdentity   = 0x001;   // table identity looks like a real table, not OCR noise
+const long kSeatEvBlinds     = 0x002;   // a sane big blind is scraped
+const long kSeatEvSeats      = 0x004;   // at least two named, seated players
+const long kSeatEvHeroChair  = 0x008;   // userchair confirmed by the symbol engine
+const long kSeatEvHeroNamed  = 0x010;   // the hero's own seat has a scraped name
+const long kSeatEvHeroStack  = 0x020;   // the hero's own seat has a positive balance
+const long kSeatEvHeroCards  = 0x040;   // the hero holds known cards
+const long kSeatEvHand       = 0x080;   // a hand number is present
+const long kSeatEvButtons    = 0x100;   // autoplayer buttons are visible (we can act)
+const long kSeatEvObserver   = 0x200;   // the scraper's observer mode is active
+extern volatile long g_seat_state;
+extern volatile long g_seat_evidence;
+extern volatile long g_seat_since_tick;
 extern bool    g_table_is_omaha;     // scraped text says Omaha/PLO/Hi-Lo -> drives the tablemap auto-switch
 // On-table RED decision overlay (HudOverlayWindow): the autoplayer publishes its locked action here on
 // the heartbeat; the overlay paints it big/bold/red above the hero's cards. Plain char buffer (no CString

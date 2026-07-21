@@ -405,6 +405,111 @@ UINT CHeartbeatThread::HeartbeatThreadFunction(LPVOID pParam) {
 	}
 }
 
+// ---- Seat status ------------------------------------------------------------------------------
+// Decide whether the hero is genuinely SEATED at a table, merely OBSERVING one, or NOT AT A TABLE
+// at all (lobby, home screen, a crashed app, a phone that wandered into another app).
+//
+// The consumer restarts the poker client when this reads not_at_table, so a false negative is
+// expensive and a false positive is worse. Two defences:
+//   1. SEVERAL INDEPENDENT SIGNALS. No single one is trusted. In the lobby the scraper still emits
+//      a table string -- observed: "antCliedog|EE.1." -- so the identity check demands a numeric
+//      tourney id or a substantial table name, and a verdict needs corroborating seats and blinds.
+//   2. DEBOUNCE. The raw verdict is recomputed every heartbeat, but g_seat_since_tick records when
+//      the CURRENT verdict first appeared. Callers wait for it to have held a while, so a single
+//      bad scrape (or the gap between hands) can never trigger a restart.
+static bool SeatIdentityLooksReal(const CString &identity) {
+  // "35534662|50GTDFreerollPLO6MaxTable1." -> real. "antCliedog|EE.1." -> lobby noise.
+  int bar = identity.Find('|');
+  if (bar > 0) {
+    CString tourney = identity.Left(bar);
+    bool all_digits = (tourney.GetLength() >= 4);
+    for (int i = 0; i < tourney.GetLength() && all_digits; ++i) {
+      if (!isdigit((unsigned char)tourney[i])) all_digits = false;
+    }
+    if (all_digits) return true;              // a numeric tourney id is the strongest signal
+  }
+  // No tourney id (cash game, or the id region misread): fall back to demanding a table name with
+  // real substance, which lobby noise like "EE.1." cannot fake.
+  CString tail = (bar >= 0) ? identity.Mid(bar + 1) : identity;
+  int alnum = 0;
+  for (int i = 0; i < tail.GetLength(); ++i) {
+    if (isalnum((unsigned char)tail[i])) ++alnum;
+  }
+  return (alnum >= 12);
+}
+
+void CHeartbeatThread::UpdateSeatStatus() {
+  long ev = 0;
+  if (SeatIdentityLooksReal(g_table_identity)) ev |= kSeatEvIdentity;
+
+  if (p_engine_container != NULL
+      && p_engine_container->symbol_engine_tablelimits()->bblind() > 0) {
+    ev |= kSeatEvBlinds;
+  }
+
+  int nchairs = (p_tablemap == NULL) ? 0 : p_tablemap->nchairs();
+  int named_seats = 0;
+  for (int i = 0; i < nchairs && p_table_state != NULL; ++i) {
+    CPlayer *pl = p_table_state->Player(i);
+    if (pl != NULL && pl->seated() && !pl->name().IsEmpty()) ++named_seats;
+  }
+  if (named_seats >= 2) ev |= kSeatEvSeats;
+
+  int userchair = kUndefined;
+  if (p_engine_container != NULL
+      && p_engine_container->symbol_engine_userchair()->userchair_confirmed()) {
+    userchair = p_engine_container->symbol_engine_userchair()->userchair();
+    ev |= kSeatEvHeroChair;
+  }
+  if (userchair >= 0 && userchair < nchairs && p_table_state != NULL) {
+    CPlayer *hero = p_table_state->Player(userchair);
+    if (hero != NULL) {
+      if (!hero->name().IsEmpty())        ev |= kSeatEvHeroNamed;
+      if (hero->_balance.GetValue() > 0)  ev |= kSeatEvHeroStack;
+      if (hero->HasKnownCards())          ev |= kSeatEvHeroCards;
+    }
+  }
+
+  if (p_handreset_detector != NULL && !p_handreset_detector->GetHandNumber().IsEmpty()) {
+    ev |= kSeatEvHand;
+  }
+  if (p_casino_interface != NULL
+      && p_casino_interface->NumberOfVisibleAutoplayerButtons() > 0) {
+    ev |= kSeatEvButtons;
+  }
+  if (p_scraper != NULL && p_scraper->ObserverActive()) ev |= kSeatEvObserver;
+
+  // A table is REAL only with all three of: a believable identity, sane blinds, and populated
+  // seats. Every "am I somewhere" question is gated on that, so nothing in the lobby can qualify.
+  const bool at_a_real_table =
+      (ev & kSeatEvIdentity) && (ev & kSeatEvBlinds) && (ev & kSeatEvSeats);
+
+  // SEATED needs the hero's own seat to exist and to look occupied by us: the seat is confirmed,
+  // it carries our name, and it has either chips or cards. Buttons alone are not enough (they can
+  // linger) and cards alone are not enough (card templates can mismatch and read as backs).
+  const bool hero_present =
+      (ev & kSeatEvHeroChair) && (ev & kSeatEvHeroNamed)
+      && ((ev & kSeatEvHeroStack) || (ev & kSeatEvHeroCards));
+
+  long state = kSeatNotAtTable;
+  if (at_a_real_table && hero_present && !(ev & kSeatEvObserver)) {
+    state = kSeatSeated;
+  } else if (at_a_real_table && ((ev & kSeatEvObserver) || (ev & kSeatEvHand))) {
+    // Railing a table: a real table is on screen and hands are running, but it is not our seat.
+    state = kSeatObserving;
+  }
+
+  if (state != g_seat_state) {
+    g_seat_state = state;
+    g_seat_since_tick = (long)GetTickCount();
+    write_log(k_always_log_basic_information,
+      "[SeatStatus] state -> %s (evidence 0x%03x, %d named seats, userchair %d)\n",
+      state == kSeatSeated ? "seated" : state == kSeatObserving ? "observing" : "not_at_table",
+      ev, named_seats, userchair);
+  }
+  g_seat_evidence = ev;
+}
+
 void CHeartbeatThread::ScrapeEvaluateAct() {
 	// No window to keep in position for the Scarlet Beast virtual connection.
 	if (!p_autoconnector->IsVirtualConnection()) {
@@ -809,6 +914,9 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
       write_log(k_always_log_basic_information, "[MCP] Click region '%s' not found in tablemap\n", rgn.GetString());
     }
   }
+
+  // ---- Seat status for /api/seat-status: am I really sat at (or railing) a table? ----
+  UpdateSeatStatus();
 
   // ---- MCP / API: apply HUD overlay positions posted by Claude (/api/hud-positions).
   // Hand the JSON to the overlay on the UI thread (DB write + repaint happen there). ----

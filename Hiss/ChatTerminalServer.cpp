@@ -1463,6 +1463,82 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		return;
 	}
 
+	// Automation on/off for THIS instance, for the table-view tile.
+	//   GET                -> {"ok":true,"enabled":bool}
+	//   GET|POST ?on=1|0   -> sets it, returns the new value
+	// This is deliberately the SAME per-port "enabled" field the /automation-prefs page and the
+	// tournament-join poller already use (automation_api.enabled_<port>), so the tile is the one
+	// switch for this instance's automation rather than a second, silently divergent flag.
+	if (path.CompareNoCase("/api/automation-enabled") == 0) {
+		CStringA body;
+		if (p_tablemap_db == NULL) {
+			body = "{\"ok\":false,\"error\":\"No database connection.\"}";
+		} else {
+			if (AutomationQueryHas(query, "on")) {
+				CStringA v = UrlDecode(QueryValue(query, "on"));
+				bool want_on = (v == "1" || v.CompareNoCase("on") == 0 || v.CompareNoCase("true") == 0);
+				p_tablemap_db->SetSettingString(kAutomationPrefsKey, AutomationPrefField("enabled"),
+					CString(want_on ? "on" : "off"));
+				write_log(k_always_log_basic_information,
+					"[Automation] enabled -> %s (via /api/automation-enabled)\n", want_on ? "on" : "off");
+			}
+			CString cur = p_tablemap_db->GetSettingString(kAutomationPrefsKey, AutomationPrefField("enabled"));
+			bool on = (cur.CompareNoCase("on") == 0 || cur == "1" || cur.CompareNoCase("true") == 0);
+			body.Format("{\"ok\":true,\"enabled\":%s}", on ? "true" : "false");
+		}
+		CStringA response;
+		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\n"
+			"Content-Length: %d\r\nConnection: close\r\n\r\n%s",
+			body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	// Seat status: is the hero genuinely SEATED at a table, OBSERVING one, or NOT AT A TABLE?
+	// The verdict and its evidence are computed once per heartbeat (CHeartbeatThread::UpdateSeatStatus)
+	// and only READ here -- this HTTP thread must never evaluate symbols, which is the race that used
+	// to crash /api/symbols. "stable_ms" is how long the current verdict has held; the join-a-game
+	// automation restarts the poker app on a negative, so it waits for a sustained one rather than
+	// acting on a single scrape.
+	if (path.CompareNoCase("/api/seat-status") == 0) {
+		long state = g_seat_state;
+		long ev = g_seat_evidence;
+		long since = g_seat_since_tick;
+		long stable_ms = (long)(GetTickCount() - (DWORD)since);
+		if (stable_ms < 0) stable_ms = 0;
+		const char *name = (state == kSeatSeated) ? "seated"
+		                 : (state == kSeatObserving) ? "observing" : "not_at_table";
+		CStringA body;
+		body.Format("{\"ok\":true,\"state\":\"%s\",\"at_table\":%s,\"stable_ms\":%ld,"
+			"\"table\":\"%s\",\"evidence\":{"
+			"\"identity\":%s,\"blinds\":%s,\"seats\":%s,\"hero_chair\":%s,\"hero_named\":%s,"
+			"\"hero_stack\":%s,\"hero_cards\":%s,\"hand\":%s,\"buttons\":%s,\"observer\":%s},"
+			"\"evidence_bits\":%ld}",
+			name,
+			(state != kSeatNotAtTable) ? "true" : "false",
+			stable_ms,
+			JsonEscape(g_table_identity).GetString(),
+			(ev & kSeatEvIdentity)  ? "true" : "false",
+			(ev & kSeatEvBlinds)    ? "true" : "false",
+			(ev & kSeatEvSeats)     ? "true" : "false",
+			(ev & kSeatEvHeroChair) ? "true" : "false",
+			(ev & kSeatEvHeroNamed) ? "true" : "false",
+			(ev & kSeatEvHeroStack) ? "true" : "false",
+			(ev & kSeatEvHeroCards) ? "true" : "false",
+			(ev & kSeatEvHand)      ? "true" : "false",
+			(ev & kSeatEvButtons)   ? "true" : "false",
+			(ev & kSeatEvObserver)  ? "true" : "false",
+			ev);
+		CStringA response;
+		response.Format("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
+			"Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\n"
+			"Content-Length: %d\r\nConnection: close\r\n\r\n%s",
+			body.GetLength(), body.GetString());
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
 	if (path.CompareNoCase("/api/table-state") == 0) {
 		CStringA body = BuildTableStateJson();
 		CStringA response;

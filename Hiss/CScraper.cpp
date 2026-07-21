@@ -144,6 +144,15 @@ CString g_tgi_table_number = "";
 // to detect a table SWITCH between hands -- the only reliable switch signal here, since the scrcpy
 // phone window title never changes when the poker app navigates to a different table.
 CString g_table_identity = "";
+// --- Seat status, published once per heartbeat, read by /api/seat-status ------------------------
+// "Am I actually sat at (or railing) a table?" for the join-a-game automation. The automation
+// RESTARTS the poker app when this says no, so a false negative costs a real interruption: the
+// verdict is therefore built from several independent signals AND has to hold steady for a while
+// before it is reported as stable. Written only by the heartbeat thread, read by the HTTP thread;
+// each is a single aligned 32-bit value, so a reader always sees a whole value, never a torn one.
+volatile long  g_seat_state = 0;        // 0 = not_at_table, 1 = observing, 2 = seated
+volatile long  g_seat_evidence = 0;     // bitfield of the individual signals (see kSeatEv* )
+volatile long  g_seat_since_tick = 0;   // GetTickCount() when the CURRENT state was first seen
 // True when the scraped table text says this is an Omaha / PLO / Hi-Lo game. Drives the automatic
 // tablemap switch (CTableMapLoader::SwitchTablemapForGameTypeIfNeeded) between the Hold'em map and
 // its "<name>_omaha" variant, since Omaha's 4-card layout needs a separate, separately-calibrated map.

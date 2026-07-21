@@ -42,6 +42,8 @@ class CHeartbeatThread /*: public CSpaceOptimizedGlobalObject */{
 	// private functions and variables - not available via accessors or mutators
 	static UINT HeartbeatThreadFunction(LPVOID pParam);
 	static void ScrapeEvaluateAct();
+	// Publishes g_seat_state / g_seat_evidence / g_seat_since_tick for /api/seat-status.
+	static void UpdateSeatStatus();
 	static void AutoConnect();
  private:
 	// private variables - use public accessors and public mutators to address these	
