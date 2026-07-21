@@ -286,50 +286,68 @@ def field_ink(title, rect):
     return clusters
 
 
-def pullout_showing(title, rect):
-    """Is Google's saved-password sheet up?
+def field_ink_columns(title, rect):
+    """Width of the ink in a box -- answers "is anything in here" for a masked field."""
+    crop = grab_region(title, rect).convert("L")
+    import numpy as np
+    a = np.asarray(crop).astype(int)
+    return int(((a < 128).sum(axis=0) > 0).sum())
 
-    hiss.exe answers this with autoocr0 over use_saved_password. Here -- outside the bot,
-    with no OCR engine -- the same region answers it structurally: the sheet is a light
-    slab, so its bright-pixel fraction jumps from ~nothing to a large share of the box.
+
+def pullout_showing(title, guard):
+    """Is Chrome's "Use saved password?" sheet up?
+
+    Read the use_saved_password region and look for the words. This is the same rule
+    hiss.exe applies with autoocr0 on that region -- note the space-stripped compare,
+    because OCR of that line comes back with the spacing anywhere or nowhere.
+
+    (Suppressing the Android autofill_service does NOT stop this: it is Chrome's own
+    password manager, inside the WebAPK.)
     """
-    shot = os.path.join(os.environ.get("TEMP", "/tmp"), "_pullout_probe.png")
-    AM.capture(title, shot)
-    from PIL import Image
-    with Image.open(shot) as im:
-        crop = im.convert("L").crop((rect[0], rect[1], rect[2] + 1, rect[3] + 1))
-    px = list(crop.getdata())
-    bright = sum(1 for v in px if v > 165) / float(len(px) or 1)
-    print("   pullout probe: %.1f%% bright in use_saved_password" % (bright * 100))
-    return bright > 0.05
+    if "use_saved_password" not in guard:
+        return False
+    txt = ocr_region(title, guard["use_saved_password"]["rect"])
+    hit = "usesavedpassword" in txt.replace(" ", "").lower()
+    if hit:
+        print("      pullout detected: %r" % txt)
+    return hit
 
 
-def fill_field(serial, title, m, region, text, dry, settle, secret, label, tries=3):
+def dismiss_pullout(serial, m, guard, dry, settle):
+    """Tap the blank strip ABOVE the sheet -- tapping the sheet itself would accept it."""
+    if "pullout_dismiss" not in guard:
+        return False
+    print("      dismissing the saved-password pullout")
+    tap(serial, m.centre(guard["pullout_dismiss"]["rect"]), dry)
+    time.sleep(settle * 1.5)
+    return True
+
+
+def fill_field(serial, title, m, region, text, dry, settle, secret, label,
+               guard=None, email_region=None, email_text=None, tries=3):
     """Focus, clear, type -- then READ THE FIELD BACK and only accept it if it took.
 
-    The page autofills a previously SAVED (and, from an early failed attempt, scrambled)
-    credential on load, and a tap does not always move focus. Both faults are invisible
-    until you look at the field, so every step here is checked against a fresh capture
-    rather than assumed.
+    Every step is checked against a fresh capture rather than assumed, because two faults
+    are invisible otherwise: the page autofills a previously SAVED (and, from an early
+    failed attempt, scrambled) credential, and Chrome's saved-password sheet can steal the
+    focus mid-sequence.
     """
+    guard = guard or {}
     for attempt in range(1, tries + 1):
         print("   %s: attempt %d" % (label, attempt))
         hide_keyboard(serial, dry)
         time.sleep(settle * 0.5)
         tap(serial, m.centre(region["rect"]), dry)
         time.sleep(settle)
+
+        # Touching a credential field is what raises the sheet; clear it and re-focus.
+        if not dry and pullout_showing(title, guard):
+            dismiss_pullout(serial, m, guard, dry, settle)
+            tap(serial, m.centre(region["rect"]), dry)
+            time.sleep(settle)
+
         clear_field(serial, dry)
         time.sleep(settle * 0.5)
-
-        if not dry:
-            hide_keyboard(serial, dry); time.sleep(settle * 0.5)
-            left = field_ink(title, region["rect"])
-            if left > 2:                          # a stray cursor artefact is 1-2 clusters
-                print("      still %d glyphs after clearing -- clearing again" % left)
-                tap(serial, m.centre(region["rect"]), dry); time.sleep(settle * 0.5)
-                clear_field(serial, dry, presses=CLEAR_PRESSES)
-                time.sleep(settle * 0.5)
-
         type_text(serial, text, dry, secret=secret)
         time.sleep(settle)
         if dry:
@@ -337,10 +355,19 @@ def fill_field(serial, title, m, region, text, dry, settle, secret, label, tries
 
         hide_keyboard(serial, dry)
         time.sleep(settle * 0.6)
+        if not dry and pullout_showing(title, guard):
+            dismiss_pullout(serial, m, guard, dry, settle)
+
         if secret:
-            got = field_ink(title, region["rect"])
-            ok = abs(got - len(text)) <= 2        # one mask glyph per character
-            print("      %d mask glyphs (expected ~%d) -> %s" % (got, len(text), "ok" if ok else "WRONG"))
+            # The mask glyphs run together into one blob, so counting them is useless.
+            # What matters is that SOMETHING landed here and that it did not land in the
+            # email box instead -- the exact failure that produced the swapped fields.
+            ink = field_ink_columns(title, region["rect"])
+            still = ocr_region(title, email_region["rect"]) if email_region else ""
+            same = (not email_text) or still.replace(" ", "").lower() == email_text.replace(" ", "").lower()
+            ok = ink > 20 and same
+            print("      %d ink columns, email still %r -> %s"
+                  % (ink, still, "ok" if ok else "WRONG"))
         else:
             got = ocr_region(title, region["rect"])
             ok = got.replace(" ", "").lower() == text.replace(" ", "").lower()
@@ -350,10 +377,12 @@ def fill_field(serial, title, m, region, text, dry, settle, secret, label, tries
     return False
 
 
-def enter_credentials(serial, m, rows, email, password, dry, settle, title=None):
-    if not fill_field(serial, title, m, rows["acr_email"], email, dry, settle, False, "email"):
+def enter_credentials(serial, m, rows, email, password, dry, settle, title=None, guard=None):
+    if not fill_field(serial, title, m, rows["acr_email"], email, dry, settle, False, "email",
+                      guard=guard):
         return False
-    if not fill_field(serial, title, m, rows["acr_password"], password, dry, settle, True, "password"):
+    if not fill_field(serial, title, m, rows["acr_password"], password, dry, settle, True, "password",
+                      guard=guard, email_region=rows["acr_email"], email_text=email):
         return False
 
     hide_keyboard(serial, dry)
@@ -452,24 +481,6 @@ def field_ink(title, rect):
     return clusters
 
 
-def pullout_showing(title, rect):
-    """Is Google's saved-password sheet up?
-
-    hiss.exe answers this with autoocr0 over use_saved_password. Here -- outside the bot,
-    with no OCR engine -- the same region answers it structurally: the sheet is a light
-    slab, so its bright-pixel fraction jumps from ~nothing to a large share of the box.
-    """
-    shot = os.path.join(os.environ.get("TEMP", "/tmp"), "_pullout_probe.png")
-    AM.capture(title, shot)
-    from PIL import Image
-    with Image.open(shot) as im:
-        crop = im.convert("L").crop((rect[0], rect[1], rect[2] + 1, rect[3] + 1))
-    px = list(crop.getdata())
-    bright = sum(1 for v in px if v > 165) / float(len(px) or 1)
-    print("   pullout probe: %.1f%% bright in use_saved_password" % (bright * 100))
-    return bright > 0.05
-
-
 def login(port, map_name=None, process="login", step=1, dry=False, settle=1.2, attempts=3):
     serial, entry = device_for_port(port)
     title = entry.get("window") or ("A17" if "A17" in entry.get("note", "") else None)
@@ -513,22 +524,21 @@ def login(port, map_name=None, process="login", step=1, dry=False, settle=1.2, a
     suppress_prompts(serial, dry)
     for attempt in range(1, attempts + 1):
         print("-- attempt %d --" % attempt)
-        if not enter_credentials(serial, m, rows, email, password, dry, settle, title):
+        if not enter_credentials(serial, m, rows, email, password, dry, settle, title, guard):
             print("could not get the fields to hold what was typed")
             return False
         time.sleep(settle * 2)
 
         if dry or "use_saved_password" not in guard or "pullout_dismiss" not in guard:
             return True
-        if not pullout_showing(title, guard["use_saved_password"]["rect"]):
+        if not pullout_showing(title, guard):
             print("no saved-password pullout -- login submitted")
             return True
 
         # It ate the entry. Tap the blank strip ABOVE the sheet to dismiss, then
         # start the whole entry again: the fields it intercepted are not reliable.
         print("saved-password pullout is up -- dismissing above it and retrying")
-        tap(serial, m.centre(guard["pullout_dismiss"]["rect"]), dry)
-        time.sleep(settle * 2)
+        dismiss_pullout(serial, m, guard, dry, settle)
 
     print("gave up after %d attempts" % attempts)
     return False

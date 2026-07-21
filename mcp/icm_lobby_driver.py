@@ -367,7 +367,12 @@ def build_lobby_info(port, key, m, mo, pay=None):
         cur = {}
     out = dict(cur)
     if m.get("is_info_page"):
-        for k in ("tournament", "remaining", "entrants", "prize_pool", "avg_stack_bb", "level"):
+        for k in ("tournament", "remaining", "entrants", "prize_pool", "avg_stack_bb", "level",
+                  # The lobby states the blinds in CHIPS ("100/200"), which is the ONLY place the
+                  # chip size of a big blind is visible: the phone renders every stack in BB, so
+                  # /api/table-state reports bblind=1.0 and cannot supply it. Keeping these is what
+                  # makes a chips->BB conversion possible at all.
+                  "sb_dollars", "bb_dollars", "next_level_minutes"):
             if m.get(k) is not None:
                 out[k] = m[k]
     if mo.get("is_more_info"):
@@ -375,15 +380,42 @@ def build_lobby_info(port, key, m, mo, pay=None):
                       ("max_seats", "max_seats"), ("places_paid", "places_paid"), ("first_place", "first_place")):
             if mo.get(k) is not None:
                 out[kk] = mo[k]
-    # derive avg_stack_bb from chip figures if the lobby didn't print it in BB
+    # ---- UNITS: establish the chip size of one big blind, then reconcile ------------------------
+    # Everything downstream is denominated in BIG BLINDS, because that is the only unit both sides
+    # can speak: the phone shows stacks in BB, the lobby shows structure in chips. Mixing them is
+    # the bug that made hero's 17bb look like a 0.0001% stack against a field sized in chips and
+    # collapsed ICM equity to ~0.
+    bbc = float(out.get("bb_dollars") or 0)          # from the lobby: a big blind IN CHIPS
+    if bbc <= 1.5:
+        bbc = bb_chips_from_table(port)              # fallback: only if the table reports real chips
+    if bbc > 1.5:
+        out["bb_chips"] = bbc
+
+    ent = float(out.get("entrants") or 0); rem = float(out.get("remaining") or 0)
+    sc = float(out.get("starting_chips") or 0)
+    computed_bb = ((ent * sc / rem) / bbc) if (ent and rem and sc and bbc > 1.5) else 0.0
+
     if not out.get("avg_stack_bb"):
-        ent = float(out.get("entrants") or 0); rem = float(out.get("remaining") or 0)
-        sc = float(out.get("starting_chips") or 0); bbc = bb_chips_from_table(port)
-        if ent and rem and sc and bbc:
-            out["avg_stack_bb"] = round((ent * sc / rem) / bbc, 2)
-            out["bb_chips"] = bbc
-            log("[%d] derived avg_stack_bb=%.2f (avg %.0f chips / bb %.0f)"
-                % (port, out["avg_stack_bb"], ent*sc/rem, bbc))
+        if computed_bb:
+            out["avg_stack_bb"] = round(computed_bb, 2)
+            log("[%d] derived avg_stack_bb=%.2f (avg %.0f chips / bb %.0f chips)"
+                % (port, out["avg_stack_bb"], ent * sc / rem, bbc))
+    elif computed_bb:
+        # Both routes available -- CROSS-CHECK them. They are independent (one is OCR of the lobby's
+        # "Avg Stack ... BB", the other is entrants*starting_chips/remaining/bb_chips), so agreement
+        # is strong evidence the units are right, and disagreement means a misread figure is about
+        # to produce confident, wrong equity. Trust the printed value; report the divergence.
+        stated = float(out["avg_stack_bb"])
+        drift = abs(stated - computed_bb) / max(stated, 1e-9)
+        out["avg_stack_bb_computed"] = round(computed_bb, 2)
+        out["avg_stack_bb_drift"] = round(drift, 4)
+        if drift > 0.15:
+            log("[%d] UNIT WARNING: lobby says avg %.2f bb but chips imply %.2f bb (%.0f%% apart) -- "
+                "one of entrants/remaining/starting_chips/bb_dollars misread"
+                % (port, stated, computed_bb, drift * 100))
+        else:
+            log("[%d] units check out: avg %.2f bb stated vs %.2f bb computed (bb=%.0f chips, %.1f%% apart)"
+                % (port, stated, computed_bb, bbc, drift * 100))
     if pay and pay.get("is_payouts"):          # EXACT payouts (once the PRIZE POOL region is placed)
         for k in ("places_paid", "first_place", "payouts"):
             if pay.get(k) is not None:
