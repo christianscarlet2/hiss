@@ -149,7 +149,11 @@ def run_claude(prompt, image_path, model=None):
         prompt += "\n\nThe live table screenshot is at: " + image_path + " -- Read it for board/stack/sizing ground-truth."
         cmd[2] = prompt
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=CLAUDE_TIMEOUT,
+        # Silence the Claude Code Stop-hook chime for this headless call -- see the same note in
+        # deep_thought.py. This fires on every decision while the bot plays, so without the gate the
+        # speakers chime continuously for calls nobody is waiting on.
+        _env = dict(os.environ); _env["HISS_NO_CHIME"] = "1"
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=CLAUDE_TIMEOUT, env=_env,
                            creationflags=(0x08000000 if os.name == "nt" else 0))
         env = json.loads(r.stdout)
         text = env.get("result", r.stdout) if isinstance(env, dict) else r.stdout

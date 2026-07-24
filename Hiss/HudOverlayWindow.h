@@ -35,6 +35,9 @@ public:
 	// Called from the MainFrm UI timer: cover the scrcpy client area, show/hide,
 	// and repaint with the latest stats.
 	void TrackTableWindow();
+	// CTRL-opacity only, cheap enough to run on the 50ms timer so holding CTRL feels instant
+	// instead of lagging up to a 200ms tick (and lagging DIFFERENTLY per instance).
+	void RefreshCtrlAlpha();
 	// Anchor rect the RED decision is drawn above (the hero's HUD box, or the hero seat's
 	// default position when that seat has no box yet). Public because the decision now lives
 	// in its OWN window (CHudActionWindow) which is the same size as this one, so the rect
@@ -101,9 +104,20 @@ protected:
 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
 	afx_msg void OnPaint();
 	afx_msg BOOL OnEraseBkgnd(CDC *pDC);
+	// COPY-HAND-NUMBER TILE. The window stays hit-test-transparent EVERYWHERE except this one small
+	// rect, so the bot's own autoplayer clicks still reach the felt untouched. [Emrald]
+	afx_msg LRESULT OnNcHitTest(CPoint point);
+	afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
 
 private:
 	CWnd *_owner;
+	CRect _stop_rect;        // client-space rect of the STOP SIGN (left of the hand number); toggles g_halt_acting
+	CRect _copy_rect;        // client-space rect of the CURRENT hand number (empty when not drawn)
+	CRect _copy_rect_prev;   // client-space rect of the PREVIOUS hand number, shown in parentheses
+	DWORD _copied_tick;      // for the brief "COPIED" confirmation
+	int   _copied_which;     // 0 = none, 1 = current, 2 = previous (so only the clicked row flashes)
+	CString _prev_hand;      // the hand before this one -- the one you usually want to investigate
+	CString _seen_hand;      // last hand number observed, used to roll _prev_hand on change
 };
 
 extern CHudActionWindow *p_hud_action_window;

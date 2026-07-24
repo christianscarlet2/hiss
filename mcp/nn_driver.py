@@ -48,6 +48,7 @@ def _discover_bot_url():
 # Hiss launches the driver with --bot-url http://127.0.0.1:<its own terminal port> from the
 # NN-driver button, so that always wins when it starts us.
 BOT    = _argval("--bot-url", os.environ.get("NN_BOT_URL") or _discover_bot_url())
+MAX_SANE_EFF_BB = float(os.environ.get("NN_MAX_EFF_BB", "1000"))  # deeper than this is a scrape failure, not a table
 NN     = os.environ.get("NN_URL",        "http://192.168.1.39:8088/nn-decide")
 POLL   = float(os.environ.get("NN_POLL_S", "0.6"))
 DRY    = "--dry-run" in sys.argv
@@ -555,7 +556,33 @@ def decide_and_act(gs):
         except (TypeError, ValueError):
             pass
     sym = _inject_opp_read(gs, sym)   # roadmap 4: real villain HUD read -> f$Opp_* (fail-safe)
-    nn = _post(NN, {"sym": sym, "hole": sv["hole"], "board": sv["board"], "bblind": sv["bblind"]})
+    # SEND THE EFFECTIVE STACK. nn_decide's serve-time guards resolve it as
+    # p["eff_stack"] -> sym["StackSize"], and this driver never sent the first, so every guard
+    # that needs a stack (push/fold, jam-discipline, commit, the override audit log) fell back
+    # to a SCRAPED symbol -- and when that reads 0 they all silently do nothing. Measured:
+    # StackSize=0 turns "jam AK at 8bb" into a flat call and lets a deep-stack shove through.
+    # This number is the one the driver already trusts for its own depth sizing (posted bet +
+    # remaining stack, in chips, same units as bblind).  [eff-stack 2026-07-21]
+    # DO NOT ACT ON A STATE WE CANNOT READ.
+    #
+    # Every bb-denominated number here is derived by dividing by the big blind, so ONE bad blind
+    # inflates the size, the depth multiplier and the all-in clamp together -- which is how a
+    # 1200bb "raise" was served to a 93bb stack and sailed past the shove clamp (the clamp compares
+    # against an equally inflated stack). The driver has also logged effective stacks of 91,224bb
+    # and 13,229,777bb. None of those are tables; they are scrape failures.
+    #
+    # A bot that cannot read the table must WAIT, not guess: returning False re-arms the turn and
+    # we try again on the next tick, which costs a second and risks nothing.  [state-sanity]
+    _bb_now = float(sv.get("bblind", 0) or 0)
+    _eff_chips = float(sv.get("bet", 0) or 0) + float(sv.get("stack", 0) or 0)
+    _eff_bb_now = (_eff_chips / _bb_now) if _bb_now > 0 else 0.0
+    if _bb_now <= 0 or _eff_bb_now <= 0 or _eff_bb_now > MAX_SANE_EFF_BB:
+        print("[nn_driver] !! UNREADABLE STATE (bblind=%.4f, effective stack=%.0fbb) -- not acting "
+              "this tick; a bad blind inflates every size and the all-in clamp with it."
+              % (_bb_now, _eff_bb_now), flush=True)
+        return False
+    nn = _post(NN, {"sym": sym, "hole": sv["hole"], "board": sv["board"],
+                    "bblind": sv["bblind"], "eff_stack": _eff_chips})
 
     # NEVER DEFAULT TO FOLD.
     #
@@ -663,12 +690,38 @@ def decide_and_act(gs):
             _bets_bb = [float((pp or {}).get("bet", 0) or 0) / bbl for pp in (gs.get("players") or [])]
         except Exception:
             _bets_bb = []
-        highest = max([my_bet + to_call] + _bets_bb)  # current highest bet on the table (bb)
+        # WHICH SOURCE DECIDES `highest`.
+        #
+        # Two independent views: our own (my_bet + AmountToCall) and the opponents' bet pills. When
+        # the PILLS ADD UP TO THE POT the table state is internally consistent -- every chip in the
+        # middle is accounted for -- and a bigger number from AmountToCall can only be that symbol
+        # being wrong. On hand 2783577681 the pills were 9.5/2.5/2.5/1 summing to the 15.5 pot while
+        # my_bet+to_call claimed 15.5, i.e. one player betting the entire pot including everyone
+        # else's chips, which cannot happen. That inflated `highest` and, through the floor below,
+        # spent 31bb on a hand the NN sized at 21.  [legal-raise fix]
+        _pill_sum = sum(_bets_bb)
+        _pill_max = max(_bets_bb or [0.0])
+        _pills_reconcile = bool(_bets_bb) and pot > 0 and abs(_pill_sum - pot) <= max(0.5, 0.02 * pot)
+        if _pills_reconcile:
+            highest = max(_pill_max, my_bet)          # our own posted bet is still a floor
+        else:
+            highest = max([my_bet + to_call] + _bets_bb)
+
         _raises = float(sym.get("Raises", 0) or 0)
+        # LEGAL MIN-RAISE = the bet we face, PLUS the amount it was raised BY (never less than one
+        # big blind). The previous floor of 2*highest is only correct when there was nothing to raise
+        # over (an opening bet), and that case still lands on 2*highest here because _prev is then 0.
+        # Against a RE-raise it over-shot badly and, being applied as a floor on the NN's own size,
+        # spent chips the model never asked for: hand 2783579579 faced a raise to 11 (over a 2.5 open,
+        # so the legal minimum was 19.5) and the 2x rule made it 22 -- turning a requested 7.5 into a
+        # 22bb re-raise with Q8o. Over-raising is legal, but it is not free.  [legal-raise fix]
+        _levels = sorted({round(b, 4) for b in (_bets_bb + [my_bet]) if b > 1e-9}, reverse=True)
+        _prev = _levels[1] if len(_levels) > 1 else 0.0   # the bet being raised OVER
+        _increment = max(highest - _prev, 1.0)             # a raise is at least one big blind
         if highest <= 1.0 + 1e-6 and _raises < 1:     # no raise/bet yet -> an OPEN, not a re-raise
             min_raise_to = 2.0 if _preflop else 1.0   # preflop open >= 2bb; postflop open bet >= 1bb
-        else:                                         # facing a bet/raise -> legal-safe floor
-            min_raise_to = 2.0 * highest
+        else:
+            min_raise_to = highest + _increment
         eff_max = my_bet + stack                      # a full shove, in bb
 
         # A raise with NO SIZE is a silent no-op: click("raise", 0) sends /api/action?do=raise with no
@@ -696,7 +749,21 @@ def decide_and_act(gs):
         # raised a single hand. A min-raise is always legal, so honour "open >= 2bb / re-raise >= last
         # increment" by raising TO that minimum. If we cannot even afford it, the allin check below
         # turns it into the jam it effectively is. [Emrald: raise>=stack = all-in]
-        if amount < min_raise_to - 1e-6:
+        # A "RAISE" TO LESS THAN THE BET WE FACE IS NOT A RAISE -> CALL.
+        #
+        # Narrower than the old "below the minimum -> call" rule that was removed for good reason
+        # (the NN's size was always under the minimum preflop, so the bot never raised at all). This
+        # fires only when the requested raise-TO does not even reach the CURRENT BET -- an incoherent
+        # request that says the driver's view of the betting was wrong, not that it wanted a big
+        # re-raise. Min-raising it anyway is the most expensive possible reading: on hand 2783579579
+        # the NN asked to raise to 7.5 while facing 11 and the clamp turned that into a 22bb re-raise
+        # with Q8o. Calling honours what the size actually said.
+        if amount > 0 and amount < highest - 1e-6:
+            do = "call"
+            note = "  (NN raise-to %.2f is below the %.2f bet it faces -> not a raise, calling)" % (
+                amount, highest)
+            amount = 0
+        elif amount < min_raise_to - 1e-6:
             note = "  (NN size %.2f < min %.2f -> min-raise)" % (amount, min_raise_to)
             amount = min_raise_to
 
@@ -747,7 +814,14 @@ def decide_and_act(gs):
     if do == "call" and amt_to_call <= 0.001:
         do, note = "check", note + "  (call->check: nothing to call)"
     elif do == "check" and amt_to_call > 0.001:
-        do, note = "call", note + "  (check->call: facing a bet)"
+        # CHECK means "this hand is not worth putting money in". The old fallback promoted it to CALL,
+        # which inverts that: on hand 2783853224 the engine chose check on the river, check was illegal
+        # facing a bet, and the fallback bought a showdown with air.
+        #
+        # Note the other two conversions in this block are strictly dominated improvements -- a free
+        # check beats folding, and beats "calling" nothing. This is the only one that COSTS chips, and
+        # the faithful reading of "check" is "no investment", so it folds.
+        do, note = "fold", note + "  (check->fold: facing a bet)"
     elif do == "fold" and amt_to_call <= 0.001:
         # Folding a free option is strictly dominated -- and worse, the bar in that spot
         # (Check | Raise Options) has no Fold button at all, so the request never lands: Hiss
@@ -766,6 +840,17 @@ def decide_and_act(gs):
         print("[nn_driver] !! decided CHECK with no Check button and no Call button (fckra=%s) -- "
               "not acting." % fckra, flush=True)
         return False
+    # LOG THE INPUTS, not just the answer. Three sizes now (1200bb, 12bb open, a 22bb re-raise)
+    # could only be explained by "the symbols must have been garbage" -- unprovable, because the
+    # driver recorded what it decided and never what it decided FROM. One compact line ends that.
+    print("[nn_driver]   in: bb=%.2f tocall=%.2f pot=%.2f stack=%.2f bet=%.2f committed=%.2f "
+          "raises=%s br=%s eff=%.1fbb" % (
+              float(sv.get("bblind", 0) or 0), float(sym.get("AmountToCall", 0) or 0),
+              float(sym.get("PotSize", 0) or 0), float(sv.get("stack", 0) or 0),
+              float(sv.get("bet", 0) or 0), float(sym.get("f$Committed", 0) or 0),
+              sym.get("Raises"), sym.get("betround"),
+              (float(sv.get("bet", 0) or 0) + float(sv.get("stack", 0) or 0)) / (float(sv.get("bblind", 1) or 1) or 1.0)),
+          flush=True)
     print("[nn_driver] %s hole=%s board=%s -> NN: %s%s%s  [btns=%s]  (val=%s)" %
           (sv["_handnumber"], sv["hole"], sv["board"] or "-", do,
            (" to %.1fbb" % amount) if amount else "", note, fckra or "-", nn.get("value")), flush=True)
@@ -876,5 +961,66 @@ def main():
         time.sleep(POLL)
 
 
+class _Tee:
+    """Copy everything printed to a per-instance file, with timestamps.
+
+    The driver already narrates what it is doing -- turn latches, the "acted but it is STILL
+    my turn" watchdog, decision failures -- but Hiss launches it with no stdout capture, so
+    all of that went to a console nobody reads. When a hand stalls (2783606360: 53 s facing a
+    1.78bb bet on 3s3cKs with Fold/Call/Raise live and not one decision) there is then no
+    evidence at all, and the cause has to be guessed. Timestamps are added here because the
+    prints have none, and correlating them with hand times is the whole point.
+    """
+
+    def __init__(self, stream, handle):
+        self._stream, self._fh, self._at_line_start = stream, handle, True
+
+    def write(self, text):
+        try:
+            self._stream.write(text)
+        except Exception:
+            pass
+        try:
+            for part in text.splitlines(True):
+                if self._at_line_start and part.strip():
+                    self._fh.write(time.strftime("%Y-%m-%d %H:%M:%S "))
+                self._fh.write(part)
+                self._at_line_start = part.endswith("\n")
+            self._fh.flush()
+        except Exception:
+            pass
+
+    def flush(self):
+        for target in (self._stream, self._fh):
+            try:
+                target.flush()
+            except Exception:
+                pass
+
+
+def _start_logging():
+    """Tee stdout/stderr to mcp/logs/nn_driver_<port>.log. Never fatal: a driver that cannot
+    open its log must still drive."""
+    try:
+        port = "".join(ch for ch in (BOT or "").split(":")[-1] if ch.isdigit()) or "unknown"
+        d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+        os.makedirs(d, exist_ok=True)
+        fh = open(os.path.join(d, "nn_driver_%s.log" % port), "a", encoding="utf-8", errors="replace")
+        sys.stdout = _Tee(sys.stdout, fh)
+        sys.stderr = _Tee(sys.stderr, fh)
+        print("[nn_driver] ---- driver starting; logging to %s ----" % fh.name, flush=True)
+    except Exception as e:
+        print("[nn_driver] (could not open a log file: %s)" % e, flush=True)
+
+
 if __name__ == "__main__":
-    main()
+    _start_logging()
+    try:
+        main()
+    except BaseException as e:
+        # An unhandled exception used to vanish with the console. Record it, then re-raise so
+        # the exit code still tells Hiss the driver died.
+        import traceback
+        print("[nn_driver] !! DRIVER EXITING on %s: %s\n%s"
+              % (type(e).__name__, e, traceback.format_exc()), flush=True)
+        raise

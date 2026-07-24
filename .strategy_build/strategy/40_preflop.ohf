@@ -64,6 +64,14 @@ WHEN Others RETURN f$preflop_open FORCE
 WHEN Calls >= 1 RETURN f$preflop_limped FORCE
 // Truly unopened: open-raise by position. Short stacks tighten to the MP range.
 WHEN f$ShortStack AND NOT listOpenMP Fold FORCE
+// TRAP LIMP: open-LIMP the premiums (AA KK QQ AKs AKo) one hand in six. [Emrald]
+// Always raising the top of the range makes an open readable -- a raise is never AA, a limp never
+// strong. Mixing a slice of premiums into the limping range denies that read, and these hands play
+// fine in any pot while inviting the isolation raise we want. Placed FIRST so it wins over the
+// positional opens below. randomround is fixed per betting round => one HAND in six, not a re-roll
+// per heartbeat. Not in the BB: first-in there means everyone folded, so there is nothing to limp
+// into -- that falls through to the Check below.
+WHEN listPremium AND NOT InBigBlind AND randomround < 0.1667 Call FORCE
 // OPENING-RANGE KNOB (tighten): when the Synapse open-range dial is turned DOWN, open only the
 // MP-strength range from every seat (drop the wide late/blind steals). BB still checks. Inert at
 // the neutral / wide settings. [Emrald open-range knob]
@@ -121,6 +129,13 @@ WHEN explain_fold_pre Fold FORCE
 //-----------------------------------------------------------------------------
 
 ##f$preflop_vs_raise##
+// LIMP-RERAISE: we trap-limped a premium and someone raised behind -- spring it. [Emrald]
+// Without this the hand falls into the flat-vs-light-3bettor rule below, which wastes the trap: the
+// point of limping AA is to get raised and come back over the top, not to play a big pot passively.
+// Detecting our own limp without a dedicated symbol (BotCalledBeforeFlop is only a Shanky name
+// translation here, not evaluable): we did not raise, yet we have a full big blind in.
+// BB excluded -- a BB facing a raise posted its blind, it did not choose to limp.
+WHEN listPremium AND NOT InBigBlind AND NOT BotRaisedBeforeFlop AND currentbet >= bblind AND explain_3bet_value RaiseTo f$ThreeBet_RaiseTo FORCE
 // Vs a player who 3-bets light, just FLAT the premiums and outplay him. [N p.22]
 WHEN list3betValue AND f$Opp_ThreeBetsLight AND listCall3bet Call FORCE
 // CtM: vs a NIT'S open, FLAT the big pairs / big aces (in position or at a price)
@@ -146,6 +161,11 @@ WHEN listSetMine AND f$DeepStack AND f$SetMineOK AND explain_call_setmine Call F
 // Big-blind defence: defend a price with playable hands.
 WHEN InBigBlind AND listCallOpen AND explain_bbdefend Call FORCE
 WHEN InBigBlind AND f$DecentPrice AND listOpenLP Call FORCE
+// 666 OMEN WIDENER: when the Beast meter is optimal, flat ANY two for a cheap price in late
+// position, about one hand in seven. Placed LAST so it only picks up hands the ranges above already
+// declined -- it widens the folding range and never overrides a value line. sb_beastfavor is 0
+// whenever the 666 tile is off, so this is completely inert unless superstition is running. [Emrald]
+WHEN (InLatePosition OR InCutOff OR InButton) AND sb_beastfavor >= 0.80 AND AmountToCall <= 2.5 * bblind AND randomround < 0.1429 Call FORCE
 WHEN explain_fold_pre Fold FORCE
 
 //-----------------------------------------------------------------------------

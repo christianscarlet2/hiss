@@ -206,6 +206,42 @@ bool CAutoplayerFunctions::IsFoldAllinSituation() {
   return false;
 }
 
+bool CAutoplayerFunctions::CallIsEffectivelyAllin() {
+  // Is calling actually the same act as moving in? IsFoldAllinSituation() assumes it is but
+  // never verifies it, and the assumption is only as good as the button scrape that produced it.
+  //
+  // The original rule deliberately reads buttons rather than bets/balances because those are
+  // easier to mis-scrape -- so treat unreadable numbers as a NO, not as a yes. Refusing the
+  // promotion costs at most the pot equity of a call we could not price; allowing it wrongly
+  // costs the whole stack. Genuinely desperate stacks are already covered upstream:
+  // ExecuteDesperationShoveOrCall() runs before the allin check and never folds under 2 BB.
+  if (p_table_state == NULL || p_table_state->User() == NULL
+      || p_engine_container == NULL
+      || p_engine_container->symbol_engine_chip_amounts() == NULL) {
+    return false;
+  }
+  double stack   = p_table_state->User()->_balance.GetValue();
+  double to_call = p_engine_container->symbol_engine_chip_amounts()->call();
+  if (stack <= 0.0 || to_call <= 0.0) {
+    write_log(k_always_log_errors,
+      "[CAutoplayerFunctions] Fold/allin buttons, but stack (%.2f) or to-call (%.2f) is "
+      "unreadable -- NOT promoting call to all-in.\n", stack, to_call);
+    return false;
+  }
+  double bb = 1.0;
+  if (p_engine_container->symbol_engine_tablelimits() != NULL) {
+    double b = p_engine_container->symbol_engine_tablelimits()->bblind();
+    if (b > 0.0) bb = b;                        // the blind-guesser has reported 0 before
+  }
+  // One big blind of slack absorbs rounding and a slightly stale balance scrape.
+  if (stack <= to_call + bb) return true;
+  write_log(k_always_log_errors,
+    "[CAutoplayerFunctions] REFUSING call->all-in: calling costs %.2f but the shove is %.2f "
+    "(%.1fx). The fold/allin button pattern is not trustworthy here -- most likely the CALL "
+    "button was missed by the scrape.\n", to_call, stack, to_call > 0.0 ? stack / to_call : 0.0);
+  return false;
+}
+
 void CAutoplayerFunctions::CalculateOpenPPLBackupActions() {
   write_log(Preferences()->debug_formula(), 
     "[CAutoplayerFunctions] CalculateOpenPPLBackupActions()\n");
@@ -251,8 +287,16 @@ void CAutoplayerFunctions::CalculateOpenPPLBackupActions() {
   // Call -> Check
   CalculateSingleOpenPPLBackupAction(
     k_autoplayer_function_call, k_autoplayer_function_check);
-  // Call -> Allin, in case we only can fold / (call) allin
-  if (IsFoldAllinSituation()) {
+  // Call -> Allin, in case we only can fold / (call) allin.
+  //
+  // POT CONSERVATION (Emrald, hn 2783860493): stock OpenPPL promotes an intended CALL into a
+  // full-stack SHOVE on nothing but the button pattern "F...A", with no check on what the call
+  // was worth. That is only sound when calling genuinely IS all-in -- which is the very reason
+  // the casino collapsed the buttons in the first place. One missed CALL-button scrape breaks
+  // the assumption: on that hand the strategy wanted 4.50 in with 96.00 behind and f$allin came
+  // back true, a 21x escalation holding a naked open-ender. f$allin is the FIRST thing
+  // ExecutePrimaryFormulas() tests, so nothing downstream would have caught it.
+  if (IsFoldAllinSituation() && CallIsEffectivelyAllin()) {
     CalculateSingleOpenPPLBackupAction(
       k_autoplayer_function_call, k_autoplayer_function_allin);
   }

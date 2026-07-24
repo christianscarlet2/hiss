@@ -80,6 +80,7 @@ def table_state():
         "has_cards": len(cards) >= 2,
         "observer": bool(ts.get("observer")),
         "nchairs": ts.get("nchairs"),
+        "seat": hero,
     }
 
 
@@ -100,6 +101,34 @@ def bblind():
 # "em351811.|LNWERERaaIEMalachySargS300..." is the SAME table, and it was throwing the hand away as a
 # "table switch". The stake guards below already reject the thing that check was protecting against
 # (a stack that jumps because we moved tables), without discarding good hands on OCR noise.
+#
+# ...except they DON'T, and dropping identity entirely cost us the whole results table for
+# 2026-07-21 (Emrald). When the scraper alternates between two tables on one connection, each flip
+# is a stack jump that is individually small -- 47 <-> 71, 51 <-> 97 -- so every guard below passes
+# and the flip lands in hand_results as a real win or loss. The 17:00 hour recorded 175 "hands"
+# whose losses (-2994) were almost exactly cancelled by their wins (+4647): pure oscillation. It
+# poisoned ail_feedback.py, which scores the strategy off this table.
+#
+# The fix is identity checks that never touch OCR'd text:
+#   * hand numbers must MOVE FORWARD. Two interleaved tables produce out-of-order numbers --
+#     2783562778 arrived between ...92616 and ...92778 -- while real play at one table only counts up.
+#   * the hero's seat and the table size must not change between consecutive hands.
+# A genuine table move trips these too, and that is correct: we skip one hand and re-baseline
+# rather than book a phantom result.
+def same_table(prev, cur):
+    if prev is None or cur is None:
+        return True                            # nothing to compare yet
+    if prev.get("seat") != cur.get("seat"):
+        return False
+    if prev.get("nchairs") and cur.get("nchairs") and prev["nchairs"] != cur["nchairs"]:
+        return False
+    return True
+
+
+def hand_moved_forward(prev_hand, new_hand):
+    if not (str(prev_hand).isdigit() and str(new_hand).isdigit()):
+        return True                            # unparseable -> leave it to the stake guards
+    return int(new_hand) > int(prev_hand)
 def plausible(prev_hand, prev_bal, new_bal, bb):
     if not prev_hand or prev_bal is None or new_bal is None:
         return None
@@ -134,6 +163,7 @@ def main():
     once = "--once" in sys.argv
     print("[odometer] recording every hand's result from %s -> hand_results" % bot_url(), flush=True)
     cur_hand, cur_bal, cur_had_cards, cur_observer = "", None, False, False
+    cur_ident = None                 # {"seat", "nchairs"} of the table the current hand belongs to
     recorded = skipped = 0
     while True:
         st = table_state()
@@ -153,7 +183,15 @@ def main():
                 cur_observer = True
 
         if hn and hn != cur_hand:                       # hand boundary -> score the one that ended
-            if cur_hand and cur_had_cards and not cur_observer:
+            if cur_hand and not hand_moved_forward(cur_hand, hn):
+                skipped += 1
+                print("[odometer] hand %s -> %s went BACKWARDS -- two tables are interleaving on "
+                      "this connection; re-baselining instead of recording" % (cur_hand, hn), flush=True)
+            elif cur_hand and not same_table(cur_ident, st):
+                skipped += 1
+                print("[odometer] hand %s: seat/table changed (%s -> %s) -- re-baselining, not recording"
+                      % (cur_hand, cur_ident, {"seat": st["seat"], "nchairs": st["nchairs"]}), flush=True)
+            elif cur_hand and cur_had_cards and not cur_observer:
                 net = plausible(cur_hand, cur_bal, bal, bblind())
                 if net is None:
                     skipped += 1
@@ -170,9 +208,11 @@ def main():
             cur_hand, cur_bal = hn, bal
             cur_had_cards = st["has_cards"]
             cur_observer = st["observer"]
+            cur_ident = {"seat": st["seat"], "nchairs": st["nchairs"]}
         elif not cur_hand and hn:
             cur_hand, cur_bal = hn, bal
             cur_had_cards, cur_observer = st["has_cards"], st["observer"]
+            cur_ident = {"seat": st["seat"], "nchairs": st["nchairs"]}
 
         time.sleep(POLL_S)
 

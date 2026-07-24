@@ -109,6 +109,12 @@ PSQL   = os.environ.get("HISS_PSQL", r"C:\Program Files\PostgreSQL\12\bin\psql.e
 PGUSER = os.environ.get("PGUSER", "postgres")
 PGDB   = os.environ.get("PGDATABASE", "hiss")
 PGPASS = os.environ.get("PGPASSWORD", "dbpass")
+# The learning daemon (proposal review/apply) is a plain .py run by a REAL python -- inside the frozen
+# learner.exe sys.executable IS learner.exe, so point at the interpreter the bot already uses.
+PYEXE  = os.environ.get("HISS_PYEXE", r"C:\Users\scarl\AppData\Local\Programs\Python\Python310\python.exe")
+if not os.path.isfile(PYEXE):
+    PYEXE = "python"
+LEARN_DAEMON = os.path.join(REPO, "mcp", "learn_from_decisions.py")
 
 # ---------------------------------------------------------------- infra
 def hiss_port():
@@ -174,11 +180,16 @@ def get_context():
     # a couple of symbols for the betting context (modal is suppressed server-side)
     sym = {}
     try:
+        # The f$ decision functions are the OHF's OWN answer for this spot; folding them into the
+        # same batch (one HTTP round-trip) means the bot's pick is captured atomically with the
+        # rest of the context, so the staged play logs the bot's counterfactual as of the moment
+        # you decided. prwin is cached per-hand, so this stays cheap.
         sym = json.loads(hiss_get("/api/symbols?names=betround,AmountToCall,PotSize,potplayer,"
                                   "potcommon,balance,currentbet,ncurrentbets,nplayersdealt,"
-                                  "nopponentsplaying"))
+                                  "nopponentsplaying,f$fold,f$call,f$check,f$raise,f$allin,f$betsize"))
     except Exception:
         pass
+    bot_action, bot_amount = bot_pick_from_symbols(sym)
     return {
         "handnumber": st.get("handnumber", ""),
         "betround": sym.get("betround"),
@@ -195,8 +206,28 @@ def get_context():
         "nplayersdealt": sym.get("nplayersdealt"),
         "nopponentsplaying": sym.get("nopponentsplaying"),
         "amount_to_call": sym.get("AmountToCall"),
+        "bot_action": bot_action,                      # the OHF's pick for this spot (None if unknown)
+        "bot_amount": bot_amount,                      # bet/raise size in bb when raise/allin
         "raw": st,
     }
+
+def bot_pick_from_symbols(sym):
+    """Collapse the OHF's f$ decision functions into (action, amount_bb) the same way the autoplayer
+    does -- highest-priority TRUE wins: allin > raise > call > check > fold. amount is the f$betsize
+    (big blinds) for raise/allin, else None. Returns (None, None) if nothing evaluated."""
+    def truthy(k):
+        try: return float(sym.get(k, 0)) != 0.0
+        except Exception: return False
+    def num(k):
+        try:
+            v = float(sym.get(k, 0));  return v if v > 0 else None
+        except Exception: return None
+    if truthy("f$allin"): return ("allin", num("f$betsize"))
+    if truthy("f$raise"): return ("raise", num("f$betsize"))
+    if truthy("f$call"):  return ("call", None)
+    if truthy("f$check"): return ("check", None)
+    if truthy("f$fold"):  return ("fold", None)
+    return (None, None)
 
 # ---------------------------------------------------------------- app
 class Learner(tk.Tk):
@@ -236,6 +267,8 @@ class Learner(tk.Tk):
         tools.add_command(label="Set ElevenLabs voice id...", command=self.set_voice_id)
         tools.add_command(label="Test voice", command=lambda: self._speak("This is the Lilith voice. Testing one two three."))
         tools.add_command(label="Unmute all apps", command=lambda: set_app_mutes(False))
+        tools.add_separator()
+        tools.add_command(label="Bot-improvement proposals…", command=self.open_proposals)
         menubar.add_cascade(label="Tools", menu=tools)
         self.config(menu=menubar)
         # apply the persisted preference at startup
@@ -249,6 +282,11 @@ class Learner(tk.Tk):
         self.lbl_cards.pack(anchor="w", padx=6)
         self.lbl_board = ttk.Label(ctxf, text="board: --"); self.lbl_board.pack(anchor="w", padx=6)
         self.lbl_pot   = ttk.Label(ctxf, text="pot: --   to call: --"); self.lbl_pot.pack(anchor="w", padx=6)
+        # The BOT's own pick for this spot (the OHF decision, read live via /api/symbols). Shown so you
+        # can see what Hiss would do BEFORE you choose -- and your choice is logged against it, so a
+        # divergence where your line is EV+ becomes an improvement proposal (learn_from_decisions.py).
+        self.lbl_bot   = ttk.Label(ctxf, text="bot would: --", font=("Segoe UI", 11, "bold"),
+                                   foreground="#0b6e2e"); self.lbl_bot.pack(anchor="w", padx=6, pady=(2,0))
         self.lbl_conn  = ttk.Label(ctxf, text="", foreground="#a00"); self.lbl_conn.pack(anchor="w", padx=6)
 
         # --- reasoning ---
@@ -448,6 +486,7 @@ class Learner(tk.Tk):
         self.ctx = get_context()
         if not self.ctx:
             self.lbl_conn.config(text="hiss.exe not reachable")
+            self.lbl_bot.config(text="bot would: --", foreground="#888")
         else:
             self.lbl_conn.config(text="")
             c = self.ctx
@@ -456,7 +495,105 @@ class Learner(tk.Tk):
             self.lbl_board.config(text="board: %s" % (c.get("board") or "--"))
             self.lbl_pot.config(text="pot: %s   round bets (bet basis): %s   to call: %s" % (
                 c.get("pot"), c.get("potplayer") or 0, c.get("amount_to_call")))
+            self.lbl_bot.config(text="bot would: %s" % self._fmt_bot(c.get("bot_action"), c.get("bot_amount")),
+                                foreground="#0b6e2e")
         self.after(2000, self.refresh_ctx)
+
+    @staticmethod
+    def _fmt_bot(action, amount):
+        if not action:
+            return "-- (no read)"
+        a = str(action).upper()
+        if action in ("raise", "allin", "bet") and amount:
+            try: return "%s %gbb" % (a, float(amount))
+            except Exception: return a
+        return a
+
+    # ---- Bot-improvement proposals (from learn_from_decisions.py) ----
+    def open_proposals(self):
+        win = tk.Toplevel(self); win.title("Bot-improvement proposals"); win.geometry("780x580")
+        top = ttk.Frame(win); top.pack(fill="x", padx=8, pady=6)
+        ttk.Label(top, text="Pending OHF changes proposed from your EV+ decisions").pack(side="left")
+        ttk.Button(top, text="Refresh", command=lambda: self._props_refresh()).pack(side="right")
+        self._props_lb = tk.Listbox(win, height=7); self._props_lb.pack(fill="x", padx=8)
+        self._props_lb.bind("<<ListboxSelect>>", lambda e: self._props_show())
+        self._props_detail = tk.Text(win, height=20, wrap="word", font=("Consolas", 9))
+        self._props_detail.pack(fill="both", expand=True, padx=8, pady=6)
+        btns = ttk.Frame(win); btns.pack(fill="x", padx=8, pady=6)
+        tk.Button(btns, text="✔ Approve & apply", bg="#0b6e2e", fg="white",
+                  font=("Segoe UI", 10, "bold"), command=self._props_apply).pack(side="left", padx=4, ipady=4)
+        tk.Button(btns, text="✖ Reject", bg="#c0392b", fg="white",
+                  command=self._props_reject).pack(side="left", padx=4, ipady=4)
+        self._props_ids = []
+        self._props_refresh()
+
+    def _daemon(self, *args, timeout=200):
+        return subprocess.run([PYEXE, LEARN_DAEMON, *args], capture_output=True, text=True,
+                              timeout=timeout, creationflags=0x08000000)
+
+    def _props_refresh(self):
+        self._props_lb.delete(0, "end"); self._props_ids = []
+        try:
+            out = run_sql("SELECT id, target_file, validated, pattern_signature FROM ohf_proposals "
+                          "WHERE status='pending' ORDER BY id DESC", read=True)
+        except Exception as e:
+            self._props_detail.delete("1.0", "end"); self._props_detail.insert("end", "DB error: %s" % e); return
+        for line in out.splitlines():
+            if not line.strip(): continue
+            p = line.split("|")
+            pid = p[0].strip(); self._props_ids.append(pid)
+            self._props_lb.insert("end", "#%s  %s  applicable=%s  |  %s" % (
+                pid, (p[1] if len(p) > 1 else "?").strip(), (p[2] if len(p) > 2 else "").strip(),
+                (p[3] if len(p) > 3 else "").strip()[:44]))
+        self._props_detail.delete("1.0", "end")
+        if not self._props_ids:
+            self._props_detail.insert("end",
+                "No pending proposals.\n\nThey appear once your manual plays produce repeated EV+ "
+                "divergences from the bot and the learner daemon has run:\n\n"
+                "    python mcp\\learn_from_decisions.py --once\n\n"
+                "Nothing is ever applied to the live strategy without you approving it here.")
+
+    def _props_show(self):
+        sel = self._props_lb.curselection()
+        if not sel: return
+        pid = self._props_ids[sel[0]]
+        try:
+            r = self._daemon("--show", str(pid), timeout=25); d = json.loads(r.stdout)
+        except Exception as e:
+            self._props_detail.delete("1.0", "end")
+            self._props_detail.insert("end", "show failed: %s\n%s" % (e, getattr(r, "stdout", ""))); return
+        self._props_detail.delete("1.0", "end")
+        self._props_detail.insert("end",
+            "PATTERN:  %s\nTARGET:   %s\nlint-applicable: %s     status: %s\n\nWHY (claude):\n%s\n\n"
+            "----- REPLACE (old) -----\n%s\n\n----- WITH (new) -----\n%s\n\nvalidation: %s\n"
+            % (d.get("pattern"), d.get("target"), d.get("validated"), d.get("status"), d.get("rationale"),
+               d.get("old_snippet"), d.get("new_snippet"), d.get("validation")))
+
+    def _props_apply(self):
+        sel = self._props_lb.curselection()
+        if not sel:
+            self.status.config(text="select a proposal first"); return
+        pid = self._props_ids[sel[0]]
+        if not messagebox.askyesno("Apply to the live strategy?",
+            "Apply proposal #%s to the live OHF?\n\nIt is lint-validated first; on ANY error it reverts "
+            "and the live strategy is untouched. A timestamped backup is kept for rollback, and every "
+            "running instance is reloaded on success." % pid):
+            return
+        try:
+            r = self._daemon("--apply", str(pid)); msg = (r.stdout or "") + (r.stderr or "")
+        except Exception as e:
+            msg = "apply failed to run: %s" % e
+        messagebox.showinfo("Apply result", msg[-1800:]); self._props_refresh()
+
+    def _props_reject(self):
+        sel = self._props_lb.curselection()
+        if not sel: return
+        pid = self._props_ids[sel[0]]
+        try:
+            run_sql("UPDATE ohf_proposals SET status='rejected' WHERE id=%s" % int(pid))
+        except Exception as e:
+            messagebox.showerror("DB error", str(e)); return
+        self._props_refresh()
 
     def toggle_on_top(self):
         on = bool(self.on_top.get())
@@ -733,13 +870,15 @@ class Learner(tk.Tk):
             try: return str(float(v))
             except Exception: return "NULL"
         gs = json.dumps(c.get("raw", {}))
+        bot_a = ("'%s'" % esc(c.get("bot_action"))) if c.get("bot_action") else "NULL"
+        bot_amt = numornull(c.get("bot_amount"))
         sql = ("INSERT INTO learner_decisions "
-               "(handnumber,betround,hero_cards,board,pot,amount_to_call,action,amount,reasoning,game_state) VALUES "
-               "('%s',%s,'%s','%s',%s,%s,'%s',%s,'%s','%s'::jsonb);" % (
+               "(handnumber,betround,hero_cards,board,pot,amount_to_call,action,amount,reasoning,game_state,ohf_action,ohf_amount) VALUES"
+               "('%s',%s,'%s','%s',%s,%s,'%s',%s,'%s','%s'::jsonb,%s,%s);" % (
                    esc(c.get("handnumber")), numornull(c.get("betround")),
                    esc(c.get("hero_cards")), esc(c.get("board")),
                    numornull(c.get("pot")), numornull(c.get("amount_to_call")),
-                   esc(action), amt_sql, esc(reasoning), esc(gs)))
+                   esc(action), amt_sql, esc(reasoning), esc(gs), bot_a, bot_amt))
         try:
             run_sql(sql)
         except Exception as e:
@@ -790,15 +929,17 @@ class Learner(tk.Tk):
             try: return str(float(v))
             except Exception: return "NULL"
         gs = json.dumps(c.get("raw", {}))
+        bot_a = ("'%s'" % esc(c.get("bot_action"))) if c.get("bot_action") else "NULL"
+        bot_amt = numornull(c.get("bot_amount"))
         sql = (
             "INSERT INTO learner_decisions "
-            "(handnumber,betround,hero_cards,board,pot,amount_to_call,action,amount,reasoning,game_state) VALUES "
-            "('%s',%s,'%s','%s',%s,%s,'%s',%s,'%s','%s'::jsonb);" % (
+            "(handnumber,betround,hero_cards,board,pot,amount_to_call,action,amount,reasoning,game_state,ohf_action,ohf_amount) VALUES"
+            "('%s',%s,'%s','%s',%s,%s,'%s',%s,'%s','%s'::jsonb,%s,%s);" % (
                 esc(c.get("handnumber")),
                 numornull(c.get("betround")),
                 esc(c.get("hero_cards")), esc(c.get("board")),
                 numornull(c.get("pot")), numornull(c.get("amount_to_call")),
-                esc(action), amt_sql, esc(reasoning), esc(gs)))
+                esc(action), amt_sql, esc(reasoning), esc(gs), bot_a, bot_amt))
         # 1) execute on the real table (pass through the autoplayer's button finding)
         ok, err = self.execute_on_table(action, amt)
         # 2) log the decision + reasoning for Claude to review

@@ -65,8 +65,21 @@ def device_for_port(port):
 
 
 def device_size(serial):
-    out = adb(serial, "shell", "wm", "size")
-    m = re.search(r"(\d+)x(\d+)", out)
+    """The resolution taps are addressed in.
+
+    `wm size` prints BOTH a physical and (when the user has picked a lower screen
+    resolution, as this S10 has) an OVERRIDE size:
+
+        Physical size: 1440x3040
+        Override size: 1080x2280
+
+    Input events use the override. Taking the first number found gave the physical
+    size and put every tap ~33% too far down and right -- the login button was missed
+    entirely while the read-back still "passed", because the fields happened to be
+    pre-filled with the right values already.
+    """
+    out = adb(serial, "shell", "wm", "size") or ""
+    m = re.search(r"Override size:\s*(\d+)x(\d+)", out) or re.search(r"(\d+)x(\d+)", out)
     if not m:
         raise SystemExit("could not read device size: " + out.strip())
     return int(m.group(1)), int(m.group(2))
@@ -121,35 +134,88 @@ SUPPRESS = {
 SUPPRESS_BACKUP = r"C:\tmp\automation_suppress_%s.json"
 
 
+def _saved_path(serial):
+    return SUPPRESS_BACKUP % serial
+
+
+def _load_saved(serial):
+    path = _saved_path(serial)
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
 def suppress_prompts(serial, dry=False):
-    """Silence autofill + assistant on this phone, remembering what was there."""
-    saved = {}
+    """Silence autofill + assistant on this phone, remembering what was there.
+
+    Merge-safe: a value that is ALREADY suppressed is never recorded as the original.
+    Running this twice used to overwrite the backup with the nulls it had just written,
+    which quietly destroyed the real settings and made restore a no-op.
+    """
+    previously = _load_saved(serial)
+    saved = dict(previously)
     for key, want in SUPPRESS.items():
         was = adb(serial, "shell", "settings", "get", "secure", key).strip()
-        saved[key] = was
+        suppressed_already = (not was) or was.lower() == "null" or was == want
+        if suppressed_already:
+            # keep whatever we knew from an earlier, cleaner run
+            saved.setdefault(key, previously.get(key, ""))
+        else:
+            saved[key] = was
         print("   %s: %s -> %s" % (key, was, want))
         if not dry:
             adb(serial, "shell", "settings", "put", "secure", key, want)
-    path = SUPPRESS_BACKUP % serial
     if not dry:
-        with open(path, "w", encoding="utf-8") as f:
+        with open(_saved_path(serial), "w", encoding="utf-8") as f:
             json.dump(saved, f, indent=2)
-        print("   previous values saved to %s" % path)
     return saved
 
 
-def restore_prompts(serial):
-    path = SUPPRESS_BACKUP % serial
-    if not os.path.exists(path):
-        raise SystemExit("no saved values at %s" % path)
-    with open(path, encoding="utf-8") as f:
-        saved = json.load(f)
+def restore_prompts(serial, quiet=False):
+    """Put the phone's own autofill/assistant back."""
+    saved = _load_saved(serial)
+    if not saved:
+        if not quiet:
+            print("   nothing to restore (no saved values for %s)" % serial)
+        return
     for key, was in saved.items():
-        if was and was.lower() != "null":
-            adb(serial, "shell", "settings", "put", "secure", key, was)
-        else:
-            adb(serial, "shell", "settings", "delete", "secure", key)
-        print("   %s restored to %s" % (key, was))
+        try:
+            if was and was.lower() != "null":
+                adb(serial, "shell", "settings", "put", "secure", key, was)
+            else:
+                adb(serial, "shell", "settings", "delete", "secure", key)
+            if not quiet:
+                print("   %s restored to %s" % (key, was or "(unset)"))
+        except RuntimeError as e:
+            print("   %s RESTORE FAILED (%s)" % (key, e))
+
+
+class PromptsSuppressed:
+    """Silence the phone's prompts for the DURATION of a sequence, then hand it back.
+
+    The suppression exists to stop autofill sheets stealing the keystrokes; it has no
+    business outliving the login. Restoring happens in a finally, so a crash mid-typing
+    still gives the phone its own settings back -- and the saved file stays on disk so a
+    killed process can be recovered with --restore-prompts.
+    """
+
+    def __init__(self, serial, dry=False):
+        self.serial, self.dry = serial, dry
+
+    def __enter__(self):
+        print("suppressing autofill/assistant for this sequence:")
+        suppress_prompts(self.serial, self.dry)
+        return self
+
+    def __exit__(self, *exc):
+        if not self.dry:
+            print("restoring the phone's own settings:")
+            restore_prompts(self.serial)
+        return False
 
 
 def keyboard_showing(serial):
@@ -250,14 +316,21 @@ TESSERACT = os.environ.get("HISS_TESSERACT",
                            r"C:\www\openholdembot_old\tesseract-demo\tesseract\tesseract.exe")
 
 
-def grab_region(title, rect, pad=2):
+def grab_region(title, rect, pad=2, tries=3):
     """Fresh capture of the mirror, cropped to one region."""
-    shot = os.path.join(os.environ.get("TEMP", "/tmp"), "_verify_probe.png")
-    AM.capture(title, shot)
     from PIL import Image
+    shot = os.path.join(os.environ.get("TEMP", "/tmp"), "_verify_probe.png")
     l, t, r, b = (int(round(v)) for v in rect)
-    with Image.open(shot) as im:
-        return im.convert("RGB").crop((l + pad, t + pad, r - pad, b - pad))
+    last = None
+    for _ in range(tries):
+        AM.capture(title, shot)
+        try:
+            with Image.open(shot) as im:
+                return im.convert("RGB").crop((l + pad, t + pad, r - pad, b - pad))
+        except OSError as e:                    # half-written png -- grab it again
+            last = e
+            time.sleep(0.5)
+    raise SystemExit("could not read a clean capture of %s: %s" % (title, last))
 
 
 def ocr_region(title, rect):
@@ -452,14 +525,21 @@ TESSERACT = os.environ.get("HISS_TESSERACT",
                            r"C:\www\openholdembot_old\tesseract-demo\tesseract\tesseract.exe")
 
 
-def grab_region(title, rect, pad=2):
+def grab_region(title, rect, pad=2, tries=3):
     """Fresh capture of the mirror, cropped to one region."""
-    shot = os.path.join(os.environ.get("TEMP", "/tmp"), "_verify_probe.png")
-    AM.capture(title, shot)
     from PIL import Image
+    shot = os.path.join(os.environ.get("TEMP", "/tmp"), "_verify_probe.png")
     l, t, r, b = (int(round(v)) for v in rect)
-    with Image.open(shot) as im:
-        return im.convert("RGB").crop((l + pad, t + pad, r - pad, b - pad))
+    last = None
+    for _ in range(tries):
+        AM.capture(title, shot)
+        try:
+            with Image.open(shot) as im:
+                return im.convert("RGB").crop((l + pad, t + pad, r - pad, b - pad))
+        except OSError as e:                    # half-written png -- grab it again
+            last = e
+            time.sleep(0.5)
+    raise SystemExit("could not read a clean capture of %s: %s" % (title, last))
 
 
 def ocr_region(title, rect):
@@ -490,7 +570,14 @@ def field_ink(title, rect):
 
 def login(port, map_name=None, process="login", step=1, dry=False, settle=1.2, attempts=3):
     serial, entry = device_for_port(port)
-    title = entry.get("window") or ("A17" if "A17" in entry.get("note", "") else None)
+    # settings.automation_devices."window" is the authority; the note is only a fallback
+    # for entries written before that key existed.
+    title = entry.get("window")
+    if not title:
+        for known in AM.MIRRORS:
+            if known.lower() in entry.get("note", "").lower():
+                title = known
+                break
     if not title:
         raise SystemExit("no scrcpy window title known for port %s (add \"window\" to "
                          "settings.automation_devices)" % port)
@@ -528,7 +615,11 @@ def login(port, map_name=None, process="login", step=1, dry=False, settle=1.2, a
     email, password = fetch_credentials(port)
     print("credentials for port %d: %s / %d chars" % (port, email, len(password)))
 
-    suppress_prompts(serial, dry)
+    with PromptsSuppressed(serial, dry):
+        return _attempt_login(serial, title, m, rows, guard, email, password, dry, settle, attempts)
+
+
+def _attempt_login(serial, title, m, rows, guard, email, password, dry, settle, attempts):
     for attempt in range(1, attempts + 1):
         print("-- attempt %d --" % attempt)
         if not enter_credentials(serial, m, rows, email, password, dry, settle, title, guard):
@@ -567,7 +658,10 @@ def main():
         open_app(a.port, a.dry_run)
     if a.suppress_only or a.restore_prompts:
         serial, _ = device_for_port(a.port)
-        restore_prompts(serial) if a.restore_prompts else suppress_prompts(serial, a.dry_run)
+        if a.restore_prompts:
+            restore_prompts(serial)
+        else:
+            suppress_prompts(serial, a.dry_run)
         return
     login(a.port, a.map, a.process, a.step, dry=a.dry_run, attempts=a.attempts)
 

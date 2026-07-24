@@ -30,6 +30,58 @@ static inline bool Hiss_LoadAlwaysOnTop(LPCTSTR key) {
   return (AfxGetApp() != NULL) && (AfxGetApp()->GetProfileInt(_T("AlwaysOnTop"), key, 0) != 0);
 }
 
+// ---- window placement (position + size), same per-window profile storage --------------------
+//
+// Stored as four ints under "WindowPlacement\<key>". Saved on destroy, restored on create, so the
+// React table view reopens exactly where it was left instead of at CW_USEDEFAULT. [Emrald]
+static inline void Hiss_SaveWindowPlacement(CWnd *w, LPCTSTR key) {
+  if (w == NULL || !::IsWindow(w->GetSafeHwnd()) || AfxGetApp() == NULL) return;
+  WINDOWPLACEMENT wp; wp.length = sizeof(wp);
+  if (!w->GetWindowPlacement(&wp)) return;
+  // Use the RESTORED rect, never the current one: saving while maximized or minimized would
+  // persist a full-screen or off-screen box and the window would reopen wrong.
+  const RECT &r = wp.rcNormalPosition;
+  int cx = r.right - r.left, cy = r.bottom - r.top;
+  if (cx <= 0 || cy <= 0) return;                       // never persist a degenerate size
+  CWinApp *app = AfxGetApp();
+  CString section; section.Format(_T("WindowPlacement\\%s"), key);
+  app->WriteProfileInt(section, _T("x"),  r.left);
+  app->WriteProfileInt(section, _T("y"),  r.top);
+  app->WriteProfileInt(section, _T("cx"), cx);
+  app->WriteProfileInt(section, _T("cy"), cy);
+  app->WriteProfileInt(section, _T("max"), (wp.showCmd == SW_SHOWMAXIMIZED) ? 1 : 0);
+}
+
+// Restore a saved placement. Returns false when nothing was saved (caller keeps its defaults).
+static inline bool Hiss_RestoreWindowPlacement(CWnd *w, LPCTSTR key) {
+  if (w == NULL || !::IsWindow(w->GetSafeHwnd()) || AfxGetApp() == NULL) return false;
+  CWinApp *app = AfxGetApp();
+  CString section; section.Format(_T("WindowPlacement\\%s"), key);
+  int cx = app->GetProfileInt(section, _T("cx"), 0);
+  int cy = app->GetProfileInt(section, _T("cy"), 0);
+  if (cx <= 0 || cy <= 0) return false;                 // nothing saved yet
+  int x = app->GetProfileInt(section, _T("x"), 0);
+  int y = app->GetProfileInt(section, _T("y"), 0);
+  // A monitor may have been unplugged or the layout changed since we saved. If the saved box no
+  // longer intersects any visible monitor the window would open somewhere unreachable, so fall
+  // back to the nearest monitor's work area rather than restoring a box the user cannot grab.
+  CRect want(x, y, x + cx, y + cy);
+  HMONITOR mon = ::MonitorFromRect(&want, MONITOR_DEFAULTTONULL);
+  if (mon == NULL) {
+    mon = ::MonitorFromRect(&want, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi; mi.cbSize = sizeof(mi);
+    if (mon != NULL && ::GetMonitorInfo(mon, &mi)) {
+      x = mi.rcWork.left + 40;
+      y = mi.rcWork.top + 40;
+      if (cx > mi.rcWork.right - mi.rcWork.left) cx = mi.rcWork.right - mi.rcWork.left;
+      if (cy > mi.rcWork.bottom - mi.rcWork.top) cy = mi.rcWork.bottom - mi.rcWork.top;
+    }
+  }
+  w->SetWindowPos(NULL, x, y, cx, cy, SWP_NOZORDER | SWP_NOACTIVATE);
+  if (app->GetProfileInt(section, _T("max"), 0) != 0) w->ShowWindow(SW_MAXIMIZE);
+  return true;
+}
+
 // Append "Always on Top" to a window's system menu (idempotent-ish: call once in OnCreate).
 static inline void Hiss_AppendAlwaysOnTopMenu(CWnd *w) {
   if (w == NULL || !::IsWindow(w->GetSafeHwnd())) return;

@@ -692,6 +692,23 @@ function App() {
     setUltraOn(!ultraOn);   // optimistic; the poll below reconciles
   };
 
+  // MANUAL PLAY: the bot decides but waits for a human confirm before it plays each action. Lit-state
+  // and the pending suggestion come straight from table-state (polled every 500ms), so no separate
+  // reconcile is needed. Confirm sends a normal /api/action with human=1 (which the halt still blocks).
+  var toggleManual = function () {
+    var on = state && state.manual_play;
+    fetch('/api/manual-play?on=' + (on ? '0' : '1')).catch(function () {});
+  };
+  var confirmPending = function () {
+    var pa = state && state.pending_action;
+    if (!pa || !pa.do) return;
+    var q = '/api/action?do=' + encodeURIComponent(pa.do) + '&human=1&force=1';
+    if ((pa.do === 'raise' || pa.do === 'bet') && Number(pa.amount) > 0) {
+      q += '&amount=' + encodeURIComponent(pa.amount);
+    }
+    fetch(q).catch(function () {});
+  };
+
   var superPair = useState(false);
   var superOn = superPair[0];
   var setSuperOn = superPair[1];
@@ -889,6 +906,22 @@ function App() {
           boxShadow: nnOn ? '0 0 8px rgba(63,185,80,.5)' : 'none'
         }
       }, (nnOn ? '🧠 NN Driver ●' : '🧠 NN Driver')),
+      (function () {
+        var on = !!(state && state.manual_play);
+        return e('button', {
+          onClick: toggleManual,
+          title: on ? 'MANUAL PLAY on — the bot shows each move and waits for you to confirm it; click to return to auto-play'
+                    : 'MANUAL PLAY: the bot decides but waits for you to confirm each action before it plays',
+          style: {
+            marginLeft: '8px', padding: '4px 12px', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', font: 'inherit',
+            border: '1px solid ' + (on ? '#e8b84b' : '#444'),
+            background: on ? '#352a13' : '#1c1c20',
+            color: on ? '#f0c75e' : '#bbb',
+            boxShadow: on ? '0 0 8px rgba(232,184,75,.55)' : 'none'
+          }
+        }, (on ? '✋ Manual ●' : '✋ Manual'));
+      })(),
       e('button', {
         onClick: toggleBrain,
         title: brainOn ? 'BRAIN ENGAGED — introspection + intuition steering the bot via the knobs; click to disengage'
@@ -1040,7 +1073,54 @@ function App() {
       (table.players || []).filter(function (p) { return p.bet; }).map(function (p) {
         return e(BetChip, { key: 'b' + p.chair, chair: p.chair, nchairs: table.nchairs, bet: p.bet, observer: !!table.observer, onToggleUnit: toggleUnit });
       })
-    )
+    ),
+    // MANUAL PLAY confirm + STOP-SIGN halt banner. Fixed near the bottom, above where the action buttons
+    // sit on the mirrored client, so it reads as "confirm this move". Shows the pending action while
+    // manual play is on, or a HALTED banner (click to resume) while the stop sign is engaged. The wrapper
+    // is pointer-transparent so it never blocks the felt; only the button itself is clickable.
+    (function () {
+      var halted = !!table.halted;
+      var pa = table.pending_action;
+      var showConfirm = !!(table.manual_play && pa && pa.do);
+      if (!halted && !showConfirm) return null;
+      var inner;
+      if (halted) {
+        inner = e('div', {
+          onClick: function () { fetch('/api/halt?on=0').catch(function () {}); },
+          title: 'The bot is HALTED by the stop sign — click to resume acting',
+          style: {
+            pointerEvents: 'auto', padding: '10px 22px', borderRadius: '10px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '18px', fontFamily: 'monospace', letterSpacing: '2px',
+            color: '#fff', background: '#c81818', border: '2px solid #ff9a9a',
+            boxShadow: '0 0 18px rgba(220,24,24,.7)'
+          }
+        }, '⛔ HALTED — click to resume');
+      } else {
+        var label = String(pa.do).toUpperCase();
+        if ((pa.do === 'raise' || pa.do === 'bet') && Number(pa.amount) > 0) {
+          label += ' ' + (Math.round(Number(pa.amount) * 100) / 100) + 'bb';
+        }
+        inner = e('div', { style: { pointerEvents: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' } },
+          e('button', {
+            onClick: confirmPending,
+            title: 'The bot wants to ' + label + ' — click to play it. Otherwise it keeps waiting.',
+            style: {
+              padding: '12px 26px', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold',
+              fontSize: '19px', font: 'inherit', color: '#0a140a', background: '#3fb950',
+              border: '2px solid #7bf39a', boxShadow: '0 0 20px rgba(63,185,80,.7)'
+            }
+          }, '▶ CONFIRM: ' + label),
+          e('div', { style: { fontSize: '12px', color: '#9fefb2', fontFamily: 'monospace' } },
+            'manual play — the bot is waiting for you'));
+      }
+      return e('div', {
+        key: 'manualoverlay',
+        style: {
+          position: 'fixed', left: 0, right: 0, bottom: '26px', zIndex: 50,
+          display: 'flex', justifyContent: 'center', pointerEvents: 'none'
+        }
+      }, inner);
+    })()
   );
 }
 

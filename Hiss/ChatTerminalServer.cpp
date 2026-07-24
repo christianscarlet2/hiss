@@ -27,8 +27,12 @@
 #include "..\DLLs\Files_DLL\Files.h"
 #include "CAutoconnector.h"   // attached_hwnd(), for the manual window override
 #include "CSharedMem.h"       // PokerWindowAttached(), to flag windows another instance serves
+#include "CLogWriter.h"       // p_log_writer->LogLearnerDecision(): capture manual plays for the EV+ loop
 
 #pragma comment(lib, "ws2_32.lib")
+
+// Defined further down (needs CardToken); forward-declared so the /api/action handler above it can call it.
+static void CaptureLearnerDecision(const char *human_verb, double human_amount);
 
 // ---- /api/symbols snapshot (see ChatTerminalServer.h) -------------------------------------------
 // The heartbeat WRITES this; HTTP threads only READ it. Guarded by its own small lock, never by
@@ -1037,6 +1041,39 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 		return;
 	}
 
+	// STOP SIGN: freeze / unfreeze ALL acting (OHF + NN).  /api/halt?on=1|0|toggle . No ?on= reports.
+	// The scrcpy overlay toggles this too; both write the same flag, both action chokepoints read it.
+	if (path.CompareNoCase("/api/halt") == 0) {
+		extern volatile bool g_halt_acting; void ClearPendingAction();
+		CStringA on = QueryValue(query, "on");
+		if (!on.IsEmpty()) {
+			if (on.CompareNoCase("toggle") == 0) g_halt_acting = !g_halt_acting;
+			else g_halt_acting = (on == "1") || (on.CompareNoCase("true") == 0) || (on.CompareNoCase("on") == 0);
+			if (g_halt_acting) ClearPendingAction();   // nothing to confirm while frozen
+		}
+		CStringA body; body.Format("{\"ok\":true,\"halted\":%s}", g_halt_acting ? "true" : "false");
+		CStringA response = Response(body + "\r\n");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
+	// MANUAL PLAY: confirm each action instead of auto-acting.  /api/manual-play?on=1|0|toggle .
+	// While on, the bot decides but publishes its move as table-state.pending_action for the confirm
+	// button; the confirm is a normal /api/action with human=1. No ?on= just reports. [manual play]
+	if (path.CompareNoCase("/api/manual-play") == 0) {
+		extern volatile bool g_manual_play; void ClearPendingAction();
+		CStringA on = QueryValue(query, "on");
+		if (!on.IsEmpty()) {
+			if (on.CompareNoCase("toggle") == 0) g_manual_play = !g_manual_play;
+			else g_manual_play = (on == "1") || (on.CompareNoCase("true") == 0) || (on.CompareNoCase("on") == 0);
+			if (!g_manual_play) ClearPendingAction();   // leaving manual play drops any dangling suggestion
+		}
+		CStringA body; body.Format("{\"ok\":true,\"manual_play\":%s}", g_manual_play ? "true" : "false");
+		CStringA response = Response(body + "\r\n");
+		send(client, response.GetString(), response.GetLength(), 0);
+		return;
+	}
+
 	// Engage/disengage ULTRA mode:  /api/ultra?on=1  or  ?on=0  (launches/kills ultra_mode.py,
 	// which then drives OHF<->NN from the system-audio average). No ?on= reports engaged state.
 	if (path.CompareNoCase("/api/ultra") == 0) {
@@ -1200,6 +1237,17 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 	//   /api/action?do=bet|raise&amount=<bb>                  -> sized bet/raise via the
 	//        autoplayer's two-successive-clicks + numpad path (amount in big blinds)
 	if (path.CompareNoCase("/api/action") == 0) {
+		// STOP SIGN: while halted, refuse every action -- autonomous OR a human confirm. The heartbeat
+		// also discards queued actions when halted; blocking here just tells the caller immediately
+		// instead of letting it queue an action that will be silently dropped. [stop sign]
+		{
+			extern volatile bool g_halt_acting;
+			if (g_halt_acting) {
+				CStringA response = Response("{\"ok\":false,\"halted\":true,\"error\":\"bot is halted (stop sign)\"}\r\n");
+				send(client, response.GetString(), response.GetLength(), 0);
+				return;
+			}
+		}
 		CStringA d = QueryValue(query, "do"); d.MakeLower();
 		CStringA amt = QueryValue(query, "amount");
 		double amount = amt.IsEmpty() ? -1.0 : atof(amt.GetString());
@@ -1224,10 +1272,31 @@ void CChatTerminalServer::HandleClient(SOCKET client)
 			CStringA br_a = QueryValue(query, "betround");
 			g_mcp_action_hand = hand_stamp;
 			g_mcp_action_betround = br_a.IsEmpty() ? -1 : atoi(br_a.GetString());
-			// force=1 (manual learner click) bypasses the ismyturn gate: fire as soon as
-			// the button is clickable, even if the buttons-visible threshold isn't met.
+			// ...and WHICH TABLE it was decided for. Hand+betround alone are not a unique spot when the
+			// instance hops tables: on hand 2783851433 it switched mid-hand between two tables BOTH named
+			// "GadsdenNoLimi" (354143247190 -> 35414324T901). The decision was computed on one and
+			// executed on the other, where the action had not in fact been checked to us -- the engine
+			// tried f$check into a 2.50 bet and the log recorded a "bluff against a raiser" that was
+			// really a stale read. Stamped here rather than sent by the caller: the driver cannot know
+			// which table this instance will be looking at when the click finally lands. [Emrald]
+			g_mcp_action_table = g_table_identity;
+			// force=1 bypasses the ismyturn gate: fire as soon as the button is clickable, even if
+			// the buttons-visible threshold isn't met. IT DOES NOT MEAN A HUMAN SENT IT -- nn_driver.py
+			// sets force=1 on every autonomous action, which is why the logs label NN actions "Manual".
 			g_mcp_action_force = (QueryValue(query, "force") == "1");
+			// human=1 is the ONLY thing that marks a real person clicking in the learner UI. It is what
+			// waives the scrape-trust gate in the heartbeat, on the grounds that a human can see the
+			// screen and judge for themselves. Absent (i.e. any bot caller) -> the gate applies.
+			g_mcp_action_human = (QueryValue(query, "human") == "1");
 			g_mcp_action_request = code;   // executed by the heartbeat thread
+			if (g_mcp_action_human) {
+				// A REAL person made a manual play: capture it + the bot's own pick for this spot into
+				// learner_decisions, so the EV+ learning loop (mcp/learn_from_decisions.py) can reconcile
+				// them and, on repeated EV+ divergences, propose an OHF improvement. Captured HERE (on the
+				// human confirm, before the heartbeat consumes/clears the pending suggestion) so the bot's
+				// pick is still available. Best-effort; never blocks the confirm.
+				CaptureLearnerDecision(d.GetString(), (d == "raise" || d == "bet") ? amount : -1.0);
+			}
 			body.Format("{\"ok\":true,\"action\":\"%s\",\"amount\":%.2f}", d.GetString(), amount);
 		}
 		CStringA response;
@@ -1730,6 +1799,56 @@ static CString CardToken(Card *c)
 	return c->ToString();
 }
 
+// Map an autoplayer action code to the verb learner_decisions / the EV+ reconciler expect.
+static const char *ManualActionVerb(int code) {
+	if (code == k_autoplayer_function_fold)  return "fold";
+	if (code == k_autoplayer_function_check) return "check";
+	if (code == k_autoplayer_function_call)  return "call";
+	if (code == k_autoplayer_function_raise) return "raise";
+	if (code == k_autoplayer_function_allin) return "allin";
+	return "";
+}
+
+// Capture a HUMAN manual play (from the in-hiss manual-play panel or learner.exe) into learner_decisions,
+// tagged with the BOT's own pick for the same spot (the published pending_action), so the EV+ learning
+// loop (mcp/learn_from_decisions.py) can reconcile human-vs-bot and propose OHF improvements. Reads only
+// already-scraped/derived values (cards, cached pot/call, the pending code) -- no symbol EVALUATION -- so
+// it is cheap and safe on the HTTP thread. Best-effort: any missing piece just lands as NULL/empty.
+static void CaptureLearnerDecision(const char *human_verb, double human_amount) {
+	if (p_log_writer == NULL || p_table_state == NULL || p_engine_container == NULL) return;
+	extern volatile int g_pending_action_code; extern volatile double g_pending_action_amount;
+	CString hand = (p_handreset_detector != NULL) ? p_handreset_detector->GetHandNumber() : CString("");
+	// hero hole cards
+	CString hero;
+	if (p_engine_container->symbol_engine_userchair()->userchair_confirmed()) {
+		int uc = p_engine_container->symbol_engine_userchair()->userchair();
+		CPlayer *me = (uc >= 0) ? p_table_state->Player(uc) : NULL;
+		if (me != NULL) {
+			CString c0 = CardToken(me->hole_cards(0)), c1 = CardToken(me->hole_cards(1));
+			hero = c0; if (!c1.IsEmpty()) { if (!hero.IsEmpty()) hero += " "; hero += c1; }
+		}
+	}
+	// board + betround derived from the visible community cards (avoids a betround-calculator dependency)
+	CString board; int ncomm = 0;
+	for (int i = 0; i < kNumberOfCommunityCards; ++i) {
+		CString c = CardToken(p_table_state->CommonCards(i));
+		if (!c.IsEmpty()) { if (!board.IsEmpty()) board += " "; board += c; ++ncomm; }
+	}
+	int betround = (ncomm == 0) ? 1 : (ncomm == 3) ? 2 : (ncomm == 4) ? 3 : (ncomm >= 5) ? 4 : -1;
+	double pot     = p_engine_container->symbol_engine_chip_amounts()->pot();
+	double to_call = p_engine_container->symbol_engine_chip_amounts()->call();
+	int    botc    = g_pending_action_code;
+	double bota    = g_pending_action_amount;
+	// SOURCE ENGINE of that pending pick: the NN is the effective decider exactly when it bypasses the
+	// OHF -- engaged AND not an Omaha table (mirrors nn_bypasses_ohf_nlh in DoAutoplayer). Otherwise the
+	// OHF produced the pick. The learn daemon routes OHF divergences -> OHF proposals, NN divergences ->
+	// the NN retraining dataset (an OHF edit can't change what the NN does on NLH).
+	extern bool g_nn_driver_engaged; extern bool g_table_is_omaha;
+	const char *src = (g_nn_driver_engaged && !g_table_is_omaha) ? "nn" : "ohf";
+	p_log_writer->LogLearnerDecision(hand, betround, hero, board, pot, to_call,
+		human_verb, human_amount, ManualActionVerb(botc), (bota > 0 ? bota : -1.0), src);
+}
+
 CStringA CChatTerminalServer::BuildTableStateJson(void)
 {
 	int nchairs = p_tablemap == NULL ? 10 : p_tablemap->nchairs();
@@ -1792,6 +1911,31 @@ CStringA CChatTerminalServer::BuildTableStateJson(void)
 		is_plo8 ? "true" : "false", is_pl ? "true" : "false",
 		observer ? "true" : "false", JsonEscape(g_table_identity).GetString(), sblind, bblind, ante, gametype, pot, beastfavor_live,
 		fckra_snapshot, tiolp_snapshot);
+	// Manual-control state for the React table view: the stop-sign halt, manual play, and (while manual)
+	// the pending action it should offer to confirm -- with its age so a stale suggestion self-clears if
+	// the driver has gone quiet across a hand. [stop sign + manual play]
+	{
+		extern volatile bool g_halt_acting; extern volatile bool g_manual_play;
+		extern volatile int g_pending_action_code; extern volatile double g_pending_action_amount;
+		extern volatile unsigned long g_pending_action_tick;
+		json.AppendFormat("\"halted\":%s,\"manual_play\":%s,",
+			g_halt_acting ? "true" : "false", g_manual_play ? "true" : "false");
+		int pc = g_pending_action_code;
+		unsigned long age = (g_pending_action_tick == 0) ? 999999UL
+			: (unsigned long)(GetTickCount() - g_pending_action_tick);
+		const char *ds =
+			pc == k_autoplayer_function_fold  ? "fold"  :
+			pc == k_autoplayer_function_check ? "check" :
+			pc == k_autoplayer_function_call  ? "call"  :
+			pc == k_autoplayer_function_allin ? "allin" :
+			pc == k_autoplayer_function_raise ? "raise" : "";
+		if (pc >= 0 && age < 12000 && ds[0] != '\0') {
+			json.AppendFormat("\"pending_action\":{\"do\":\"%s\",\"amount\":%.2f,\"age_ms\":%lu},",
+				ds, g_pending_action_amount, age);
+		} else {
+			json += "\"pending_action\":null,";
+		}
+	}
 	json += "\"commonCards\":[";
 	for (int i = 0; i < kNumberOfCommunityCards; ++i) {
 		if (i > 0) json += ",";

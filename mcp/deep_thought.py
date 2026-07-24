@@ -54,8 +54,14 @@ def recent(node, max_age_ms=None):
 
 def _run_claude(prompt, model):
     try:
+        # Silence the Claude Code Stop-hook chime for this headless call. Every `claude -p` ENDS a
+        # session, which fires the Stop hook, which plays a sound -- and this runs continuously while
+        # the bot plays, so the speakers chime nonstop for calls no human is waiting on. The hook
+        # scripts honour HISS_NO_CHIME; the parent may not have it set when deep_thought is started
+        # outside launch_hiss.py, so set it on the child explicitly.
+        _env = dict(os.environ); _env["HISS_NO_CHIME"] = "1"
         r = subprocess.run([CLAUDE_BIN, "-p", prompt, "--model", model, "--output-format", "json"],
-                           capture_output=True, text=True, timeout=TIMEOUT,
+                           capture_output=True, text=True, timeout=TIMEOUT, env=_env,
                            creationflags=(0x08000000 if os.name == "nt" else 0))   # CREATE_NO_WINDOW
         try:
             env = json.loads(r.stdout)

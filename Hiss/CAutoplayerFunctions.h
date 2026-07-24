@@ -36,6 +36,8 @@ class CAutoplayerFunctions : public CSpaceOptimizedGlobalObject {
   void CalculateOpenPPLBackupActions();
  private:
   bool IsFoldAllinSituation();
+  // Price sanity-check on the fold/allin backup: is calling really the same as shoving?
+  bool CallIsEffectivelyAllin();
  private:
 	CCritSec	m_critsec;
 };

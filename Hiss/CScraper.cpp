@@ -17,7 +17,10 @@
 #include <string>
 #include <regex>
 using namespace std;
+#include "..\DLLs\WindowFunctions_DLL\window_functions.h"
 #include "CScraper.h"
+#include "CSymbolEngineValidator.h"
+#include "CPlayer.h"
 
 #include "..\DLLs\Files_DLL\Files.h"
 #include "Bitmaps.h"
@@ -119,7 +122,9 @@ int g_terminal_port = 0;
 int g_mcp_action_request = -1;       // a k_autoplayer_function_* code (FCKRA)
 double g_mcp_action_amount = -1.0;   // bet/raise size in big blinds (<0 = plain button click)
 unsigned long g_mcp_action_set_tick = 0;  // GetTickCount() when the request was set (for wait-for-turn expiry)
-bool g_mcp_action_force = false;          // true: a manual learner click -> bypass the ismyturn gate
+bool g_mcp_action_force = false;
+bool g_mcp_action_human = false;          // true: a manual learner click -> bypass the ismyturn gate
+CString g_mcp_action_table;              // table this action was decided on; a switch invalidates it
 CString g_mcp_action_hand = "";           // the handnumber this action was decided for ("" = unchecked)
 int g_mcp_action_betround = -1;           // the betround it was decided for (<0 = unchecked)
 bool g_mcp_reload_ohf_request = false;  // /api/reload-ohf -> heartbeat reloads the strategy folder
@@ -153,10 +158,248 @@ CString g_table_identity = "";
 volatile long  g_seat_state = 0;        // 0 = not_at_table, 1 = observing, 2 = seated
 volatile long  g_seat_evidence = 0;     // bitfield of the individual signals (see kSeatEv* )
 volatile long  g_seat_since_tick = 0;   // GetTickCount() when the CURRENT state was first seen
+
+// ---- ACTING GATE: never commit chips on a table we are not stably reading ----------------------
+//
+// The scrape can oscillate -- measured live at 00:26-00:27, the seat flipped seated <-> not_at_table
+// every ~2 seconds, reporting 0, 3, 4 then 9 seated players, with hero's own chair appearing and
+// vanishing. During those windows the bot has no reliable hole cards, no userchair and no bet sizes,
+// yet it still acted (or half-acted): hand 2783836120 was recorded as folding top pair of aces that
+// it never actually read (hole cards scraped as "? ?"), and 2783831963 decided CALL twice and timed
+// out without clicking.
+//
+// A decision made from a half-read table is worse than no decision: at worst we time out and lose a
+// blind, whereas acting blind can commit a whole stack. So actions require the seat to have been
+// stably SEATED for a moment first. Reads, logging and sit-in are untouched -- this gates COMMITTING
+// CHIPS only. [Emrald: gate acting on seat-status]
+volatile long g_seat_flicker_count = 0;      // state changes seen in the current window
+volatile long g_seat_flicker_window = 0;     // GetTickCount() when that window opened
+
+// FLICKER GRACE [Emrald: "when the flicker guard trips, wait 1s then re-evaluate and re-execute the
+// decision"]. When the seat is oscillating we stand down -- but rather than sit out open-endedly until the
+// seat holds a full clean stretch, we give it exactly ONE second. If the CURRENT frame is still content-
+// clean after that (cards readable, pot reconciles, hero stack positive -- the checks that actually catch
+// the garbage a flickering scrape emits), we act on it. This tick marks when the current stand-down
+// episode began; it is reset to 0 whenever the seat reads cleanly or the content goes bad.
+static unsigned long g_flicker_standdown_since = 0;
+static const unsigned long kFlickerGraceMs = 1000;   // wait this long after a flicker stand-down, then act
+
+// Defined further down (near ScrapePots); forward-declared so the earlier bet/pot scrapes can reject
+// OCR-noise money reads.
+static bool MoneyOcrIsGarbage(const CString &s);
+
+bool SeatIsStableForActing(const char **why) {
+	long state = g_seat_state;
+	if (state != kSeatSeated) {
+		if (why) *why = (state == kSeatObserving) ? "observing, not seated" : "not at a table";
+		return false;
+	}
+	unsigned long now  = (unsigned long)GetTickCount();
+	unsigned long held = now - (unsigned long)g_seat_since_tick;
+
+	// A held-time floor ALONE is not enough, and it is worth being explicit about why. In the measured
+	// 00:26-00:27 outage the seat sat on "seated" for a full ~2s between flips, so any threshold under
+	// 2000ms would have declared that garbage stable and acted on it. Raising the floor past 2s instead
+	// punishes normal play, where a legitimate sit-down also starts at held=0.
+	//
+	// The honest discriminator is not how long this state has lasted, but HOW OFTEN THE STATE HAS BEEN
+	// CHANGING. A healthy table transitions a handful of times an hour; the outage transitioned every
+	// ~2 seconds. So count transitions in a rolling window and demand far more settling once the table
+	// has proven itself unreliable.
+	const unsigned long kWindowMs = 20000;
+	if ((now - (unsigned long)g_seat_flicker_window) > kWindowMs) {
+		g_seat_flicker_window = (long)now;             // roll the window
+		g_seat_flicker_count = 0;
+	}
+	// >= 8 changes inside 20s is flickering, not play (loosened 3 -> 5 -> 8: at 5, normal multitabling
+	// churn and legit ACR tab-switches between tables kept tripping it and stopping live play [Emrald]).
+	// The measured garbage outage flipped every ~2s, i.e. ~10 changes/20s, so 8 still catches real
+	// oscillation while tolerating normal churn. Then require a clean stretch (3s), still longer than
+	// the outage ever held one state.
+	unsigned long required = (g_seat_flicker_count >= 8) ? 3000 : 800;
+	if (held < required) {
+		if (why) {
+			*why = (g_seat_flicker_count >= 8) ? "seat is FLICKERING (unreliable scrape)"
+			                                   : "seat only just resolved (still settling)";
+		}
+		return false;
+	}
+	if (why) *why = "";
+	return true;
+}
+
+// Seat stability is necessary but NOT sufficient. Hand 2783842881 was played from a rock-steady seat
+// while CSymbolEngineValidator reported "duplicate card among hands/board" on essentially every
+// evaluation -- the board itself was garbage, so the bot barrelled three streets and then donked 65.5bb
+// into a hand it could not actually see. The validator already detects this; nothing consulted it.
+//
+// The .ohf does check validator_ok (40_preflop.ohf line 18), but the NN path never did, and the
+// validator header even documents itself as "It only reports." That is the gap this closes: a HARD
+// card/pot error means we do not know what we are holding or what is on the board, and no amount of
+// seat stability makes acting on that safe. Deliberately NOT gated on warnings -- only hard errors.
+bool ScrapeIsTrustworthyForActing(const char **why) {
+	// --- CONTENT checks FIRST, independent of seat oscillation. These are the real safety net: they catch
+	// the actual garbage a flickering scrape emits -- impossible/duplicate cards, a pot that will not
+	// reconcile, an unreadable hero hand, a ~0 hero stack. A frame that passes all of these is safe to act
+	// on even if the seat has been flipping, which is exactly what lets the flicker grace below be safe.
+	const char *content_why = "";
+	bool content_ok = true;
+	if (p_symbol_engine_validator != NULL && !p_symbol_engine_validator->Ok()) {
+		// Distinguish the cause so the log says something actionable rather than just "invalid".
+		if (!p_symbol_engine_validator->CardsOk()) {
+			content_why = "validator: CARDS are impossible (duplicate/garbled board or hole cards)";
+		} else if (!p_symbol_engine_validator->PotOk()) {
+			content_why = "validator: POT does not reconcile";
+		} else {
+			content_why = "validator: hard scrape error";
+		}
+		content_ok = false;
+	}
+	// HERO MUST BE ABLE TO SEE ITS OWN HAND. This is separate from the duplicate-card check and is the
+	// most dangerous state of all, because it raises NO validator error: on the GadsdenNoLimi map the
+	// hole-card regions were bound to the wrong chairs, so hero (chair 3, seated and verified) scraped
+	// ["","","",""] while two chairs that were not even seated showed cards. Nothing was "duplicated",
+	// so validator_ok stayed 1 and the bot barrelled three streets having never read its own hand.
+	//
+	// This gate is only ever consulted when we are about to act, which is precisely the moment two
+	// known hole cards must exist -- so requiring them here cannot misfire between hands.
+	if (content_ok && p_engine_container != NULL && p_engine_container->symbol_engine_userchair() != NULL && p_table_state != NULL) {
+		int uc = p_engine_container->symbol_engine_userchair()->userchair();
+		if (uc >= 0 && uc < kMaxNumberOfPlayers) {
+			CPlayer *me = p_table_state->Player(uc);
+			int known = 0;
+			if (me != NULL) {
+				for (int i = 0; i < 2; ++i) {
+					Card *c = me->hole_cards(i);
+					if (c != NULL && c->IsKnownCard()) ++known;
+				}
+			}
+			if (known < 2) {
+				content_why = "hero's OWN hole cards are not readable";
+				content_ok = false;
+			} else {
+				// HERO'S OWN STACK must read as some positive money. A stack of ~0 while a decision is on the
+				// table is a MIS-SCRAPE (a truly empty stack is already all-in, with no buttons to press), and
+				// acting on it is catastrophic: a 0-read fired the desperation shove and jammed a healthy 8 BB
+				// stack (hand 2785328443), and a 0 to-call folded a flopped set (2785315104). Stand down until
+				// the stack reads cleanly rather than push/fold, shove or fold off a garbage number. (A deep
+				// MIS-read -- 29 for 2.91 -- is not caught here; that needs the source OCR fix.) [Emrald]
+				CPlayer *hero = (me != NULL) ? me : p_table_state->Player(uc);
+				if (hero != NULL && (hero->_balance.GetValue() + hero->_bet.GetValue()) <= 0.0) {
+					content_why = "hero's OWN stack is not readable (reads ~0)";
+					content_ok = false;
+				}
+			}
+		}
+	}
+	// Bad content -> NEVER act, and reset the flicker-grace clock so a later clean-but-flickering frame
+	// still gets its full 1s wait instead of acting instantly off a stale timer.
+	if (!content_ok) {
+		g_flicker_standdown_since = 0;
+		if (why) *why = content_why;
+		return false;
+	}
+
+	// --- SEAT stability. Seat steady + content clean -> act normally, and clear the grace clock.
+	const char *seat_why = "";
+	if (SeatIsStableForActing(&seat_why)) {
+		g_flicker_standdown_since = 0;
+		if (why) *why = "";
+		return true;
+	}
+
+	// The seat is flickering/settling but the CURRENT frame's content is clean. [Emrald: "when the flicker
+	// guard trips, wait 1s then re-evaluate and re-execute the decision"]. Rather than sit out until the
+	// seat holds a full clean stretch, give it ONE second; if it is still content-clean after that, ACT on
+	// the current frame. The heartbeat is already re-scraping and re-deciding every cycle, so "re-evaluate
+	// and re-execute" is automatic once this gate opens -- the fresh decision fires on the next tick.
+	unsigned long now = (unsigned long)GetTickCount();
+	if (g_flicker_standdown_since == 0) {
+		g_flicker_standdown_since = now;   // first stand-down frame of this episode -> start the 1s clock
+	}
+	if ((now - g_flicker_standdown_since) >= kFlickerGraceMs) {
+		write_log(k_always_log_basic_information,
+			"[SeatStatus] seat still unsettled (%s) but content is clean and %lums elapsed since stand-down "
+			"-- re-evaluating and ACTING on the current frame.\n",
+			(seat_why != NULL && *seat_why) ? seat_why : "unsettled", kFlickerGraceMs);
+		if (why) *why = "";
+		return true;
+	}
+	if (why) *why = (seat_why != NULL && *seat_why) ? seat_why : "seat unsettled (waiting 1s before acting)";
+	return false;
+}
+
+// Called by UpdateSeatStatus() on every state CHANGE, so the gate above can tell a settled table from
+// one that is oscillating. Cheap counter; the window is rolled lazily inside SeatIsStableForActing().
+void NoteSeatStateChanged() {
+	unsigned long now = (unsigned long)GetTickCount();
+	if ((now - (unsigned long)g_seat_flicker_window) > 20000) {
+		g_seat_flicker_window = (long)now;
+		g_seat_flicker_count = 0;
+	}
+	++g_seat_flicker_count;
+}
+
+// Called each time we refuse to act. Silence is the real danger here: tonight's three lost hands all
+// LOOKED like strategy mistakes in review ("folded aces", "timed out") because nothing announced that
+// the table had gone unreadable. Speak once per episode, then stay quiet until the seat recovers, so
+// a sustained outage cannot turn into an alert storm. [Emrald: alert instead of silently sitting out]
+void NoteSeatUnstableWhileActing() {
+	static DWORD s_episode_started = 0;
+	static bool  s_announced = false;
+	DWORD now = GetTickCount();
+	if (s_episode_started == 0 || (now - s_episode_started) > 15000) {
+		s_episode_started = now;                      // a fresh episode (or a long gap since the last)
+		s_announced = false;
+	}
+	if (!s_announced && (now - s_episode_started) > 3000) {
+		s_announced = true;                           // sustained >3s: this is not a momentary blip
+		write_log(k_always_log_errors,
+			"[SeatStatus] *** UNSTABLE SCRAPE -- bot is standing down and NOT acting. "
+			"Hands may be lost to timeouts until the table reads cleanly again. ***\n");
+		// Surface it where the user will actually see it mid-session. This window is non-blocking
+		// (background thread + read-only edit control), so raising it cannot stall the heartbeat.
+		MessageBox_Error_Warning(
+			"Scrape unstable: the seat keeps flickering, so the bot has STOPPED ACTING on this table. "
+			"It will resume automatically once the table reads cleanly.", "Seat status");
+	}
+}
+
+// ---- MANUAL CONTROL globals (the scrcpy STOP SIGN + the React MANUAL PLAY). Declared in CScraper.h;
+// consumed by CAutoplayer (OHF path) and CHeartbeatThread (/api/action / NN path), toggled by the
+// scrcpy overlay (halt) and ChatTerminalServer's /api/manual-play + /api/halt endpoints. -1 amount /
+// -1 code means "none". [stop sign + manual play]
+volatile bool          g_halt_acting = false;
+volatile bool          g_manual_play = false;
+volatile int           g_pending_action_code = -1;
+volatile double        g_pending_action_amount = -1.0;
+volatile unsigned long g_pending_action_tick = 0;
+
+void PublishPendingAction(int code, double amount_bb) {
+	g_pending_action_code = code;
+	g_pending_action_amount = amount_bb;
+	g_pending_action_tick = (unsigned long)GetTickCount();
+}
+void ClearPendingAction() {
+	g_pending_action_code = -1;
+	g_pending_action_amount = -1.0;
+	g_pending_action_tick = 0;
+}
+
 // True when the scraped table text says this is an Omaha / PLO / Hi-Lo game. Drives the automatic
 // tablemap switch (CTableMapLoader::SwitchTablemapForGameTypeIfNeeded) between the Hold'em map and
 // its "<name>_omaha" variant, since Omaha's 4-card layout needs a separate, separately-calibrated map.
 bool g_table_is_omaha = false;
+// GetTickCount() of the last COMMITTED table switch (set in CHandHistoryWriter::ScrapeTourneyInfo
+// when the debounced identity actually changes). Two consumers read it: CHeartbeatDelay burst-scrapes
+// for a short window afterwards so the new table's real values are read within ~one frame instead of
+// crawling in at the not-seated 2-5x delay, and the seat-memory bridge is flushed so table A's per-
+// chair name/stack/bet cannot bleed onto table B. 0 = no switch seen yet.
+volatile unsigned long g_table_switch_tick = 0;
+// Set to GetTickCount() when the autoplayer takes an action, to request a hop to the OTHER open ACR
+// table once the click has settled. The heartbeat performs it (that is where clicking belongs); 0 =
+// nothing pending. See CHeartbeatThread's pill-switch block.
+volatile unsigned long g_pill_switch_request_tick = 0;
 // MANUAL GAME-TYPE OVERRIDE (React badge menu -> /api/gametype).
 //
 // Auto-detection reads the hero's hole-card count and the table title, and both can be wrong: the
@@ -175,6 +418,9 @@ volatile bool g_hero_decision_active = false;
 DWORD g_hero_decision_tick = 0;             // GetTickCount() when the action was locked (drives the 10s trail+fade)
 char g_hero_decision_detail[256] = {0};     // brain context lines under the action ('\n'-sep), pushed via /api/decision-detail
 DWORD g_hero_decision_detail_tick = 0;      // freshness of the detail [Emrald: more lines on the RED decision in scrcpy]
+// WHICH ENGINE chose the action now showing in the overlay -- "NN DRIVER" or "OHF". Drawn in blue
+// under the red action so it is obvious at a glance which brain is playing. [Emrald]
+char g_hero_decision_source[16] = {0};
 volatile bool g_reset_detection_request = false;  // React badge backup: wipe per-table game-type cache + identity -> re-detect
 // Written on the HEARTBEAT thread, read on the HTTP thread (BuildTableStateJson) -- so they are
 // published as ONE aligned 64-bit store (exactly 8 bytes) and never byte-by-byte. A torn read here
@@ -311,6 +557,7 @@ CScraper::CScraper(void) {
     _mem_bet[i] = 0.0;
     _mem_name[i] = "";
     _mem_out_frames[i] = 0;
+    _mem_identity[i] = "";
   }
   _mem_p3observer = false;
   _mem_p3observer_name = "";
@@ -928,16 +1175,24 @@ void CScraper::ScrapeSeated(int chair) {
 		CString nm = pl->name();
 		if (bal > 0.0) {
 			_mem_balance[chair] = bal;
+			_mem_identity[chair] = g_table_identity;   // stamp WHICH table this memory belongs to
 			if (!nm.IsEmpty() && !IsLikelyNameStatusIndicator(nm)) _mem_name[chair] = nm;
 		}
 		pl->set_seated(false);   // triggers CPlayer::Reset()
-		if (_mem_balance[chair] > 0.0 && _mem_out_frames[chair] < kMaxOutMemoryFrames) {
+		// Bridge the flicker ONLY within the same table. When ACR tabs to another table the seat
+		// regions flicker during the transition; without this identity gate the previous table's
+		// chair-N name/stack was restored onto the NEW table's chair N -- the wrong-names/stacks/bets
+		// on a switch. A mismatched identity means "this is a different table", so drop the memory and
+		// let the seat read fresh.
+		bool same_table = (_mem_identity[chair] == g_table_identity);
+		if (same_table && _mem_balance[chair] > 0.0 && _mem_out_frames[chair] < kMaxOutMemoryFrames) {
 			pl->_balance.SetValue(_mem_balance[chair]);
 			if (!_mem_name[chair].IsEmpty()) pl->set_name(_mem_name[chair]);
 			_mem_out_frames[chair]++;
 		} else {
 			_mem_balance[chair] = 0.0;
 			_mem_name[chair] = "";
+			_mem_identity[chair] = "";
 		}
 		return;
 	}
@@ -1875,13 +2130,20 @@ void CScraper::ScrapeBalance(int chair) {
   const double kMaxPlausibleBalance = 1e12;
   if (g_ocr_memory && p_table_state->Player(chair)->seated() && old_balance > 0.0) {
     double now = p_table_state->Player(chair)->_balance.GetValue();
-    bool committed = (p_table_state->Player(chair)->_bet.GetValue() > 0.0);
+    double committed_bet = p_table_state->Player(chair)->_bet.GetValue();
     bool implausible = (now > kMaxPlausibleBalance);
-    if ((((!ok || now <= 0.0) && !committed)) || implausible) {
+    // A genuine all-in is the ONLY way a seated stack legitimately reaches 0, and it leaves a bet ~= the
+    // whole prior stack. The old rule suppressed the restore for ANY bet, so a SMALL bet with a big stack
+    // behind whose stack pill OCR'd as 0 (the bet chips cover it) was taken as all-in -- the engine then
+    // folded a nut flush draw and mis-decided (hn 2785351381). So only treat a 0-read as a real all-in
+    // when the committed bet is within ~1 BB of the last good stack; otherwise it is a mis-scrape and we
+    // keep the last-good stack. [Emrald]
+    bool plausible_allin = (committed_bet + 1.0 >= old_balance);
+    if ((((!ok || now <= 0.0) && !plausible_allin)) || implausible) {
       p_table_state->Player(chair)->_balance.SetValue(old_balance);
       write_log(Preferences()->debug_scraper(),
-        "[CScraper] balance-memory: chair %d kept %.2f (bad scrape: %s)\n",
-        chair, old_balance, implausible ? "implausibly large" : "0/invalid, no bet");
+        "[CScraper] balance-memory: chair %d kept %.2f (bad scrape: %s; committed %.2f)\n",
+        chair, old_balance, implausible ? "implausibly large" : "0/invalid, not a plausible all-in", committed_bet);
     }
   }
 }
@@ -1976,6 +2238,16 @@ void CScraper::ScrapeBet(int chair) {
   s.Format("p%dbet", chair);
   CString result;
   EvaluateRegion(s, &result);
+	// Reject OCR noise before it becomes a bet: a garbage bet mis-reads AmountToCall, which has folded a
+	// flopped set (hand 2785315104, to-call read as 0). Keep the last good bet for this chair instead.
+	if (MoneyOcrIsGarbage(result)) {
+		p_table_state->Player(chair)->_bet.SetValue(_mem_bet[chair]);
+		write_log(k_always_log_errors,
+			"[CScraper] p%dbet OCR is noise (\"%s\") -- keeping last good bet %.2f.\n",
+			chair, result.GetString(), _mem_bet[chair]);
+		__HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK
+		return;
+	}
 	if (p_table_state->Player(chair)->_bet.SetValue(result)) {
 		ApplyBetMemory(chair);
 		__HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK
@@ -2101,6 +2373,59 @@ void CScraper::ScrapeAllPlayerCards() {
 	}
 }
 
+// A pot cannot be bigger than the chips that exist at the table.
+//
+// There was NO sanity check on the scraped pot -- unlike stacks, which have one -- so a misread went
+// straight into CTableState and poisoned everything derived from it: pot odds, SPR, M-ratio, ICM, and
+// (worst) the NN driver's bet sizing, which is literally `fraction * PotSize`. Observed live on port
+// 27655: pot stuck at 91771.71 with bblind=1.0, i.e. a ninety-thousand-big-blind pot, while the NN
+// was firing 49bb and 71.5bb raises.
+//
+// The bound is the total money visible on the felt (every stack plus every bet). That is exact rather
+// than a guessed ceiling, and it self-scales to any stake or unit. A generous slack factor keeps a
+// slightly-stale stack read from rejecting a legitimate pot. When stacks are not readable at all we
+// cannot bound it this way, so fall back to an absolute BB ceiling.
+//
+// REJECTED, not repaired: decimal-shifting 91771.71 down to 917.7 would just invent a different wrong
+// number and hand it to the sizing code. Keeping the previous good value is honest about not knowing.
+static bool PotValueIsPlausible(double pot, double *bound_out) {
+	if (!(pot > 0.0)) return true;                      // 0 / unread is not a bad value
+	double table_money = 0.0;
+	if (p_table_state != NULL && p_tablemap != NULL) {
+		for (int i = 0; i < p_tablemap->nchairs(); ++i) {
+			CPlayer *pl = p_table_state->Player(i);
+			if (pl == NULL || !pl->seated()) continue;
+			table_money += pl->_balance.GetValue() + pl->_bet.GetValue();
+		}
+	}
+	const double kSlack = 1.30;                         // tolerate a stale/rounded stack read
+	const double kAbsoluteMaxPotBB = 20000.0;           // fallback when no stack is readable
+	double bound = (table_money > 0.0) ? (table_money * kSlack) : kAbsoluteMaxPotBB;
+	if (bound_out) *bound_out = bound;
+	return pot <= bound;
+}
+
+// OCR-NOISE FILTER [Emrald]: a money read with a RUN of >=5 identical digits (e.g. "090999000000090",
+// "111111....1") or an absurd digit count is scanner noise, not an amount. A17's pot region OCRs
+// no-number transient frames (pot animating / moving to the winner / mid-deal) into exactly this garbage,
+// and when it lands within plausible VALUE bounds it slips past PotValueIsPlausible and poisons
+// pot-fraction sizing. Format-reject it so the last good value is kept instead of parsing junk.
+// Thresholds are deliberately LOOSE so a real amount -- even a 5-figure MTT pot like "10000" -- never trips.
+static bool MoneyOcrIsGarbage(const CString &s) {
+	int digits = 0, run = 1, dots = 0; TCHAR last = 0;
+	for (int i = 0; i < s.GetLength(); ++i) {
+		TCHAR c = s[i];
+		if (c >= '0' && c <= '9') {
+			++digits;
+			if (c == last) { if (++run >= 5) return true; } else { run = 1; last = c; }
+		} else {
+			if (c == '.') ++dots;             // a real amount has exactly one decimal point
+			last = 0; run = 1;
+		}
+	}
+	return digits > 8 || dots >= 3;           // ">=3 dots" catches the "1......92" / ".....BB" no-number noise
+}
+
 void CScraper::ScrapePots() {
 	__HDC_HEADER
 	CString			text = "";
@@ -2108,12 +2433,25 @@ void CScraper::ScrapePots() {
 	CString			s = "", t="";
 	RMapCI			r_iter = p_tablemap->r$()->end();
 
+	// Remember the last plausible pots so a rejected scrape can fall back to them instead of to 0
+	// (a 0 pot silently breaks pot-fraction sizing the other way).
+	static double s_last_good_pot[kMaxNumberOfPots] = {0.0};
+
   p_table_state->ResetPots();
 	for (int j=0; j<kMaxNumberOfPots; j++) {
 		// r$c0potX
 		s.Format("c0pot%d", j);
     CString result;
     EvaluateRegion(s, &result);
+    if (MoneyOcrIsGarbage(result)) {
+      // Force the SANITY-CHECK pass below to reject this frame and restore s_last_good_pot, instead of
+      // parsing OCR noise into a number. 999999999 always exceeds the chips-in-play bound.
+      p_table_state->set_pot(j, "999999999");
+      write_log(k_always_log_errors,
+        "[CScraper] c0pot%d OCR is noise (\"%s\") -- rejecting so the last good pot is kept.\n",
+        j, result.GetString());
+      continue;
+    }
     if (p_table_state->set_pot(j, result)) {
       continue;
     }
@@ -2145,6 +2483,24 @@ void CScraper::ScrapePots() {
 			if (r_iter != p_tablemap->r$()->end())
 				ProcessRegion(r_iter);
 		}
+	}
+	// SANITY-CHECK every pot before anything downstream reads it. Runs after the loop so the seat
+	// scrapes this frame (stacks + bets) are already in CTableState and can bound the pot.
+	for (int j = 0; j < kMaxNumberOfPots; ++j) {
+		double pot = p_table_state->Pot(j);
+		double bound = 0.0;
+		if (PotValueIsPlausible(pot, &bound)) {
+			if (pot > 0.0) s_last_good_pot[j] = pot;    // remember it for the next bad frame
+			continue;
+		}
+		CString restore;
+		restore.Format("%.2f", s_last_good_pot[j]);
+		p_table_state->set_pot(j, restore.GetString());
+		write_log(k_always_log_errors,
+			"[CScraper] IMPLAUSIBLE POT: c0pot%d scraped %.2f but the whole table only holds ~%.2f. "
+			"A pot cannot exceed the chips in play, so this is a misread -- restoring the last good "
+			"value %.2f. (An unchecked pot poisons pot-odds, SPR, M, ICM and the NN's pot-fraction "
+			"bet sizing.)\n", j, pot, bound, s_last_good_pot[j]);
 	}
 	__HDC_FOOTER_ATTENTION_HAS_TO_BE_CALLED_ON_EVERY_FUNCTION_EXIT_OTHERWISE_MEMORY_LEAK
 }
@@ -2751,6 +3107,116 @@ bool CScraper::IsExtendedNumberic(CString text) {
   bool currently_unused = false;
   assert(currently_unused);
   return false;
+}
+
+CScraper::TablePillState CScraper::ClassifyTablePill(int index) {
+	if (index < 0 || index >= kMaxTablePills || p_tablemap == NULL || _entire_window_cur == NULL) {
+		return kPillEmpty;
+	}
+	CString name;
+	name.Format("table_pill%d", index);
+	RMapCI r_iter = p_tablemap->r$()->find(name.GetString());
+	if (r_iter == p_tablemap->r$()->end()) return kPillEmpty;   // map has no pills -> never switch
+
+	BITMAP bm = {0};
+	if (!GetObject(_entire_window_cur, sizeof(bm), &bm) || bm.bmWidth <= 0 || bm.bmHeight <= 0) {
+		return kPillEmpty;
+	}
+	int left = r_iter->second.left, top = r_iter->second.top;
+	int right = r_iter->second.right, bottom = r_iter->second.bottom;
+	if (left < 0) left = 0; if (top < 0) top = 0;
+	if (right > bm.bmWidth) right = bm.bmWidth;
+	if (bottom > bm.bmHeight) bottom = bm.bmHeight;
+	if (right - left < 4 || bottom - top < 4) return kPillEmpty;
+
+	// Pull the whole client bitmap once (same pattern the frame logger uses) and count ink in the rect.
+	int w = bm.bmWidth, h = bm.bmHeight;
+	std::vector<BYTE> buf((size_t)w * h * 4);
+	BITMAPINFO bi = {0};
+	bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+	bi.bmiHeader.biWidth = w;
+	bi.bmiHeader.biHeight = -h;                     // top-down, so row 0 is the top of the window
+	bi.bmiHeader.biPlanes = 1;
+	bi.bmiHeader.biBitCount = 32;
+	bi.bmiHeader.biCompression = BI_RGB;
+	HDC hdc = GetDC(NULL);
+	if (hdc == NULL) return kPillEmpty;
+	BOOL ok = GetDIBits(hdc, _entire_window_cur, 0, h, buf.data(), &bi, DIB_RGB_COLORS);
+	ReleaseDC(NULL, hdc);
+	if (!ok) return kPillEmpty;
+
+	// TWO independent measurements, because they answer two different questions:
+	//   INK in the middle  -> is a table open in this slot at all? (card glyphs vs the faint "+")
+	//   RING at the edges  -> is it the FOREGROUND table? ACR outlines only the active pill.
+	// Brightness alone is NOT enough to find the active one: with three tables open all three pills
+	// render their card text at full white, and only the ring distinguishes them. Measured:
+	//   ink   occupied 129..255   empty 0
+	//   ring  active   139..140   inactive 27..56
+	// "Is a table open here?" must NOT be "does it show hole cards": when the hero is SAT OUT at a
+	// table no cards are dealt, and that slot still needs visiting so the Sit-In / Rejoin button can
+	// be found and pressed. So the test is inverted -- anything that is not the "+" add-table button
+	// and not a blank slot counts as a table, whatever it happens to render.
+	//
+	// The "+" is identified by SHAPE, not brightness: a small centred glyph. Measured over the pill
+	// interior (lit = pixels >= 55 grey):
+	//     "+"    lit 47..58    horizontal span 15..45% of the pill
+	//     cards  lit 188..337  horizontal span 67..77% of the pill
+	int ink = 0, ring = 0, lit = 0, lit_min_x = 1 << 30, lit_max_x = -1;
+	for (int y = top + 2; y < bottom - 2; ++y) {
+		const BYTE *row = &buf[(size_t)y * w * 4];
+		for (int x = left + 8; x < right - 8; ++x) {
+			int b = row[x * 4 + 0], g = row[x * 4 + 1], r = row[x * 4 + 2];
+			int v = (r + g + b) / 3;
+			if (v >= 95) ++ink;
+			if (v >= 55) {
+				++lit;
+				if (x < lit_min_x) lit_min_x = x;
+				if (x > lit_max_x) lit_max_x = x;
+			}
+		}
+	}
+	for (int y = top + 4; y < bottom - 4; ++y) {
+		const BYTE *row = &buf[(size_t)y * w * 4];
+		for (int k = 0; k < 6; ++k) {
+			int xs[2] = { left + k, right - 1 - k };
+			for (int j = 0; j < 2; ++j) {
+				int x = xs[j];
+				if (x < 0 || x >= w) continue;
+				int b = row[x * 4 + 0], g = row[x * 4 + 1], r = row[x * 4 + 2];
+				int v = (r + g + b) / 3;
+				if (v > ring) ring = v;
+			}
+		}
+	}
+	const int kRingNeeded = 90;   // between inactive (<=56) and active (>=139)
+	const int kBlankLit   = 15;   // an unused slot draws essentially nothing
+	if (lit < kBlankLit) return kPillEmpty;
+
+	// The "+" add-table button. Judged on LIT COUNT alone: measured 47..58 for the plus against
+	// 188..337 for a pill showing cards -- a 3x gap. The glyph's horizontal span looked like a
+	// tempting second test but is not stable (the same plus measured 18% of the pill in one frame
+	// and 57% in another, depending on how the rect sits over the ring), and at 57% it would have
+	// passed as a table -- clicking "+" opens ACR's table CHOOSER, so that is the one mistake this
+	// must never make.
+	//
+	// The threshold sits far above the plus and far below cards. If a sat-out table ever renders
+	// this sparsely it would read as "+" and simply never be visited -- the safe direction to err:
+	// a missed hop costs nothing, a stray click on "+" opens a dialog over the felt.
+	if (lit <= 120) return kPillEmpty;
+	(void)lit_min_x; (void)lit_max_x;
+
+	(void)ink;   // kept for the log/debug picture; the verdict rests on lit+span+ring
+	return (ring >= kRingNeeded) ? kPillActive : kPillOccupied;
+}
+
+void CScraper::FlushSeatMemory() {
+	for (int i = 0; i < kMaxNumberOfPlayers; ++i) {
+		_mem_balance[i] = 0.0;
+		_mem_bet[i] = 0.0;
+		_mem_name[i] = "";
+		_mem_out_frames[i] = 0;
+		_mem_identity[i] = "";
+	}
 }
 
 bool CScraper::IsIdenticalScrape() {

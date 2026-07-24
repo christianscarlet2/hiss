@@ -292,3 +292,28 @@ void CLogWriter::LogHand(long long ts_ms, const char *hand, bool complete, const
 		complete ? "true" : "false", EscLit(hh_text ? hh_text : "").GetString());
 	EnqueueSql(sql);
 }
+
+void CLogWriter::LogLearnerDecision(const char *hand, int betround, const char *hero_cards,
+		const char *board, double pot, double to_call,
+		const char *human_action, double human_amount,
+		const char *bot_action, double bot_amount, const char *source) {
+	// NOT gated on _enabled: this is the manual-play capture, not replay logging. Run() drains _sql
+	// regardless of the toggle, so the row lands even with advanced logging off. ts/reasoning/game_state
+	// are left to their column defaults/NULL (the panel captures no free-text reason). source tags which
+	// engine produced bot_action ('ohf' or 'nn') so the learn daemon routes the improvement to the right
+	// place -- OHF divergences -> OHF proposals, NN divergences -> the NN retraining dataset.
+	CString br;   if (betround >= 0)     br.Format("%d", betround);       else br = "NULL";
+	CString ha;   if (human_amount >= 0) ha.Format("%.4f", human_amount); else ha = "NULL";
+	CString oa;   if (bot_action && bot_action[0]) oa.Format("'%s'", EscLit(bot_action).GetString()); else oa = "NULL";
+	CString oamt; if (bot_amount >= 0)   oamt.Format("%.4f", bot_amount); else oamt = "NULL";
+	CString sql;
+	sql.Format("INSERT INTO learner_decisions"
+		"(handnumber,betround,hero_cards,board,pot,amount_to_call,action,amount,ohf_action,ohf_amount,source)"
+		" VALUES ('%s',%s,'%s','%s',%.4f,%.4f,'%s',%s,%s,%s,'%s')",
+		EscLit(hand ? hand : "").GetString(), br.GetString(),
+		EscLit(hero_cards ? hero_cards : "").GetString(), EscLit(board ? board : "").GetString(),
+		pot, to_call, EscLit(human_action ? human_action : "").GetString(),
+		ha.GetString(), oa.GetString(), oamt.GetString(),
+		EscLit(source && source[0] ? source : "ohf").GetString());
+	EnqueueSql(sql);
+}

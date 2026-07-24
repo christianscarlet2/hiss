@@ -68,6 +68,8 @@ class CAutoplayerButton {
   bool IsLabelFold();
   bool IsLabelAutopost();
   bool IsLabelSitin();
+  // The label scraped real text that matches no known button -> we do not know what this control is.
+  bool LabelIsUnreadable();
   bool IsLabelSitout();
   bool IsLabelLeave();
   bool IsLabelRematch();

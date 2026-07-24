@@ -245,6 +245,8 @@ def image_content(path):
 TOOLS = [
     {"name": "hiss_status", "description": "Is hiss.exe running? Returns its terminal HTTP port and reachability.",
      "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "target_bot", "description": "Switch WHICH hiss.exe instance every other tool talks to (game_state, symbols, scrapes, dump_tablemap, table_screenshot, trigger_scrape_dump, autoplayer_toggle, fckra_action, read_log, ...). The MCP otherwise caches ONE port, so it's stuck on whichever instance answered first. With NO args it LISTS every live instance (port + attached table) and marks the current target with *. Pass port (e.g. 27654) or table (a case-insensitive substring of the attached table title) to switch; the choice sticks for the whole session until you switch again.",
+     "inputSchema": {"type": "object", "properties": {"port": {"type": "integer", "description": "terminal port to target, e.g. 27654"}, "table": {"type": "string", "description": "substring of the attached table title to match (e.g. 'mark', 'wies')"}}}},
     {"name": "start_hiss", "description": "Launch Release\\Hiss.exe (cwd=Release). No-op if already reachable, unless force=true.",
      "inputSchema": {"type": "object", "properties": {"force": {"type": "boolean", "default": False}}}},
     {"name": "stop_hiss", "description": "Terminate all running Hiss.exe processes (and their OCR workers).",
@@ -603,6 +605,36 @@ def call_tool(name, args):
             return [{"type": "text", "text": "hiss.exe reachable on port %d." % port}]
         except Exception as e:
             return [{"type": "text", "text": "port %d found but not responding: %s" % (port, e)}]
+    if name == "target_bot":
+        ports = live_hiss_ports()
+        if not ports:
+            return [{"type": "text", "text": "No live hiss instances found (27654-27664)."}]
+        def _tbl(p):
+            try:
+                return (json.loads(hiss_get_on(p, "/api/table-state")).get("table") or "").strip()
+            except Exception:
+                return ""
+        want = args.get("port")
+        wt = (args.get("table") or "").strip().lower()
+        if not want and wt:
+            for p in ports:
+                if wt in _tbl(p).lower():
+                    want = p
+                    break
+        if want:
+            want = int(want)
+            if want not in ports:
+                return [{"type": "text", "text": "port %d is not a live hiss instance. Live: %s" % (want, ports)}]
+            _port_cache[0] = want
+            return [{"type": "text", "text": "MCP now targets port %d (table %r). All hiss tools use this instance until switched." % (want, _tbl(want))}]
+        cur = _port_cache[0]
+        rows = ["Live hiss instances (current target = *):"]
+        for p in ports:
+            rows.append("  %s %d   table=%r" % ("*" if p == cur else " ", p, _tbl(p)))
+        if wt:
+            rows.append("(no live instance's table matched %r)" % wt)
+        rows.append("Switch with:  target_bot(port=27654)  or  target_bot(table='mark').")
+        return [{"type": "text", "text": "\n".join(rows)}]
     if name == "start_hiss":
         if not args.get("force") and hiss_port():
             try:

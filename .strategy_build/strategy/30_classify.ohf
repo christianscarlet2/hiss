@@ -53,6 +53,17 @@ WHEN Others RETURN false FORCE
 WHEN HaveInsideStraightDraw OR HaveBackdoorFlushDraw RETURN true FORCE
 WHEN Others RETURN false FORCE
 
+##f$DrawIsCompromised##
+// POT CONSERVATION (Emrald, hn 2783860493): a STRAIGHT draw stops being worth a semi-bluff the
+// moment the board can already be a flush. Two of its eight outs complete that flush for someone
+// else, and the straight it does make is still second best to one. 8s7c on 6d5dJd / Kh was
+// classed f$HaveBigDraw and fired 84% of pot into a monotone board holding ~6 clean outs to a
+// hand that loses anyway. Only straight draws rot this way: a flush draw on the same board is
+// drawing to the nuts-ish hand that beats everybody, so it keeps its aggression.
+WHEN HaveFlushDraw OR HaveNutFlushDraw RETURN false FORCE
+WHEN (HaveOpenEndedStraightDraw OR HaveInsideStraightDraw) AND FlushPossible RETURN true FORCE
+WHEN Others RETURN false FORCE
+
 ##f$HaveAnyDraw##
 WHEN f$HaveBigDraw OR f$HaveWeakDraw RETURN true FORCE
 WHEN Others RETURN false FORCE

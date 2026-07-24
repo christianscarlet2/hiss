@@ -5,6 +5,42 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Hiss Terminal</title>
     <link rel="stylesheet" href="/terminal/assets/terminal.css?v=8" />
+    <style>
+      /* Proposals tab -- OHF improvements from EV+ manual plays. Kept local so terminal.css isn't touched. */
+      #tab-proposals .prop-head { padding: 8px 12px; color: #b9c2cc; font: 13px system-ui, Segoe UI, sans-serif; border-bottom: 1px solid rgba(255,255,255,.10); }
+      #tab-proposals .prop-wrap { display: flex; gap: 10px; padding: 10px; height: calc(100% - 46px); box-sizing: border-box; }
+      #tab-proposals .prop-list { flex: 0 0 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 7px; }
+      #tab-proposals .prop-detail { flex: 1; overflow-y: auto; background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.08); border-radius: 8px; padding: 12px; }
+      #tab-proposals .prop-item { background: #16181d; border: 1px solid rgba(255,255,255,.10); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+      #tab-proposals .prop-item:hover { border-color: rgba(63,185,80,.5); }
+      #tab-proposals .prop-item.sel { border-color: #3fb950; box-shadow: 0 0 0 1px rgba(63,185,80,.4) inset; }
+      #tab-proposals .prop-item-top { color: #e6edf3; font: 700 12px system-ui; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+      #tab-proposals .prop-item-pat { color: #9aa4ae; font: 12px system-ui; margin-top: 3px; }
+      #tab-proposals .prop-item-sub { color: #6e7681; font: 11px system-ui; margin-top: 3px; }
+      #tab-proposals .prop-badge { font: 700 10px system-ui; padding: 1px 6px; border-radius: 6px; }
+      #tab-proposals .prop-badge.ok { background: #0e2a16; color: #3fb950; }
+      #tab-proposals .prop-badge.warn { background: #2a220e; color: #d29922; }
+      #tab-proposals .prop-d-head { color: #e6edf3; font: 700 14px system-ui; display: flex; align-items: center; gap: 8px; }
+      #tab-proposals .prop-d-pat { color: #9aa4ae; font: 12px system-ui; margin: 4px 0 8px; }
+      #tab-proposals .prop-d-why { color: #c9d1d9; font: 13px system-ui; margin-bottom: 10px; }
+      #tab-proposals .prop-d-diff { display: flex; gap: 8px; }
+      #tab-proposals .prop-d-old, #tab-proposals .prop-d-new { flex: 1; min-width: 0; }
+      #tab-proposals .prop-d-lbl { font: 700 10px system-ui; letter-spacing: .5px; text-transform: uppercase; color: #8b949e; margin-bottom: 3px; }
+      #tab-proposals .prop-d-diff pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: 12px Consolas, monospace; padding: 8px; border-radius: 6px; max-height: 320px; overflow: auto; }
+      #tab-proposals .prop-d-old pre { background: #2a1416; color: #f0b6bb; border: 1px solid rgba(192,57,43,.4); }
+      #tab-proposals .prop-d-new pre { background: #0e2416; color: #b6f0c6; border: 1px solid rgba(63,185,80,.4); }
+      #tab-proposals .prop-actions { margin-top: 12px; display: flex; gap: 8px; }
+      #tab-proposals .prop-btn { font: 700 12px system-ui; padding: 8px 14px; border-radius: 8px; border: none; cursor: pointer; color: #fff; }
+      #tab-proposals .prop-btn.apply { background: #0b6e2e; }
+      #tab-proposals .prop-btn.reject { background: #c0392b; }
+      #tab-proposals .prop-result { margin-top: 10px; color: #c9d1d9; font: 12px Consolas, monospace; white-space: pre-wrap; }
+      #tab-proposals .ail-empty { color: #6e7681; font: 13px system-ui; padding: 10px; }
+      #tab-proposals .nn-head { padding: 8px 12px; margin-top: 4px; color: #b9c2cc; font: 12px system-ui, Segoe UI, sans-serif; border-top: 1px solid rgba(255,255,255,.10); }
+      #tab-proposals #nn-count { color: #a371f7; font-weight: 700; }
+      #tab-proposals .nn-list { padding: 0 10px 10px; display: flex; flex-wrap: wrap; gap: 6px; max-height: 150px; overflow-y: auto; }
+      #tab-proposals .nn-item { background: #1a1626; border: 1px solid rgba(163,113,247,.35); border-radius: 7px; padding: 5px 8px; font: 11px system-ui; color: #cdbdf0; }
+      #tab-proposals .nn-item b { color: #e6d9ff; }
+    </style>
   </head>
   <body>
     <div id="app">
@@ -13,6 +49,7 @@
         <nav class="tabs" id="tabs">
           <button type="button" class="tab active" data-tab="terminal">Terminal</button>
           <button type="button" class="tab" data-tab="ail">AIL</button>
+          <button type="button" class="tab" data-tab="proposals"><span class="cap">&#127891;</span>&nbsp;Proposals</button>
           <button type="button" class="tab" data-tab="synapse"><span class="dna">&#129516;</span>&nbsp;Synapse&nbsp;Harmonizer</button>
           <button type="button" class="tab" data-tab="hiss"><span class="snake">&#128013;</span>&nbsp;Hiss</button>
           <button type="button" class="tab" data-tab="educate"><span class="cap">&#127891;</span>&nbsp;Educate</button>
@@ -62,6 +99,17 @@
         </div>
       </div>
 
+      <!-- ============ PROPOSALS TAB ============ -->
+      <div class="tabview" id="tab-proposals" hidden>
+        <div class="prop-head">Bot-improvement proposals &mdash; OHF changes generated from your EV+ manual plays (the <b>learn</b> AIL). Review the diff, then <b>Approve &amp; apply</b> (lint-validated to a staging master; deploys + reloads on pass, reverts on any error, backup kept) or <b>Reject</b>. <span class="ail-conn" id="prop-conn"></span></div>
+        <div class="prop-wrap">
+          <div class="prop-list" id="prop-list"><div class="ail-empty">loading&hellip;</div></div>
+          <div class="prop-detail" id="prop-detail"><div class="ail-empty">Select a proposal on the left to review its diff.</div></div>
+        </div>
+        <div class="nn-head">&#129504; NN retraining candidates &mdash; EV+ plays where the <b>NN</b> was driving (not the OHF). These can't be applied live (the NN is weights, not rules); they're collected for the offline PPO/CFR retrain. <span id="nn-count"></span></div>
+        <div class="nn-list" id="nn-list"><div class="ail-empty">&mdash;</div></div>
+      </div>
+
       <!-- ============ SYNAPSE HARMONIZER TAB ============ -->
       <div class="tabview" id="tab-synapse" hidden>
         <div class="syn-head">Synapse Harmonizer &mdash; the dials &amp; controls that steer the bot, what each effectively does, and what to pair it with. <span class="syn-conn" id="syn-conn"></span></div>
@@ -78,6 +126,6 @@
         <iframe id="edu-frame" class="hiss-frame" title="Hiss - Educate"></iframe>
       </div>
     </div>
-    <script src="/terminal/assets/terminal.js?v=8"></script>
+    <script src="/terminal/assets/terminal.js?v=11"></script>
   </body>
 </html>

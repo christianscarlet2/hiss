@@ -153,7 +153,12 @@ BOOL CReactTableWindow::Create(CWnd *owner, unsigned short port)
 		NULL,
 		NULL);
 	if (created) {
-		AttachToOwner();
+		// Restore the saved position/size FIRST, then only fall back to docking beside the owner when
+		// nothing was ever saved. Otherwise AttachToOwner() would immediately overwrite the placement
+		// the user deliberately chose last session.
+		if (!Hiss_RestoreWindowPlacement(this, _T("ReactTable"))) {
+			AttachToOwner();
+		}
 	}
 	return created;
 }
@@ -885,6 +890,10 @@ void CReactTableWindow::ForwardCommand(unsigned int command_id)
 
 void CReactTableWindow::OnDestroy()
 {
+	// Remember where the user left this window. Saved on EVERY destroy, not just a user-initiated
+	// close: this window is also destroyed when the mirror goes away or the view is recreated (see
+	// below), and the placement at that moment is still the one the user chose. [Emrald: persist pos/size]
+	Hiss_SaveWindowPlacement(this, _T("ReactTable"));
 	// Only tear the whole instance down when the USER asked for it (the red X in the
 	// emulated caption). This window is also destroyed for reasons that are not a shutdown
 	// request -- most importantly when the scrcpy mirror it was showing goes away, or when

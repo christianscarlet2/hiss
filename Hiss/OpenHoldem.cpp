@@ -22,6 +22,7 @@
 #include "CAutoConnector.h"
 #include "CFormulaParser.h"
 #include "CHeartbeatThread.h"
+#include "CAutomationHeartbeat.h"
 #include "CIteratorThread.h"
 #include "COpenHoldemHopperCommunication.h"
 #include "COpenHoldemTitle.h"
@@ -626,6 +627,12 @@ void COpenHoldemApp::InitializeThreads() {
   p_heartbeat_thread = new CHeartbeatThread();
   assert(p_heartbeat_thread != NULL);
   p_heartbeat_thread->StartThread();
+  // Automation (login) heartbeat: its own slow tick, gated on the AUTOMATION button.
+  // Separate from the playing heartbeat on purpose -- a login check must never share a
+  // loop with the one that decides bets.
+  assert(p_automation_heartbeat == NULL);
+  p_automation_heartbeat = new CAutomationHeartbeat();
+  p_automation_heartbeat->StartThread();
   // Iterator thread
   p_iterator_thread = new CIteratorThread();
   assert(p_iterator_thread != NULL);

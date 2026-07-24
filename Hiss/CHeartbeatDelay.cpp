@@ -59,6 +59,18 @@ double CHeartbeatDelay::SleepingFactor() {
     // and the auto-connector is extremely optimized.
     return 1.0;
   }
+  // POST-SWITCH BURST. For a short window after ACR tabs to a new table, scrape as fast as possible so
+  // the new table's names/stacks/bets/buttons/HUD replace the old ones within ~a frame. This overrides
+  // the not-seated slowdown below (2-5x), which otherwise applies precisely because userchair is not
+  // yet re-confirmed on the new table -- i.e. the state is slowest to update exactly when it changed
+  // most. 1200ms covers the ~2-frame identity debounce plus the userchair re-confirm.
+  {
+    extern volatile unsigned long g_table_switch_tick;
+    unsigned long since = GetTickCount() - g_table_switch_tick;
+    if (g_table_switch_tick != 0 && since < 1200) {
+      return 0.35;
+    }
+  }
   // OBSERVER fast-capture: when we are WATCHING a table (not playing our own hand) and a hand is
   // actively contested, scrape FAST so CHandHistoryWriter samples every villain bet/raise. The
   // not-seated / folded factors below otherwise slow us to 2-5x scrape_delay, which lets fast

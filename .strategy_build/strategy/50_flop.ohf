@@ -45,7 +45,7 @@ WHEN f$HaveComboDraw AND explain_semibluff RaiseBy f$BetPctFlop % FORCE
 // DRAW MIX (Emrald): a bare big draw (4 to a straight/flush) doesn't ALWAYS want to raise -- ~58% semi-bluff,
 // else just take the free card / call at a price below. Keeps us from blasting every draw face-up.
 // [Emrald: four to a straight/flush with outs -- not always a raise]
-WHEN f$HaveBigDraw AND NOT f$Opp_IsStation AND randomround < 0.58 RaiseBy f$BetPctFlop % FORCE
+WHEN f$HaveBigDraw AND NOT f$DrawIsCompromised AND NOT f$Opp_IsStation AND randomround < 0.58 RaiseBy f$BetPctFlop % FORCE
 // RHYTHM (Emrald 2026-06-20): in position as the flat-caller (NOT the pre-flop raiser), the play is
 // usually to CHECK BACK to the raiser - take the free card and see the turn / their next action to
 // gather information before committing. Strong made hands (value, above) and big/combo-draw
@@ -108,10 +108,12 @@ WHEN me_re_acerag = 1 AND HaveTopPair AND NOT f$HaveBigDraw AND NOT f$HaveComboD
 // This is the LOW-SPR branch of "don't go broke with one pair" - at high SPR the
 // peel/pot-control lines below still apply (NOT f$Committed). [SSNL SPR sidebar]
 WHEN (HaveOverPair OR HaveTopPair OR f$HaveStrongMade) AND f$Committed RaiseMax FORCE
-// Combo draw -> get it all in (two ways to win). [B D6.6]
-WHEN f$HaveComboDraw RaiseMax FORCE
+// Combo draw -> get it all in (two ways to win). [B D6.6] POT CONSERVATION (Emrald): but not when
+// both ways run into the same flush -- see f$DrawIsCompromised. Stacking off is for draws that win
+// when they hit.
+WHEN f$HaveComboDraw AND NOT f$DrawIsCompromised RaiseMax FORCE
 // Brunson plays big draws fast even facing a bet; otherwise call at a price.
-WHEN f$HaveBigDraw AND f$Style = 1 RaiseBy f$BetPctFlop % FORCE
+WHEN f$HaveBigDraw AND NOT f$DrawIsCompromised AND f$Style = 1 RaiseBy f$BetPctFlop % FORCE
 WHEN f$HaveBigDraw AND f$CheapDraw Call FORCE
 WHEN f$HaveBigDraw AND f$DecentPrice AND f$InPositionPost Call FORCE
 // FISHING (Emrald): when the price is RIGHT and LOW (a small bet, <=1/3 pot / >=3:1) and we hold ANY draw

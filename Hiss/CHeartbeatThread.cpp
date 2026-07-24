@@ -60,6 +60,12 @@
 #include "OpenHoldem.h"
 #include "..\DLLs\Files_DLL\Files.h"
 
+// NEVER FOLD to a tiny bet [Emrald]: shared override defined in CAutoplayer.cpp. Given a chosen action
+// code it returns the code to actually execute (fold->call when the price is < 2 BB, fold->all-in when our
+// stack is <= 2 BB, everything else unchanged), so the OHF autoplayer and this NN /api/action path apply
+// the identical rule. Reads engine state only; the caller executes.
+int NoFoldToTinyBetOverride(int code, double *allin_amount);
+
 // ---- Managed child-process launch -----------------------------------------------------------
 // Drivers (nn_driver.py / ultra_mode.py) are launched into a kill-on-close JOB OBJECT so that if
 // Hiss exits or is killed they die WITH it instead of orphaning. Orphaned drivers from prior runs
@@ -142,21 +148,48 @@ static void *LaunchManagedConsole(const char *command, const char *cwd) {
 // ULTRA + superstition engaged-state survives a Hiss restart [Emrald: "make ultra mode and the
 // superstition mode persist on restart"], re-applied once the terminal port is bound (see the
 // one-time restore in ScrapeEvaluateAct).
+//
+// PER-PORT [Emrald]: the value name is suffixed with THIS instance's terminal port
+// ("UltraEngaged_27654"), so each table persists its OWN modes. Previously the names were global,
+// so with multiple instances the last writer won and modes cross-contaminated: instance #1 engaging
+// ULTRA wrote UltraEngaged=1, and instance #2 -- restoring a few seconds later -- read that 1 and
+// engaged ULTRA on ITS table too (observed live 2026-07-24: s10 came up playing under ULTRA it never
+// had). Keying on the port, which is what identifies the instance, keeps them independent. Same
+// convention as window_title_<port> (CAutoConnector) and the per-instance automation fields. The old
+// unsuffixed values are simply left orphaned; a first restart on the new binary reads the (absent)
+// per-port keys and defaults every mode OFF, after which each engage writes its own port's key.
+static void ModeRegName(const char *value, char *out, size_t out_sz) {
+  extern int g_terminal_port;
+  sprintf_s(out, out_sz, "%s_%d", value, (g_terminal_port > 0) ? g_terminal_port : 0);
+}
 static DWORD ReadModeReg(const char *value, DWORD def) {
+  char name[128]; ModeRegName(value, name, sizeof(name));
   HKEY k; DWORD out = def, sz = sizeof(DWORD), type = 0;
   if (RegOpenKeyExA(HKEY_CURRENT_USER, "Software\\ScarletBeast", 0, KEY_READ, &k) == ERROR_SUCCESS) {
-    RegQueryValueExA(k, value, NULL, &type, (LPBYTE)&out, &sz);
+    RegQueryValueExA(k, name, NULL, &type, (LPBYTE)&out, &sz);
     RegCloseKey(k);
   }
   return out;
 }
 static void WriteModeReg(const char *value, DWORD data) {
+  char name[128]; ModeRegName(value, name, sizeof(name));
   HKEY k;
   if (RegCreateKeyExA(HKEY_CURRENT_USER, "Software\\ScarletBeast", 0, NULL, 0,
                       KEY_WRITE, NULL, &k, NULL) == ERROR_SUCCESS) {
-    RegSetValueExA(k, value, 0, REG_DWORD, (const BYTE*)&data, sizeof(data));
+    RegSetValueExA(k, name, 0, REG_DWORD, (const BYTE*)&data, sizeof(data));
     RegCloseKey(k);
   }
+}
+
+// Persist the user's AUTOPLAYER intent so a restart comes back the way they left it.
+//
+// Deliberately NOT called from CAutoplayer::EngageAutoplayer(). Most callers of that are automatic
+// SAFETY disengages -- the autoconnector losing the window, a formula error, a validator trip, the
+// panic hotkey, opening the formula editor. Persisting from there would record "off" every time the
+// bot protected itself and the user would never get their setting back. Only a deliberate toggle
+// (the toolbar button, or /api/autoplayer) states an intent worth remembering.
+void PersistAutoplayerIntent(bool on) {
+  WriteModeReg("AutoplayerEngaged", on ? 1 : 0);
 }
 
 // ---- NN driver engage/disengage (mutually exclusive with the autoplayer) --------------------
@@ -494,26 +527,58 @@ void CHeartbeatThread::UpdateSeatStatus() {
   }
   if (p_scraper != NULL && p_scraper->ObserverActive()) ev |= kSeatEvObserver;
 
-  // A table is REAL only with all three of: a believable identity, sane blinds, and populated
-  // seats. Every "am I somewhere" question is gated on that, so nothing in the lobby can qualify.
-  const bool at_a_real_table =
-      (ev & kSeatEvIdentity) && (ev & kSeatEvBlinds) && (ev & kSeatEvSeats);
-
   // SEATED needs OUR name at a seat, and that seat to look occupied -- chips or cards. Chips alone
   // suffice because card templates can mismatch and read as backs; cards alone suffice because a
   // stack can scrape as 0 mid-allin. The observer flag, when the scraper does raise it, vetoes.
   const bool hero_present =
       (ev & kSeatEvHeroNamed) && ((ev & kSeatEvHeroStack) || (ev & kSeatEvHeroCards));
 
-  long state = kSeatNotAtTable;
+  // A table is REAL with all three of: a believable identity, sane blinds, and populated seats.
+  // OR -- because the table name/id OCR is the single LEAST reliable of these signals -- whenever
+  // HERO is provably present: our own name at a seat carrying chips or cards, still corroborated by
+  // blinds + populated seats. Neither the lobby (no seat bears our name and stack) nor railing (our
+  // name is not at an observed seat) can fake that. This closes a false not_at_table seen live on a
+  // rock-steady seat: the cash table "35560628T1|MarkNoLimit" fails SeatIdentityLooksReal (the id has
+  // a non-digit "T1" suffix, and the 11-char name is one short of the 12-alnum bar), so the bot stood
+  // down every hand while reading its seat perfectly. Keying on hero_present (not just "holding cards
+  // this instant") keeps the verdict SEATED BETWEEN hands too -- via the stack -- so it does not
+  // oscillate seated<->not_at_table each hand and re-trip the flicker gate on a fast table, and the
+  // automation never restarts a live client over a between-hands gap. The alert said "flickering",
+  // but the seat had been stable 160s; it was this identity gate, not oscillation. [Emrald]
+  const bool at_a_real_table =
+      ((ev & kSeatEvIdentity) && (ev & kSeatEvBlinds) && (ev & kSeatEvSeats))
+      || (hero_present && (ev & kSeatEvBlinds) && (ev & kSeatEvSeats));
+
+  long raw_state = kSeatNotAtTable;
   if (at_a_real_table && hero_present && !(ev & kSeatEvObserver)) {
-    state = kSeatSeated;
+    raw_state = kSeatSeated;
   } else if (at_a_real_table) {
     // A real table is on screen but no seat carries our name: we are RAILING it. This is an
     // "at a table" state -- the automation must not restart the client for it. It is also the
     // safe landing spot if our own name ever OCRs too badly to match, which is deliberate: a
     // missed name costs a mislabel, never a restart that drops us out of a live seat.
-    state = kSeatObserving;
+    raw_state = kSeatObserving;
+  }
+
+  // DEBOUNCE downgrades [Emrald]: a momentary full-table scrape dropout -- the whole table reads 0
+  // seats for 1-3s then recovers -- must NOT yank the verdict down out of "seated". A move to a
+  // LESS-connected state (kSeatSeated > kSeatObserving > kSeatNotAtTable) is HELD at the current
+  // state until the worse reading PERSISTS for kDowngradeDebounceMs; a move to a MORE-connected state
+  // (recovery) commits immediately, so we resume the instant the table reads cleanly. This smooths
+  // only the SEAT verdict (SeatIsStableForActing, the automation's restart trigger, the flicker
+  // counter); it does NOT relax ScrapeIsTrustworthyForActing, whose per-frame "hero has 2 known cards
+  // + validator ok" check still blocks ACTING on the dropped frame. A real close/crash lasts far
+  // longer than the debounce, so it still lands not_at_table and still restarts the client.
+  static long s_pending_down_state = -1;
+  static unsigned long s_pending_down_since = 0;
+  const unsigned long kDowngradeDebounceMs = 2500;
+  unsigned long seat_now_ms = (unsigned long)GetTickCount();
+  long state = raw_state;
+  if (raw_state < g_seat_state) {
+    if (s_pending_down_state != raw_state) { s_pending_down_state = raw_state; s_pending_down_since = seat_now_ms; }
+    if ((seat_now_ms - s_pending_down_since) < kDowngradeDebounceMs) state = g_seat_state;   // hold the better state
+  } else {
+    s_pending_down_state = -1;   // upgrade or unchanged: nothing pending, commit immediately
   }
 
   // Stamp the clock on the very first evaluation as well as on every change. Without this the
@@ -526,6 +591,7 @@ void CHeartbeatThread::UpdateSeatStatus() {
     s_seeded = true;
     g_seat_state = state;
     g_seat_since_tick = (long)GetTickCount();
+    NoteSeatStateChanged();   // feeds the flicker counter behind SeatIsStableForActing()
     write_log(k_always_log_basic_information,
       "[SeatStatus] state -> %s (evidence 0x%03x, %d named seats, my_chair %d, userchair %d)\n",
       state == kSeatSeated ? "seated" : state == kSeatObserving ? "observing" : "not_at_table",
@@ -585,7 +651,13 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
   // game-state JSON now only READ the cached values, so nothing evaluates symbols off this
   // thread (that race crashed Hiss: BuildTableStateJson -> RefreshIfNeeded -> CFunction::Evaluate).
   if (p_hud_manager != NULL && p_handreset_detector != NULL) {
-    p_hud_manager->RefreshIfNeeded(p_handreset_detector->GetHandNumber(), false);
+    // Force the HUD to re-evaluate every frame for a short window after a table switch, instead of
+    // honouring its 2500ms throttle. The seat names were just flushed, so StableName() is empty until
+    // the majority-vote window refills; forcing (together with the post-switch scrape burst) lets the
+    // new table's stats appear as soon as the names stabilise rather than up to 2.5s later.
+    extern volatile unsigned long g_table_switch_tick;
+    bool just_switched = (g_table_switch_tick != 0 && (GetTickCount() - g_table_switch_tick) < 1500);
+    p_hud_manager->RefreshIfNeeded(p_handreset_detector->GetHandNumber(), just_switched);
   }
 	// Reply-frames no longer here in the heartbeat.
   // we have a "ReplayFrameController for that.
@@ -634,14 +706,24 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
   if (g_mcp_autoplayer_request >= 0 && p_autoplayer != NULL) {
     bool want_on = (g_mcp_autoplayer_request == 1);
     g_mcp_autoplayer_request = -1;
-    write_log(k_always_log_basic_information, "[MCP] Autoplayer -> %s (API request)\n", want_on ? "ON" : "OFF");
-    // Persist the intent, like ULTRA/superstition already do. A restarted instance used to come up
-    // with the autoplayer DISENGAGED while looking perfectly healthy -- attached, scraping, frames
-    // logging -- so it silently sat out every hand. That cost a live session on 2026-07-19 after a
-    // rebuild. Written HERE (on change) rather than at exit, because instances are routinely
-    // force-killed for rebuilds and an exit-only save would never run. [Emrald]
-    WriteModeReg("AutoplayerEngaged", want_on ? 1 : 0);
-    p_autoplayer->EngageAutoplayer(want_on);
+    // ULTRA PIN [Emrald]: while ULTRA is engaged the autoplayer is the pinned always-on executor, so
+    // an OFF request is dropped HERE -- before the log + registry write -- rather than recording a
+    // phantom "OFF" and persisting AutoplayerEngaged=0 (which would sit out every hand after a restart
+    // while ULTRA re-engages). EngageAutoplayer() hard-refuses it too; this just keeps the log and the
+    // registry honest. To stop, disengage ULTRA first. The ON path is unaffected.
+    if (!want_on && g_ultra_engaged) {
+      write_log(k_always_log_basic_information,
+        "[MCP] Autoplayer OFF request IGNORED: ULTRA engaged -> autoplayer stays pinned ON\n");
+    } else {
+      write_log(k_always_log_basic_information, "[MCP] Autoplayer -> %s (API request)\n", want_on ? "ON" : "OFF");
+      // Persist the intent, like ULTRA/superstition already do. A restarted instance used to come up
+      // with the autoplayer DISENGAGED while looking perfectly healthy -- attached, scraping, frames
+      // logging -- so it silently sat out every hand. That cost a live session on 2026-07-19 after a
+      // rebuild. Written HERE (on change) rather than at exit, because instances are routinely
+      // force-killed for rebuilds and an exit-only save would never run. [Emrald]
+      WriteModeReg("AutoplayerEngaged", want_on ? 1 : 0);
+      p_autoplayer->EngageAutoplayer(want_on);
+    }
   }
   if (g_mcp_nn_driver_request >= 0) {
     bool nn_on = (g_mcp_nn_driver_request == 1);
@@ -701,9 +783,13 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
   }
   SyncSuperstitionLiveness();   // clear the engaged flag if the oracle died, so the indicator stays honest [Emrald]
   if (g_mcp_action_request >= 0 && p_casino_interface != NULL) {
+    const char *seat_why = "";
+    static DWORD s_last_seat_hold_log = 0;
+    static DWORD s_last_halt_log = 0;
     bool my_turn = (p_engine_container->symbol_engine_autoplayer() != NULL
                     && p_engine_container->symbol_engine_autoplayer()->ismyturn());
-    bool force = g_mcp_action_force;   // manual learner click: bypass the ismyturn gate
+    bool force = g_mcp_action_force;   // bypass the ismyturn gate (the NN driver sets this on every action)
+    bool human = g_mcp_action_human;   // a REAL person clicked: the only thing that waives the trust gate
     // THE SPOT MOVED ON -> DROP IT.
     //
     // The 25 s expiry alone is not enough: hands finish in seconds, so a decision made for hand N
@@ -713,40 +799,121 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
     // An action is only valid for the exact hand and street it was decided for.
     CString cur_hand = (p_handreset_detector != NULL) ? p_handreset_detector->GetHandNumber() : CString("");
     int cur_betround = (p_betround_calculator != NULL) ? p_betround_calculator->betround() : -1;
+    // A spot is (table, hand, betround) -- NOT just (hand, betround). Table identity is the field that
+    // was missing, and it is the one that matters when several tables share a name: the two tables in
+    // hand 2783851433 were both "GadsdenNoLimi" and differed only by id, so a hand/betround comparison
+    // saw nothing wrong while the decision crossed from one table to the other.
+    bool table_moved =
+        (!g_mcp_action_table.IsEmpty() && !g_table_identity.IsEmpty()
+         && g_mcp_action_table != g_table_identity);
     bool stale_spot =
         (!g_mcp_action_hand.IsEmpty() && !cur_hand.IsEmpty() && g_mcp_action_hand != cur_hand)
-     || (g_mcp_action_betround >= 0 && cur_betround >= 0 && g_mcp_action_betround != cur_betround);
+     || (g_mcp_action_betround >= 0 && cur_betround >= 0 && g_mcp_action_betround != cur_betround)
+     || table_moved;
 
     if (stale_spot) {
       write_log(k_always_log_basic_information,
-        "[MCP] Manual action DISCARDED: decided for hand %s round %d, but the table is now on "
-        "hand %s round %d. A decision is only valid for the spot it was made in.\n",
-        g_mcp_action_hand.GetString(), g_mcp_action_betround,
-        cur_hand.GetString(), cur_betround);
+        "[MCP] Manual action DISCARDED: decided for table %s hand %s round %d, but the table is now "
+        "%s hand %s round %d. A decision is only valid for the spot it was made in.%s\n",
+        g_mcp_action_table.GetString(), g_mcp_action_hand.GetString(), g_mcp_action_betround,
+        g_table_identity.GetString(), cur_hand.GetString(), cur_betround,
+        table_moved ? " [TABLE SWITCHED MID-HAND]" : "");
       g_mcp_action_request = -1;
       g_mcp_action_amount = -1.0;
       g_mcp_action_force = false;
+      g_mcp_action_human = false;
       g_mcp_action_hand = "";
       g_mcp_action_betround = -1;
+      g_mcp_action_table = "";
     } else if (GetTickCount() - g_mcp_action_set_tick > 25000) {
       // Expired before our turn came -- discard so it can't fire a later hand.
       write_log(k_always_log_basic_information, "[MCP] Manual action expired before our turn; discarded.\n");
       g_mcp_action_request = -1;
       g_mcp_action_amount = -1.0;
       g_mcp_action_force = false;
+      g_mcp_action_human = false;
       g_mcp_action_hand = "";
       g_mcp_action_betround = -1;
-    } else if (!force && !my_turn) {
-      // Not our turn yet -- keep the request PENDING and retry next heartbeat. With
-      // force (manual click) we skip this wait and try the click below right away.
-    } else {
-      int code = g_mcp_action_request;
-      double amount = g_mcp_action_amount;
+      g_mcp_action_table = "";
+    } else if (g_halt_acting) {
+      // STOP SIGN: the bot is frozen. Discard any queued action -- INCLUDING a human confirm -- so
+      // nothing fires while halted, and no stale decision fires the instant it clears. The driver
+      // re-decides on resume. This is the NN/MCP twin of the halt check in CAutoplayer. [stop sign]
+      if (GetTickCount() - s_last_halt_log > 3000) {
+        s_last_halt_log = GetTickCount();
+        write_log(k_always_log_basic_information, "[MCP] Action DISCARDED: bot is HALTED (stop sign).\n");
+      }
       g_mcp_action_request = -1;
       g_mcp_action_amount = -1.0;
       g_mcp_action_force = false;
+      g_mcp_action_human = false;
       g_mcp_action_hand = "";
       g_mcp_action_betround = -1;
+      g_mcp_action_table = "";
+      ClearPendingAction();
+    } else if (!force && !my_turn) {
+      // Not our turn yet -- keep the request PENDING and retry next heartbeat. With
+      // force (manual click) we skip this wait and try the click below right away.
+    } else if (!human && !ScrapeIsTrustworthyForActing(&seat_why)) {
+      // SCRAPE-TRUST GATE for the NN path (the OHF equivalent lives in CAutoplayer.cpp).
+      //
+      // NOTE ON `force`: it does NOT mean "a human clicked this". nn_driver.py sends force=1 on EVERY
+      // action (mcp/nn_driver.py: q = {"do": action, "force": "1"}) purely to bypass the ismyturn
+      // wait, which is why the log calls autonomous NN actions "[MCP] Manual ...". Exempting force
+      // here would leave the entire NN path ungated -- exactly how hand 2783842881 triple-barrelled
+      // and then fired a 65.5bb donk while the validator was reporting "duplicate card among
+      // hands/board" on every evaluation. Only an explicit human=1 (the learner UI) bypasses.
+      //
+      // Held PENDING, not discarded: the hand/betround staleness check above already prevents it
+      // firing on a later hand, so if the scrape settles inside the 25s window the action still lands
+      // on the correct spot. [Emrald: gate acting on seat-status + validator]
+      if (GetTickCount() - s_last_seat_hold_log > 3000) {
+        s_last_seat_hold_log = GetTickCount();
+        write_log(k_always_log_errors,
+          "[MCP] HOLDING action (%s) -- scrape not trustworthy: %s\n",
+          ActionConstantNames(g_mcp_action_request), seat_why);
+      }
+      NoteSeatUnstableWhileActing();
+    } else if (g_manual_play && !human) {
+      // MANUAL PLAY: the driver decided (this is the NN/MCP action it queued), but the human wants to
+      // confirm each move. Publish it as the pending suggestion for the React confirm button and consume
+      // the request WITHOUT clicking. The confirm arrives as a fresh /api/action with human=1, which
+      // skips this branch (human) and executes below. [manual play]
+      PublishPendingAction(g_mcp_action_request, g_mcp_action_amount);
+      g_mcp_action_request = -1;
+      g_mcp_action_amount = -1.0;
+      g_mcp_action_force = false;
+      g_mcp_action_human = false;
+      g_mcp_action_hand = "";
+      g_mcp_action_betround = -1;
+      g_mcp_action_table = "";
+    } else {
+      int code = g_mcp_action_request;
+      double amount = g_mcp_action_amount;
+      bool is_human_action = g_mcp_action_human;   // capture before the clear below
+      ClearPendingAction();   // this action is being taken now -> no pending suggestion to show
+      g_mcp_action_request = -1;
+      g_mcp_action_amount = -1.0;
+      g_mcp_action_force = false;
+      g_mcp_action_human = false;
+      g_mcp_action_hand = "";
+      g_mcp_action_betround = -1;
+      g_mcp_action_table = "";
+      // NEVER FOLD to a tiny bet [Emrald] -- NN driver / autonomous /api/action side. A human's own fold
+      // (human=1, from the manual panel) is left alone -- that is the user's explicit choice. Only the NN's
+      // autonomous folds are overridden, through the SAME helper the OHF autoplayer uses, so both engines
+      // obey the rule identically: fold->call under a 2 BB price, fold->all-in (typed as total+1) at <= 2 BB.
+      if (!is_human_action && code == k_autoplayer_function_fold) {
+        double ov_allin = amount;
+        int ov = NoFoldToTinyBetOverride(k_autoplayer_function_fold, &ov_allin);
+        if (ov != code) {
+          write_log(k_always_log_basic_information,
+            "[MCP] NoFoldTinyBet: NN driver fold overridden to %s.\n",
+            (ov == k_autoplayer_function_allin) ? "ALL-IN" : "CALL");
+          code = ov;
+          amount = (ov == k_autoplayer_function_allin) ? ov_allin : -1.0;
+        }
+      }
       // Publish the action to the on-table RED decision overlay (HudOverlayWindow).
       //
       // The OHF autoplayer publishes its own decision in CAutoplayer.cpp -- but that path is
@@ -770,6 +937,7 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
         }
         if (!decision.IsEmpty()) {
           strcpy_s(g_hero_decision_text, sizeof(g_hero_decision_text), decision.GetString());
+          strcpy_s(g_hero_decision_source, sizeof(g_hero_decision_source), "NN DRIVER");
           g_hero_decision_tick = GetTickCount();
         }
       }
@@ -814,9 +982,64 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
           keypad_amount,
           (code == k_autoplayer_function_allin && amount <= 0) ? " (full stack)" : "");
       } else if (code == k_autoplayer_function_raise && amount > 0) {
+        // SIZED RAISE REQUESTED, NO RAISE CONTROL -> CALL (or CHECK).
+        //
+        // The third member of the family below: all-in with no all-in button calls, check/call
+        // with no passive button folds, and this one -- a sized raise the table will not offer.
+        //
+        // Facing a shove that our stack covers, these phone maps show Fold | Call | All-In with
+        // no Bet/Raise Options panel, so the two-successive-clicks path above self-gates off (its
+        // label region reads e.g. "104.5BBAllIn" instead of "BetOptions"). We then landed here,
+        // found no clickable raise button, clicked NOTHING -- and still logged "clicked raise
+        // button", so the log looked like action while the hand rotted. The driver re-decided
+        // every heartbeat until the table timed us out. Observed on hand 2783568571 (3c 3h on the
+        // button): the NN asked to raise 2.50bb nine times over 51 s and never acted; ACR
+        // auto-folded and sat us out.
+        //
+        // CALL is the right downgrade, not All-In. Asking for 2.5bb means we wanted a SMALL raise;
+        // the only raise this bar offers is the whole 104bb stack, and turning a min-raise into a
+        // stack-off is the worst way to be wrong. Calling keeps the hand on the terms the decision
+        // actually contemplated. If there is nothing to call we take the free CHECK instead.
+        //
+        // GUARDED, for the same reason the passive->fold case is: a transient mis-scrape must not
+        // silently convert an intended raise into a flat, so the table has to say it for
+        // kBeatsBeforeDowngrade consecutive heartbeats first.
+        static int s_no_raise_beats = 0;
+        static const int kBeatsBeforeDowngrade = 3;
         CAutoplayerButton *btn = p_casino_interface->LogicalAutoplayerButton(code);
-        if (btn != NULL && btn->IsClickable()) btn->Click();
-        write_log(k_always_log_basic_information, "[MCP] Manual raise %.2fbb: two-clicks N/A, clicked raise button.\n", amount);
+        if (btn != NULL && btn->IsClickable()) {
+          s_no_raise_beats = 0;
+          btn->Click();
+          write_log(k_always_log_basic_information,
+            "[MCP] Manual raise %.2fbb: two-clicks N/A, clicked raise button.\n", amount);
+        } else {
+          CAutoplayerButton *call_btn =
+            p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_call);
+          CAutoplayerButton *check_btn =
+            p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_check);
+          bool call_live  = (call_btn  != NULL && call_btn->IsClickable());
+          bool check_live = (check_btn != NULL && check_btn->IsClickable());
+          if (call_live || check_live) {
+            if (++s_no_raise_beats >= kBeatsBeforeDowngrade) {
+              CAutoplayerButton *use = call_live ? call_btn : check_btn;
+              write_log(k_always_log_basic_information,
+                "[MCP] Manual raise %.2fbb: no raise control for %d heartbeats (the bar offers no "
+                "sized raise) -- downgrading to %s. A small raise never meant commit the stack.\n",
+                amount, s_no_raise_beats, call_live ? "CALL" : "CHECK");
+              use->Click();
+              s_no_raise_beats = 0;
+            } else {
+              write_log(k_always_log_basic_information,
+                "[MCP] Manual raise %.2fbb: no raise control (beat %d/%d) -- nothing clicked yet.\n",
+                amount, s_no_raise_beats, kBeatsBeforeDowngrade);
+            }
+          } else {
+            // Nothing to downgrade to either: say so plainly instead of claiming a click.
+            write_log(k_always_log_basic_information,
+              "[MCP] Manual raise %.2fbb: no raise control and no live Call/Check -- NOTHING "
+              "clicked this heartbeat.\n", amount);
+          }
+        }
       } else {
         CAutoplayerButton *btn = p_casino_interface->LogicalAutoplayerButton(code);
         // ALL-IN REQUESTED, NO ALL-IN BUTTON -> PRESS CALL.
@@ -866,12 +1089,51 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
         //   1. the FOLD button must itself be clickable -- that proves the bar is rendered and
         //      scraped, so we are reading a genuine two-button spot and not a half-drawn frame;
         //   2. neither Check nor Call may be clickable -- if either is live the normal path takes it;
-        //   3. it must hold for kBeatsBeforeGivingUp consecutive heartbeats. The all-in->call case
+        //   3. it must hold for kMsBeforeGivingUp MILLISECONDS. The all-in->call case
         //      can fire on the first frame because being wrong there still jams, which is what was
         //      asked for. Here a transient mis-scrape would throw away a free check, so we make the
         //      table say it twice more before believing it.
-        static int s_no_passive_beats = 0;
-        static const int kBeatsBeforeGivingUp = 3;
+        // SHORT-STACK VETO on every fold-downgrade below.
+        //
+        // The two downgrades that follow reason "a passive decision never meant commit the stack" --
+        // true at normal depth, and false once the stack is a blind or two. Below
+        // kDesperationStackBB the blinds take it next orbit whether we fold or not, so folding is the
+        // one line that cannot win; CAutoplayer::ExecuteDesperationShoveOrCall already refuses to fold
+        // there, and this path must not quietly do what that rule forbids.
+        //
+        // Hand 2783687719: hero held top pair with ~1 BB behind, the NN asked to CHECK, the Check
+        // button was momentarily not clickable, and this code pressed FOLD -- throwing away a stack
+        // that had nothing to protect. Measured from the same values the desperation rule uses.
+        double sv_stack_bb = 0.0;
+        {
+          double sv_bb = (p_engine_container != NULL)
+                       ? p_engine_container->symbol_engine_tablelimits()->bblind() : 0.0;
+          if (sv_bb > 0.0 && p_table_state != NULL && p_table_state->User() != NULL) {
+            sv_stack_bb = (p_table_state->User()->_balance.GetValue()
+                         + p_table_state->User()->_bet.GetValue()) / sv_bb;
+          }
+        }
+        const bool sv_desperate = (sv_stack_bb > 0.0 && sv_stack_bb < kDesperationStackBB);
+
+        // The give-up wait is measured in TIME, not heartbeats.
+        //
+        // It was 3 heartbeats. At a 25ms scrape delay that is under a second -- the log shows beats
+        // 1/3 and 2/3 landing in the SAME second -- while the driver polls every 0.6s and then has to
+        // round-trip the model. So the "give the driver a chance to re-decide" window this comment
+        // promises never actually existed, and a stale request was converted to a fold before the
+        // fresh decision could replace it.
+        //
+        // Hand 2783719772: the NN asked to CHECK, villain bet, the NN re-decided to RAISE 12 with a
+        // KING-HIGH STRAIGHT (Kc4c on Js6hTcQh9c) -- and the stale check folded it in the same second
+        // the raise was decided. A whole made straight, thrown away by a race.
+        //
+        // 2500ms comfortably covers a poll plus a decision, and costs nothing when the driver does not
+        // re-decide: we simply act on the original intent a beat later. [Emrald]
+        static DWORD s_no_passive_since = 0;              // 0 = condition not currently seen
+        const DWORD kMsBeforeGivingUp = 2500;
+        if (s_no_passive_since == 0) s_no_passive_since = GetTickCount();
+        DWORD s_no_passive_beats = GetTickCount() - s_no_passive_since;   // ms waited, for the logs
+        const DWORD kBeatsBeforeGivingUp = kMsBeforeGivingUp;
         if ((code == k_autoplayer_function_check || code == k_autoplayer_function_call)
             && (btn == NULL || !btn->IsClickable())) {
           CAutoplayerButton *check_btn =
@@ -880,23 +1142,98 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
             p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_call);
           CAutoplayerButton *fold_btn =
             p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_fold);
-          bool passive_live = (check_btn != NULL && check_btn->IsClickable())
-                           || (call_btn  != NULL && call_btn->IsClickable());
+          bool check_live = (check_btn != NULL && check_btn->IsClickable());
+          bool call_live  = (call_btn  != NULL && call_btn->IsClickable());
+          bool passive_live = check_live || call_live;
           bool can_fold = (fold_btn != NULL && fold_btn->IsClickable());
           if (!passive_live && can_fold) {
-            if (++s_no_passive_beats >= kBeatsBeforeGivingUp) {
+            if (s_no_passive_beats >= kBeatsBeforeGivingUp) {
+              CAutoplayerButton *allin_btn =
+                p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_allin);
+              bool allin_live = (allin_btn != NULL && allin_btn->IsClickable());
+              if (sv_desperate && allin_live) {
+                // Fold|All-In bar with ~nothing behind: jam. See the short-stack veto above.
+                write_log(k_always_log_basic_information,
+                  "[MCP] %s requested, bar offers only Fold and All-In, but we hold %.2f BB (< %.1f) "
+                  "-- JAMMING instead of folding: at this depth folding is the only line that cannot "
+                  "win.\n", (code == k_autoplayer_function_check) ? "CHECK" : "CALL",
+                  sv_stack_bb, kDesperationStackBB);
+                btn = allin_btn;
+              } else if (sv_desperate) {
+                // No all-in control either. Still refuse to fold; keep the request pending so a
+                // usable button next heartbeat can act on it.
+                write_log(k_always_log_basic_information,
+                  "[MCP] %s requested and no passive button, but we hold %.2f BB (< %.1f) -- NOT "
+                  "folding. Waiting for a usable button.\n",
+                  (code == k_autoplayer_function_check) ? "CHECK" : "CALL",
+                  sv_stack_bb, kDesperationStackBB);
+                s_no_passive_since = 0;
+              } else {
+                write_log(k_always_log_basic_information,
+                  "[MCP] %s requested but the bar has no Check and no Call for %lu ms -- only "
+                  "Fold and All-In. FOLDING: a passive decision never meant commit the stack.\n",
+                  (code == k_autoplayer_function_check) ? "CHECK" : "CALL",
+                  (unsigned long)s_no_passive_beats);
+                btn = fold_btn;
+              }
+              if (!sv_desperate) s_no_passive_since = 0;
+            }
+          } else if (code == k_autoplayer_function_call && !call_live && check_live) {
+            // CALL REQUESTED, NOTHING TO CALL -> CHECK, straight away.
+            //
+            // No Call button but a live Check means nobody has bet: checking IS the call that was
+            // asked for, it costs nothing, and there is no way for a mis-scrape to make it
+            // expensive -- so unlike the fold cases below this needs no waiting period.
+            write_log(k_always_log_basic_information,
+              "[MCP] CALL requested but there is nothing to call (no Call button, Check is live) "
+              "-- CHECKING instead: with no bet in front of us, a check IS the call.\n");
+            btn = check_btn;
+            s_no_passive_since = 0;
+          } else if (code == k_autoplayer_function_check && !check_live && call_live) {
+            // CHECK REQUESTED WHILE FACING A BET -> wait, then FOLD.
+            //
+            // Check is not offered, so somebody HAS bet and the driver decided from a stale view
+            // of the table. Without this the request simply stayed pending, nothing was clicked,
+            // and the driver re-decided every heartbeat until ACR timed us out -- the same stall
+            // that cost hand 2783568571 on the raise branch above.
+            //
+            // FOLD, never call. Asking to check means the decision declined to put money in;
+            // quietly turning that into a call is how a bot pays off every bet it did not see.
+            // The wait first gives the driver a few heartbeats to notice the bet and re-decide
+            // for itself -- a fresh CALL or RAISE lands on its own path and never reaches here.
+            if (s_no_passive_beats >= kBeatsBeforeGivingUp) {
+              if (sv_desperate) {
+                // Facing a bet with ~nothing behind. "Check never meant pay to continue" stops being
+                // true when continuing costs a blind we lose anyway next orbit -- so CALL rather than
+                // fold. This is the branch that folded top pair on hand 2783687719 at ~1 BB.
+                write_log(k_always_log_basic_information,
+                  "[MCP] CHECK requested facing a bet, but we hold %.2f BB (< %.1f) -- CALLING "
+                  "instead of folding: at this depth the chips are gone either way.\n",
+                  sv_stack_bb, kDesperationStackBB);
+                btn = call_btn;
+                s_no_passive_since = 0;
+              } else if (can_fold) {
+                write_log(k_always_log_basic_information,
+                  "[MCP] CHECK requested but we are facing a bet (no Check, Call is live) for %d "
+                  "heartbeats -- FOLDING: a check never meant pay to continue.\n",
+                  s_no_passive_beats);
+                btn = fold_btn;
+              } else {
+                write_log(k_always_log_basic_information,
+                  "[MCP] CHECK requested facing a bet and no Fold button either -- nothing "
+                  "clicked this heartbeat.\n");
+              }
+              s_no_passive_since = 0;
+            } else {
               write_log(k_always_log_basic_information,
-                "[MCP] %s requested but the bar has no Check and no Call for %d heartbeats -- only "
-                "Fold and All-In. FOLDING: a passive decision never meant commit the stack.\n",
-                (code == k_autoplayer_function_check) ? "CHECK" : "CALL", s_no_passive_beats);
-              btn = fold_btn;
-              s_no_passive_beats = 0;
+                "[MCP] CHECK requested but we are facing a bet (beat %d/%d) -- giving the driver a "
+                "chance to re-decide before folding.\n", s_no_passive_beats, kBeatsBeforeGivingUp);
             }
           } else {
-            s_no_passive_beats = 0;   // buttons still settling, or a passive option really is live
+            s_no_passive_since = 0;   // buttons still settling, or the asked-for option really is live
           }
         } else {
-          s_no_passive_beats = 0;
+          s_no_passive_since = 0;
         }
         if (btn != NULL && btn->IsClickable()) {
           // Log WHICH region we are about to click, its OCR'd label, and its rect -- not just the
@@ -925,6 +1262,18 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
           g_mcp_action_force = force;
         }
       }
+      // ACTED ON THIS TABLE -> ask for a hop to the next open one.
+      //
+      // This is the path the NN DRIVER acts through (/api/action -> queued here), which is what runs
+      // when nn-driver is engaged and the OHF autoplayer is not. Hooking only CAutoplayer::DoAutoplayer
+      // meant the hop could never fire for an NN-driven bot -- the normal configuration here.
+      //
+      // Requested only when the request was CONSUMED: the not-clickable branch above re-arms it, so a
+      // still-pending request means nothing was pressed and we must stay put and keep trying.
+      if (g_mcp_action_request < 0) {
+        extern volatile unsigned long g_pill_switch_request_tick;
+        g_pill_switch_request_tick = GetTickCount();
+      }
     }
   }
   // ---- MCP / API: reload the OHF strategy folder (safe here: outside the update
@@ -952,6 +1301,69 @@ void CHeartbeatThread::ScrapeEvaluateAct() {
       p_casino_interface->ClickRect(r);
     } else {
       write_log(k_always_log_basic_information, "[MCP] Click region '%s' not found in tablemap\n", rgn.GetString());
+    }
+  }
+
+  // ---- ACR table-tab hop: after acting here, move to the other open table ----------------------
+  // ACR shows one pill per open table at the top of the felt. When the autoplayer acts we set a
+  // request; once the click has settled we classify the pills and click an OCCUPIED (open but not
+  // foreground) one. Doing nothing is always the safe outcome: a map with no pill regions, a single
+  // table (the second pill reads as the empty "+"), or a screen that is not a table all classify as
+  // EMPTY and leave us where we are.
+  {
+    extern volatile unsigned long g_pill_switch_request_tick;
+    const unsigned long kSettleMs = 900;      // let the action's own clicks land first
+    const unsigned long kGiveUpMs = 6000;     // stale request -> drop it rather than hop late
+    static unsigned long s_last_pill_hop = 0;
+    const unsigned long kHopCooldownMs = 2500;
+    unsigned long req = g_pill_switch_request_tick;
+    if (req != 0 && p_scraper != NULL && p_casino_interface != NULL) {
+      unsigned long age = GetTickCount() - req;
+      if (age > kGiveUpMs) {
+        g_pill_switch_request_tick = 0;
+      } else if (age >= kSettleMs && (GetTickCount() - s_last_pill_hop) >= kHopCooldownMs) {
+        // Never hop while it is our turn again here -- acting beats tidying up.
+        bool my_turn = (p_engine_container != NULL
+                        && p_engine_container->symbol_engine_autoplayer()->ismyturn());
+        int active = 0, occupied = 0, active_idx = -1;
+        CScraper::TablePillState st[CScraper::kMaxTablePills];
+        for (int i = 0; i < CScraper::kMaxTablePills; ++i) {
+          st[i] = p_scraper->ClassifyTablePill(i);
+          if (st[i] == CScraper::kPillActive) { ++active; active_idx = i; }
+          else if (st[i] == CScraper::kPillOccupied) ++occupied;
+        }
+        // ROUND-ROBIN: take the next occupied slot AFTER the active one, wrapping. Always picking the
+        // lowest-numbered one would ping-pong between two tables and starve the third once three are
+        // open -- and three (plus the empty "+") is a normal layout.
+        int target = -1;
+        if (active_idx >= 0) {
+          for (int step = 1; step <= CScraper::kMaxTablePills; ++step) {
+            int cand = (active_idx + step) % CScraper::kMaxTablePills;
+            if (st[cand] == CScraper::kPillOccupied) { target = cand; break; }
+          }
+        }
+        // Require a coherent picture: exactly one foreground table AND at least one other open one.
+        if (!my_turn && active == 1 && occupied >= 1 && target >= 0) {
+          CString rgn;
+          rgn.Format("table_pill%d", target);
+          RMapCI it = p_tablemap->r$()->find(rgn.GetString());
+          if (it != p_tablemap->r$()->end()) {
+            CCursorRestorer _cursor_restorer;
+            RECT r;
+            r.left = it->second.left; r.top = it->second.top;
+            r.right = it->second.right; r.bottom = it->second.bottom;
+            write_log(k_always_log_basic_information,
+              "[TablePills] acted here; hopping to %s (%d active, %d occupied)\n",
+              rgn.GetString(), active, occupied);
+            p_casino_interface->ClickRect(r);
+            s_last_pill_hop = GetTickCount();
+          }
+          g_pill_switch_request_tick = 0;
+        } else if (active != 1 || occupied < 1) {
+          // Single table, or nothing recognisable on screen -> nothing to hop to.
+          g_pill_switch_request_tick = 0;
+        }
+      }
     }
   }
 

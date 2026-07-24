@@ -126,6 +126,33 @@ void CHandHistoryWriter::UpdateOnHeartbeat() {
   // uses it to reject a hand-result stack-delta that spans a table SWITCH (same-config switches are
   // invisible from stacks/blinds/seat-count alone). tourney_id|table_name changes on any switch.
   g_table_identity = _tourney_id + "|" + _table_name;
+
+  // A HAND RECORD BELONGS TO ONE TABLE.
+  //
+  // ACR tabs between tables by itself, so the felt under us can change in the middle of a hand. The
+  // record is only closed on a HANDRESET, so when a switch did not also trip that detector the open
+  // record went on accumulating -- with the new table's seats. Hand 2783653480 was written with one
+  // table's seat list (1,2,5,6,7,8,9) and another's hero (Seat 4 christianbeast), and stats mined
+  // from that are worthless.
+  //
+  // Everything gathered so far belongs to the table we were on, so FLUSH it (that hand really did
+  // happen) and start clean for the new one. Flushing here rather than discarding keeps the part we
+  // scraped honestly and only cuts it off at the point our view left.
+  if (!g_table_identity.IsEmpty()) {
+    if (_hand_identity.IsEmpty()) {
+      _hand_identity = g_table_identity;          // first sighting: bind this record to this table
+    } else if (_hand_identity != g_table_identity) {
+      if (_hand_dirty) {
+        write_log(k_always_log_basic_information,
+          "[HandHistory] table changed mid-hand (%s -> %s); closing hand %s here rather than "
+          "appending the new table's seats to it.\n",
+          _hand_identity.GetString(), g_table_identity.GetString(), _hand_number.GetString());
+        Flush();
+      }
+      ResetHand();
+      _hand_identity = g_table_identity;
+    }
+  }
   // Detect Omaha/PLO/Hi-Lo PER TABLE so the loader can auto-switch to the "<name>_omaha" 4-card map.
   // SETUP (Emrald): possibly several Hiss instances (one per scrcpy/phone), and EACH instance tabs
   // between MULTIPLE tables. This static map is per-PROCESS (=> per instance); keying it by the
@@ -247,6 +274,7 @@ void CHandHistoryWriter::ResetHand() {
   _meta_captured = false;
   _hand_dirty    = false;
   _hand_number   = "";
+  _hand_identity = "";
   _nchairs       = 0;
   _button        = kUndefined;
   _hero          = kUndefined;
@@ -810,7 +838,22 @@ void CHandHistoryWriter::ScrapeTourneyInfo() {
   CString new_name = (sc_name.GetLength() >= 3) ? sc_name : _table_name;
   if (new_id != _tourney_id || new_name != _table_name) {
     if (new_id == s_pending_id && new_name == s_pending_name) {
-      if (++s_pending_count >= 2) { _tourney_id = new_id; _table_name = new_name; s_pending_count = 0; }
+      if (++s_pending_count >= 2) {
+        _tourney_id = new_id; _table_name = new_name; s_pending_count = 0;
+        // SWITCH COMMITTED. ACR has tabbed us to a different table. Everything the previous table
+        // left cached must be dropped NOW, and the next few frames scraped fast, so the new table's
+        // real names/stacks/bets/HUD replace the old ones within ~a frame instead of lingering.
+        extern volatile unsigned long g_table_switch_tick;
+        g_table_switch_tick = GetTickCount();
+        if (p_scraper != NULL) p_scraper->FlushSeatMemory();
+        // Drop the smoothed-name state too: the rolling window and the "known name" that bridges a
+        // sit-out both span hands, so without this the previous table's names would keep winning the
+        // majority vote on the new table until the window refilled.
+        for (int i = 0; i < kMaxNumberOfPlayers; ++i) {
+          _known_name[i] = ""; _known_stack[i] = 0.0;
+          _name_hist_count[i] = 0; _name_hist_pos[i] = 0;
+        }
+      }
     } else {
       s_pending_id = new_id; s_pending_name = new_name; s_pending_count = 1;
     }

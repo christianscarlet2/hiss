@@ -64,6 +64,9 @@ private:
 	void DoAutoplayerServer();
 	bool ExecuteSecondaryFormulasIfNecessary();
 	bool ExecuteRaiseCallCheckFold();
+	// Write a hiss_log_decisions row for an action taken OUTSIDE the elementary-click loop
+	// (all-ins, keypad bet/raises, desperation shoves) -- those paths logged nothing.
+	void LogClickedDecision(int action_code, double amount = 0.0);
 	// Two-successive-clicks bet/raise (phone keypad), run from the primary-formula
 	// path so it is gated by ismyturn + isfinalanswer like the other actions.
 	// forced_bb > 0 bypasses the strategy's own sizing and types exactly that many big blinds.

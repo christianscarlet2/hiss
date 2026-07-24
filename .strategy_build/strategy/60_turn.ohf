@@ -34,7 +34,7 @@ WHEN f$HaveStrongMade RaiseBy f$BetPctTurn % FORCE
 WHEN (f$HaveWeakDraw OR f$HaveBigDraw OR f$HaveComboDraw) AND sb_beastfavor >= 0.66 RaiseBy f$BetPctTurn % FORCE
 // Keep semi-bluffing strong / combo draws.
 WHEN f$HaveComboDraw RaiseBy f$BetPctTurn % FORCE
-WHEN f$HaveBigDraw AND (f$Style = 1 OR f$InPositionPost) AND NOT f$Opp_IsStation RaiseBy f$BetPctTurn % FORCE
+WHEN f$HaveBigDraw AND NOT f$DrawIsCompromised AND (f$Style = 1 OR f$InPositionPost) AND NOT f$Opp_IsStation RaiseBy f$BetPctTurn % FORCE
 // Float-the-turn take-away: in position, we called the flop, now checked to,
 // vs a non-station. [N pp.75-78]
 WHEN f$InPositionPost AND f$HeadsUpPot AND BotCalledOnFlop AND NOT f$Opp_IsStation AND randomround < 0.70 RaiseBy f$BetPctTurn % FORCE
@@ -73,8 +73,10 @@ WHEN me_re_acerag = 1 AND HaveTopPair AND NOT f$HaveBigDraw AND NOT f$HaveComboD
 // below (which apply only at high SPR, NOT f$Committed) so a committed overpair is not
 // folded to a passive turn bet. [SSNL SPR sidebar][PNL p182-186]
 WHEN (HaveOverPair OR HaveTopPair OR f$HaveStrongMade) AND f$Committed RaiseMax FORCE
-// Combo draw -> get it in.
-WHEN f$HaveComboDraw RaiseMax FORCE
+// Combo draw -> get it in. POT CONSERVATION (Emrald): unless both ways to win run into the same
+// flush -- see f$DrawIsCompromised. One card to come is the worst possible moment to stack off
+// drawing to the second-best hand.
+WHEN f$HaveComboDraw AND NOT f$DrawIsCompromised RaiseMax FORCE
 // Big draws: continue at a price; in position can peel a bit wider.
 WHEN f$HaveBigDraw AND f$CheapDraw Call FORCE
 WHEN f$HaveBigDraw AND f$DecentPrice AND f$InPositionPost Call FORCE

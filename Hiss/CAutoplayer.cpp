@@ -284,6 +284,58 @@ bool CAutoplayer::ExecutePrimaryFormulasIfNecessary() {
 		return false;
 	}
 	APTrace("ExecutePrimaryFormulas -> AnyPrimaryFormulaTrue()=true");
+	// SEAT-STABILITY GATE: a formula being true is not enough -- the TABLE IT WAS COMPUTED FROM has to
+	// be one we are reliably reading. When the scrape oscillates (seat flipping seated/not_at_table
+	// every ~2s, hero's chair appearing and vanishing), the symbols behind that "true" formula came
+	// from a half-read frame: hand 2783836120 was folded holding top pair of aces whose hole cards had
+	// scraped as "? ?". Timing out costs a blind; acting blind can cost the stack, so we stand down and
+	// let the next stable frame decide. Sit-in / sit-out are NOT routed through here and keep working.
+	{
+		// FULL scrape-trust gate, not just seat stability: also require the validator's HARD checks to pass
+		// (pot reconciles, no duplicate/garbled board or hole cards) and hero's two hole cards to be
+		// readable -- the same gate the NN/MCP path already uses (CHeartbeatThread). Seat stability ALONE
+		// let the OHF act on a badly-scraped POT: hand 2785306341 fired an ILLEGAL preflop raise while the
+		// scrape spewed "negative potcommon" and an implausible 7595bb pot, because the bet-sizing math ran
+		// on garbage the seat check never inspected. Standing down there costs a blind; acting on it cost a
+		// rejected/illegal bet (or the stack). [Emrald: gate OHF acting on pot+card validity, not just seat]
+		const char *why = "";
+		if (!ScrapeIsTrustworthyForActing(&why)) {
+			APTrace("ExecutePrimaryFormulas -> STOP: scrape not trustworthy for acting (%s)", why);
+			write_log(k_always_log_errors,
+				"[AutoPlayer] STAND DOWN: %s -- refusing to act on an untrustworthy scrape\n", why);
+			NoteSeatUnstableWhileActing();
+			return false;
+		}
+	}
+	// GLOBAL HALT (scrcpy stop sign): the human has frozen the bot. A formula is true and the seat is
+	// trustworthy, so we HAVE a move -- but while halted nothing commits chips, period. [stop sign]
+	if (g_halt_acting) {
+		APTrace("ExecutePrimaryFormulas -> STOP: halted by the stop sign");
+		return false;
+	}
+	// MANUAL PLAY (React table view): decide WHAT the bot would do and publish it for the confirm
+	// button, but do NOT click. The human confirms via /api/action (human=1), which the heartbeat
+	// executes -- so while manual play is on this path only ever announces, it never acts. The size is
+	// in BIG BLINDS (what /api/action + the numpad path take), read from the OpenPPL betround function
+	// exactly as HandleTwoSuccessiveClicksBetRaise() does, so the confirmed amount matches the plan.
+	if (g_manual_play) {
+		int code = -1; double amt = -1.0;
+		if      (p_function_collection->EvaluateAutoplayerFunction(k_autoplayer_function_allin)) code = k_autoplayer_function_allin;
+		else if (p_function_collection->EvaluateAutoplayerFunction(k_autoplayer_function_raise)) code = k_autoplayer_function_raise;
+		else if (p_function_collection->EvaluateAutoplayerFunction(k_autoplayer_function_call))  code = k_autoplayer_function_call;
+		else if (p_function_collection->EvaluateAutoplayerFunction(k_autoplayer_function_check)) code = k_autoplayer_function_check;
+		else if (p_function_collection->EvaluateAutoplayerFunction(k_autoplayer_function_fold))  code = k_autoplayer_function_fold;
+		if (code == k_autoplayer_function_raise) {
+			int betround = p_betround_calculator->betround();
+			if (betround >= kBetroundPreflop && betround <= kBetroundRiver) {
+				double d = p_function_collection->Evaluate(k_OpenPPL_function_names[betround]);
+				if (d > 0) amt = d;
+			}
+		}
+		PublishPendingAction(code, amt);
+		APTrace("ExecutePrimaryFormulas -> HOLD: manual play, intended action published as pending (code %d)", code);
+		return false;
+	}
 	// Execute beep (if necessary) independent of all other conditions (mutex, etc.)
 	// and with autoplayer-actions.
 	ExecuteBeep();
@@ -392,6 +444,97 @@ bool CAutoplayer::HandleTwoSuccessiveClicksBetRaise(double forced_bb) {
 		        + p_table_state->User()->_balance.GetValue() + kAllinOvershoot;
 		APTrace("two-successive-clicks: ALL-IN with no numeric size -> typing full stack + overshoot");
 	}
+	// LEGAL MINIMUM RAISE. A raise must go to at least (the bet we face) + (the amount it was raised
+	// BY), and never less than one big blind more. Typing anything under that is an ILLEGAL entry: the
+	// table refuses it, the raise panel is left open, and the hand is either mis-acted or timed out.
+	//
+	// The NN driver has clamped this for a while (min_raise_to in nn_driver.py) but the OHF's keypad
+	// path never did -- it typed f$betsize verbatim, which is what the "(no adjustment)" in the entry
+	// log means. Hand 2783717210: the OHF asked for 3.00bb into a spot whose legal minimum was 4bb,
+	// and the entry was invalid. [Emrald]
+	//
+	// Only ever raises the number to the legal floor -- it never lowers a size the strategy chose, and
+	// an ALL-IN is left alone (it is capped by the table to our stack by design).
+	if (wants_raise && !wants_allin && betsize > 0.0
+	    && p_engine_container != NULL && p_table_state != NULL) {
+		double bb = p_engine_container->symbol_engine_tablelimits()->bblind();
+		if (bb > 0.0) {
+			double highest = 0.0, second = 0.0;      // the two largest live bets, in bb
+			for (int i = 0; i < p_tablemap->nchairs(); ++i) {
+				CPlayer *pl = p_table_state->Player(i);
+				if (pl == NULL || !pl->seated()) continue;
+				double b = pl->_bet.GetValue() / bb;
+				if (b > highest) { second = highest; highest = b; }
+				else if (b > second) { second = b; }
+			}
+			// CANNOT ESTABLISH A LEGAL MINIMUM -> CALL, do not type a guess.
+			//
+			// The minimum is derived from the bet pills. If we are FACING a bet but scraped no bet at
+			// all, that data is inconsistent and any minimum computed from it is fiction -- the floor
+			// collapses to 2bb and an illegal size sails through as "legal" (hand 2783751657 typed 3.00
+			// with no clamp line at all, exactly as 2783717210 did). Typing an illegal amount is worse
+			// than not raising: the table rejects it and the raise panel is left hanging.
+			//
+			// Calling is the honest fallback -- it keeps the hand alive and is what the strategy would
+			// have done for the same price anyway. [Emrald: "it should of just called"]
+			double to_call = p_engine_container->symbol_engine_chip_amounts()->call() / bb;
+			if (to_call > 0.01 && highest <= 0.01) {
+				CAutoplayerButton *call_btn =
+					p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_call);
+				if (call_btn != NULL && call_btn->IsClickable()) {
+					write_log(k_always_log_basic_information,
+						"[TwoClicks] facing %.2fbb to call but NO bet was scraped -- cannot compute a legal "
+						"minimum raise, so the %.2fbb entry would be a guess. CALLING instead: an illegal "
+						"entry is refused by the table and leaves the raise panel open.\n", to_call, betsize);
+					if (call_btn->Click()) {
+						p_engine_container->UpdateAfterAutoplayerAction(k_autoplayer_function_call);
+						return true;
+					}
+				}
+			}
+			double increment = highest - second;
+			if (increment < 1.0) increment = 1.0;    // a raise is at least one big blind
+			double min_raise_to = (highest <= 1.0 + 1e-6) ? 2.0 : (highest + increment);
+
+			// BELIEVE THE BUTTON. The raise control prints the legal minimum on its face -- observed
+			// OCR "3.8BBRaiseTo" -- and that is the table's own answer, not our inference from bet
+			// pills. Inference is what failed on hand 2783807755: the pills gave a minimum at or under
+			// 2.75, the real minimum was 3.8BB, and the entry was rejected as illegal.
+			//
+			// Only ever RAISES our floor (max of the two), so a mis-OCR'd small number can never let an
+			// illegal size through, and a garbled read simply leaves the inferred value in place.
+			{
+				CString raise_label;
+				if (p_scraper != NULL
+				    && p_scraper->EvaluateRegion("two_successive_clicks_label", &raise_label)) {
+					raise_label.Trim();
+					// Leading number off e.g. "3.8BBRaiseTo" / "3.8 BB Raise To".
+					int i = 0, n = raise_label.GetLength();
+					CString digits;
+					while (i < n && (isdigit((unsigned char)raise_label[i]) || raise_label[i] == '.')) {
+						digits += raise_label[i];
+						++i;
+					}
+					double stated = (digits.GetLength() > 0) ? atof(CStringA(digits).GetString()) : 0.0;
+					if (stated > min_raise_to) {
+						write_log(k_always_log_basic_information,
+							"[TwoClicks] the raise button states a minimum of %.2fbb (label \"%s\"); our bet-pill "
+							"estimate was only %.2fbb -- believing the button.\n",
+							stated, raise_label.GetString(), min_raise_to);
+						min_raise_to = stated;
+					}
+				}
+			}
+			if (betsize < min_raise_to - 1e-6) {
+				write_log(k_always_log_basic_information,
+					"[TwoClicks] betsize %.2fbb is BELOW the legal minimum raise of %.2fbb "
+					"(facing %.2fbb over %.2fbb) -- raising the entry to the minimum. An under-min "
+					"entry is rejected by the table and leaves the raise panel hanging.\n",
+					betsize, min_raise_to, highest, second);
+				betsize = min_raise_to;
+			}
+		}
+	}
 	write_log(k_always_log_basic_information,
 		"[TwoClicks] BetRaise entry: wants_raise=%d wants_allin=%d f$betsize=%.2f decision_bb=%.2f -> keypad betsize=%.2f\n",
 		wants_raise ? 1 : 0, wants_allin ? 1 : 0, f_betsize, decision_bb, betsize);
@@ -462,6 +605,12 @@ bool CAutoplayer::HandleTwoSuccessiveClicksBetRaise(double forced_bb) {
 	// clamp it to 0 against a BB-scale balance/min-raise (the "typed 0" bug).
 	Sleep(p_two_successive_clicks->DelayMs());
 	p_casino_interface->EnterBetsizeNumpadRaw(betsize);
+	// Record the sized bet/raise. This path returns before ExecuteRaiseCallCheckFold() ever runs,
+	// so without this the amount the bot actually typed never reached hiss_log_decisions. Log the
+	// forced size as an all-in when the desperation rule drove us here, so the row says what the
+	// bot really did rather than "raise".
+	LogClickedDecision(
+		(forced_bb > 0.0) ? k_autoplayer_function_allin : k_autoplayer_function_raise, betsize);
 	action_sequence_needs_to_be_finished = true;
 	return true;
 }
@@ -490,7 +639,17 @@ bool CAutoplayer::ExecuteDesperationShoveOrCall() {
 	// The full committable stack: what is already out in front of us plus what is behind.
 	double stack_bb = (p_table_state->User()->_balance.GetValue()
 	                 + p_table_state->User()->_bet.GetValue()) / bb;
-	if (stack_bb <= 0.0 || stack_bb >= kDesperationStackBB) {
+	// BELIEVABLE-STACK FLOOR [Emrald]: a stack that reads ~0 while a real DECISION is on the table is
+	// almost always a MIS-SCRAPE, not a genuinely-empty stack -- if you truly had nothing you'd be all-in
+	// already with no buttons to press. Desperation-shoving on it JAMS a healthy stack: hand 2785328443
+	// read hero at 0.00 BB and shoved, while the raise button itself said "8.23BBAllIn" (the real stack).
+	// The old `<= 0.0` guard only caught exactly-zero/negative; a tiny positive (0.004, from a stray bet
+	// read) prints as "0.00" yet passed it. So require a floor; below it treat the stack as unreadable and
+	// do NOT force the shove -- the normal, now scrape-trust-gated path stands down until a clean frame.
+	// A genuine sub-floor stack is already effectively all-in from its blind, so the cost of NOT shoving
+	// it is a fraction of a BB, versus jamming a mis-read 8 BB stack.
+	const double kMinBelievableStackBB = 0.5;
+	if (stack_bb < kMinBelievableStackBB || stack_bb >= kDesperationStackBB) {
 		return false;
 	}
 
@@ -531,6 +690,79 @@ bool CAutoplayer::ExecuteDesperationShoveOrCall() {
 	return false;
 }
 
+// NEVER FOLD TO A TINY BET -- shared override used by BOTH engines. [Emrald: "any bet under 2bb should
+// be called, or go all in if stack is 2bb or less"]
+//
+// Given the action `code` a decision engine chose, this returns the code to ACTUALLY execute:
+//   * If `code` is not a FOLD, it is returned unchanged -- we never turn a raise or a call into anything.
+//   * If our own stack is <= kDesperationStackBB, return ALL-IN and (via *allin_amount) the keypad size to
+//     type: full stack + kAllinOvershoot, i.e. the all-in total + 1, which the table caps to our stack.
+//   * Else if the price to continue is under kNoFoldToTinyBetBB, return CALL. Folding for < 2 BB throws the
+//     pot away to save almost nothing; getting 2-to-1-or-better is a mandatory call with anything.
+//
+// A believable-stack floor (kMinBelievableStackBB) mirrors ExecuteDesperationShoveOrCall so a 0-read
+// mis-scrape does not shove a healthy stack. This is a FREE function on purpose: the OHF autoplayer
+// (ExecuteRaiseCallCheckFold) and the NN /api/action path (CHeartbeatThread) both call it, so the rule is
+// byte-for-byte identical for both. It only READS state and never clicks -- the caller executes.
+int NoFoldToTinyBetOverride(int code, double *allin_amount) {
+	if (code != k_autoplayer_function_fold) return code;
+	if (p_table_state == NULL || p_table_state->User() == NULL || p_engine_container == NULL) return code;
+	double bb = p_engine_container->symbol_engine_tablelimits()->bblind();
+	if (bb <= 0.0) return code;   // no reliable blind -> don't gamble the fold away on a bad read
+	double stack = p_table_state->User()->_balance.GetValue()
+	             + p_table_state->User()->_bet.GetValue();
+	double stack_bb  = stack / bb;
+	double tocall_bb = p_engine_container->symbol_engine_chip_amounts()->call() / bb;
+	const double kMinBelievableStackBB = 0.5;   // below this the stack read is a mis-scrape; don't act on it
+	if (stack_bb >= kMinBelievableStackBB && stack_bb <= kDesperationStackBB) {
+		if (allin_amount != NULL) *allin_amount = stack + kAllinOvershoot;   // all-in total + 1; table caps it
+		write_log(k_always_log_basic_information,
+			"[NoFoldTinyBet] our stack is %.2f BB (<= %.1f) -- FOLD overridden to ALL-IN (type %.2f BB).\n",
+			stack_bb, kDesperationStackBB, stack + kAllinOvershoot);
+		return k_autoplayer_function_allin;
+	}
+	if (tocall_bb > 0.0 && tocall_bb < kNoFoldToTinyBetBB) {
+		write_log(k_always_log_basic_information,
+			"[NoFoldTinyBet] price to continue is %.2f BB (< %.1f) -- FOLD overridden to CALL.\n",
+			tocall_bb, kNoFoldToTinyBetBB);
+		return k_autoplayer_function_call;
+	}
+	return code;
+}
+
+// Log a decision taken through a path OTHER than ExecuteRaiseCallCheckFold().
+//
+// hiss_log_decisions had exactly one writer -- the elementary-click loop below -- so every action
+// that returns early from ExecutePrimaryFormulas() was invisible: DoAllin(), the sub-2BB
+// desperation shove, DoBetPot()/DoBetsize(), and any keypad bet/raise that fired without a
+// preceding elementary Raise click. Reviewing a session then shows folds and calls only, and
+// "why did it shove there" is unanswerable after the fact -- which is exactly the hole hit when
+// analysing 2026-07-21 (Emrald). This is the lighter sibling of that block: same row, no replay
+// scrape snapshot (the caller has already clicked, so the table state has moved on).
+void CAutoplayer::LogClickedDecision(int action_code, double amount) {
+	if (p_log_writer == NULL || !p_log_writer->Enabled()) return;
+	FILETIME ft; GetSystemTimeAsFileTime(&ft);
+	ULARGE_INTEGER u; u.LowPart = ft.dwLowDateTime; u.HighPart = ft.dwHighDateTime;
+	long long ms = (long long)((u.QuadPart - 116444736000000000ULL) / 10000ULL);
+	CString hand = (p_handreset_detector != NULL) ? p_handreset_detector->GetHandNumber() : CString("");
+	int br = (p_betround_calculator != NULL) ? p_betround_calculator->betround() : 0;
+	CString cards = (p_table_state != NULL && p_table_state->User() != NULL)
+		? p_table_state->User()->Cards() : CString("");
+	// Read the trace BEFORE anyone Print()s it -- Print clears the buffer.
+	CString trace = (p_autoplayer_trace != NULL) ? p_autoplayer_trace->GetTraceText() : CString("");
+	if (amount <= 0.0) {
+		amount = p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_betsize]);
+	}
+	p_log_writer->LogDecision(ms, CStringA(hand).GetString(), br, CStringA(cards).GetString(),
+		ActionConstantNames(action_code), amount,
+		p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_fold]),
+		p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_call]),
+		p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_check]),
+		p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_raise]),
+		p_function_collection->Evaluate(k_standard_function_names[k_autoplayer_function_allin]),
+		amount, CStringA(trace).GetString());
+}
+
 bool CAutoplayer::ExecuteRaiseCallCheckFold() {
 	write_log(Preferences()->debug_autoplayer(), 
     "[AutoPlayer] ExecuteRaiseCallCheckFold()\n");
@@ -548,6 +780,32 @@ bool CAutoplayer::ExecuteRaiseCallCheckFold() {
 		double v = p_function_collection->Evaluate(k_standard_function_names[i]);
 		APTrace("ExecuteRaiseCallCheckFold -> %s = %.2f", k_standard_function_names[i], v);
 		if (v) 	{
+			// NEVER FOLD to a tiny bet [Emrald] -- OHF side, identical rule to the NN /api/action path
+			// (CHeartbeatThread) via the shared NoFoldToTinyBetOverride(). We reach the fold branch only
+			// after raise/call/check evaluated false, so overriding here converts an intended FOLD into a
+			// CALL when the price is < 2 BB (a <=2 BB stack was already jammed by the desperation rule that
+			// runs earlier in ExecutePrimaryFormulas, so in practice this is the fold->call clause).
+			if (i == k_autoplayer_function_fold) {
+				double ov_allin = 0.0;
+				int ov = NoFoldToTinyBetOverride(k_autoplayer_function_fold, &ov_allin);
+				if (ov == k_autoplayer_function_allin) {
+					if (HandleTwoSuccessiveClicksBetRaise(kDesperationRaiseBB) || DoAllin()) {
+						LogClickedDecision(k_autoplayer_function_allin, 0.0);
+						return true;
+					}
+					ov = k_autoplayer_function_call;   // no jam control on this bar -> fall through to calling
+				}
+				if (ov == k_autoplayer_function_call) {
+					CAutoplayerButton *cb =
+						p_casino_interface->LogicalAutoplayerButton(k_autoplayer_function_call);
+					if (cb != NULL && cb->IsClickable() && cb->Click()) {
+						p_engine_container->UpdateAfterAutoplayerAction(k_autoplayer_function_call);
+						LogClickedDecision(k_autoplayer_function_call, 0.0);
+						return true;
+					}
+					// no live Call button -> fall through to the normal fold click below.
+				}
+			}
 			CAutoplayerButton *btn = p_casino_interface->LogicalAutoplayerButton(i);
 			APTrace("ExecuteRaiseCallCheckFold -> %s is TRUE; resolved button clickable=%d, calling Click()",
 				k_standard_function_names[i], (btn != NULL && btn->IsClickable()) ? 1 : 0);
@@ -715,6 +973,19 @@ void CAutoplayer::EngageAutoplayer(bool to_be_enabled_or_not) {
 	ENT 
 	// Set correct button state
 	// We have to be careful, as during initialization the GUI does not yet exist.
+	// ULTRA PIN [Emrald]: while ULTRA mode is engaged the autoplayer is the ALWAYS-ON executor --
+	// the NN only BYPASSES the OHF read on NLH; the OHF still drives PLO/PLO8 and every non-NN turn.
+	// Disengaging it here would leave NOBODY driving (the bot sits out every hand), which is exactly
+	// what the involuntary safety disengages -- validator stop-on-error, a lost window, a formula
+	// trip, the formula editor -- and a stray manual/API off used to do out from under a running
+	// ULTRA. So refuse EVERY disengage while ULTRA is on; the one intended way to stop is to disengage
+	// ULTRA first (that path is not gated). ULTRA is OFF by default, so ordinary play is unaffected.
+	extern bool g_ultra_engaged;
+	if (!to_be_enabled_or_not && g_ultra_engaged) {
+		write_log(k_always_log_basic_information,
+			"[AutoPlayer] REFUSED disengage: ULTRA engaged -> autoplayer pinned ON (disengage ULTRA to stop)\n");
+		return;
+	}
 	assert(p_flags_toolbar != NULL);
 	p_flags_toolbar->CheckButton(ID_MAIN_TOOLBAR_AUTOPLAYER, to_be_enabled_or_not);
 
@@ -795,6 +1066,9 @@ bool CAutoplayer::DoAllin(void) {
 		// as the game is over and there is no doallin-symbol,
 		// but it does not hurt to register it anyway.
     p_engine_container->UpdateAfterAutoplayerAction(k_autoplayer_function_allin);
+    // BEFORE Print(), which clears the trace. A shove is the single most expensive decision the
+    // bot makes and it was the one action that never reached hiss_log_decisions.
+    LogClickedDecision(k_autoplayer_function_allin);
     p_autoplayer_trace->Print(ActionConstantNames(k_autoplayer_function_allin), kAlwaysLogAutoplayerFunctions);
 		return true;
 	}
@@ -920,13 +1194,13 @@ void CAutoplayer::EmitDecisionTrace() {
 		else if (f_check != 0)       plain = "CHECK";
 		else if (f_fold != 0)        plain = "FOLD";
 		else                         plain = "";
-		if (!plain.IsEmpty()) {
-			// Real decision: publish it + STAMP the time. Keep the last decision/text AFTER the turn ends so
-			// the RED overlay can TRAIL ~10s and fade out (HudOverlayWindow), unlike the per-hand HUD. The
-			// overlay's own 10s timer hides it; we no longer clear the text the instant it's not our turn.
-			strcpy_s(g_hero_decision_text, sizeof(g_hero_decision_text), CStringA(plain).GetString());
-			g_hero_decision_tick = GetTickCount();
-		}
+		// NO LONGER PUBLISHED FROM HERE. This runs every heartbeat and reflects what the formulas
+		// evaluate to RIGHT NOW -- a forecast that keeps changing and often never becomes the action.
+		// The mirror showed FOLD while the bot typed a 3bb raise (hand 2783717210). The overlay is now
+		// written from CEngineContainer::UpdateAfterAutoplayerAction, i.e. once the action is actually
+		// executed, so the red text is a record rather than a guess. `plain` still feeds the Terminal
+		// decision pane below, which legitimately wants the evolving read. [Emrald: "rarely shows the
+		// true action"]
 		g_hero_decision_active = !plain.IsEmpty();
 	}
 	CString line;
@@ -1133,6 +1407,14 @@ void CAutoplayer::DoAutoplayer(void) {
 				// entry, so the retry window measures from the final click as intended.
 				_acted_heartbeat = (p_heartbeat_thread != NULL) ? p_heartbeat_thread->heartbeat_counter() : 0;
 				APTrace("DoAutoplayer -> primary action taken; FCKRA latch set for this turn");
+				// We have just acted here, so this table needs nothing from us for a while. Ask the
+				// heartbeat to hop to the other open ACR table (the pill tabs at the top of the felt).
+				// Requested, not done inline: the click sequence for this action may still be settling,
+				// and clicking belongs on the heartbeat thread with the other click handling.
+				{
+					extern volatile unsigned long g_pill_switch_request_tick;
+					g_pill_switch_request_tick = GetTickCount();
+				}
 			}
 		}
 	}	else {

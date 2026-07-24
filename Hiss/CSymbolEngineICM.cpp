@@ -288,11 +288,26 @@ bool CSymbolEngineICM::EvaluateSymbol(const CString name, double *result, bool l
   }
   // Sanity check: sum of prizes should be ~1.00
   if ((sum_of_prizes <= 0) || (sum_of_prizes > 1)) {
-    CString error_message;
-    error_message.Format("Incorrect f$icm_prizeX-functions.\n"
-      "The sum of all values should be in the range (0..1].\n"
-      "Current value: %.3f", sum_of_prizes);
-    MessageBox_Error_Warning(error_message);
+    // LOG, NEVER A MODAL.
+    //
+    // This used to call MessageBox_Error_Warning, which is BLOCKING and runs on the heartbeat
+    // thread: an unset payout curve froze the whole bot mid-hand behind an OK button, and every
+    // subsequent icm symbol evaluation queued another one. The tournament tables here do not
+    // configure f$icm_prizeX at all, so the sum is 0.000 and any icm read -- icm_fold, icm_callwin,
+    // f$ICM_SizeMult, all of which the NN driver pulls EVERY turn -- triggered it.
+    //
+    // An unconfigured prize ladder is a configuration gap, not a reason to stop playing. Returning 0
+    // means "no ICM adjustment", which is exactly right when there is no ladder to adjust for, and
+    // is what the cash-game branch above already does. Logged once a minute so it stays visible
+    // without flooding. [Emrald: modal froze the bot mid-session]
+    static DWORD s_last_icm_warn = 0;
+    if (GetTickCount() - s_last_icm_warn > 60000) {
+      s_last_icm_warn = GetTickCount();
+      write_log(k_always_log_errors,
+        "[ICM] f$icm_prizeX sums to %.3f (must be in (0..1]) -- no payout ladder is configured for "
+        "this tournament, so every icm symbol returns 0 (no ICM adjustment). Not blocking play.\n",
+        sum_of_prizes);
+    }
     *result = 0.0;
     return true;
   }

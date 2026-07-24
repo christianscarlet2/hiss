@@ -221,6 +221,15 @@ const double kAllinOvershoot = 1.0;
 const double kDesperationStackBB = 2.0;   // act on stacks strictly below this, in big blinds
 const double kDesperationRaiseBB = 3.0;   // what to type; the table caps it to our stack -> a jam
 
+// NEVER FOLD TO A TINY BET [Emrald: "any bet under 2bb should be called, or go all in if stack is 2bb
+// or less"]. Folding when the price to continue is under 2 BB throws away the whole pot to save almost
+// nothing -- getting 2-to-1-or-better on a call is a mandatory continue with essentially any holding, and
+// the sub-1BB folds we kept seeing (hn 2785351955, 2785351381) are never right. This is a HARD override,
+// applied identically to BOTH engines (OHF autoplayer AND the NN /api/action path) at the moment a FOLD
+// would execute: facing a bet strictly under this many BB, CALL instead of folding. (Stacks at or under
+// kDesperationStackBB are already handled one step earlier by the desperation rule -> jam.)
+const double kNoFoldToTinyBetBB = 2.0;    // to-call strictly below this -> call, never fold
+
 //  File accessable?
 //  (<unistd.h> is not contained in MSCVPP)
 const int F_OK = 0;

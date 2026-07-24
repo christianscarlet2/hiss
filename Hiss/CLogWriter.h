@@ -49,6 +49,15 @@ public:
 		double f_fold, double f_call, double f_check, double f_raise,
 		double f_allin, double f_betsize, const char *trace);
 	void LogHand(long long ts_ms, const char *handnumber, bool complete, const char *hh_text);
+	// Capture a MANUAL play (the in-hiss manual-play panel / learner.exe) into learner_decisions,
+	// tagged with the BOT's own pick for the same spot, so the EV+ learning loop
+	// (mcp/learn_from_decisions.py) can reconcile human-vs-bot and propose OHF improvements.
+	// NOT gated on Enabled(): manual-play capture is a separate feature from replay logging.
+	// human_amount < 0 or bot_amount < 0 => NULL; bot_action "" => NULL.
+	void LogLearnerDecision(const char *handnumber, int betround, const char *hero_cards,
+		const char *board, double pot, double amount_to_call,
+		const char *human_action, double human_amount,
+		const char *bot_action, double bot_amount, const char *source);
 
 private:
 	struct FrameJob {

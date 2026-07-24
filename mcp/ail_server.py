@@ -41,6 +41,16 @@ LOGS       = os.path.join(RELEASE, "logs")
 STATE_FILE = os.path.join(LOGS, "ail_state.json")
 PORT       = int(os.environ.get("AIL_SERVER_PORT", "7900"))
 
+# The /proposals API (served below for the browser-view Proposals tab) reuses the learning daemon's DB
+# helpers + the SAFE apply flow (lint-to-staging -> deploy+reload on pass -> revert on fail). Guarded so
+# a missing/broken module can never stop the AIL server from starting.
+if MCPDIR not in sys.path:
+    sys.path.insert(0, MCPDIR)
+try:
+    import learn_from_decisions as lfd
+except Exception:
+    lfd = None
+
 CREATE_NO_WINDOW          = 0x08000000
 DETACHED_PROCESS          = 0x00000008
 CREATE_NEW_PROCESS_GROUP  = 0x00000200
@@ -121,6 +131,9 @@ AILS = [
     {"name": "observe", "label": "Observational Learning", "icon": "\U0001F441",
      "desc": "While observing, mines villain exploits / table reads / session trend into observations; drives the HUD aggregator (AIL step 1c).",
      "args": ["observe_learn.py", "--watch"], "logs": ["observe_learn.out.log"]},
+    {"name": "learn", "label": "Learn from decisions (EV+)", "icon": "\U0001F393",
+     "desc": "Reconciles your MANUAL plays (learner_decisions) vs the bot's own pick; EV+-gates each divergence via claude -p (decision-time quality, NOT results); after >=2 same-pattern EV+ hits, proposes a minimal OHF improvement into ohf_proposals for you to approve. Never edits the live strategy on its own. Machine-wide (reads all instances).",
+     "args": ["learn_from_decisions.py"], "logs": ["learn*.out.log"]},
     {"name": "voice", "label": "Voice Feedback", "icon": "\U0001F399",
      "desc": "Mic -> whisper -> pins your spoken feedback to the live hand in postgres; the AIL improves the bot from it.",
      "args": ["voice_feedback.py", "--bot-url", "http://127.0.0.1:27654"], "logs": ["voice_feedback.log"]},
@@ -530,6 +543,61 @@ class Handler(BaseHTTPRequestHandler):
                 if since == 0:
                     lines = lines[-120:]   # fresh client: only the recent tail, not a flood
                 return self._send(200, {"lines": lines, "cursor": cursor})
+            # ---- OHF improvement proposals (browser-view Proposals tab) -----------------------------
+            # Backed by the learn daemon's own functions so the SAFE apply flow (lint-to-staging ->
+            # deploy+reload on pass -> revert on fail, backup kept) is the single source of truth.
+            if path == "/proposals/list":
+                if lfd is None:
+                    return self._send(200, {"ok": False, "error": "learn module unavailable", "proposals": []})
+                try:
+                    rows = lfd.list_proposals("pending")
+                    items = [{"id": int(r[0]), "created": r[1], "pattern": r[2], "target": r[3],
+                              "validated": (r[4] == "t"), "supporting": int(r[5] or 0), "status": r[6]}
+                             for r in rows]
+                    return self._send(200, {"ok": True, "proposals": items})
+                except Exception as e:
+                    return self._send(200, {"ok": False, "error": str(e), "proposals": []})
+            if path == "/proposals/show":
+                if lfd is None:
+                    return self._send(200, {"ok": False, "error": "learn module unavailable"})
+                pid = (q.get("id") or ["0"])[0]
+                try:
+                    r = lfd.show_proposal(pid)
+                    if not r:
+                        return self._send(200, {"ok": False, "error": "not found"})
+                    keys = ["id", "pattern", "target", "old", "new", "rationale", "validated", "validation", "status"]
+                    d = dict(zip(keys, r)); d["id"] = int(d["id"]); d["validated"] = (d["validated"] == "t"); d["ok"] = True
+                    return self._send(200, d)
+                except Exception as e:
+                    return self._send(200, {"ok": False, "error": str(e)})
+            if path == "/proposals/nn-list":
+                # NN retraining candidates: EV+ divergences vs the NN (routed here instead of OHF
+                # proposals). Read-only in the UI -- they feed the offline retrain, not a live apply.
+                if lfd is None:
+                    return self._send(200, {"ok": False, "error": "learn module unavailable", "examples": []})
+                try:
+                    rows = lfd.list_nn_examples(60)
+                    items = [{"id": int(r[0]), "created": r[1], "hero": r[2], "board": r[3],
+                              "preferred": r[4], "nn": r[5], "pattern": r[6], "status": r[7]} for r in rows]
+                    return self._send(200, {"ok": True, "examples": items})
+                except Exception as e:
+                    return self._send(200, {"ok": False, "error": str(e), "examples": []})
+            if path == "/proposals/apply":
+                if lfd is None:
+                    return self._send(200, {"ok": False, "msg": "learn module unavailable"})
+                try:
+                    ok, msg = lfd.apply_proposal((q.get("id") or ["0"])[0])
+                    return self._send(200, {"ok": ok, "msg": msg})
+                except Exception as e:
+                    return self._send(200, {"ok": False, "msg": str(e)})
+            if path == "/proposals/reject":
+                if lfd is None:
+                    return self._send(200, {"ok": False, "msg": "learn module unavailable"})
+                try:
+                    ok, msg = lfd.reject_proposal((q.get("id") or ["0"])[0])
+                    return self._send(200, {"ok": ok, "msg": msg})
+                except Exception as e:
+                    return self._send(200, {"ok": False, "msg": str(e)})
             if path == "/lobby-fetch":
                 port = (q.get("port") or ["27654"])[0]
                 ok, msg = run_lobby_fetch(port)
@@ -772,17 +840,24 @@ def reconcile_loop():
 
 def main():
     load_state()
-    # restore: re-launch any AIL that was switched ON before this server (re)started -- per-port AILs once
-    # per instance that had it on, so both bots get their brain back, not just the default one.
-    for a in AILS:
-        for port in (known_ports() if a.get("per_port") else [None]):
-            if _state["enabled"].get(ail_key(a["name"], port)) and not is_running(a["name"], port):
-                start_daemon(a["name"], port)
-    threading.Thread(target=tail_loop, daemon=True).start()
-    threading.Thread(target=reconcile_loop, daemon=True).start()
+    # BIND THE PORT FIRST [Emrald]. Restoring the enabled AILs shells out several daemons and can take a
+    # few seconds; if that runs BEFORE the bind, hiss's "ensure ail_server" pings :7900 during the gap,
+    # sees nothing, and spawns a DUPLICATE ail_server -- and each duplicate re-launches every enabled AIL,
+    # cascading into a pile-up of ail_servers + daemons (learn/synapse/...). Binding first also makes any
+    # duplicate FAIL FAST (address in use) instead of running long enough to spawn more daemons.
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     sys.stderr.write("[ail_server] listening on 0.0.0.0:%d\n" % PORT)
     sys.stderr.flush()
+    threading.Thread(target=tail_loop, daemon=True).start()
+    threading.Thread(target=reconcile_loop, daemon=True).start()
+    # Restore any AIL that was switched ON before this (re)start -- in the BACKGROUND so it never delays
+    # the bind. Per-port AILs restore once per instance that had it on.
+    def _restore():
+        for a in AILS:
+            for port in (known_ports() if a.get("per_port") else [None]):
+                if _state["enabled"].get(ail_key(a["name"], port)) and not is_running(a["name"], port):
+                    start_daemon(a["name"], port)
+    threading.Thread(target=_restore, daemon=True).start()
     srv.serve_forever()
 
 if __name__ == "__main__":

@@ -236,6 +236,7 @@
     <ClCompile Include="CHandHistoryWriter.cpp" />
     <ClCompile Include="CHandresetDetector.cpp" />
     <ClCompile Include="CHeartbeatDelay.cpp" />
+    <ClCompile Include="CAutomationHeartbeat.cpp" />
     <ClCompile Include="CHeartbeatThread.cpp" />
     <ClCompile Include="HudManager.cpp" />
     <ClCompile Include="CLevDistance.cpp" />
@@ -558,6 +559,7 @@
     <ClInclude Include="CHandHistoryWriter.h" />
     <ClInclude Include="CHandresetDetector.h" />
     <ClInclude Include="CHeartbeatDelay.h" />
+    <ClInclude Include="CAutomationHeartbeat.h" />
     <ClInclude Include="CHeartbeatThread.h" />
     <ClInclude Include="HudManager.h" />
     <ClInclude Include="ChatTerminalServer.h" />

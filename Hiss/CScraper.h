@@ -49,6 +49,22 @@ class CScraper : public CSpaceOptimizedGlobalObject {
   // per scrape frame; ObserverActive() exposes the cached state to other code.
   void RefreshObserverState();
   bool ObserverActive() const { return _observer_active; }
+  // Drop ALL per-chair OCR memory (name / stack / bet / out-frames / identity). Called the moment a
+  // table switch commits, so nothing from the previous table can bridge onto the new one. The
+  // per-chair identity gate already blocks cross-table restores; this also clears the bet memory and
+  // any seat that never hit the out-of-seat branch. [switch-safe seat memory]
+  void FlushSeatMemory();
+  // ---- ACR table tabs ("pills") -------------------------------------------------------------
+  // Each open table gets a pill at the top of the felt, labelled with the hero's hole cards there.
+  // Three visually distinct states, separated by how much LIGHT ink the pill contains (measured on
+  // the A17: active 175 bright px, inactive-with-table 129 mid px, empty "+" 0/0):
+  //   active   = the foreground table  -> bright white card text
+  //   occupied = another open table    -> dim grey card text, no ring
+  //   empty    = the "+" add-table slot-> faint outline only
+  // A missing region classifies as EMPTY, so a map without these regions simply never switches.
+  enum TablePillState { kPillEmpty = 0, kPillOccupied = 1, kPillActive = 2 };
+  static const int kMaxTablePills = 4;
+  TablePillState ClassifyTablePill(int index);
  public:
   bool IsCommonAnimation();
   // Public so a live DB tablemap-reload can re-allocate per-region bitmaps after the
@@ -182,6 +198,10 @@ class CScraper : public CSpaceOptimizedGlobalObject {
 	double  _mem_bet[kMaxNumberOfPlayers];   // last-good bet per chair (bet memory)
 	CString _mem_name[kMaxNumberOfPlayers];
 	int     _mem_out_frames[kMaxNumberOfPlayers];
+	// The table identity each chair's memory was captured at. The bridge (restore-on-flicker) only
+	// fires when this still matches g_table_identity, so a stale name/stack/bet from a DIFFERENT table
+	// can never be painted onto this one when ACR tabs between two tables. [switch-safe seat memory]
+	CString _mem_identity[kMaxNumberOfPlayers];
 	// p3 observer-state memory: keep observing while the seat-3 name is unchanged even if
 	// the p3observer scrape flickers to false (unless that name is one of the user's).
 	bool    _mem_p3observer;
@@ -226,7 +246,9 @@ void TerminateInstanceHelpers();   // kill this instance's helper daemons (port-
 extern int g_mcp_action_request;       // a k_autoplayer_function_* code (FCKRA)
 extern double g_mcp_action_amount;     // bet/raise size in big blinds (<0 = plain click)
 extern unsigned long g_mcp_action_set_tick;  // tick when set (wait-for-turn expiry)
-extern bool g_mcp_action_force;        // true: manual learner click -> bypass the ismyturn gate
+extern bool g_mcp_action_force;        // true: bypass the ismyturn gate (the NN driver sets this too!)
+extern CString g_mcp_action_table;     // table identity the action was decided on (spot guard)
+extern bool g_mcp_action_human;        // true: a REAL person clicked in the learner UI -> waive the scrape-trust gate
 // The SPOT the action was decided for. A forced request bypasses the ismyturn gate and stays PENDING
 // for up to 25 s, so without this a fold decided for hand N could still be sitting in the queue when
 // hand N+1 deals -- and fire there, into a completely different spot, as soon as a matching button
@@ -276,6 +298,7 @@ extern double g_tgi_players_remaining;
 extern CString g_tgi_tourney_name;   // e.g. "$50 GTD Freeroll"
 extern CString g_tgi_tourney_id;     // e.g. "35300198"
 extern CString g_tgi_table_number;   // e.g. "1"
+extern char g_hero_decision_source[16];   // "NN DRIVER" / "OHF" -- the engine behind the shown action
 extern CString g_table_identity;     // tourney_id|table_name; changes on a table switch (phantom guard)
 
 // --- Seat status for /api/seat-status (published by the heartbeat, see CScraper.cpp) -------------
@@ -295,6 +318,31 @@ const long kSeatEvObserver   = 0x200;   // the scraper's observer mode is active
 // The seated chair holding one of the user's own usernames, or -1. The ONLY reliable "I occupy that
 // seat" test -- userchair latches onto an opponent while railing a table. See CScraper.cpp.
 int HeroChairByName();
+// True only when the seat has been stably SEATED long enough to trust the table we are acting on.
+// Gates chip-committing actions; reads/logging/sit-in are unaffected. See CScraper.cpp.
+bool SeatIsStableForActing(const char **why);
+bool ScrapeIsTrustworthyForActing(const char **why);  // seat stability AND validator hard errors
+void NoteSeatStateChanged();          // record a seat-state transition (flicker detection)
+void NoteSeatUnstableWhileActing();   // log/announce a stand-down episode (rate-limited)
+
+// ---- MANUAL CONTROL: the scrcpy STOP SIGN and the React table view's MANUAL PLAY. Both gate the two
+// action chokepoints -- CAutoplayer::ExecutePrimaryFormulasIfNecessary (the OHF path) and the heartbeat's
+// /api/action consumer (the NN-driver / MCP path) -- so nothing can slip past by using the other route.
+//   g_halt_acting : the stop sign. While true NOTHING commits chips: the OHF stands down and every queued
+//                   NN/MCP action is discarded, INCLUDING a manual confirm. Toggled from the scrcpy overlay.
+//   g_manual_play : while true the bot still DECIDES but does not act -- it publishes the intended action
+//                   below and waits for the human to confirm it in the React view (which sends human=1).
+extern volatile bool g_halt_acting;
+extern volatile bool g_manual_play;
+// The action the bot WANTS to take, published for the React confirm button while manual play is on.
+// code is a k_autoplayer_function_* constant (fold/check/call/raise/allin), or -1 for none; amount is in
+// big blinds for a sized raise/bet, else -1. tick drives freshness so a stale suggestion self-clears.
+extern volatile int           g_pending_action_code;
+extern volatile double        g_pending_action_amount;
+extern volatile unsigned long g_pending_action_tick;
+void PublishPendingAction(int code, double amount_bb);  // set the pending suggestion (manual play)
+void ClearPendingAction();                              // drop it (confirmed, or the hand/turn moved on)
+
 extern volatile long g_seat_state;
 extern volatile long g_seat_evidence;
 extern volatile long g_seat_since_tick;

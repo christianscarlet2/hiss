@@ -802,6 +802,11 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent) {
       p_hud_action_window->TrackTableWindow();
     }
  	} else if (nIDEvent == ENABLE_BUTTONS_TIMER) {
+    // CTRL-held HUD opacity, refreshed on this 50ms timer so it responds immediately rather than
+    // waiting for the 200ms HWND_CHECK_TIMER (see CHudOverlayWindow::RefreshCtrlAlpha).
+    if (p_hud_overlay_window != NULL) {
+      p_hud_overlay_window->RefreshCtrlAlpha();
+    }
 		// Autoplayer
 		// Since OH 4.0.5 we support autoplaying immediatelly after connection
 		// without the need to know the userchair to act on secondary formulas.
@@ -843,9 +848,19 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent) {
 }
 
 void CMainFrame::OnAutoplayer() {
-	bool is_autoplaying = p_autoplayer->autoplayer_engaged();
-	// Toggle the autoplayer-state
-	p_autoplayer->EngageAutoplayer(!is_autoplaying);
+	// Route through the heartbeat request flag, exactly like OnNnDriver and OnUltra below.
+	//
+	// This used to call EngageAutoplayer() directly, which is why the autoplayer was the ONE mode
+	// that did not survive a restart: the persist happens in the heartbeat's request handler (next to
+	// ApplyNNDriverEngage / ApplyUltraEngage, which is where the other two save), and calling the
+	// setter straight from here bypassed it. Every restarted instance then came up with the
+	// autoplayer OFF while looking perfectly healthy -- attached, scraping, frames logging -- and
+	// silently sat out every hand.
+	//
+	// One path for all three modes means one place that persists, one place that applies, and no
+	// mode that can quietly diverge again. [Emrald: "so it is consistent"]
+	extern int g_mcp_autoplayer_request;
+	g_mcp_autoplayer_request = p_autoplayer->autoplayer_engaged() ? 0 : 1;
 }
 
 void CMainFrame::OnNnDriver() {

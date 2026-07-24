@@ -225,6 +225,7 @@
       if (on) views[j].removeAttribute("hidden"); else views[j].setAttribute("hidden", "");
     }
     if (name === "ail") { loadAudioDevices(); ailListPoll(); ailOutputPoll(); }
+    if (name === "proposals") { propListPoll(); nnListPoll(); }
     if (name === "synapse") { renderSynapse(); pollSynapse(); }
     if (name === "hiss") {
       var f = document.getElementById("hiss-frame");   // lazy-load the React table view on first view
@@ -377,6 +378,123 @@
   // AIL timers tick only while the AIL tab is visible.
   setInterval(function () { if (activeTab === "ail") ailListPoll(); }, 2000);
   setInterval(function () { if (activeTab === "ail") ailOutputPoll(); }, 800);
+
+  // ---- Proposals tab: OHF improvements from EV+ manual plays (ail_server /proposals/*) --------------
+  var propListEl = document.getElementById("prop-list");
+  var propDetailEl = document.getElementById("prop-detail");
+  var propConnEl = document.getElementById("prop-conn");
+  var propSel = null;      // currently-selected proposal id
+  var propBusy = false;    // guards a double apply/reject
+
+  function propListPoll() {
+    if (!propListEl) return;
+    fetch(AIL_BASE + "/proposals/list", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (propConnEl) propConnEl.textContent = "";
+        var items = (d && d.proposals) || [];
+        if (!items.length) {
+          propListEl.innerHTML = '<div class="ail-empty">No pending proposals yet. They appear once your manual plays produce 2+ EV+ divergences of the same pattern (the <b>learn</b> AIL writes them).</div>';
+          return;
+        }
+        var html = "";
+        for (var i = 0; i < items.length; i++) {
+          var p = items[i];
+          html += '<div class="prop-item' + (p.id === propSel ? " sel" : "") + '" data-prop="' + p.id + '">'
+            + '<div class="prop-item-top"><span>#' + p.id + " &middot; " + escapeHtml(p.target || "?") + "</span>"
+            + '<span class="prop-badge ' + (p.validated ? "ok" : "warn") + '">' + (p.validated ? "applicable" : "check") + "</span></div>"
+            + '<div class="prop-item-pat">' + escapeHtml(p.pattern || "") + "</div>"
+            + '<div class="prop-item-sub">' + (p.supporting || 0) + " supporting hand(s)</div>"
+            + "</div>";
+        }
+        propListEl.innerHTML = html;
+      })
+      .catch(function () { if (propConnEl) propConnEl.textContent = "(AIL server offline)"; });
+  }
+
+  function propShow(id) {
+    propSel = id;
+    fetch(AIL_BASE + "/proposals/show?id=" + id, { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || !d.ok) {
+          propDetailEl.innerHTML = '<div class="ail-empty">' + escapeHtml((d && d.error) || "not found") + "</div>";
+          return;
+        }
+        propDetailEl.innerHTML =
+          '<div class="prop-d-head"><span>Proposal #' + d.id + " &mdash; " + escapeHtml(d.target) + "</span>"
+            + '<span class="prop-badge ' + (d.validated ? "ok" : "warn") + '">' + (d.validated ? "applicable" : "check first") + "</span></div>"
+          + '<div class="prop-d-pat">' + escapeHtml(d.pattern || "") + "</div>"
+          + '<div class="prop-d-why"><b>Why:</b> ' + escapeHtml(d.rationale || "") + "</div>"
+          + '<div class="prop-d-diff"><div class="prop-d-old"><div class="prop-d-lbl">replace (old)</div><pre>' + escapeHtml(d.old || "") + "</pre></div>"
+          + '<div class="prop-d-new"><div class="prop-d-lbl">with (new)</div><pre>' + escapeHtml(d.new || "") + "</pre></div></div>"
+          + '<div class="prop-actions"><button type="button" class="prop-btn apply" data-apply="' + d.id + '">&#10003; Approve &amp; apply</button>'
+          + '<button type="button" class="prop-btn reject" data-reject="' + d.id + '">&#10007; Reject</button></div>'
+          + '<div class="prop-result" id="prop-result"></div>';
+        propListPoll();
+      })
+      .catch(function () {});
+  }
+
+  function propAct(kind, id) {
+    if (propBusy) return;
+    propBusy = true;
+    var res = document.getElementById("prop-result");
+    if (res) res.textContent = (kind === "apply" ? "applying… (lint → deploy → reload)" : "rejecting…");
+    fetch(AIL_BASE + "/proposals/" + kind + "?id=" + id, { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        propBusy = false;
+        if (res) res.textContent = (d && d.msg) ? d.msg : (d && d.ok ? "done" : "failed");
+        if (d && d.ok) {
+          propSel = null;
+          propDetailEl.innerHTML = '<div class="ail-empty">Select a proposal on the left to review its diff.</div>';
+        }
+        propListPoll();
+      })
+      .catch(function () { propBusy = false; if (res) res.textContent = "request failed"; });
+  }
+
+  if (propListEl) propListEl.addEventListener("click", function (ev) {
+    var it = ev.target && ev.target.closest ? ev.target.closest(".prop-item") : null;
+    if (it) propShow(parseInt(it.getAttribute("data-prop"), 10));
+  });
+  if (propDetailEl) propDetailEl.addEventListener("click", function (ev) {
+    var t = ev.target; if (!t || !t.getAttribute) return;
+    var ap = t.getAttribute("data-apply"), rj = t.getAttribute("data-reject");
+    if (ap) {
+      if (confirm("Apply proposal #" + ap + " to the LIVE OHF?\n\nIt is lint-validated first; on any error it reverts and the live strategy is untouched. A timestamped backup is kept and every running instance is reloaded on success.")) propAct("apply", ap);
+    } else if (rj) {
+      propAct("reject", rj);
+    }
+  });
+  // NN retraining candidates (read-only: EV+ plays where the NN was driving; feed the offline retrain).
+  var nnListEl = document.getElementById("nn-list");
+  var nnCountEl = document.getElementById("nn-count");
+  function nnListPoll() {
+    if (!nnListEl) return;
+    fetch(AIL_BASE + "/proposals/nn-list", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var items = (d && d.examples) || [];
+        if (nnCountEl) nnCountEl.textContent = items.length ? "(" + items.length + ")" : "(none yet)";
+        if (!items.length) {
+          nnListEl.innerHTML = '<div class="ail-empty">None yet. Collected when you make an EV+ play that diverges from the NN (ULTRA on, NLH).</div>';
+          return;
+        }
+        var html = "";
+        for (var i = 0; i < items.length; i++) {
+          var x = items[i];
+          var spot = escapeHtml(x.hero || "?") + (x.board ? " / " + escapeHtml(x.board) : "");
+          html += '<div class="nn-item"><b>' + spot + "</b> &mdash; you " + escapeHtml(x.preferred || "?")
+            + " vs NN " + escapeHtml(x.nn || "?") + " &middot; " + escapeHtml(x.status || "") + "</div>";
+        }
+        nnListEl.innerHTML = html;
+      })
+      .catch(function () {});
+  }
+
+  setInterval(function () { if (activeTab === "proposals") { propListPoll(); nnListPoll(); } }, 3000);
 
   // ---- Synapse Harmonizer tab: steering dials, what each does, pairings, + live values ----
   var SYNAPSE_DIALS = [

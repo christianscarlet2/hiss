@@ -229,6 +229,14 @@ bool CAutoplayerButton::IsLabelSitin() {
       || s_lower_case == "lamback") {
     return true;
   }
+  // "Rejoin" is the SAME control under a different caption: ACR shows "I Am Back" on some tables and
+  // "Rejoin" on others (observed on the s10 PLO tables, hero seat reading SITTING OUT). Recognising
+  // it here means any map that draws the region gets Sit-In behaviour without also needing an
+  // i<N>buttondefaultlabel, and the 'I' indicator lights either way. "rejo1n" is the usual OCR
+  // garble of the second i.
+  if (s_lower_case == "rejoin" || s_lower_case == "rejo1n" || s_lower_case == "rej0in") {
+    return true;
+  }
   s_lower_case = s_lower_case.Left(5);
   return (s_lower_case == "sitin" || s_lower_case == "s1t1n");
 }
@@ -265,6 +273,22 @@ bool CAutoplayerButton::IsNameI86() {
 // which could at the same time be changed by the scraper (part of the heart-beat-).
 // We could have added mutexes, but were not sure about performance,
 // so we switched to an atomic data-type without pointers instead.
+// True when the label region produced REAL TEXT that matches no button we recognise -- i.e. OCR
+// gave us something and it is meaningless. An EMPTY (or near-empty) label is different and must not
+// land here: a map can legitimately define a button with no label region at all and rely on
+// i<N>buttondefaultlabel (that is how the Rejoin/sit-in button is wired), and a momentarily blank
+// scrape of a real button must keep working too.
+bool CAutoplayerButton::LabelIsUnreadable() {
+  CString s = _label;
+  s.Trim();
+  if (s.GetLength() < 2) return false;      // blank / single stray glyph -> use the default label
+  int alnum = 0;
+  for (int i = 0; i < s.GetLength(); ++i) {
+    if (isalnum((unsigned char)s[i])) ++alnum;
+  }
+  return (alnum >= 2);                      // real characters, yet nothing above matched it
+}
+
 void CAutoplayerButton::PrecomputeButtonType() {
   if (IsLabelAllin()) {
     _button_type = k_autoplayer_function_allin;
@@ -291,6 +315,18 @@ void CAutoplayerButton::PrecomputeButtonType() {
   } else if (IsNameI86()) {
     _button_type = k_button_i86;
   } else {
+    // NOTE: an unrecognised scraped label DOES fall through to the default label, deliberately.
+    //
+    // A guard was tried here that refused the fallback whenever the label scraped real-but-unknown
+    // text, on the theory that we then do not know which control we are looking at. Measured against
+    // a live session, that theory was wrong and the guard was harmful: EVERY unknown label came from
+    // one region -- i4button, the Check button -- whose label OCRs badly and produced 25+ spellings
+    // of the same word (meck, heck, neck, sneck, hack, shack, whack, angcit, angchk, ahgcit, ...).
+    // Refusing the fallback did not prevent a mis-press; it stopped the bot CHECKING at all, and it
+    // sat out hands until they timed out.
+    //
+    // The default label is the map author's statement of what a region is. Noisy OCR on top of it is
+    // evidence about the glyphs, not about the button's identity.
     /* No or wrongly scraped value, apply default label, if any */
     if (_default_label == "allin" || _default_label == "max") {
       _button_type = k_autoplayer_function_allin;

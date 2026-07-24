@@ -62,11 +62,33 @@ def peak(meter):
         return 0.0
 
 
-def choose(seed, loudness, tick):
-    """Sound-seeded coin flip, BIASED by loudness (louder system audio -> more likely NN)."""
-    r = (seed * 131.0 + tick * GOLDEN) % 1.0
-    p_nn = min(0.92, max(0.08, loudness * LOUD_GAIN))
-    return ("nn" if r < p_nn else "ohf"), p_nn
+# DUTY CYCLE [Emrald]: which engine drives is now a SCHEDULE, not a coin flip.
+#
+#   phase 1:  NN for 2/3 of the phase, then OHF for 1/3
+#   phase 2:  NN for 1/3 of the phase, then OHF for 2/3
+#   ...then repeat.
+#
+# Over one full cycle each engine gets half the time, but in blocks of deliberately different weight
+# rather than evenly alternating -- long NN stretch, short OHF, short NN stretch, long OHF.
+#
+# This REPLACES the loudness-biased coin flip as the chooser. That flip could not honour a ratio: it
+# re-rolled independently every cadence, so the split was whatever the audio happened to produce and
+# a quiet room could sit on one engine indefinitely. Loudness is still measured and logged (and still
+# drives the beat cadence, i.e. WHEN a switch is considered) -- it just no longer decides WHICH.
+CYCLE = (("nn", 2), ("ohf", 1), ("nn", 1), ("ohf", 2))
+CYCLE_SECS = float(_argval("--cycle-secs") or 720)   # one full pass through all four blocks
+_CYCLE_UNITS = float(sum(w for _, w in CYCLE))
+
+
+def scheduled_mode(elapsed_total):
+    """The engine this point in the duty cycle belongs to, plus how far through its block we are."""
+    pos = (elapsed_total % CYCLE_SECS) / CYCLE_SECS * _CYCLE_UNITS
+    acc = 0.0
+    for mode, w in CYCLE:
+        if pos < acc + w:
+            return mode, (pos - acc) / w
+        acc += w
+    return CYCLE[-1][0], 1.0
 
 
 def switch(mode):
@@ -127,6 +149,7 @@ def main():
     loud_n = 0
     dt = 1.0 / SAMPLE_HZ
 
+    t_start = time.monotonic()
     while True:
         now = time.monotonic()
         # GAME-TYPE GATE: refresh the live PLO/PLO8 flag on a slow cadence. If the table is Omaha and
@@ -159,7 +182,7 @@ def main():
         if rhythm_due or fallback_due:
             loudness = loud_sum / max(1, loud_n)
             bpm = (60.0 / (sum(beat_gaps) / len(beat_gaps))) if beat_gaps else 0.0
-            mode, p_nn = choose(e, loudness, tick)
+            mode, block_frac = scheduled_mode(now - t_start)
             tick += 1
             # GATE: ULTRA only flips to NN on NLH. On PLO/PLO8 the NN choice is suppressed -> stay OHF.
             gated = is_omaha and mode == "nn"
@@ -171,12 +194,12 @@ def main():
                 why += " [PLO/PLO8->OHF gated]"
             if mode != cur:
                 if switch(mode):
-                    print("[ultra] %s | loud=%.3f P(NN)=%.2f -> SWITCH to %s"
-                          % (why, loudness, p_nn, tag), flush=True)
+                    print("[ultra] %s | loud=%.3f duty=%s %.0f%% -> SWITCH to %s"
+                          % (why, loudness, mode.upper(), block_frac*100, tag), flush=True)
                     cur = mode
             else:
-                print("[ultra] %s | loud=%.3f P(NN)=%.2f -> stay %s"
-                      % (why, loudness, p_nn, tag), flush=True)
+                print("[ultra] %s | loud=%.3f duty=%s %.0f%% -> stay %s"
+                      % (why, loudness, mode.upper(), block_frac*100, tag), flush=True)
             beats = 0
             last_switch = now
             loud_sum = 0.0

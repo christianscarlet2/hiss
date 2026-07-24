@@ -20,6 +20,7 @@
 #include "..\CTablemap\CTablemapDB.h"
 #include "CEngineContainer.h"
 #include "CSymbolengineUserchair.h"
+#include "CHandresetDetector.h"   // p_handreset_detector -> the hand number the copy tile shows
 
 // Seat-layout percentage table (defined in OpenHoldemView.cpp); used for default
 // per-seat HUD positions before the first MCP recalibration.
@@ -42,12 +43,14 @@ static const COLORREF kHudBalance   = RGB(60, 255, 90);   // bright green: playe
 // HUD overlay opacity (layered-window global alpha, 0..255). Kept FAINT by default so the HUD never
 // obscures the table; holding CTRL makes it SOLID for reading. [Emrald request]
 static const BYTE kHudAlphaFaint = 31;    // 12% opacity per request (alpha = 0.12*255) -- faint at rest
-static const BYTE kHudAlphaSolid = 235;   // ~92% opaque -- crisp for reading while CTRL is held
+static const BYTE kHudAlphaSolid = 255;   // FULLY opaque while CTRL is held [Emrald: "should be 1"]
 
 // RED decision overlay opacity. Its own constant, NOT kHudAlphaSolid: the decision sits directly
 // over the table (above the hero's cards), so at 92% it blotted out the felt underneath. 20%
 // opaque per request -- readable as a flash without hiding the cards/board it covers. [Emrald]
-static const BYTE kActionAlpha = 51;      // 0.20 * 255
+static const BYTE kActionAlpha = 179;     // 0.70 * 255 -- covers BOTH the red action and the blue
+                                          // engine line, which share this window's global alpha.
+                                          // [Emrald: 0.20 -> 0.40 -> 0.60 -> 0.70]
 
 static const int kHudBoxWidth = 210;   // wide enough for two |-separated stat lines
 static const int kHudLineH    = 13;
@@ -126,6 +129,43 @@ BOOL CHudOverlayWindow::OnEraseBkgnd(CDC * /*pDC*/) {
 // ---------------------------------------------------------------------------
 // Geometry: keep the overlay covering the scrcpy client area.
 // ---------------------------------------------------------------------------
+// CTRL -> HUD opacity, on its own fast cadence.
+//
+// The full TrackTableWindow runs at 200ms because repositioning and re-styling do not need to be
+// faster. But the CTRL response DOES: at 200ms a press shorter than a tick is missed entirely, and
+// with two instances each polling on their own timer the two HUDs visibly disagree (measured:
+// alpha=31,255 while CTRL was held). This does nothing but read the key and correct the alpha, so it
+// is cheap to run at 50ms and makes holding CTRL feel immediate. [Emrald]
+void CHudOverlayWindow::RefreshCtrlAlpha() {
+	if (!::IsWindow(GetSafeHwnd()) || !IsWindowVisible()) return;
+	BYTE want_alpha = ((::GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0)
+	                ? kHudAlphaSolid : kHudAlphaFaint;
+	BYTE actual_alpha = 0; COLORREF actual_key = 0; DWORD actual_flags = 0;
+	bool readable = (::GetLayeredWindowAttributes(GetSafeHwnd(), &actual_key, &actual_alpha,
+	                                              &actual_flags) != FALSE);
+	if (!readable || actual_alpha != want_alpha) {
+		BOOL applied = ::SetLayeredWindowAttributes(GetSafeHwnd(), kHudColorKey, want_alpha,
+		                                            LWA_COLORKEY | LWA_ALPHA);
+		// GROUND TRUTH for the recurring "CTRL does not make the tiles opaque" report. Two
+		// measurements disagreed -- an external probe saw the alpha reach 255 while the tiles still
+		// looked see-through -- so log what we asked for, what the window HAD, whether the call
+		// succeeded, and what it reads back immediately after. Only fires on an actual change (a few
+		// lines per CTRL press), so it cannot flood. [Emrald]
+		BYTE after = 0; COLORREF k2 = 0; DWORD f2 = 0;
+		BOOL reread = ::GetLayeredWindowAttributes(GetSafeHwnd(), &k2, &after, &f2);
+		write_log(k_always_log_basic_information,
+			"[HudAlpha] ctrl=%d want=%u had=%s setattr=%s -> reads back %s (key=0x%06X flags=0x%X)\n",
+			(want_alpha == kHudAlphaSolid) ? 1 : 0, (unsigned)want_alpha,
+			readable ? "readable" : "UNREADABLE", applied ? "ok" : "FAILED",
+			reread ? "ok" : "UNREADABLE", (unsigned)k2, (unsigned)f2);
+		if (reread && after != want_alpha) {
+			write_log(k_always_log_errors,
+				"[HudAlpha] MISMATCH: asked for %u but the window reports %u immediately after the "
+				"call -- something else is overwriting it.\n", (unsigned)want_alpha, (unsigned)after);
+		}
+	}
+}
+
 void CHudOverlayWindow::TrackTableWindow() {
 	if (!::IsWindow(GetSafeHwnd())) return;
 	HWND table = (p_autoconnector != NULL) ? p_autoconnector->attached_hwnd() : NULL;
@@ -187,7 +227,22 @@ void CHudOverlayWindow::TrackTableWindow() {
 	// it and hid the table underneath. The decision now renders in its own always-solid CHudActionWindow,
 	// leaving the tiles faint unless CTRL is held. [Emrald: "leave the HUD tiles transparent"]
 	BYTE want_alpha = ctrl_held ? kHudAlphaSolid : kHudAlphaFaint;
-	if (want_alpha != s_hud_alpha || exstyle_changed) {
+	// RE-APPLY WHENEVER THE WINDOW DISAGREES, not just when our own cached value changes.
+	//
+	// This used to skip the call whenever want_alpha == s_hud_alpha. But Windows DISCARDS the layered
+	// attributes on an ex-style change (the very reason the exstyle_changed flag exists), and the
+	// click-through toggle is not the only thing that can touch style/visibility -- SWP_SHOWWINDOW and
+	// the topmost re-assert run on this same 200ms tick. When the attributes were dropped by any path
+	// we did not flag, the cache still said "already 31" and the real window sat at whatever Windows
+	// reset it to. CTRL then did nothing until something else happened to force a change, which is
+	// exactly the intermittent "it stopped working again" symptom.
+	//
+	// Ask the window what it actually has and correct it. GetLayeredWindowAttributes is a cheap local
+	// call at 5Hz, and trusting the window over our own bookkeeping removes the whole class of bug.
+	BYTE actual_alpha = 0; COLORREF actual_key = 0; DWORD actual_flags = 0;
+	bool readable = (::GetLayeredWindowAttributes(GetSafeHwnd(), &actual_key, &actual_alpha,
+	                                              &actual_flags) != FALSE);
+	if (!readable || actual_alpha != want_alpha || want_alpha != s_hud_alpha || exstyle_changed) {
 		::SetLayeredWindowAttributes(GetSafeHwnd(), kHudColorKey, want_alpha, LWA_COLORKEY | LWA_ALPHA);
 		s_hud_alpha = want_alpha;
 	}
@@ -510,12 +565,18 @@ CHudActionWindow *p_hud_action_window = NULL;
 IMPLEMENT_DYNAMIC(CHudActionWindow, CWnd)
 
 BEGIN_MESSAGE_MAP(CHudActionWindow, CWnd)
+	ON_WM_NCHITTEST()
+	ON_WM_LBUTTONDOWN()
 	ON_WM_CREATE()
 	ON_WM_PAINT()
 	ON_WM_ERASEBKGND()
 END_MESSAGE_MAP()
 
-CHudActionWindow::CHudActionWindow() { _owner = NULL; }
+CHudActionWindow::CHudActionWindow() {
+	_owner = NULL; _copy_rect.SetRectEmpty(); _copy_rect_prev.SetRectEmpty();
+	_stop_rect.SetRectEmpty();
+	_copied_tick = 0; _copied_which = 0;
+}
 CHudActionWindow::~CHudActionWindow() {}
 
 BOOL CHudActionWindow::Create(CWnd *owner) {
@@ -525,11 +586,15 @@ BOOL CHudActionWindow::Create(CWnd *owner) {
 		AfxGetApp()->LoadStandardCursor(IDC_ARROW),
 		NULL,   // no background brush -- we paint everything
 		NULL);
-	// Same flags as the HUD overlay. WS_EX_TRANSPARENT is set PERMANENTLY here (unlike the HUD, which
-	// drops it while CTRL is held so boxes can be dragged): this window is purely visual, is never
-	// interacted with, and must never eat the bot's own autoplayer clicks on the table beneath.
+	// WS_EX_TRANSPARENT is NO LONGER set here. It made the whole window hit-test-transparent below the
+	// WM_NCHITTEST level, so OnNcHitTest never ran and nothing on this overlay could be clicked. The
+	// copy-hand-number tile needs exactly one clickable rect, so the flag is dropped and OnNcHitTest
+	// returns HTTRANSPARENT everywhere EXCEPT that tile -- which preserves the original guarantee
+	// (the bot's own autoplayer clicks pass straight through to the felt) while making one small
+	// control usable. The tile sits at the TOP of the felt beside the table pills, far from the
+	// action buttons at the bottom. [Emrald: one-click hand-number copy]
 	return CreateEx(
-		WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
+		WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
 		class_name, _T("HissAction"),
 		WS_POPUP,
 		0, 0, 100, 100,
@@ -546,6 +611,76 @@ int CHudActionWindow::OnCreate(LPCREATESTRUCT lpCreateStruct) {
 	return 0;
 }
 
+
+// ---- COPY-HAND-NUMBER TILE ---------------------------------------------------------------------
+// Hit-test: HTTRANSPARENT everywhere EXCEPT the tile, so every other click -- including the bot's
+// own autoplayer clicks -- passes through to the felt exactly as before this window became
+// interactive. Only the small tile beside the table pills is grabbable.
+LRESULT CHudActionWindow::OnNcHitTest(CPoint point) {
+	CPoint c(point);
+	ScreenToClient(&c);
+	if (!_stop_rect.IsRectEmpty() && _stop_rect.PtInRect(c)) return HTCLIENT;   // the STOP SIGN
+	if (!_copy_rect.IsRectEmpty() && _copy_rect.PtInRect(c)) return HTCLIENT;
+	if (!_copy_rect_prev.IsRectEmpty() && _copy_rect_prev.PtInRect(c)) return HTCLIENT;
+	return HTTRANSPARENT;
+}
+
+void CHudActionWindow::OnLButtonDown(UINT nFlags, CPoint point) {
+	// STOP SIGN first: toggle the global halt. While halted both action chokepoints (CAutoplayer's OHF
+	// path and the heartbeat's NN/MCP path) refuse to commit chips, so this one click freezes the bot
+	// and a second click resumes it. [stop sign]
+	if (!_stop_rect.IsRectEmpty() && _stop_rect.PtInRect(point)) {
+		extern volatile bool g_halt_acting; void ClearPendingAction();
+		g_halt_acting = !g_halt_acting;
+		if (g_halt_acting) ClearPendingAction();
+		write_log(k_always_log_basic_information, "[StopSign] bot acting %s by overlay click.\n",
+			g_halt_acting ? "HALTED" : "RESUMED");
+		Invalidate(FALSE);
+		return;
+	}
+	// Which row was hit? Current on top, previous underneath -- each copies its own number.
+	int which = 0;
+	if (!_copy_rect.IsRectEmpty() && _copy_rect.PtInRect(point)) which = 1;
+	else if (!_copy_rect_prev.IsRectEmpty() && _copy_rect_prev.PtInRect(point)) which = 2;
+	if (which == 0) {
+		CWnd::OnLButtonDown(nFlags, point);
+		return;
+	}
+	CString hn;
+	if (which == 2) {
+		hn = _prev_hand;
+	} else {
+		hn = (p_handreset_detector != NULL) ? p_handreset_detector->GetHandNumber() : CString("");
+	}
+	hn.Trim();
+	if (!hn.IsEmpty() && ::OpenClipboard(GetSafeHwnd())) {
+		::EmptyClipboard();
+		int bytes = hn.GetLength() + 1;
+		HGLOBAL mem = ::GlobalAlloc(GMEM_MOVEABLE, bytes);
+		if (mem != NULL) {
+			char *dst = (char *)::GlobalLock(mem);
+			if (dst != NULL) {
+				strcpy_s(dst, bytes, CStringA(hn).GetString());
+				::GlobalUnlock(mem);
+				if (::SetClipboardData(CF_TEXT, mem) != NULL) {
+					_copied_tick = GetTickCount();       // drives the brief COPIED confirmation
+					_copied_which = which;               // flash only the row that was clicked
+					write_log(k_always_log_basic_information,
+						"[HandCopy] %s hand number \"%s\" copied to the clipboard.\n",
+						(which == 2) ? "previous" : "current", hn.GetString());
+				} else {
+					::GlobalFree(mem);
+				}
+			} else {
+				::GlobalFree(mem);
+			}
+		}
+		::CloseClipboard();
+	}
+	Invalidate(FALSE);
+	CWnd::OnLButtonDown(nFlags, point);
+}
+
 BOOL CHudActionWindow::OnEraseBkgnd(CDC * /*pDC*/) {
 	return TRUE;   // fully painted in OnPaint (double-buffered)
 }
@@ -560,7 +695,19 @@ void CHudActionWindow::TrackTableWindow() {
 	// enabled: the action must still flash when the HUD is switched off.
 	bool decision_active = (g_hero_decision_text[0] != '\0'
 		&& (GetTickCount() - g_hero_decision_tick) < 10000);
-	if (!table_visible || !decision_active) {
+	// A live HAND NUMBER also keeps this window up, not just a trailing decision.
+	//
+	// Decision-only meant the window sat hidden -- and un-positioned, at its default 100x100 --
+	// whenever no action was flashing. The COPY-HAND-NUMBER TILE is drawn in this window, so it
+	// was invisible almost all of the time: a decision only trails for 10s after the bot acts.
+	// The tile has to be reachable for the whole hand. Still hidden when there is neither, so the
+	// window is never left topmost-and-empty over scrcpy. [Emrald: "i dont see the copy tile"]
+	bool have_handnumber = (p_handreset_detector != NULL
+		&& !p_handreset_detector->GetHandNumber().Trim().IsEmpty());
+	// Keep the overlay up while halted or in manual play even between hands, so the STOP SIGN stays
+	// reachable to click OFF again (and the manual state stays visible). [stop sign + manual play]
+	extern volatile bool g_halt_acting; extern volatile bool g_manual_play;
+	if (!table_visible || (!decision_active && !have_handnumber && !g_halt_acting && !g_manual_play)) {
 		if (IsWindowVisible()) ShowWindow(SW_HIDE);
 		return;
 	}
@@ -604,6 +751,106 @@ void CHudActionWindow::OnPaint() {
 	mem.FillSolidRect(0, 0, cw, ch, kHudColorKey);   // transparent background
 	mem.SetBkMode(TRANSPARENT);
 
+	// ---- COPY-HAND-NUMBER TILE -----------------------------------------------------------------
+	// Sits to the RIGHT of ACR's four table pills (measured at tablemap x 162..477, y 53..85), at the
+	// top of the felt and far from the action buttons at the bottom, so making it clickable cannot
+	// interfere with the bot pressing fold/call/raise. Inherits this window's 0.70 alpha. [Emrald]
+	{
+		CString hn = (p_handreset_detector != NULL) ? p_handreset_detector->GetHandNumber() : CString("");
+		hn.Trim();
+		// Roll the history on every hand change. The PREVIOUS number is the one usually wanted: by the
+		// time a hand looks wrong it has often already ended, and the current tile has moved on. [Emrald]
+		if (!hn.IsEmpty() && hn != _seen_hand) {
+			if (!_seen_hand.IsEmpty()) _prev_hand = _seen_hand;
+			_seen_hand = hn;
+		}
+		if (!hn.IsEmpty()) {
+			const int kTileX = 487, kTileY = 53, kTileW = 132;    // just right of pill 3
+			const int kRowH = 26, kPrevH = 22;                    // current row, then the parenthesised one
+			bool has_prev = !_prev_hand.IsEmpty();
+			const int kTileH = kRowH + (has_prev ? kPrevH : 0);
+			CRect tr(kTileX, kTileY, kTileX + kTileW, kTileY + kTileH);
+			if (tr.right > cw) tr.OffsetRect(cw - tr.right, 0);   // keep it on-screen on a narrow mirror
+			CRect cur_r(tr.left, tr.top, tr.right, tr.top + kRowH);
+			CRect prev_r(tr.left, tr.top + kRowH, tr.right, tr.bottom);
+			_copy_rect = cur_r;                                   // each row is independently clickable
+			_copy_rect_prev = has_prev ? prev_r : CRect(0, 0, 0, 0);
+			bool flash = (_copied_tick != 0 && (GetTickCount() - _copied_tick) < 1500);
+			bool cur_copied  = flash && _copied_which == 1;
+			bool prev_copied = flash && _copied_which == 2;
+
+			mem.FillSolidRect(&cur_r, cur_copied ? RGB(16, 60, 24) : RGB(18, 22, 30));
+			if (has_prev) mem.FillSolidRect(&prev_r, prev_copied ? RGB(16, 60, 24) : RGB(14, 17, 24));
+			CBrush edge(flash ? RGB(63, 185, 80) : RGB(90, 100, 120));
+			mem.FrameRect(&tr, &edge);
+
+			LOGFONT hf; ZeroMemory(&hf, sizeof(hf));
+			hf.lfHeight = -13; hf.lfWeight = FW_BOLD; hf.lfQuality = CLEARTYPE_QUALITY;
+			strcpy_s(hf.lfFaceName, 32, "Segoe UI");
+			CFont hfont; hfont.CreateFontIndirect(&hf);
+			CFont *oldhf = mem.SelectObject(&hfont);
+			mem.SetTextColor(cur_copied ? RGB(120, 255, 150) : RGB(215, 225, 240));
+			CRect ctext(cur_r); ctext.DeflateRect(4, 1);
+			mem.DrawText(cur_copied ? CString("COPIED") : hn, -1, &ctext,
+				DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOCLIP | DT_END_ELLIPSIS);
+
+			if (has_prev) {                                       // dimmer + smaller: it is the secondary row
+				LOGFONT pf(hf); pf.lfHeight = -12; pf.lfWeight = FW_NORMAL;
+				CFont pfont; pfont.CreateFontIndirect(&pf);
+				CFont *oldpf = mem.SelectObject(&pfont);
+				mem.SetTextColor(prev_copied ? RGB(120, 255, 150) : RGB(150, 162, 182));
+				CString ptxt; ptxt.Format("(%s)", _prev_hand.GetString());
+				CRect ptext(prev_r); ptext.DeflateRect(4, 1);
+				mem.DrawText(prev_copied ? CString("COPIED") : ptxt, -1, &ptext,
+					DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOCLIP | DT_END_ELLIPSIS);
+				mem.SelectObject(oldpf);
+			}
+			mem.SelectObject(oldhf);
+		} else {
+			_copy_rect.SetRectEmpty();      // nothing to copy -> nothing clickable
+			_copy_rect_prev.SetRectEmpty();
+		}
+	}
+
+	// ---- STOP SIGN --------------------------------------------------------------------------------
+	// A click-to-freeze octagon just LEFT of the hand-number tile. Drawn every paint (independent of a
+	// hand number) so it is reachable whenever the overlay is up. Bright red while the bot is halted,
+	// dim otherwise; the click is handled in OnLButtonDown, the hit-test in OnNcHitTest. [stop sign]
+	{
+		extern volatile bool g_halt_acting;
+		const int kStopW = 44, kStopH = 44;
+		const int kTileX = 487, kTileY = 53;                  // must match the hand-tile block above
+		int sx = kTileX - kStopW - 8; if (sx < 2) sx = 2;
+		int sy = kTileY - 6;
+		CRect sr(sx, sy, sx + kStopW, sy + kStopH);
+		if (sr.right > cw) sr.OffsetRect(cw - sr.right - 2, 0);   // keep it on-screen on a narrow mirror
+		_stop_rect = sr;
+		bool halted = g_halt_acting;
+		int cut = (int)(kStopW * 0.30);
+		POINT oct[8] = {
+			{ sr.left + cut, sr.top }, { sr.right - cut, sr.top },
+			{ sr.right, sr.top + cut }, { sr.right, sr.bottom - cut },
+			{ sr.right - cut, sr.bottom }, { sr.left + cut, sr.bottom },
+			{ sr.left, sr.bottom - cut }, { sr.left, sr.top + cut }
+		};
+		CBrush fill(halted ? RGB(220, 24, 24) : RGB(70, 18, 18));
+		CPen   edge(PS_SOLID, 2, halted ? RGB(255, 210, 210) : RGB(150, 60, 60));
+		CBrush *ob = mem.SelectObject(&fill);
+		CPen   *op = mem.SelectObject(&edge);
+		mem.Polygon(oct, 8);
+		mem.SelectObject(ob);
+		mem.SelectObject(op);
+		LOGFONT sf; ZeroMemory(&sf, sizeof(sf));
+		sf.lfHeight = -12; sf.lfWeight = FW_BOLD; sf.lfQuality = CLEARTYPE_QUALITY;
+		strcpy_s(sf.lfFaceName, 32, "Segoe UI");
+		CFont sfont; sfont.CreateFontIndirect(&sf);
+		CFont *osf = mem.SelectObject(&sfont);
+		mem.SetTextColor(halted ? RGB(255, 255, 255) : RGB(205, 150, 150));
+		CRect stext(sr);
+		mem.DrawText(CString("STOP"), -1, &stext, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOCLIP);
+		mem.SelectObject(osf);
+	}
+
 	const DWORD kDecisionHoldMs = 6000, kDecisionTotalMs = 10000;   // stay solid ~6s, then fade out by 10s [Emrald]
 	DWORD dec_elapsed = GetTickCount() - g_hero_decision_tick;
 	CRect hb;
@@ -633,6 +880,25 @@ void CHudActionWindow::OnPaint() {
 		mem.SetTextColor(dec_color);                 // table name fades with the action
 		CRect tr(ctrx - 220, hb.top - 70, ctrx + 220, hb.top - 52);    // table name just under the action
 		mem.DrawText(tname, -1, &tr, DT_CENTER | DT_SINGLELINE | DT_NOCLIP | DT_END_ELLIPSIS);
+		// WHICH BRAIN ACTED, in blue, directly under the action. Same fade curve as the red text so the
+		// pair reads as one flash, and it appears only once an action has been selected (this whole
+		// block is gated on g_hero_decision_text). Blue against the red keeps the two instantly
+		// separable at a glance. The window's global alpha (kActionAlpha) gives it the same 0.40
+		// opacity as the action itself. [Emrald]
+		if (g_hero_decision_source[0] != '\0') {
+			COLORREF src_color = RGB((int)(1 * t),
+			                         (int)(140 + (1 - 140) * t),
+			                         (int)(255 + (1 - 255) * t));   // blue -> colour key as it ages
+			LOGFONT sf; ZeroMemory(&sf, sizeof(sf));
+			sf.lfHeight = -17; sf.lfWeight = FW_BOLD; sf.lfQuality = CLEARTYPE_QUALITY;
+			strcpy_s(sf.lfFaceName, 32, "Segoe UI");
+			CFont srcf; srcf.CreateFontIndirect(&sf);
+			mem.SelectObject(&srcf);
+			mem.SetTextColor(src_color);
+			CRect sr(ctrx - 220, hb.top - 52, ctrx + 220, hb.top - 34);
+			mem.DrawText(CString(g_hero_decision_source), -1, &sr,
+				DT_CENTER | DT_SINGLELINE | DT_NOCLIP);
+		}
 		// Brain detail lines (exploit / branch / vs-villain / confidence / mischief), pushed by the Python
 		// brain via /api/decision-detail. Multi-line ('\n'-separated), small, fading with the action so the
 		// scrcpy mirror carries the SAME rich context the React table view shows. [Emrald: more lines on scrcpy]
@@ -645,7 +911,9 @@ void CHudActionWindow::OnPaint() {
 			CFont detf; detf.CreateFontIndirect(&df);
 			mem.SelectObject(&detf);
 			mem.SetTextColor(dec_color);              // same fading red as the action
-			CRect dr(ctrx - 230, hb.top - 50, ctrx + 230, hb.top - 50 + 84);  // up to ~5 lines under the table name
+			// Starts BELOW the blue engine line (which occupies top-52..top-34), not at top-50 where it
+			// used to -- otherwise the two overprint each other.
+			CRect dr(ctrx - 230, hb.top - 32, ctrx + 230, hb.top - 32 + 84);  // up to ~5 lines under the source
 			mem.DrawText(CString(g_hero_decision_detail), -1, &dr,
 				DT_CENTER | DT_NOPREFIX | DT_NOCLIP | DT_WORDBREAK);
 		}

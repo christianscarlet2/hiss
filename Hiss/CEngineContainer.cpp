@@ -477,6 +477,35 @@ void CEngineContainer::UpdateOnHeartbeat() {
 
 void CEngineContainer::UpdateAfterAutoplayerAction(int autoplayer_action_code) {
   write_log(Preferences()->debug_engine_container(), "[EngineContainer] Reset after autoplayer action\n");
+  // PUBLISH THE ACTION THAT WAS ACTUALLY TAKEN to the on-table red overlay.
+  //
+  // The overlay used to be written by CAutoplayer::EmitDecisionTrace(), which runs at the TOP of
+  // DoAutoplayer on every heartbeat and shows what the formulas CURRENTLY evaluate to -- a forecast,
+  // re-evaluated continuously, not a record of what happened. So the mirror routinely showed an action
+  // the bot never took: on hand 2783717210 it read FOLD while the bot actually typed a 3bb raise.
+  //
+  // This function is called once per EXECUTED action, from every real click site (fold/check/call/
+  // raise/all-in), so it is the honest place to publish from. betsize is skipped: it is a sub-step of
+  // a raise, and the raise itself publishes.
+  if (autoplayer_action_code != k_autoplayer_function_betsize) {
+    extern char g_hero_decision_text[48];
+    extern char g_hero_decision_source[16];
+    extern DWORD g_hero_decision_tick;
+    const char *taken = NULL;
+    switch (autoplayer_action_code) {
+      case k_autoplayer_function_fold:  taken = "FOLD";   break;
+      case k_autoplayer_function_check: taken = "CHECK";  break;
+      case k_autoplayer_function_call:  taken = "CALL";   break;
+      case k_autoplayer_function_raise: taken = "RAISE";  break;
+      case k_autoplayer_function_allin: taken = "ALL-IN"; break;
+      default: break;
+    }
+    if (taken != NULL) {
+      strcpy_s(g_hero_decision_text, sizeof(g_hero_decision_text), taken);
+      strcpy_s(g_hero_decision_source, sizeof(g_hero_decision_source), "OHF");
+      g_hero_decision_tick = GetTickCount();
+    }
+  }
   for (int i = 0; i < _symbol_engines.GetCount(); ++i) {
     _symbol_engines[i]->UpdateAfterAutoplayerAction(autoplayer_action_code);
   }

@@ -114,6 +114,11 @@ class CHandHistoryWriter: public CVirtualSymbolEngine {
   bool    _hand_dirty;           // something worth writing was recorded
   bool    _joined_midhand;       // we did not see the start of this hand
   CString _hand_number;
+  // The table this hand record belongs to (g_table_identity when it was opened). A hand record
+  // accumulates whatever is on screen, and ACR tabs between tables on its own -- so without binding
+  // the record to a table, a switch mid-hand appends the NEW table's seats to the OLD table's hand
+  // and writes one history entry containing both. Observed on hand 2783653480.
+  CString _hand_identity;
   int     _nchairs;
   int     _button;
   int     _hero;

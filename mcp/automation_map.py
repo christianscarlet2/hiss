@@ -117,18 +117,29 @@ Write-Output ([Cap]::Grab($h, '%OUT%'))
 
 
 def capture(title, out_path, allow_task=True):
-    """Capture a window's CLIENT area by title substring. Returns 'OK WxH'."""
-    ps = CAP_PS1.replace("%TITLE%", title).replace("%OUT%", out_path.replace("\\", "\\\\"))
+    """Capture a window's CLIENT area by title substring. Returns 'OK WxH'.
+
+    Written to a .part file and renamed into place: a reader that opens the destination
+    while PrintWindow is still saving gets a TRUNCATED png, which surfaces far away from
+    here as "image file is truncated" in whatever was trying to read a region.
+    """
+    part = out_path + ".part"
+    ps = CAP_PS1.replace("%TITLE%", title).replace("%OUT%", part.replace("\\", "\\\\"))
     script = os.path.join(tempfile.gettempdir(), "_automation_cap.ps1")
     with open(script, "w", encoding="utf-8") as f:
         f.write(ps)
 
-    if os.path.exists(out_path):
-        os.remove(out_path)
+    for stale in (out_path, part):
+        if os.path.exists(stale):
+            try:
+                os.remove(stale)
+            except OSError:
+                pass
     r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script],
                        capture_output=True, text=True, timeout=120,
                        creationflags=NO_WINDOW if os.name == "nt" else 0)
-    if "OK" in (r.stdout or ""):
+    if "OK" in (r.stdout or "") and os.path.exists(part):
+        os.replace(part, out_path)             # atomic: readers see all or nothing
         return r.stdout.strip()
 
     # No window here. If we are in session 0 (ssh/service) the desktop belongs to another
